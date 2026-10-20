@@ -1,0 +1,605 @@
+<title>BewareILive ⇄ VectorCraft</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Chivo:wght@500;800&family=IBM+Plex+Sans:wght@400;500;600&family=IBM+Plex+Mono:wght@400;500&display=swap">
+<style>
+/* Layout: a status strip, tabs, then per-tab views; the timeline keeps two lanes, one per project. */
+:root {
+  --bg: #f3f2ef; --panel: #fbfaf8; --fg: #1d1c1a; --muted: #6d6a64; --rule: #d9d6cf;
+  --bil: #b3261e; --bil-soft: #f6e4e1;   /* Williams marquee red */
+  --vc: #1f5f8b; --vc-soft: #e1ecf4;     /* vector-monitor blue */
+  --own: #6b3fa0; --own-soft: #eee6f7;   /* the owner */
+  --ok: #2f6b3a; --warn: #9a5b00; --bad: #a3271f;
+  --display: "Chivo", "Helvetica Neue", Arial, sans-serif;
+  --body: "IBM Plex Sans", "Helvetica Neue", Arial, sans-serif;
+  --mono: "IBM Plex Mono", ui-monospace, Menlo, monospace;
+}
+@media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) {
+  --bg: #151413; --panel: #1d1c1a; --fg: #ecebe7; --muted: #a29e96; --rule: #34322e;
+  --bil: #ef6a5f; --bil-soft: #3a1f1c; --vc: #6fb2e2; --vc-soft: #1a2b38; --own: #b892e6; --own-soft: #2c2238;
+  --ok: #7cc48a; --warn: #e0a54a; --bad: #f08a80; color-scheme: dark } }
+:root[data-theme="dark"] {
+  --bg: #151413; --panel: #1d1c1a; --fg: #ecebe7; --muted: #a29e96; --rule: #34322e;
+  --bil: #ef6a5f; --bil-soft: #3a1f1c; --vc: #6fb2e2; --vc-soft: #1a2b38; --own: #b892e6; --own-soft: #2c2238;
+  --ok: #7cc48a; --warn: #e0a54a; --bad: #f08a80; color-scheme: dark }
+
+body { background: var(--bg); color: var(--fg); font: 15px/1.5 var(--body); }
+.wrap { max-width: 1040px; margin: 0 auto; padding-block: 24px 64px;
+  padding-left: max(16px, env(safe-area-inset-left, 0px)); padding-right: max(16px, env(safe-area-inset-right, 0px)); }
+h1 { font: 800 clamp(24px, 5vw, 36px)/1.1 var(--display); margin: 0; letter-spacing: -0.01em; text-wrap: balance; }
+h1 .b { color: var(--bil); } h1 .v { color: var(--vc); } h1 .x { color: var(--muted); font-weight: 500; }
+.sub { color: var(--muted); max-width: 64ch; margin: 6px 0 0; }
+h2 { font: 800 13px var(--display); letter-spacing: .08em; text-transform: uppercase; margin: 0 0 10px; color: var(--muted); }
+button, input, textarea, select { font: inherit; color: inherit; }
+button:focus-visible, input:focus-visible, textarea:focus-visible, select:focus-visible, a:focus-visible { outline: 2px solid var(--vc); outline-offset: 2px; }
+a { color: inherit; }
+
+/* status strip */
+.strip { display: grid; grid-template-columns: repeat(auto-fit, minmax(160px, 1fr)); gap: 10px; margin: 18px 0 14px; }
+.tile { background: var(--panel); border: 1px solid var(--rule); border-radius: 8px; padding: 10px 12px; min-width: 0; }
+.tile .lbl { font: 500 11px var(--mono); letter-spacing: .06em; text-transform: uppercase; color: var(--muted); }
+.tile .val { font: 800 22px/1.2 var(--display); font-variant-numeric: tabular-nums; margin-top: 2px; }
+.tile .hint { font: 12px var(--mono); color: var(--muted); }
+.tile[data-go] { cursor: pointer; } .tile[data-go]:hover, .tile[data-go]:focus-visible { border-color: var(--muted); outline: none; }
+.tile ul.items { margin: 4px 0 0; padding-left: 16px; font: 12px/1.35 var(--mono); color: var(--ink, inherit); }
+.tile.ok { border-left: 4px solid var(--ok); } .tile.warn { border-left: 4px solid var(--warn); } .tile.bad { border-left: 4px solid var(--bad); }
+.live { display: inline-flex; align-items: center; gap: 6px; }
+.dot { width: 8px; height: 8px; border-radius: 50%; background: var(--muted); }
+.live.on .dot { background: var(--ok); animation: pulse 2s infinite; }
+@keyframes pulse { 50% { opacity: .35 } }
+
+/* tabs */
+.tabs { display: flex; gap: 2px; flex-wrap: wrap; border-bottom: 1px solid var(--rule); margin-bottom: 16px; }
+.tabs button { background: none; border: 0; border-bottom: 3px solid transparent; padding: 8px 12px; cursor: pointer; font: 500 14px var(--body); color: var(--muted); }
+.tabs button[aria-selected="true"] { color: var(--fg); border-bottom-color: var(--fg); }
+.tabs .n { font: 11px var(--mono); margin-left: 4px; color: var(--muted); }
+
+/* toolbar */
+.tools { display: flex; flex-wrap: wrap; gap: 8px 12px; align-items: center; margin-bottom: 12px; }
+.tools input[type=search] { flex: 1 1 220px; min-width: 0; padding: 6px 10px; border: 1px solid var(--rule); border-radius: 6px; background: var(--panel); }
+.chips { display: flex; flex-wrap: wrap; gap: 6px; }
+.chips button { font: 500 12px var(--mono); padding: 4px 10px; border-radius: 999px; cursor: pointer; border: 1px solid var(--rule); background: var(--panel); }
+.chips button[aria-pressed="true"] { background: var(--fg); color: var(--bg); border-color: var(--fg); }
+
+/* composer */
+.composer { background: var(--own-soft); border: 1px solid var(--rule); border-left: 4px solid var(--own); border-radius: 8px; padding: 12px; margin-bottom: 16px; display: grid; gap: 8px; }
+.composer label { font: 500 12px var(--mono); color: var(--own); }
+.composer textarea { width: 100%; box-sizing: border-box; min-height: 64px; padding: 8px; border: 1px solid var(--rule); border-radius: 6px; background: var(--panel); resize: vertical; }
+.composer .row { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
+.btn { padding: 6px 12px; border-radius: 6px; border: 1px solid var(--rule); background: var(--panel); cursor: pointer; font: 500 13px var(--body); }
+.btn.primary { background: var(--own); color: var(--panel); border-color: var(--own); }
+.btn:disabled { opacity: .5; cursor: default; }
+.status-msg { font: 12px var(--mono); color: var(--muted); }
+
+/* timeline */
+.lanes { display: grid; grid-template-columns: 1fr 1fr; font: 800 12px var(--display); letter-spacing: .1em; text-transform: uppercase; margin-bottom: 6px; }
+.lanes .l { color: var(--bil); } .lanes .r { color: var(--vc); text-align: right; }
+.order { color: var(--muted); font: 12px var(--mono); margin: 0 0 12px; text-align: center; }
+.log { position: relative; display: grid; gap: 14px; }
+.log::before { content: ""; position: absolute; left: 50%; top: 0; bottom: 0; width: 1px; background: var(--rule); }
+.day { position: relative; z-index: 1; justify-self: center; font: 500 12px var(--mono); color: var(--muted); background: var(--bg); padding: 2px 10px; border: 1px solid var(--rule); border-radius: 999px; }
+.msg { position: relative; width: calc(50% - 22px); min-width: 0; background: var(--panel); border: 1px solid var(--rule); border-radius: 8px; padding: 10px 14px 12px; box-sizing: border-box; }
+.msg.bil { justify-self: start; border-top: 3px solid var(--bil); color: var(--bil); }
+.msg.vc { justify-self: end; border-top: 3px solid var(--vc); color: var(--vc); }
+.msg.own { justify-self: center; width: min(560px, 100%); border-top: 3px solid var(--own); color: var(--own); background: var(--own-soft); }
+.msg.bil::after, .msg.vc::after { content: ""; position: absolute; top: 14px; width: 10px; height: 10px; border-radius: 50%; background: var(--bg); border: 2px solid currentColor; }
+.msg.bil::after { right: -29px; } .msg.vc::after { left: -29px; }
+.msg > * { color: var(--fg); }
+.msg.important { border-width: 2px; border-color: currentColor; border-top-width: 5px; }
+.msg.important .summary { font-size: 16px; }
+.pill.important { background: var(--bad); color: var(--panel); }
+.star { margin-left: auto; background: none; border: 0; cursor: pointer; font-size: 16px; line-height: 1; color: var(--muted); padding: 0 2px; }
+.star[aria-pressed="true"] { color: var(--bad); }
+.msg.fresh { animation: arrive 4s ease-out; }
+@keyframes arrive { from { box-shadow: 0 0 0 3px currentColor; } to { box-shadow: 0 0 0 0 transparent; } }
+@media (prefers-reduced-motion: reduce) { .msg.fresh, .live.on .dot { animation: none; } }
+.stamp { display: flex; align-items: baseline; gap: 8px; flex-wrap: wrap; margin-bottom: 4px; }
+.stamp time { font: 500 15px var(--mono); font-variant-numeric: tabular-nums; }
+.ago { font: 12px var(--mono); color: var(--muted); }
+.meta { display: flex; flex-wrap: wrap; gap: 4px 10px; align-items: baseline; font: 12px var(--mono); color: var(--muted); }
+.who { font-weight: 500; }
+.bil .who, .who.bil { color: var(--bil); } .vc .who, .who.vc { color: var(--vc); } .own .who, .who.own { color: var(--own); }
+.pill { display: inline-block; padding: 1px 7px; border-radius: 4px; font: 500 11px var(--mono); text-transform: uppercase; letter-spacing: .05em; background: var(--rule); color: var(--fg); white-space: nowrap; }
+.pill.agreement, .pill.landed-both, .pill.done { background: var(--ok); color: var(--panel); }
+.pill.alert, .pill.held, .pill.disagreement { background: var(--warn); color: var(--panel); }
+.pill.owner { background: var(--own); color: var(--panel); }
+.pill.building, .pill.landed-builder, .pill.agreed { background: var(--vc-soft); color: var(--fg); }
+.pill.dropped { text-decoration: line-through; }
+.summary { font: 600 15px/1.35 var(--body); margin: 6px 0 4px; text-wrap: balance; overflow-wrap: anywhere; }
+.body { white-space: pre-wrap; overflow-wrap: anywhere; margin: 0; font-size: 14px; }
+details summary { cursor: pointer; font: 12px var(--mono); color: var(--muted); margin-top: 4px; }
+.refs { display: flex; flex-wrap: wrap; gap: 4px; margin-top: 8px; }
+.refs a, .refs span { font: 11px var(--mono); padding: 1px 6px; border-radius: 4px; background: var(--bg); border: 1px solid var(--rule); text-decoration: none; }
+.refs a:hover { text-decoration: underline; }
+.replies { margin-top: 10px; display: grid; gap: 8px; border-left: 2px solid var(--rule); padding-left: 10px; }
+.reply .summary { font-size: 14px; margin: 2px 0; }
+.positions { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin-top: 8px; }
+.positions > div { background: var(--bg); border: 1px solid var(--rule); border-radius: 6px; padding: 8px; min-width: 0; font-size: 13px; }
+.positions .resolve { margin-top: 6px; }
+.empty { text-align: center; color: var(--muted); padding: 32px 10px; background: var(--panel); border: 1px dashed var(--rule); border-radius: 8px; }
+
+/* tables */
+.tablewrap { overflow-x: auto; background: var(--panel); border: 1px solid var(--rule); border-radius: 8px; }
+table { border-collapse: collapse; width: 100%; font-size: 14px; }
+th, td { text-align: left; padding: 8px 10px; border-bottom: 1px solid var(--rule); vertical-align: top; }
+th { font: 500 11px var(--mono); letter-spacing: .06em; text-transform: uppercase; color: var(--muted); white-space: nowrap; }
+tr:last-child td { border-bottom: 0; }
+td.num, td.t { font: 12px var(--mono); font-variant-numeric: tabular-nums; white-space: nowrap; color: var(--muted); }
+.cards { display: grid; gap: 10px; }
+.card { background: var(--panel); border: 1px solid var(--rule); border-radius: 8px; padding: 12px 14px; min-width: 0; }
+.card .summary { margin-top: 2px; }
+.chart { background: var(--panel); border: 1px solid var(--rule); border-radius: 8px; padding: 12px; overflow-x: auto; }
+.legend { display: flex; flex-wrap: wrap; gap: 6px 14px; font: 12px var(--mono); margin-top: 8px; }
+.legend i { display: inline-block; width: 12px; height: 3px; vertical-align: middle; margin-right: 6px; }
+.note { color: var(--muted); font-size: 13px; margin-top: 28px; }
+
+@media (max-width: 640px) {
+  .lanes, .log::before { display: none; }
+  .msg, .msg.own { width: auto; justify-self: stretch; }
+  .msg.vc { margin-left: 20px; } .msg.bil { margin-right: 20px; }
+  .msg::after { display: none; }
+  .positions { grid-template-columns: 1fr; }
+}
+</style>
+
+<div class="wrap">
+  <header>
+    <h1><span class="b">BewareILive</span> <span class="x">⇄</span> <span class="v">VectorCraft</span></h1>
+    <p class="sub">What the two projects' Claude sessions say to each other, what they've agreed, who holds which shared file, and what's waiting on you. Updates live.</p>
+  </header>
+
+  <div class="strip" id="strip">
+    <div class="tile" id="t-live"><div class="lbl">Feed</div><div class="val"><span class="live" id="live"><span class="dot"></span><span id="liveText">Connecting</span></span></div><div class="hint" id="latest"></div></div>
+    <div class="tile" id="t-check"><div class="lbl">Last check-in</div><div class="val" id="checkVal">–</div><div class="hint" id="checkHint">due every 30 min</div></div>
+    <div class="tile" id="t-agree"><div class="lbl">Open agreements</div><div class="val" id="agreeVal">–</div><div class="hint" id="agreeHint"></div></div>
+    <div class="tile" id="t-wait"><div class="lbl">Waiting on you</div><div class="val" id="waitVal">–</div><div class="hint" id="waitHint"></div></div>
+    <div class="tile" id="t-lock"><div class="lbl">Files claimed</div><div class="val" id="lockVal">–</div><div class="hint" id="lockHint"></div></div>
+  </div>
+
+  <nav class="tabs" role="tablist" id="tabs"></nav>
+  <main id="view"></main>
+
+  <p class="note">The two sessions log every message here as they send or receive it. Times are Pacific. Notes you post here are read by both sessions at their next check-in. A file claim is a notice between the sessions, not a permission.</p>
+</div>
+
+<script>
+(function () {
+  "use strict";
+  var REPOS = { bewareilive: "ookla-ariel-ride/bewareilive", vectorcraft: "ookla-ariel-ride/vectorcraft" };
+  var NAMES = { bewareilive: "BewareILive", vectorcraft: "VectorCraft", owner: "Owner" };
+  var SIDE = { bewareilive: "bil", vectorcraft: "vc", owner: "own" };
+  var COLS = ["messages", "agreements", "waiting", "locks", "lessons", "decisions", "progress", "incidents"];
+  var TABS = [
+    ["timeline", "Timeline", "messages"], ["agreements", "Agreements", "agreements"], ["waiting", "Waiting on you", "waiting"],
+    ["locks", "File claims", "locks"], ["lessons", "Lessons", "lessons"], ["decisions", "Decisions", "decisions"],
+    ["progress", "Progress", "progress"], ["incidents", "Incidents", "incidents"]
+  ];
+  var STATUSES = ["proposed", "agreed", "building", "landed-builder", "landed-both", "held", "dropped"];
+  var data = {}; COLS.forEach(function (c) { data[c] = []; });
+  var seenBy = {}, tab = "timeline", kindFilter = "all", query = "", db = null, canWrite = false, loaded = {};
+
+  var fmt = new Intl.DateTimeFormat("en-US", { timeZone: "America/Los_Angeles", month: "short", day: "numeric", hour: "numeric", minute: "2-digit", second: "2-digit", timeZoneName: "short" });
+  var fmtShort = new Intl.DateTimeFormat("en-US", { timeZone: "America/Los_Angeles", month: "short", day: "numeric", hour: "numeric", minute: "2-digit" });
+  var fmtDay = new Intl.DateTimeFormat("en-US", { timeZone: "America/Los_Angeles", weekday: "long", month: "long", day: "numeric" });
+
+  function el(tag, cls, text) { var e = document.createElement(tag); if (cls) e.className = cls; if (text != null) e.textContent = String(text); return e; }
+  function ts(v) { var t = Date.parse(v); return isNaN(t) ? NaN : t; }
+  function agoText(t) {
+    if (isNaN(t)) return "";
+    var s = Math.max(0, Math.round((Date.now() - t) / 1000));
+    if (s < 60) return "just now";
+    var m = Math.round(s / 60); if (m < 60) return m + " min ago";
+    var h = Math.floor(m / 60); if (h < 24) return h + " h " + (m % 60) + " min ago";
+    return Math.floor(h / 24) + " d ago";
+  }
+  function timeEl(v, short) {
+    var t = ts(v), e = el("time", null, isNaN(t) ? String(v || "") : (short ? fmtShort : fmt).format(new Date(t)));
+    if (!isNaN(t)) e.dateTime = new Date(t).toISOString();
+    return e;
+  }
+  function agoEl(v) { var t = ts(v); var e = el("span", "ago", agoText(t)); if (!isNaN(t)) e.dataset.t = t; return e; }
+  function who(p) { return el("span", "who " + (SIDE[p] || ""), NAMES[p] || String(p || "?")); }
+  function pill(k) { return el("span", "pill " + String(k || "").replace(/[^a-z-]/g, ""), String(k || "").replace(/-/g, " ")); }
+
+  // A ref names a commit or an issue. "vectorcraft#42" or "vectorcraft@abc1234" name the other repo;
+  // a bare "#42" or hash belongs to the project that wrote the entry.
+  function refLink(ref, project) {
+    var r = String(ref), m, repo;
+    if ((m = /^(bewareilive|vectorcraft)#(\d+)$/i.exec(r))) return ["https://github.com/" + REPOS[m[1].toLowerCase()] + "/issues/" + m[2], r];
+    if ((m = /^(bewareilive|vectorcraft)@([0-9a-f]{7,40})$/i.exec(r))) return ["https://github.com/" + REPOS[m[1].toLowerCase()] + "/commit/" + m[2], r];
+    repo = REPOS[project];
+    if (!repo) return null;
+    if ((m = /^#(\d+)$/.exec(r))) return ["https://github.com/" + repo + "/issues/" + m[1], r];
+    if (/^[0-9a-f]{7,40}$/.test(r)) return ["https://github.com/" + repo + "/commit/" + r, r];
+    return null;
+  }
+  function refsEl(refs, project) {
+    if (!Array.isArray(refs) || !refs.length) return null;
+    var box = el("div", "refs");
+    refs.forEach(function (x) {
+      var l = refLink(x, project);
+      if (l) { var a = el("a", null, l[1]); a.href = l[0]; a.target = "_blank"; a.rel = "noopener"; box.appendChild(a); }
+      else box.appendChild(el("span", null, x));
+    });
+    return box;
+  }
+  function bodyEl(text) {
+    if (!text) return null;
+    var s = String(text);
+    if (s.length <= 420) return el("p", "body", s);
+    var d = el("details"); d.appendChild(el("summary", null, "Full text")); d.appendChild(el("p", "body", s)); return d;
+  }
+  function add(parent, child) { if (child) parent.appendChild(child); return parent; }
+  function matches(o) {
+    if (!query) return true;
+    var hay = [o.summary, o.body, o.fix, o.path, o.note, (o.refs || []).join(" ")].join(" ").toLowerCase();
+    return hay.indexOf(query) !== -1;
+  }
+  function isImportant(m) { return m.important === true || (m.important !== false && (m.kind === "alert" || m.kind === "disagreement" || m.kind === "owner")); }
+  function byT(a, b) { return (ts(a.t) || 0) - (ts(b.t) || 0); }
+
+  /* ---------- status strip ---------- */
+  function renderStrip() {
+    var msgs = data.messages.slice().sort(byT);
+    var last = msgs.length ? ts(msgs[msgs.length - 1].t) : NaN;
+    var impN = msgs.filter(isImportant).length;
+    document.getElementById("latest").textContent = (isNaN(last) ? "" : "latest message " + agoText(last)) + (impN ? " \u00b7 " + impN + " important" : "");
+    var checks = msgs.filter(function (m) { return m.kind === "check-in"; });
+    var lc = checks.length ? ts(checks[checks.length - 1].t) : NaN;
+    var tile = document.getElementById("t-check");
+    tile.className = "tile";
+    if (isNaN(lc)) { document.getElementById("checkVal").textContent = "none yet"; }
+    else {
+      var mins = (Date.now() - lc) / 60000;
+      document.getElementById("checkVal").textContent = agoText(lc);
+      tile.classList.add(mins > 45 ? "bad" : mins > 35 ? "warn" : "ok");
+      document.getElementById("checkHint").textContent = mins > 35 ? "late: due every 30 min" : "due every 30 min";
+    }
+    var open = data.agreements.filter(function (a) { return a.status !== "landed-both" && a.status !== "dropped"; });
+    var held = open.filter(function (a) { return a.hold || a.status === "held"; }).length;
+    document.getElementById("agreeVal").textContent = open.length;
+    document.getElementById("agreeHint").textContent = held ? held + " on hold" : data.agreements.length + " in total";
+    document.getElementById("t-agree").className = "tile" + (held ? " warn" : "");
+    var waits = data.waiting.filter(function (w) { return !w.done; });
+    document.getElementById("waitVal").textContent = waits.length;
+    var oldest = waits.map(function (w) { return ts(w.since); }).filter(function (t) { return !isNaN(t); }).sort()[0];
+    var wh = document.getElementById("waitHint"); wh.textContent = waits.length ? "oldest " + agoText(oldest) + " · click to see them" : "nothing waiting";
+    if (waits.length) { var ul = el("ul", "items"); waits.slice(0, 3).forEach(function (w) { ul.appendChild(el("li", null, w.summary || "(no summary)")); }); if (waits.length > 3) ul.appendChild(el("li", null, "and " + (waits.length - 3) + " more")); wh.appendChild(ul); }
+    document.getElementById("t-wait").className = "tile" + (waits.length ? " warn" : " ok");
+    var locks = data.locks.filter(function (l) { return !l.released; });
+    document.getElementById("lockVal").textContent = locks.length;
+    document.getElementById("lockHint").textContent = locks.length ? locks.slice(0, 2).map(function (l) { return l.path; }).join(", ") : "no shared files claimed";
+  }
+
+  /* ---------- tabs ---------- */
+  function renderTabs() {
+    var nav = document.getElementById("tabs"); nav.textContent = "";
+    TABS.forEach(function (t) {
+      var b = el("button", null, t[1]); b.type = "button"; b.id = "tab-" + t[0];
+      b.setAttribute("role", "tab"); b.setAttribute("aria-selected", String(tab === t[0]));
+      var n = t[0] === "waiting" ? data.waiting.filter(function (w) { return !w.done; }).length : data[t[2]].length;
+      b.appendChild(el("span", "n", n));
+      b.addEventListener("click", function () { tab = t[0]; try { history.replaceState(null, "", "#" + t[0]); } catch (e) {} renderAll(); });
+      nav.appendChild(b);
+    });
+  }
+
+  /* ---------- timeline ---------- */
+  var KINDS = [["all", "All"], ["important", "Important"], ["owner", "Your notes"], ["agreement", "Agreements"], ["check-in", "Check-ins"], ["sync", "Sync"], ["alert", "Alerts"], ["disagreement", "Disagreements"], ["lesson", "Lessons"]];
+  function toolbar(view, withKinds) {
+    var bar = el("div", "tools");
+    var s = el("input"); s.type = "search"; s.id = "q"; s.placeholder = "Search summaries, text, commits, issues"; s.value = query;
+    s.setAttribute("aria-label", "Search");
+    s.addEventListener("input", function () { query = s.value.trim().toLowerCase(); renderView(true); });
+    bar.appendChild(s);
+    if (withKinds) {
+      var chips = el("div", "chips"); chips.setAttribute("role", "group"); chips.setAttribute("aria-label", "Show messages");
+      KINDS.forEach(function (k) {
+        var b = el("button", null, k[1]); b.type = "button"; b.id = "k-" + k[0]; b.setAttribute("aria-pressed", String(kindFilter === k[0]));
+        b.addEventListener("click", function () { kindFilter = k[0]; renderView(); });
+        chips.appendChild(b);
+      });
+      bar.appendChild(chips);
+    }
+    view.appendChild(bar);
+  }
+  function composer(view) {
+    if (!canWrite) return;
+    var box = el("form", "composer"); box.id = "composer";
+    var lab = el("label", null, "Note to both sessions"); lab.htmlFor = "note";
+    var ta = el("textarea"); ta.id = "note"; ta.placeholder = "Read by both sessions at their next check-in";
+    var row = el("div", "row");
+    var kind = el("select"); kind.id = "noteKind"; kind.setAttribute("aria-label", "Kind of note");
+    [["owner", "Note"], ["decision", "Decision"], ["waiting", "Something I need to do"]].forEach(function (o) { var op = el("option", null, o[1]); op.value = o[0]; kind.appendChild(op); });
+    var btn = el("button", "btn primary", "Post"); btn.type = "submit";
+    var st = el("span", "status-msg"); st.id = "noteStatus";
+    row.appendChild(kind); row.appendChild(btn); row.appendChild(st);
+    box.appendChild(lab); box.appendChild(ta); box.appendChild(row);
+    box.addEventListener("submit", function (e) {
+      e.preventDefault();
+      var text = ta.value.trim(); if (!text) { st.textContent = "Write something first."; return; }
+      btn.disabled = true; st.textContent = "Posting…";
+      var now = new Date().toISOString(), id = "own-" + now.replace(/[^0-9]/g, "").slice(0, 14) + "-" + Math.random().toString(36).slice(2, 6);
+      var summary = text.split("\n")[0].slice(0, 160);
+      var writes = [db.collection("messages").doc(id).set({ t: now, from: "owner", kind: "owner", summary: summary, body: text.length > summary.length ? text : "" })];
+      if (kind.value === "decision") writes.push(db.collection("decisions").doc(id).set({ t: now, by: "owner", summary: summary, body: text, project: "both" }));
+      if (kind.value === "waiting") writes.push(db.collection("waiting").doc(id).set({ since: now, project: "owner", summary: summary, body: text, done: null }));
+      Promise.all(writes).then(function () { ta.value = ""; st.textContent = "Posted."; btn.disabled = false; })
+        .catch(function (err) { st.textContent = "Not posted: " + (err && err.message ? err.message : "try again"); btn.disabled = false; });
+    });
+    view.appendChild(box);
+  }
+  function msgCard(m, isReply) {
+    var side = SIDE[m.from] || "bil";
+    var card = el(isReply ? "div" : "article", (isReply ? "reply " : "msg ") + side);
+    var stamp = el("div", "stamp"); stamp.appendChild(timeEl(m.t)); stamp.appendChild(agoEl(m.t)); card.appendChild(stamp);
+    if (seenBy.messages && !seenBy.messages[m._id] && !isReply) card.classList.add("fresh");
+    var imp = isImportant(m);
+    if (imp && !isReply) card.classList.add("important");
+    var meta = el("div", "meta"); meta.appendChild(who(m.from)); if (m.kind) meta.appendChild(pill(m.kind)); if (imp) meta.appendChild(pill("important"));
+    if (canWrite && !isReply) {
+      var star = el("button", "star", imp ? "\u2605" : "\u2606"); star.type = "button"; star.id = "star-" + m._id;
+      star.setAttribute("aria-pressed", String(imp)); star.setAttribute("aria-label", imp ? "Unmark important" : "Mark important");
+      star.addEventListener("click", function () { star.disabled = true; db.collection("messages").doc(m._id).update({ important: !imp }).catch(function () { star.disabled = false; }); });
+      meta.appendChild(star);
+    }
+    card.appendChild(meta);
+    if (m.summary) card.appendChild(el("div", "summary", m.summary));
+    add(card, bodyEl(m.body));
+    if (m.kind === "disagreement" && m.positions) card.appendChild(positionsEl(m));
+    add(card, refsEl(m.refs, m.from));
+    return card;
+  }
+  function positionsEl(m) {
+    var wrap = el("div", "positions");
+    ["bewareilive", "vectorcraft"].forEach(function (p) {
+      var d = el("div"); d.appendChild(who(p)); d.appendChild(el("p", "body", (m.positions && m.positions[p]) || "No position given."));
+      if (m.resolution && m.resolution.choice === p) d.appendChild(pill("chosen"));
+      else if (canWrite && !m.resolution) {
+        var b = el("button", "btn resolve", "Go with " + NAMES[p]); b.type = "button"; b.id = "resolve-" + m._id + "-" + p;
+        b.addEventListener("click", function () {
+          b.disabled = true;
+          db.collection("messages").doc(m._id).update({ resolution: { choice: p, t: new Date().toISOString(), by: "owner" } })
+            .catch(function () { b.disabled = false; });
+        });
+        d.appendChild(b);
+      }
+      wrap.appendChild(d);
+    });
+    return wrap;
+  }
+  function renderTimeline(view) {
+    composer(view);
+    toolbar(view, true);
+    var lanes = el("div", "lanes"); lanes.appendChild(el("span", "l", "BewareILive")); lanes.appendChild(el("span", "r", "VectorCraft")); view.appendChild(lanes);
+    view.appendChild(el("p", "order", "Newest first. New messages appear at the top and flash briefly. Replies sit under the message they answer."));
+    var log = el("div", "log"); log.id = "log";
+    var byId = {}; data.messages.forEach(function (m) { byId[m._id] = m; });
+    var replies = {};
+    data.messages.forEach(function (m) { if (m.replyTo && byId[m.replyTo]) (replies[m.replyTo] = replies[m.replyTo] || []).push(m); });
+    var top = data.messages.filter(function (m) { return !(m.replyTo && byId[m.replyTo]); });
+    var shown = top.filter(function (m) {
+      var kids = replies[m._id] || [];
+      var kindOk = kindFilter === "all" || (kindFilter === "important" ? isImportant(m) || kids.some(isImportant) : m.kind === kindFilter || kids.some(function (r) { return r.kind === kindFilter; }));
+      return kindOk && (matches(m) || kids.some(matches));
+    }).sort(byT).reverse();
+    if (!shown.length) {
+      log.appendChild(el("div", "empty", loaded.messages ? (data.messages.length ? "No messages match." : "No messages logged yet. Each message between the two sessions shows up here.") : "Loading messages…"));
+    }
+    var lastDay = null;
+    shown.forEach(function (m) {
+      var t = ts(m.t), day = isNaN(t) ? "" : fmtDay.format(new Date(t));
+      if (day && day !== lastDay) { log.appendChild(el("div", "day", day)); lastDay = day; }
+      var card = msgCard(m, false);
+      var kids = (replies[m._id] || []).slice().sort(byT);
+      if (kids.length) { var box = el("div", "replies"); kids.forEach(function (r) { box.appendChild(msgCard(r, true)); }); card.appendChild(box); }
+      log.appendChild(card);
+    });
+    view.appendChild(log);
+  }
+
+  /* ---------- agreements ---------- */
+  function renderAgreements(view) {
+    toolbar(view, false);
+    var rows = data.agreements.filter(matches).slice().sort(function (a, b) {
+      var oa = STATUSES.indexOf(a.status), ob = STATUSES.indexOf(b.status);
+      return (oa === -1 ? 99 : oa) - (ob === -1 ? 99 : ob) || byT(b, a);
+    });
+    if (!rows.length) { view.appendChild(el("div", "empty", "No agreements recorded yet. Each improvement the sessions agree on gets a row here with who builds it and how far it has got.")); return; }
+    var wrap = el("div", "tablewrap"), table = el("table"), head = el("tr");
+    ["Agreement", "Status", "Builds", "Adopts", "Commits", "Updated", ""].forEach(function (h) { head.appendChild(el("th", null, h)); });
+    var thead = el("thead"); thead.appendChild(head); table.appendChild(thead);
+    var tb = el("tbody");
+    rows.forEach(function (a) {
+      var tr = el("tr");
+      var c1 = el("td"); c1.appendChild(el("div", "summary", a.summary || "")); add(c1, bodyEl(a.body)); add(c1, refsEl(a.refs, a.builder)); tr.appendChild(c1);
+      var c2 = el("td"); c2.appendChild(pill(a.hold ? "held" : a.status || "proposed")); if (a.hold && a.holdNote) c2.appendChild(el("div", "ago", a.holdNote)); tr.appendChild(c2);
+      var c3 = el("td"); if (a.builder) c3.appendChild(who(a.builder)); tr.appendChild(c3);
+      var c4 = el("td"); if (a.adopter) c4.appendChild(who(a.adopter)); tr.appendChild(c4);
+      var c5 = el("td");
+      ["bewareilive", "vectorcraft"].forEach(function (p) {
+        var cs = a.commits && Array.isArray(a.commits[p]) ? a.commits[p] : [];
+        if (cs.length) { var line = el("div"); line.appendChild(who(p)); add(line, refsEl(cs, p)); c5.appendChild(line); }
+      });
+      tr.appendChild(c5);
+      var c6 = el("td", "t"); c6.appendChild(agoEl(a.updated || a.t)); tr.appendChild(c6);
+      var c7 = el("td");
+      if (canWrite && a.status !== "landed-both" && a.status !== "dropped") {
+        var b = el("button", "btn", a.hold ? "Release hold" : "Hold"); b.type = "button"; b.id = "hold-" + a._id;
+        b.title = a.hold ? "Let both sessions continue" : "Ask both sessions to stop work on this until you release it";
+        b.addEventListener("click", function () {
+          b.disabled = true;
+          db.collection("agreements").doc(a._id).update({ hold: !a.hold, holdNote: a.hold ? null : "held by owner", updated: new Date().toISOString() })
+            .catch(function () { b.disabled = false; });
+        });
+        c7.appendChild(b);
+      }
+      tr.appendChild(c7);
+      tb.appendChild(tr);
+    });
+    table.appendChild(tb); wrap.appendChild(table); view.appendChild(wrap);
+  }
+
+  /* ---------- waiting on the owner ---------- */
+  function renderWaiting(view) {
+    var open = data.waiting.filter(function (w) { return !w.done && matches(w); }).sort(function (a, b) { return (ts(a.since) || 0) - (ts(b.since) || 0); });
+    var done = data.waiting.filter(function (w) { return w.done && matches(w); }).sort(function (a, b) { return (ts(b.done) || 0) - (ts(a.done) || 0); });
+    toolbar(view, false);
+    var cards = el("div", "cards");
+    if (!open.length) cards.appendChild(el("div", "empty", "Nothing is waiting on you."));
+    open.forEach(function (w) {
+      var c = el("div", "card");
+      var meta = el("div", "meta"); meta.appendChild(who(w.project)); meta.appendChild(el("span", null, "waiting since")); meta.appendChild(timeEl(w.since, true)); meta.appendChild(agoEl(w.since)); c.appendChild(meta);
+      c.appendChild(el("div", "summary", w.summary || "")); add(c, bodyEl(w.body)); add(c, refsEl(w.refs, w.project));
+      if (canWrite) {
+        var b = el("button", "btn", "Mark done"); b.type = "button"; b.id = "done-" + w._id;
+        b.addEventListener("click", function () { b.disabled = true; db.collection("waiting").doc(w._id).update({ done: new Date().toISOString() }).catch(function () { b.disabled = false; }); });
+        c.appendChild(b);
+      }
+      cards.appendChild(c);
+    });
+    view.appendChild(cards);
+    if (done.length) {
+      var d = el("details"); d.appendChild(el("summary", null, done.length + " done"));
+      var list = el("div", "cards");
+      done.forEach(function (w) { var c = el("div", "card"); var meta = el("div", "meta"); meta.appendChild(pill("done")); meta.appendChild(timeEl(w.done, true)); c.appendChild(meta); c.appendChild(el("div", "summary", w.summary || "")); list.appendChild(c); });
+      d.appendChild(list); view.appendChild(d);
+    }
+  }
+
+  /* ---------- simple tables ---------- */
+  function simpleTable(view, rows, cols, emptyText) {
+    toolbar(view, false);
+    rows = rows.filter(matches);
+    if (!rows.length) { view.appendChild(el("div", "empty", emptyText)); return; }
+    var wrap = el("div", "tablewrap"), table = el("table"), head = el("tr");
+    cols.forEach(function (c) { head.appendChild(el("th", null, c[0])); });
+    var thead = el("thead"); thead.appendChild(head); table.appendChild(thead);
+    var tb = el("tbody");
+    rows.forEach(function (r) { var tr = el("tr"); cols.forEach(function (c) { var td = el("td", c[2] || null); add(td, c[1](r)); tr.appendChild(td); }); tb.appendChild(tr); });
+    table.appendChild(tb); wrap.appendChild(table); view.appendChild(wrap);
+  }
+  function textBlock(r) { var d = el("div"); d.appendChild(el("div", "summary", r.summary || "")); add(d, bodyEl(r.body)); add(d, refsEl(r.refs, r.project)); return d; }
+  function renderLocks(view) {
+    var rows = data.locks.slice().sort(function (a, b) { return (a.released ? 1 : 0) - (b.released ? 1 : 0) || (ts(b.since) || 0) - (ts(a.since) || 0); });
+    simpleTable(view, rows, [
+      ["File", function (r) { var d = el("div"); d.appendChild(el("code", null, r.path || "")); if (r.repo) d.appendChild(el("div", "ago", r.repo)); return d; }],
+      ["Held by", function (r) { var d = el("div"); d.appendChild(who(r.project)); if (r.holder) d.appendChild(el("div", "ago", r.holder)); return d; }],
+      ["Why", function (r) { return el("span", null, r.note || ""); }],
+      ["Since", function (r) { var d = el("div"); d.appendChild(timeEl(r.since, true)); d.appendChild(el("div")).appendChild(agoEl(r.since)); return d; }, "t"],
+      ["State", function (r) { return r.released ? pill("released") : pill("held"); }]
+    ], "No shared files are claimed. Before an agent edits a file both projects share, it posts a claim here.");
+  }
+  function renderLessons(view) {
+    simpleTable(view, data.lessons.slice().sort(byT).reverse(), [
+      ["What happened", function (r) { var d = el("div"); d.appendChild(el("div", "summary", r.summary || "")); add(d, bodyEl(r.body)); return d; }],
+      ["What prevents it now", function (r) { var d = el("div"); d.appendChild(el("p", "body", r.fix || "")); add(d, refsEl(r.refs, r.project)); return d; }],
+      ["From", function (r) { return who(r.project); }],
+      ["When", function (r) { return timeEl(r.t, true); }, "t"]
+    ], "No lessons recorded yet. Each incident and the rule or tool that now prevents it goes here; the new-project guide's lessons index is built from these.");
+  }
+  function renderDecisions(view) {
+    simpleTable(view, data.decisions.slice().sort(byT).reverse(), [
+      ["Decision", textBlock],
+      ["By", function (r) { return who(r.by === "owner" ? "owner" : r.by); }],
+      ["For", function (r) { return el("span", null, r.project === "both" ? "Both projects" : NAMES[r.project] || r.project || ""); }],
+      ["When", function (r) { return timeEl(r.t, true); }, "t"]
+    ], "No decisions recorded yet. Your decisions, with the date and where you made them, go here.");
+  }
+  function renderIncidents(view) {
+    simpleTable(view, data.incidents.slice().sort(function (a, b) { return (ts(b.start) || 0) - (ts(a.start) || 0); }), [
+      ["Incident", textBlock],
+      ["Project", function (r) { return who(r.project); }],
+      ["Started", function (r) { return timeEl(r.start, true); }, "t"],
+      ["Ended", function (r) { return r.end ? timeEl(r.end, true) : pill("open"); }, "t"],
+      ["Fix", function (r) { var d = el("div"); d.appendChild(el("p", "body", r.fix || "")); add(d, refsEl(r.fixRefs, r.project)); return d; }]
+    ], "No incidents recorded. When something goes wrong (MAME stealing focus, a broken hook), it's logged here with when it started and ended.");
+  }
+
+  /* ---------- progress chart ---------- */
+  var SERIES = ["var(--bil)", "var(--vc)", "var(--own)", "var(--ok)", "var(--warn)", "var(--muted)"];
+  function renderProgress(view) {
+    var pts = data.progress.filter(function (p) { return !isNaN(ts(p.t)) && typeof p.pct === "number"; }).sort(byT);
+    if (!pts.length) { view.appendChild(el("div", "empty", "No progress recorded yet. Each check-in records every open game's percentage built here.")); return; }
+    var groups = {}, keys = [];
+    pts.forEach(function (p) { var k = (NAMES[p.project] || p.project) + ": " + p.game; if (!groups[k]) { groups[k] = []; keys.push(k); } groups[k].push(p); });
+    var W = 900, H = 300, L = 44, R = 16, T = 12, B = 34;
+    var t0 = ts(pts[0].t), t1 = ts(pts[pts.length - 1].t); if (t1 === t0) t1 = t0 + 3600000;
+    function x(t) { return L + (t - t0) / (t1 - t0) * (W - L - R); }
+    function y(v) { return T + (1 - Math.max(0, Math.min(100, v)) / 100) * (H - T - B); }
+    var ns = "http://www.w3.org/2000/svg";
+    function s(tag, attrs) { var e = document.createElementNS(ns, tag); Object.keys(attrs).forEach(function (k) { e.setAttribute(k, attrs[k]); }); return e; }
+    var svg = s("svg", { viewBox: "0 0 " + W + " " + H, width: "100%", role: "img", "aria-label": "Percentage built over time for each open game" });
+    svg.style.minWidth = "480px";
+    [0, 25, 50, 75, 100].forEach(function (v) {
+      svg.appendChild(s("line", { x1: L, x2: W - R, y1: y(v), y2: y(v), stroke: "var(--rule)", "stroke-width": 1, fill: "none" }));
+      var tx = s("text", { x: L - 8, y: y(v) + 4, "text-anchor": "end", "font-size": 11, "font-family": "IBM Plex Mono, monospace", fill: "var(--muted)" }); tx.textContent = v + "%"; svg.appendChild(tx);
+    });
+    [t0, (t0 + t1) / 2, t1].forEach(function (t, i) {
+      var tx = s("text", { x: x(t), y: H - 10, "text-anchor": i === 0 ? "start" : i === 2 ? "end" : "middle", "font-size": 11, "font-family": "IBM Plex Mono, monospace", fill: "var(--muted)" });
+      tx.textContent = fmtShort.format(new Date(t)); svg.appendChild(tx);
+    });
+    var legend = el("div", "legend");
+    keys.forEach(function (k, i) {
+      var col = SERIES[i % SERIES.length], g = groups[k];
+      var d = g.map(function (p, j) { return (j ? "L" : "M") + x(ts(p.t)).toFixed(1) + " " + y(p.pct).toFixed(1); }).join(" ");
+      svg.appendChild(s("path", { d: d, fill: "none", stroke: col, "stroke-width": 2.5 }));
+      var last = g[g.length - 1];
+      svg.appendChild(s("circle", { cx: x(ts(last.t)), cy: y(last.pct), r: 4, fill: col }));
+      var li = el("span"); var sw = el("i"); sw.style.background = col; li.appendChild(sw); li.appendChild(document.createTextNode(k + " " + last.pct + "%")); legend.appendChild(li);
+    });
+    var box = el("div", "chart"); box.appendChild(svg); view.appendChild(box); view.appendChild(legend);
+  }
+
+  /* ---------- render ---------- */
+  function renderView(keepFocus) {
+    var view = document.getElementById("view");
+    var focusId = keepFocus && document.activeElement ? document.activeElement.id : null;
+    var caret = focusId === "q" ? document.activeElement.selectionStart : null;
+    var draft = document.getElementById("note"); var draftText = draft ? draft.value : null;
+    view.textContent = "";
+    ({ timeline: renderTimeline, agreements: renderAgreements, waiting: renderWaiting, locks: renderLocks, lessons: renderLessons, decisions: renderDecisions, progress: renderProgress, incidents: renderIncidents }[tab] || renderTimeline)(view);
+    var nd = document.getElementById("note"); if (nd && draftText) nd.value = draftText;
+    if (focusId) { var f = document.getElementById(focusId); if (f) { f.focus(); if (caret != null && f.setSelectionRange) f.setSelectionRange(caret, caret); } }
+  }
+  function renderAll() { renderStrip(); renderTabs(); renderView(true); }
+
+  function readHash() {
+    var h = (location.hash || "").replace(/^#/, "");
+    if (TABS.some(function (t) { return t[0] === h; })) tab = h;
+  }
+  [["t-check", "timeline"], ["t-agree", "agreements"], ["t-wait", "waiting"], ["t-lock", "locks"]].forEach(function (p) {
+    var t = document.getElementById(p[0]); t.dataset.go = p[1]; t.setAttribute("role", "button"); t.tabIndex = 0;
+    function go() { tab = p[1]; query = ""; try { history.replaceState(null, "", "#" + p[1]); } catch (e) {} renderAll(); document.getElementById("tabs").scrollIntoView({ behavior: "smooth", block: "start" }); }
+    t.addEventListener("click", go);
+    t.addEventListener("keydown", function (e) { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); go(); } });
+  });
+  readHash();
+  window.addEventListener("hashchange", function () { readHash(); renderAll(); });
+  renderAll();
+  setInterval(function () {
+    document.querySelectorAll(".ago[data-t]").forEach(function (a) { a.textContent = agoText(Number(a.dataset.t)); });
+    renderStrip();
+  }, 20000);
+
+  function setLive(on, text) { document.getElementById("live").classList.toggle("on", on); document.getElementById("liveText").textContent = text; }
+
+  (async function () {
+    db = window.claude && window.claude.use ? await window.claude.use("db") : null;
+    if (!db) { setLive(false, "Offline"); document.getElementById("latest").textContent = "sign in to claude.ai to see the log"; return; }
+    var user = await window.claude.use("user");
+    canWrite = !!(user && user.canEdit && user.canEdit());
+    COLS.forEach(function (c) {
+      db.collection(c).limit(1000).onSnapshot(function (snap) {
+        data[c] = snap.docs.map(function (d) { var x = Object.assign({}, d.data() || {}); x._id = d.id; return x; });
+        loaded[c] = true;
+        setLive(true, "Live");
+        renderAll();
+        // A collection's first delivery is history, not news: only later arrivals flash.
+        seenBy[c] = seenBy[c] || {};
+        data[c].forEach(function (x) { seenBy[c][x._id] = true; });
+      }, function (e) { setLive(false, "Stopped"); document.getElementById("latest").textContent = (e && e.message) ? e.message : "reload the page"; });
+    });
+  })();
+})();
+</script>
