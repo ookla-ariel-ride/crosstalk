@@ -1,5 +1,8 @@
-"""Log lines: read and check (append is added in a later task)."""
+"""Log lines: read, check and append."""
+import fcntl
 import json
+import os
+import time
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Dict, List, Optional, Tuple
@@ -113,3 +116,38 @@ def check_all(root: Path, roster: Roster) -> List[Problem]:
                                     "lines are carried as quarantined" % path.stem, False))
         problems.extend(read_log(path)[1])
     return problems
+
+
+def append_line(root: Path, from_: str, op: str, collection: str, id: str, data: dict,
+                t: Optional[str] = None, via: Optional[str] = None) -> Line:
+    """Append one line to log/<from_>.jsonl under an exclusive lock; returns the Line written."""
+    if op not in OPS:
+        raise ValueError("unknown op %r" % (op,))
+    if t is None:
+        t = time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime())
+    log_dir = Path(root) / "log"
+    log_dir.mkdir(parents=True, exist_ok=True)
+    path = log_dir / (from_ + ".jsonl")
+    with open(str(path), "a+b") as f:
+        fcntl.flock(f, fcntl.LOCK_EX)
+        try:
+            f.seek(0)
+            last = 0
+            for raw in f.read().decode("utf-8").split("\n"):
+                if raw.strip():
+                    last = json.loads(raw)["seq"]
+            d = {"seq": last + 1, "t": t, "from": from_, "op": op,
+                 "collection": collection, "id": id, "data": data}
+            if via is not None:
+                d["via"] = via
+            text = json.dumps(d, ensure_ascii=False, separators=(",", ":"))
+            result = _validate(text, from_, last + 1, [])
+            if isinstance(result, str):
+                raise ValueError(result)
+            f.seek(0, 2)
+            f.write((text + "\n").encode("utf-8"))
+            f.flush()
+            os.fsync(f.fileno())
+            return result
+        finally:
+            fcntl.flock(f, fcntl.LOCK_UN)
