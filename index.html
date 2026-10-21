@@ -79,9 +79,13 @@ a { color: inherit; }
 .log::before { content: ""; position: absolute; left: 50%; top: 0; bottom: 0; width: 1px; background: var(--rule); }
 .day { position: relative; z-index: 1; justify-self: center; font: 500 12px var(--mono); color: var(--muted); background: var(--bg); padding: 2px 10px; border: 1px solid var(--rule); border-radius: 999px; }
 .msg { position: relative; width: calc(50% - 22px); min-width: 0; background: var(--panel); border: 1px solid var(--rule); border-radius: 8px; padding: 10px 14px 12px; box-sizing: border-box; }
-.msg.bil { justify-self: start; border-top: 3px solid var(--bil); color: var(--bil); }
-.msg.vc { justify-self: end; border-top: 3px solid var(--vc); color: var(--vc); }
-.msg.own { justify-self: center; width: min(560px, 100%); border-top: 3px solid var(--own); color: var(--own); background: var(--own-soft); }
+/* Lanes until the single feed replaces them: the two projects left and right, everyone else centered.
+   The sender's color comes from the participants collection as the --who custom property. */
+.msg { border-top: 3px solid var(--who, var(--muted)); color: var(--who, var(--muted)); }
+.msg.bil { justify-self: start; }
+.msg.vc { justify-self: end; }
+.msg.own, .msg.ctr { justify-self: center; width: min(560px, 100%); }
+.msg.own { background: var(--own-soft); }
 .msg.bil::after, .msg.vc::after { content: ""; position: absolute; top: 14px; width: 10px; height: 10px; border-radius: 50%; background: var(--bg); border: 2px solid currentColor; }
 .msg.bil::after { right: -29px; } .msg.vc::after { left: -29px; }
 .msg > * { color: var(--fg); }
@@ -99,7 +103,7 @@ a { color: inherit; }
 .ago { font: 12px var(--mono); color: var(--muted); }
 .meta { display: flex; flex-wrap: wrap; gap: 4px 10px; align-items: baseline; font: 12px var(--mono); color: var(--muted); }
 .who { font-weight: 500; }
-.bil .who, .who.bil { color: var(--bil); } .vc .who, .who.vc { color: var(--vc); } .own .who, .who.own { color: var(--own); }
+.who { color: var(--who, inherit); }
 .pill { display: inline-block; padding: 1px 7px; border-radius: 4px; font: 500 11px var(--mono); text-transform: uppercase; letter-spacing: .05em; background: var(--rule); color: var(--fg); white-space: nowrap; }
 .pill.agreement, .pill.landed-both, .pill.done { background: var(--ok); color: var(--panel); }
 .pill.alert, .pill.held, .pill.disagreement { background: var(--warn); color: var(--panel); }
@@ -114,7 +118,7 @@ details summary { cursor: pointer; font: 12px var(--mono); color: var(--muted); 
 .refs a:hover { text-decoration: underline; }
 .replies { margin-top: 10px; display: grid; gap: 8px; border-left: 2px solid var(--rule); padding-left: 10px; }
 .reply .summary { font-size: 14px; margin: 2px 0; }
-.positions { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin-top: 8px; }
+.positions { display: grid; grid-template-columns: repeat(auto-fit, minmax(160px, 1fr)); gap: 8px; margin-top: 8px; }
 .positions > div { background: var(--bg); border: 1px solid var(--rule); border-radius: 6px; padding: 8px; min-width: 0; font-size: 13px; }
 .positions .resolve { margin-top: 6px; }
 .empty { text-align: center; color: var(--muted); padding: 32px 10px; background: var(--panel); border: 1px dashed var(--rule); border-radius: 8px; }
@@ -136,7 +140,7 @@ td.num, td.t { font: 12px var(--mono); font-variant-numeric: tabular-nums; white
 
 @media (max-width: 640px) {
   .lanes, .log::before { display: none; }
-  .msg, .msg.own { width: auto; justify-self: stretch; }
+  .msg, .msg.own, .msg.ctr { width: auto; justify-self: stretch; }
   .msg.vc { margin-left: 20px; } .msg.bil { margin-right: 20px; }
   .msg::after { display: none; }
   .positions { grid-template-columns: 1fr; }
@@ -169,10 +173,8 @@ td.num, td.t { font: 12px var(--mono); font-variant-numeric: tabular-nums; white
   "use strict";
   // scripts/stamp.sh replaces these placeholders in the published copy; the repo file keeps them.
   var BUILD = { commit: "__COMMIT__", published: "__PUBLISHED__" };
-  var REPOS = { bewareilive: "ookla-ariel-ride/bewareilive", vectorcraft: "ookla-ariel-ride/vectorcraft" };
-  var NAMES = { bewareilive: "BewareILive", vectorcraft: "VectorCraft", owner: "Owner" };
-  var SIDE = { bewareilive: "bil", vectorcraft: "vc", owner: "own" };
-  var COLS = ["messages", "agreements", "waiting", "locks", "lessons", "decisions", "progress", "incidents"];
+  // Names, colors, repos and kinds come from the `participants` collection (doc id = participant id).
+  var COLS = ["messages", "agreements", "waiting", "locks", "lessons", "decisions", "progress", "incidents", "participants"];
   var TABS = [
     ["timeline", "Timeline", "messages"], ["agreements", "Agreements", "agreements"], ["waiting", "Waiting on you", "waiting"],
     ["locks", "File claims", "locks"], ["lessons", "Lessons", "lessons"], ["decisions", "Decisions", "decisions"],
@@ -180,7 +182,7 @@ td.num, td.t { font: 12px var(--mono); font-variant-numeric: tabular-nums; white
   ];
   var STATUSES = ["proposed", "agreed", "building", "landed-builder", "landed-both", "held", "dropped"];
   var data = {}; COLS.forEach(function (c) { data[c] = []; });
-  var seenBy = {}, tab = "timeline", kindFilter = "all", query = "", queryRaw = "", db = null, canWrite = false, loaded = {}, offline = false;
+  var people = Object.create(null), seenBy = {}, tab = "timeline", kindFilter = "all", query = "", queryRaw = "", db = null, canWrite = false, loaded = {}, offline = false;
   // subState[c]: undefined while connecting, "ok" once live, "retry" while resubscribing, "dead" when it can't recover.
   var subState = {};
   // The composer's state lives here, not in the DOM, so a snapshot re-render can't reset it. `id` stays the same
@@ -207,19 +209,46 @@ td.num, td.t { font: 12px var(--mono); font-variant-numeric: tabular-nums; white
     return e;
   }
   function agoEl(v) { var t = ts(v); var e = el("span", "ago", agoText(t)); if (!isNaN(t)) e.dataset.t = t; return e; }
-  function who(p) { return el("span", "who " + (SIDE[p] || ""), NAMES[p] || String(p || "?")); }
+  // Rows are untrusted, so a participant's fields are checked before they reach a URL or a style.
+  var HAS = Object.prototype.hasOwnProperty;
+  var ID = "[a-z0-9-]+(?:\\.[a-z0-9-]+)*";
+  function person(id) {
+    var k = String(id == null ? "" : id), p = HAS.call(people, k) && people[k] && typeof people[k] === "object" ? people[k] : null;
+    if (!p) return { id: k, name: k, kind: null, color: "var(--muted)", repo: null, parent: null, checkInMin: null, trust: "quarantined" };
+    var name = typeof p.name === "string" && p.name ? p.name : (p.kind === "agent" ? k.split(".").pop() : k);
+    var color = typeof p.color === "string" && /^(#[0-9a-f]{3,8}|[a-z]+)$/i.test(p.color) ? p.color : "var(--muted)";
+    var repo = typeof p.repo === "string" && /^[\w.-]+\/[\w.-]+$/.test(p.repo) ? p.repo : null;
+    return { id: k, name: name, kind: p.kind || null, color: color, repo: repo, parent: typeof p.parent === "string" ? p.parent : null,
+      checkInMin: typeof p.checkInMin === "number" ? p.checkInMin : null, trust: p.trust === "approved" ? "approved" : "quarantined" };
+  }
+  function displayName(id) {
+    var p = person(id);
+    return p.kind === "agent" && p.parent && p.parent !== p.id ? person(p.parent).name + " \u203a " + p.name : p.name;
+  }
+  // The owner keeps the themed --own color, which has a light and a dark value.
+  function colorOf(id) { return id === "owner" ? "var(--own)" : person(id).color; }
+  // An agent without a repo of its own uses its parent's.
+  function repoFor(id) { var p = person(id); return p.repo || (p.parent ? person(p.parent).repo : null); }
+  // Lanes until the single feed replaces them: the two projects left and right, everyone else centered.
+  function lane(id) { return id === "bewareilive" ? "bil" : id === "vectorcraft" ? "vc" : id === "owner" ? "own" : "ctr"; }
+  function who(p) {
+    var e = el("span", "who", p == null || p === "" ? "?" : displayName(p));
+    e.style.setProperty("--who", colorOf(String(p == null ? "" : p)));
+    return e;
+  }
   function pill(k) { return el("span", "pill " + String(k || "").replace(/[^a-z-]/g, ""), String(k || "").replace(/-/g, " ")); }
 
-  // A ref names a commit or an issue. "vectorcraft#42" or "vectorcraft@abc1234" name the other repo;
-  // a bare "#42" or hash belongs to the project that wrote the entry.
+  // A ref names a commit or an issue. "<id>#42" or "<id>@abc1234" name that participant's repo;
+  // a bare "#42" or hash belongs to the participant that wrote the entry.
+  var REF_ISSUE = new RegExp("^(" + ID + ")#(\\d+)$", "i"), REF_COMMIT = new RegExp("^(" + ID + ")@([0-9a-f]{7,40})$", "i");
   function refLink(ref, project) {
     var r = String(ref), m, repo;
-    if ((m = /^(bewareilive|vectorcraft)#(\d+)$/i.exec(r))) return ["https://github.com/" + REPOS[m[1].toLowerCase()] + "/issues/" + m[2], r];
-    if ((m = /^(bewareilive|vectorcraft)@([0-9a-f]{7,40})$/i.exec(r))) return ["https://github.com/" + REPOS[m[1].toLowerCase()] + "/commit/" + m[2], r];
-    repo = REPOS[project];
+    if ((m = REF_ISSUE.exec(r))) { repo = repoFor(m[1].toLowerCase()); return repo ? ["https://github.com/" + repo + "/issues/" + m[2], r] : null; }
+    if ((m = REF_COMMIT.exec(r))) { repo = repoFor(m[1].toLowerCase()); return repo ? ["https://github.com/" + repo + "/commit/" + m[2].toLowerCase(), r] : null; }
+    repo = project ? repoFor(project) : null;
     if (!repo) return null;
     if ((m = /^#(\d+)$/.exec(r))) return ["https://github.com/" + repo + "/issues/" + m[1], r];
-    if (/^[0-9a-f]{7,40}$/i.test(r)) return ["https://github.com/" + repo + "/commit/" + r, r];
+    if (/^[0-9a-f]{7,40}$/i.test(r)) return ["https://github.com/" + repo + "/commit/" + r.toLowerCase(), r];
     return null;
   }
   function refsEl(refs, project) {
@@ -242,7 +271,7 @@ td.num, td.t { font: 12px var(--mono); font-variant-numeric: tabular-nums; white
   function matches(o) {
     if (!query) return true;
     var commits = o.commits && typeof o.commits === "object" ? Object.keys(o.commits).map(function (k) { return [].concat(o.commits[k] || []).join(" "); }) : [];
-    var hay = [o.summary, o.body, o.fix, o.path, o.note, o.game, o.source, NAMES[o.project] || o.project,
+    var hay = [o.summary, o.body, o.fix, o.path, o.note, o.game, o.source, o.project ? person(o.project).name : "",
       [].concat(o.refs || []).join(" "), [].concat(o.fixRefs || []).join(" "), commits.join(" ")].join(" ").toLowerCase();
     return hay.indexOf(query) !== -1;
   }
@@ -259,7 +288,7 @@ td.num, td.t { font: 12px var(--mono); font-variant-numeric: tabular-nums; white
     var latest = (isNaN(last) ? "" : "latest message " + agoText(last)) + (impN ? " \u00b7 " + impN + " important" : "");
     // The feed is live only when every collection is: one stopped subscription leaves its tab stale.
     var stopped = COLS.filter(function (c) { return subState[c] === "retry" || subState[c] === "dead"; });
-    function tabName(c) { return TABS.filter(function (t) { return t[2] === c; })[0][1]; }
+    function tabName(c) { var t = TABS.filter(function (t) { return t[2] === c; })[0]; return t ? t[1] : "People"; }
     if (offline) { setLive(false, "Offline"); latest = "sign in to claude.ai to see the log"; }
     else if (stopped.length) {
       setLive(false, stopped.length === COLS.length ? "Stopped" : "Partly live");
@@ -374,8 +403,8 @@ td.num, td.t { font: 12px var(--mono); font-variant-numeric: tabular-nums; white
     var f = hadFocus && document.getElementById(hadFocus); if (f && !f.disabled) f.focus();
   }
   function msgCard(m, isReply, parent) {
-    var side = SIDE[m.from] || "bil";
-    var card = el(isReply ? "div" : "article", (isReply ? "reply " : "msg ") + side);
+    var card = el(isReply ? "div" : "article", isReply ? "reply" : "msg " + lane(m.from));
+    card.style.setProperty("--who", colorOf(String(m.from == null ? "" : m.from)));
     var stamp = el("div", "stamp"); stamp.appendChild(timeEl(m.t)); stamp.appendChild(agoEl(m.t)); card.appendChild(stamp);
     if (seenBy.messages && !seenBy.messages[m._id] && !isReply) card.classList.add("fresh");
     var imp = isImportant(m);
@@ -388,20 +417,24 @@ td.num, td.t { font: 12px var(--mono); font-variant-numeric: tabular-nums; white
       meta.appendChild(star);
     }
     card.appendChild(meta);
-    if (parent) card.appendChild(el("div", "re", "↩ Replying to " + (NAMES[parent.from] || parent.from || "") + ": " + (parent.summary || "")));
+    if (parent) card.appendChild(el("div", "re", "↩ Replying to " + (parent.from ? displayName(parent.from) : "") + ": " + (parent.summary || "")));
     if (m.summary) card.appendChild(el("div", "summary", m.summary));
     add(card, bodyEl(m.body));
-    if (m.kind === "disagreement" && m.positions) card.appendChild(positionsEl(m));
-    add(card, refsEl(m.refs, m.from));
+    if (m.kind === "disagreement" && m.positions) add(card, positionsEl(m));
+    add(card, refsEl(m.refs, m.project || m.from));
     return card;
   }
+  // One column per participant named in `positions`, in the row's order.
   function positionsEl(m) {
+    var pos = m.positions && typeof m.positions === "object" && !Array.isArray(m.positions) ? m.positions : {};
+    var ids = Object.keys(pos);
+    if (!ids.length) return null;
     var wrap = el("div", "positions");
-    ["bewareilive", "vectorcraft"].forEach(function (p) {
-      var d = el("div"); d.appendChild(who(p)); d.appendChild(el("p", "body", (m.positions && m.positions[p]) || "No position given."));
+    ids.forEach(function (p) {
+      var d = el("div"); d.appendChild(who(p)); d.appendChild(el("p", "body", pos[p] == null || pos[p] === "" ? "No position given." : String(pos[p])));
       if (m.resolution && m.resolution.choice === p) d.appendChild(pill("chosen"));
       else if (canWrite && !m.resolution) {
-        var b = el("button", "btn resolve", "Go with " + NAMES[p]); b.type = "button"; b.id = "resolve-" + m._id + "-" + p;
+        var b = el("button", "btn resolve", "Go with " + displayName(p)); b.type = "button"; b.id = "resolve-" + m._id + "-" + p;
         b.addEventListener("click", function () {
           b.disabled = true;
           db.collection("messages").doc(m._id).update({ resolution: { choice: p, t: new Date().toISOString(), by: "owner" } })
@@ -461,8 +494,8 @@ td.num, td.t { font: 12px var(--mono); font-variant-numeric: tabular-nums; white
       var c3 = el("td"); if (a.builder) c3.appendChild(who(a.builder)); tr.appendChild(c3);
       var c4 = el("td"); if (a.adopter) c4.appendChild(who(a.adopter)); tr.appendChild(c4);
       var c5 = el("td");
-      ["bewareilive", "vectorcraft"].forEach(function (p) {
-        var cs = a.commits && Array.isArray(a.commits[p]) ? a.commits[p] : [];
+      Object.keys(a.commits && typeof a.commits === "object" ? a.commits : {}).forEach(function (p) {
+        var cs = Array.isArray(a.commits[p]) ? a.commits[p] : [];
         if (cs.length) { var line = el("div"); line.appendChild(who(p)); add(line, refsEl(cs, p)); c5.appendChild(line); }
       });
       tr.appendChild(c5);
@@ -549,7 +582,7 @@ td.num, td.t { font: 12px var(--mono); font-variant-numeric: tabular-nums; white
     simpleTable(view, data.decisions.slice().sort(byT).reverse(), [
       ["Decision", textBlock],
       ["By", function (r) { return who(r.by === "owner" ? "owner" : r.by); }],
-      ["For", function (r) { return el("span", null, r.project === "both" ? "Both projects" : NAMES[r.project] || r.project || ""); }],
+      ["For", function (r) { return el("span", null, r.project === "both" ? "Both projects" : r.project ? person(r.project).name : ""); }],
       ["Where said", function (r) { return el("span", null, r.source || ""); }],
       ["When", function (r) { return timeEl(r.t, true); }, "t"]
     ], "No decisions recorded yet. Your decisions, with the date and where you made them, go here.");
@@ -572,7 +605,7 @@ td.num, td.t { font: 12px var(--mono); font-variant-numeric: tabular-nums; white
     var pts = all.filter(matches).sort(byT);
     if (!pts.length) { view.appendChild(el("div", "empty", all.length ? "No games match." : "No progress recorded yet. Each check-in records every open game's percentage built here.")); return; }
     var groups = {}, keys = [];
-    pts.forEach(function (p) { var k = (NAMES[p.project] || p.project) + ": " + p.game; if (!groups[k]) { groups[k] = []; keys.push(k); } groups[k].push(p); });
+    pts.forEach(function (p) { var k = person(p.project).name + ": " + p.game; if (!groups[k]) { groups[k] = []; keys.push(k); } groups[k].push(p); });
     var W = 900, H = 300, L = 44, R = 16, T = 12, B = 34;
     var t0 = ts(pts[0].t), t1 = ts(pts[pts.length - 1].t); if (t1 === t0) t1 = t0 + 3600000;
     function x(t) { return L + (t - t0) / (t1 - t0) * (W - L - R); }
@@ -661,6 +694,7 @@ td.num, td.t { font: 12px var(--mono); font-variant-numeric: tabular-nums; white
     function subscribe(c, attempt) {
       db.collection(c).limit(1000).onSnapshot(function (snap) {
         data[c] = snap.docs.map(function (d) { var x = Object.assign({}, d.data() || {}); x._id = d.id; return x; });
+        if (c === "participants") { people = Object.create(null); data[c].forEach(function (p) { people[p._id] = p; }); }
         loaded[c] = true;
         subState[c] = "ok"; attempt = 0;
         renderAll();

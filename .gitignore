@@ -1,3 +1,4 @@
 build/
 .superpowers/
 __pycache__/
+tests/page/out/
