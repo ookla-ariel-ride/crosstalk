@@ -233,6 +233,23 @@
     return res("toArrow", ok, "one=" + JSON.stringify(a) + " two=" + JSON.stringify(b) + " none=" + JSON.stringify(n));
   });
 
+  // A missing, empty or not-yet-loaded roster must not quarantine everyone.
+  S.push(async function emptyRosterNoQuarantine() {
+    await go("timeline");
+    var saved = __store.participants;
+    __store.participants = {}; __emit("participants"); __emit("messages"); await tick();
+    var dimmed = document.querySelectorAll("#log .msg.quarantined").length;
+    var pills = [].slice.call(document.querySelectorAll("#roster .pill, #log .pill")).filter(function (p) { return /not approved/i.test(p.textContent); }).length;
+    var tile = $("checkVal").textContent, tileCls = $("t-check").className;
+    var g = card("gemini-1"), tag = g && g.querySelector(".who");
+    var neutral = !!tag && tag.textContent === "gemini" && getComputedStyle(tag).backgroundColor === rgb("var(--muted)");
+    __store.participants = saved; __emit("participants"); await tick();
+    var back = document.querySelectorAll("#log .msg.quarantined").length;
+    var ok = dimmed === 0 && pills === 0 && tile === "roster not loaded" && tileCls === "tile" && neutral && back > 0;
+    return res("emptyRosterNoQuarantine", ok, "dimmed=" + dimmed + " pills=" + pills + " tile=" + JSON.stringify(tile) + " class=" + tileCls +
+      " neutralTag=" + neutral + " dimmedAfterReseed=" + back);
+  });
+
   // Checks whichever width the window has: run once at desktop width, then again after browser_resize to 390 (see run.md).
   S.push(async function mobileRosterFolds() {
     await go("timeline");

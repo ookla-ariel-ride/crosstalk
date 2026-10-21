@@ -64,6 +64,8 @@ sees the real roster from its first snapshot.
 - `dotThresholds`: `__crosstalk.dotState` is ok at 34 min, warn at 36 and bad at 46 for
   `checkInMin: 30`; the roster dot and the "Check-ins" strip tile agree.
 - `toArrow`: a card with `to` shows `→ name` (or several names); without `to`, nothing.
+- `emptyRosterNoQuarantine`: with an empty `participants` collection no card is dimmed, nothing says
+  "not approved", and the Check-ins tile reads "roster not loaded"; re-seeding restores quarantine.
 - `mobileRosterFolds`: wide, the roster is open beside the feed; at 390 wide it folds into a "People"
   disclosure above the feed.
 - `holdRelease`: releasing an old-style `status: "held"` agreement sets `agreed` and `hold: false`.

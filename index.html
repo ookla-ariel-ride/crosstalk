@@ -265,6 +265,11 @@ td.num, td.t { font: 12px var(--mono); font-variant-numeric: tabular-nums; white
     e.style.setProperty("--who", c); e.style.setProperty("--who-ink", inkFor(c));
     return e;
   }
+  // Quarantine applies only once the roster has loaded with at least one participant. Before the first
+  // participants snapshot, or while the collection is empty (a page published before the courier's first trip),
+  // every sender shows in the neutral unknown style without dimming.
+  function rosterReady() { return !!loaded.participants && Object.keys(people).length > 0; }
+  function isQuarantined(id) { return rosterReady() && person(id).trust !== "approved"; }
   function quarantinePill() { return el("span", "pill quarantine", "not approved"); }
 
   // Per sender: the newest message time and the newest check-in time. Cached until the messages snapshot changes.
@@ -390,6 +395,7 @@ td.num, td.t { font: 12px var(--mono); font-variant-numeric: tabular-nums; white
       .sort(function (a, b) { return rank[b.state] - rank[a.state] || b.late - a.late; });
     var tile = document.getElementById("t-check"), val = document.getElementById("checkVal"), hint = document.getElementById("checkHint");
     val.className = "val text";
+    if (!rosterReady()) { tile.className = "tile"; val.textContent = "roster not loaded"; hint.textContent = loaded.participants ? "the participants list is empty" : "waiting for the participants list"; return; }
     if (!due.length) { tile.className = "tile"; val.className = "val"; val.textContent = "\u2014"; hint.textContent = "no one has a check-in interval"; return; }
     if (!late.length) { tile.className = "tile ok"; val.textContent = "all on time"; hint.textContent = due.length + (due.length === 1 ? " participant checks in" : " participants check in"); return; }
     var w = late[0];
@@ -476,11 +482,11 @@ td.num, td.t { font: 12px var(--mono); font-variant-numeric: tabular-nums; white
     var f = hadFocus && document.getElementById(hadFocus); if (f && !f.disabled) f.focus();
   }
   function msgCard(m, isReply, parent) {
-    var from = String(m.from == null ? "" : m.from), sender = person(from);
+    var from = String(m.from == null ? "" : m.from);
     var card = el(isReply ? "div" : "article", isReply ? "reply" : "msg" + (from === "owner" ? " own" : "") + (parent ? " reply-to" : ""));
     card.dataset.from = from;
     card.style.setProperty("--who", colorOf(from));
-    var quarantined = sender.trust !== "approved";
+    var quarantined = isQuarantined(from);
     if (quarantined) card.classList.add("quarantined");
     var stamp = el("div", "stamp"); stamp.appendChild(timeEl(m.t)); stamp.appendChild(agoEl(m.t)); card.appendChild(stamp);
     if (seenBy.messages && !seenBy.messages[m._id] && !isReply) card.classList.add("fresh");
@@ -529,6 +535,7 @@ td.num, td.t { font: 12px var(--mono); font-variant-numeric: tabular-nums; white
   }
   /* ---------- roster ---------- */
   var GROUPS = [["projects", "Projects"], ["reviewers", "Reviewers and research"], ["tools", "Tools and people"], ["unlisted", "Not in roster"]];
+  // Without a loaded roster, every sender is listed plainly under "Senders" rather than "Not in roster".
   function isWide() { return WIDE ? WIDE.matches : true; }
   function byName(a, b) { return person(a).name.localeCompare(person(b).name) || (a < b ? -1 : a > b ? 1 : 0); }
   function rosterEl() {
@@ -552,7 +559,7 @@ td.num, td.t { font: 12px var(--mono); font-variant-numeric: tabular-nums; white
     GROUPS.forEach(function (g) {
       if (!groups[g[0]].length) return;
       var sec = el("section", "rgroup"); sec.dataset.group = g[0];
-      sec.appendChild(el("h3", null, g[1]));
+      sec.appendChild(el("h3", null, g[0] === "unlisted" && !rosterReady() ? "Senders" : g[1]));
       var ul = el("ul");
       groups[g[0]].forEach(function (id) { ul.appendChild(rosterEntry(id, now, st, kids, false)); });
       sec.appendChild(ul); d.appendChild(sec);
@@ -579,7 +586,7 @@ td.num, td.t { font: 12px var(--mono); font-variant-numeric: tabular-nums; white
     if (r && !isNaN(r.msg)) { var since = el("span", "since", compactAgo(now - r.msg)); since.title = "last message " + agoText(r.msg); b.appendChild(since); }
     b.addEventListener("click", function () { whoFilter = whoFilter === id ? null : id; renderView(true); });
     li.appendChild(b);
-    if (p.trust !== "approved") {
+    if (isQuarantined(id)) {
       var rx = el("div", "rx"); rx.appendChild(quarantinePill());
       // Only a roster member can be approved: the page updates that participants doc and never writes one any other way.
       if (canWrite && HAS.call(people, id)) {
