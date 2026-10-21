@@ -31,7 +31,7 @@ class RosterTests(unittest.TestCase):
         self.assertIn("helper", str(cm.exception))
 
     def test_bad_id_rejected(self):
-        for bad in ("Codex", "a b"):
+        for bad in ("Codex", "a b", "codex\n"):
             with self.assertRaises(ValueError):
                 self.load(self.entry(id=bad))
 

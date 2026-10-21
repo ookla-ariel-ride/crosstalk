@@ -59,5 +59,24 @@ class AppendTests(unittest.TestCase):
             self.assertFalse((r.root / "log" / "codex.jsonl").exists())
 
 
+    def test_rejects_miscased_from_without_touching_disk(self):
+        # On APFS, log/Codex.jsonl would open log/codex.jsonl and poison it.
+        with TempRepo() as r:
+            append_line(r.root, "codex", "set", "messages", "codex-1", {})
+            before = (r.root / "log" / "codex.jsonl").read_bytes()
+            with self.assertRaises(ValueError):
+                append_line(r.root, "Codex", "set", "messages", "Codex-1", {})
+            self.assertEqual((r.root / "log" / "codex.jsonl").read_bytes(), before)
+            self.assertEqual(sorted(p.name for p in (r.root / "log").iterdir()),
+                             ["codex.jsonl"])
+
+    def test_rejects_invalid_from_and_creates_nothing(self):
+        for bad in ("Codex", "codex\n", "../x", "a b", ""):
+            with TempRepo() as r:
+                (r.root / "log").rmdir()
+                with self.assertRaises(ValueError, msg=repr(bad)):
+                    append_line(r.root, bad, "set", "messages", "x-1", {})
+                self.assertFalse((r.root / "log").exists(), repr(bad))
+
 if __name__ == "__main__":
     unittest.main()

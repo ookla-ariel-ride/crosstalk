@@ -7,7 +7,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Dict, List, Optional, Tuple
 
-from .participants import Roster
+from .participants import ID_RE, Roster
 
 LEGACY_PREFIXES = ("m-", "vc-", "own-", "a-", "d-", "w-", "l-", "p-", "i-", "lesson-")
 COLLECTIONS = ("messages", "agreements", "waiting", "locks", "lessons",
@@ -121,6 +121,10 @@ def check_all(root: Path, roster: Roster) -> List[Problem]:
 def append_line(root: Path, from_: str, op: str, collection: str, id: str, data: dict,
                 t: Optional[str] = None, via: Optional[str] = None) -> Line:
     """Append one line to log/<from_>.jsonl under an exclusive lock; returns the Line written."""
+    if not isinstance(from_, str) or not ID_RE.fullmatch(from_):
+        # Checked before any path is built: on a case-insensitive disk "Codex" would
+        # open codex.jsonl.
+        raise ValueError("bad participant id %r" % (from_,))
     if op not in OPS:
         raise ValueError("unknown op %r" % (op,))
     if t is None:

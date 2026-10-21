@@ -43,7 +43,7 @@ def _parse(entry: dict, index: int) -> Participant:
     if not isinstance(entry, dict):
         raise ValueError("participants[%d]: not an object" % index)
     pid = entry.get("id")
-    if not isinstance(pid, str) or not ID_RE.match(pid):
+    if not isinstance(pid, str) or not ID_RE.fullmatch(pid):
         raise ValueError("participants[%d]: bad id %r" % (index, pid))
     if not isinstance(entry.get("name"), str) or not entry["name"]:
         raise ValueError("participant %s: missing name" % pid)
