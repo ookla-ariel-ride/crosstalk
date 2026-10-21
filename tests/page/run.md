@@ -33,7 +33,10 @@ sees the real roster from its first snapshot.
 
    The result is an array of `{name, pass, detail}`. Every entry should have `pass: true`.
    The scenarios share one page and the last two stop subscriptions, so reload the page
-   before running them again.
+   before running them again. `runAll(["name", ...])` runs only the named scenarios.
+
+   Run them at a desktop width (`browser_resize` to 1100 wide) first. Then `browser_resize`
+   to 390 wide and run `await runAll(["mobileRosterFolds"])`, which checks the narrow layout.
 
 5. Check `browser_console_messages` at level `error`. The only expected error is the
    missing `favicon.ico`.
@@ -42,16 +45,27 @@ sees the real roster from its first snapshot.
 
 ## Scenarios
 
-- `unknownSenderNeutral`: a sender not in `participants` shows its raw id in the muted color.
+- `unknownSenderNeutral`: a sender not in `participants` shows its raw id on a muted tag.
 - `subAgentTag`: an `agent` participant shows as `Parent › name`.
 - `refViaRoster`: `codex@ABC1234` and `codex#12` link through codex's `repo`; plain text without one.
 - `threeWayPositions`: three ids in `positions` give three columns, each with "Go with".
 - `forColumnUsesName`: the decisions "For" column shows the participant's name; `both` shows "Both projects".
-- `ownerColorThemed`: the owner keeps the themed `--own` color and the centered lane.
+- `ownerColorThemed`: the owner's tag keeps the themed `--own` color, and its card the `own` class.
 - `composerKindKept`: a snapshot re-render keeps the composer's kind.
 - `noDuplicatePosts`: retrying a half-failed post rewrites the same rows.
 - `searchSpaces`: a trailing space stays in the search box and still matches.
 - `focusKept`: a snapshot re-render keeps focus in the search box.
+- `rosterGroups`: the roster groups Projects (sub-agents nested), Reviewers and research, Tools and
+  people (an agent whose parent is missing included) and Not in roster (marked not approved).
+- `rosterFilter`: a roster name is a button that filters the feed to that sender (`aria-pressed`),
+  combines with the kind chips, keeps focus, and clears on a second click.
+- `quarantineDimmedAndApprove`: a quarantined sender's card is dimmed with a "not approved" pill; a
+  failed Approve shows its error and keeps the dimming; a working one sets `trust: approved`.
+- `dotThresholds`: `__crosstalk.dotState` is ok at 34 min, warn at 36 and bad at 46 for
+  `checkInMin: 30`; the roster dot and the "Check-ins" strip tile agree.
+- `toArrow`: a card with `to` shows `→ name` (or several names); without `to`, nothing.
+- `mobileRosterFolds`: wide, the roster is open beside the feed; at 390 wide it folds into a "People"
+  disclosure above the feed.
 - `holdRelease`: releasing an old-style `status: "held"` agreement sets `agreed` and `hold: false`.
 - `partlyLive`: one stopped collection shows "Partly live" and names its tab.
 - `participantsStopShown`: a stopped `participants` subscription is named too.

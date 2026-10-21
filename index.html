@@ -3,13 +3,14 @@
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Chivo:wght@500;800&family=IBM+Plex+Sans:wght@400;500;600&family=IBM+Plex+Mono:wght@400;500&display=swap">
 <style>
-/* Layout: a status strip, tabs, then per-tab views; the timeline keeps two lanes, one per project. */
+/* Layout: a status strip, tabs, then per-tab views; the timeline is one feed beside a roster of participants. */
 :root {
   --bg: #f3f2ef; --panel: #fbfaf8; --fg: #1d1c1a; --muted: #6d6a64; --rule: #d9d6cf;
   --bil: #b3261e; --bil-soft: #f6e4e1;   /* Williams marquee red */
   --vc: #1f5f8b; --vc-soft: #e1ecf4;     /* vector-monitor blue */
   --own: #6b3fa0; --own-soft: #eee6f7;   /* the owner */
   --ok: #2f6b3a; --warn: #9a5b00; --bad: #a3271f;
+  --tag-ink-themed: #fff;   /* text on a tag whose color is a theme token (the owner, unknown senders) */
   --display: "Chivo", "Helvetica Neue", Arial, sans-serif;
   --body: "IBM Plex Sans", "Helvetica Neue", Arial, sans-serif;
   --mono: "IBM Plex Mono", ui-monospace, Menlo, monospace;
@@ -17,11 +18,11 @@
 @media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) {
   --bg: #151413; --panel: #1d1c1a; --fg: #ecebe7; --muted: #a29e96; --rule: #34322e;
   --bil: #ef6a5f; --bil-soft: #3a1f1c; --vc: #6fb2e2; --vc-soft: #1a2b38; --own: #b892e6; --own-soft: #2c2238;
-  --ok: #7cc48a; --warn: #e0a54a; --bad: #f08a80; color-scheme: dark } }
+  --ok: #7cc48a; --warn: #e0a54a; --bad: #f08a80; --tag-ink-themed: #151413; color-scheme: dark } }
 :root[data-theme="dark"] {
   --bg: #151413; --panel: #1d1c1a; --fg: #ecebe7; --muted: #a29e96; --rule: #34322e;
   --bil: #ef6a5f; --bil-soft: #3a1f1c; --vc: #6fb2e2; --vc-soft: #1a2b38; --own: #b892e6; --own-soft: #2c2238;
-  --ok: #7cc48a; --warn: #e0a54a; --bad: #f08a80; color-scheme: dark }
+  --ok: #7cc48a; --warn: #e0a54a; --bad: #f08a80; --tag-ink-themed: #151413; color-scheme: dark }
 
 body { background: var(--bg); color: var(--fg); font: 15px/1.5 var(--body); }
 .wrap { max-width: 1040px; margin: 0 auto; padding-block: 24px 64px;
@@ -39,6 +40,7 @@ a { color: inherit; }
 .tile { background: var(--panel); border: 1px solid var(--rule); border-radius: 8px; padding: 10px 12px; min-width: 0; }
 .tile .lbl { font: 500 11px var(--mono); letter-spacing: .06em; text-transform: uppercase; color: var(--muted); }
 .tile .val { font: 800 22px/1.2 var(--display); font-variant-numeric: tabular-nums; margin-top: 2px; }
+.tile .val.text { font-size: 17px; overflow-wrap: anywhere; }
 .tile .hint { font: 12px var(--mono); color: var(--muted); }
 .tile[data-go] { cursor: pointer; } .tile[data-go]:hover, .tile[data-go]:focus-visible { border-color: var(--muted); outline: none; }
 .tile ul.items { margin: 4px 0 0; padding-left: 16px; font: 12px/1.35 var(--mono); color: var(--ink, inherit); }
@@ -71,39 +73,52 @@ a { color: inherit; }
 .btn:disabled { opacity: .5; cursor: default; }
 .status-msg { font: 12px var(--mono); color: var(--muted); }
 
-/* timeline */
-.lanes { display: grid; grid-template-columns: 1fr 1fr; font: 800 12px var(--display); letter-spacing: .1em; text-transform: uppercase; margin-bottom: 6px; }
-.lanes .l { color: var(--bil); } .lanes .r { color: var(--vc); text-align: right; }
-.order { color: var(--muted); font: 12px var(--mono); margin: 0 0 12px; text-align: center; }
-.log { position: relative; display: grid; gap: 14px; }
-.log::before { content: ""; position: absolute; left: 50%; top: 0; bottom: 0; width: 1px; background: var(--rule); }
-.day { position: relative; z-index: 1; justify-self: center; font: 500 12px var(--mono); color: var(--muted); background: var(--bg); padding: 2px 10px; border: 1px solid var(--rule); border-radius: 999px; }
-.msg { position: relative; width: calc(50% - 22px); min-width: 0; background: var(--panel); border: 1px solid var(--rule); border-radius: 8px; padding: 10px 14px 12px; box-sizing: border-box; }
-/* Lanes until the single feed replaces them: the two projects left and right, everyone else centered.
-   The sender's color comes from the participants collection as the --who custom property. */
-.msg { border-top: 3px solid var(--who, var(--muted)); color: var(--who, var(--muted)); }
-.msg.bil { justify-self: start; }
-.msg.vc { justify-self: end; }
-.msg.own, .msg.ctr { justify-self: center; width: min(560px, 100%); }
-.msg.own { background: var(--own-soft); }
-.msg.bil::after, .msg.vc::after { content: ""; position: absolute; top: 14px; width: 10px; height: 10px; border-radius: 50%; background: var(--bg); border: 2px solid currentColor; }
-.msg.bil::after { right: -29px; } .msg.vc::after { left: -29px; }
-.msg > * { color: var(--fg); }
+/* timeline: a roster beside one feed (mockup C). A participant's color shows in three places only: the
+   sender tag's background, the card's top border and the roster entry's accent. Text keeps the theme's ink. */
+.feedgrid { display: grid; grid-template-columns: 210px minmax(0, 1fr); gap: 20px; align-items: start; }
+.roster { position: sticky; top: 12px; max-height: calc(100vh - 24px); overflow-y: auto; box-sizing: border-box; background: var(--panel); border: 1px solid var(--rule); border-radius: 8px; padding: 10px 8px 12px; font-size: 13px; }
+.roster > summary { display: none; }
+.rgroup h3 { font: 800 11px var(--display); letter-spacing: .08em; text-transform: uppercase; color: var(--muted); margin: 12px 0 4px 4px; }
+.rgroup:first-of-type h3 { margin-top: 0; }
+.roster ul { list-style: none; margin: 0; padding: 0; }
+.roster ul.sub { padding-left: 14px; }
+.rentry { margin: 2px 0; }
+.rp { display: flex; align-items: center; gap: 6px; width: 100%; box-sizing: border-box; text-align: left; background: none; border: 0; border-left: 3px solid var(--who, var(--muted)); border-radius: 0 4px 4px 0; padding: 3px 6px; cursor: pointer; }
+.rp:hover { background: var(--bg); }
+.rp[aria-pressed="true"] { background: var(--fg); color: var(--bg); }
+.rp .nm { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.rp .since { font: 11px var(--mono); color: var(--muted); }
+.rp[aria-pressed="true"] .since { color: inherit; }
+.cdot { flex: none; width: 8px; height: 8px; border-radius: 50%; }
+.cdot.ok { background: var(--ok); } .cdot.warn { background: var(--warn); } .cdot.bad { background: var(--bad); }
+.rx { display: flex; flex-wrap: wrap; gap: 4px 6px; align-items: center; padding: 2px 0 4px 9px; }
+.btn.small { padding: 1px 8px; font-size: 12px; }
+.order { color: var(--muted); font: 12px var(--mono); margin: 0 0 12px; }
+.whonote { display: flex; flex-wrap: wrap; gap: 6px 10px; align-items: center; font: 12px var(--mono); color: var(--muted); margin: -4px 0 12px; }
+.log { display: grid; gap: 14px; }
+.day { justify-self: center; font: 500 12px var(--mono); color: var(--muted); background: var(--bg); padding: 2px 10px; border: 1px solid var(--rule); border-radius: 999px; }
+.msg { position: relative; min-width: 0; background: var(--panel); color: var(--fg); border: 1px solid var(--rule); border-top: 3px solid var(--who, var(--muted)); border-radius: 8px; padding: 10px 14px 12px; box-sizing: border-box; }
+/* A reply sits indented with a reply line beside it; its "Replying to" line names the message it answers. */
+.msg.reply-to { margin-left: 28px; }
+.msg.reply-to::before { content: ""; position: absolute; left: -16px; top: 6px; bottom: 6px; border-left: 2px solid var(--rule); }
+.msg.quarantined { opacity: .55; }
 .msg .re { font: 12px/1.35 var(--mono); color: var(--muted); margin: 4px 0 2px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.msg.important { border-width: 2px; border-color: currentColor; border-top-width: 5px; }
+.msg.important { border-width: 2px; border-color: var(--muted); border-top: 5px solid var(--who, var(--muted)); }
 .msg.important .summary { font-size: 16px; }
 .pill.important { background: var(--bad); color: var(--panel); }
+.pill.quarantine { background: none; border: 1px dashed var(--muted); color: var(--fg); }
 .star { margin-left: auto; background: none; border: 0; cursor: pointer; font-size: 16px; line-height: 1; color: var(--muted); padding: 0 2px; }
 .star[aria-pressed="true"] { color: var(--bad); }
 .msg.fresh { animation: arrive 4s ease-out; }
-@keyframes arrive { from { box-shadow: 0 0 0 3px currentColor; } to { box-shadow: 0 0 0 0 transparent; } }
+@keyframes arrive { from { box-shadow: 0 0 0 3px var(--muted); } to { box-shadow: 0 0 0 0 transparent; } }
 @media (prefers-reduced-motion: reduce) { .msg.fresh, .live.on .dot { animation: none; } }
 .stamp { display: flex; align-items: baseline; gap: 8px; flex-wrap: wrap; margin-bottom: 4px; }
 .stamp time { font: 500 15px var(--mono); font-variant-numeric: tabular-nums; }
 .ago { font: 12px var(--mono); color: var(--muted); }
 .meta { display: flex; flex-wrap: wrap; gap: 4px 10px; align-items: baseline; font: 12px var(--mono); color: var(--muted); }
-.who { font-weight: 500; }
-.who { color: var(--who, inherit); }
+/* The sender tag: a solid block of the participant's color; --who-ink is white or dark, whichever reads on it. */
+.who { display: inline-block; padding: 0 6px; border-radius: 4px; font: 600 12px/1.6 var(--mono); background: var(--who, var(--muted)); color: var(--who-ink, var(--tag-ink-themed)); overflow-wrap: anywhere; }
+.to { color: var(--muted); }
 .pill { display: inline-block; padding: 1px 7px; border-radius: 4px; font: 500 11px var(--mono); text-transform: uppercase; letter-spacing: .05em; background: var(--rule); color: var(--fg); white-space: nowrap; }
 .pill.agreement, .pill.landed-both, .pill.done { background: var(--ok); color: var(--panel); }
 .pill.alert, .pill.held, .pill.disagreement { background: var(--warn); color: var(--panel); }
@@ -139,10 +154,13 @@ td.num, td.t { font: 12px var(--mono); font-variant-numeric: tabular-nums; white
 .note { color: var(--muted); font-size: 13px; margin-top: 28px; }
 
 @media (max-width: 640px) {
-  .lanes, .log::before { display: none; }
-  .msg, .msg.own, .msg.ctr { width: auto; justify-self: stretch; }
-  .msg.vc { margin-left: 20px; } .msg.bil { margin-right: 20px; }
-  .msg::after { display: none; }
+  /* The roster folds into a "People" disclosure above the feed. */
+  .feedgrid { grid-template-columns: minmax(0, 1fr); gap: 12px; }
+  .roster { position: static; max-height: none; overflow: visible; padding: 8px 12px; }
+  .roster > summary { display: list-item; margin: 0; font: 500 14px var(--body); color: var(--fg); }
+  .roster[open] > summary { margin-bottom: 8px; }
+  .msg.reply-to { margin-left: 16px; }
+  .msg.reply-to::before { left: -10px; }
   .positions { grid-template-columns: 1fr; }
 }
 </style>
@@ -155,7 +173,7 @@ td.num, td.t { font: 12px var(--mono); font-variant-numeric: tabular-nums; white
 
   <div class="strip" id="strip">
     <div class="tile" id="t-live"><div class="lbl">Feed</div><div class="val"><span class="live" id="live"><span class="dot"></span><span id="liveText">Connecting</span></span></div><div class="hint" id="latest"></div></div>
-    <div class="tile" id="t-check"><div class="lbl">Last check-in</div><div class="val" id="checkVal">–</div><div class="hint" id="checkHint">due every 30 min</div></div>
+    <div class="tile" id="t-check"><div class="lbl">Check-ins</div><div class="val" id="checkVal">–</div><div class="hint" id="checkHint"></div></div>
     <div class="tile" id="t-agree"><div class="lbl">Open agreements</div><div class="val" id="agreeVal">–</div><div class="hint" id="agreeHint"></div></div>
     <div class="tile" id="t-wait"><div class="lbl">Waiting on you</div><div class="val" id="waitVal">–</div><div class="hint" id="waitHint"></div></div>
     <div class="tile" id="t-lock"><div class="lbl">Files claimed</div><div class="val" id="lockVal">–</div><div class="hint" id="lockHint"></div></div>
@@ -182,12 +200,16 @@ td.num, td.t { font: 12px var(--mono); font-variant-numeric: tabular-nums; white
   ];
   var STATUSES = ["proposed", "agreed", "building", "landed-builder", "landed-both", "held", "dropped"];
   var data = {}; COLS.forEach(function (c) { data[c] = []; });
-  var people = Object.create(null), seenBy = {}, tab = "timeline", kindFilter = "all", query = "", queryRaw = "", db = null, canWrite = false, loaded = {}, offline = false;
+  var people = Object.create(null), seenBy = {}, tab = "timeline", kindFilter = "all", whoFilter = null, query = "", queryRaw = "", db = null, canWrite = false, loaded = {}, offline = false;
   // subState[c]: undefined while connecting, "ok" once live, "retry" while resubscribing, "dead" when it can't recover.
   var subState = {};
   // The composer's state lives here, not in the DOM, so a snapshot re-render can't reset it. `id` stays the same
   // until a post succeeds, so retrying a half-failed post overwrites the same rows instead of duplicating them.
   var draft = { text: "", kind: "owner", id: null, posting: false, status: "" };
+  // The roster is a <details>: always open on wide screens, folded into "People" below 640px until opened.
+  var WIDE = window.matchMedia ? window.matchMedia("(min-width: 641px)") : null, rosterOpen = false;
+  // A failed Approve keeps its message here, by participant id, so a re-render doesn't drop it.
+  var approveErr = Object.create(null);
 
   var fmt = new Intl.DateTimeFormat("en-US", { timeZone: "America/Los_Angeles", month: "short", day: "numeric", hour: "numeric", minute: "2-digit", second: "2-digit", timeZoneName: "short" });
   var fmtShort = new Intl.DateTimeFormat("en-US", { timeZone: "America/Los_Angeles", month: "short", day: "numeric", hour: "numeric", minute: "2-digit" });
@@ -229,12 +251,56 @@ td.num, td.t { font: 12px var(--mono); font-variant-numeric: tabular-nums; white
   function colorOf(id) { return id === "owner" ? "var(--own)" : person(id).color; }
   // An agent without a repo of its own uses its parent's.
   function repoFor(id) { var p = person(id); return p.repo || (p.parent ? person(p.parent).repo : null); }
-  // Lanes until the single feed replaces them: the two projects left and right, everyone else centered.
-  function lane(id) { return id === "bewareilive" ? "bil" : id === "vectorcraft" ? "vc" : id === "owner" ? "own" : "ctr"; }
+  // Text on a tag of this color: white on a dark color, dark ink on a light one. A theme token's tag uses
+  // --tag-ink-themed, which follows the token's light and dark values.
+  function inkFor(c) {
+    if (c.charAt(0) !== "#") return c.indexOf("var(") === 0 ? "var(--tag-ink-themed)" : "#fff";
+    var h = c.slice(1); if (h.length <= 4) h = h.split("").map(function (x) { return x + x; }).join("");
+    var L = [0, 2, 4].map(function (i) { var v = parseInt(h.substr(i, 2), 16) / 255; return v <= 0.03928 ? v / 12.92 : Math.pow((v + 0.055) / 1.055, 2.4); });
+    return 0.2126 * L[0] + 0.7152 * L[1] + 0.0722 * L[2] > 0.2 ? "#1d1c1a" : "#fff";
+  }
   function who(p) {
-    var e = el("span", "who", p == null || p === "" ? "?" : displayName(p));
-    e.style.setProperty("--who", colorOf(String(p == null ? "" : p)));
+    var id = String(p == null ? "" : p), c = colorOf(id);
+    var e = el("span", "who", id === "" ? "?" : displayName(id));
+    e.style.setProperty("--who", c); e.style.setProperty("--who-ink", inkFor(c));
     return e;
+  }
+  function quarantinePill() { return el("span", "pill quarantine", "not approved"); }
+
+  // Per sender: the newest message time and the newest check-in time. Cached until the messages snapshot changes.
+  var statsFor = null, statsCache = null;
+  function msgStats() {
+    if (statsFor === data.messages) return statsCache;
+    var o = Object.create(null);
+    data.messages.forEach(function (m) {
+      var id = String(m.from == null ? "" : m.from), t = ts(m.t);
+      if (!id || isNaN(t)) return;
+      var r = o[id] || (o[id] = { msg: NaN, check: NaN });
+      if (!(r.msg >= t)) r.msg = t;
+      if (m.kind === "check-in" && !(r.check >= t)) r.check = t;
+    });
+    statsFor = data.messages; statsCache = o;
+    return o;
+  }
+  // "ok", "warn" (amber at checkInMin + 5 minutes), "bad" (red at checkInMin + 15, or never checked in),
+  // or null when the participant has no checkInMin. `p` is a participant id or a person() object.
+  function dotState(p, now) {
+    var q = typeof p === "string" ? person(p) : p && typeof p === "object" ? p : null;
+    if (!q || typeof q.checkInMin !== "number" || !isFinite(q.checkInMin)) return null;
+    var r = msgStats()[String(q.id)], last = r ? r.check : NaN;
+    if (isNaN(last)) return "bad";
+    var mins = ((now == null ? Date.now() : now) - last) / 60000;
+    return mins >= q.checkInMin + 15 ? "bad" : mins >= q.checkInMin + 5 ? "warn" : "ok";
+  }
+  // Minutes past due: time since the last check-in minus checkInMin. Infinity when it never checked in.
+  function minutesLate(p, now) {
+    var r = msgStats()[p.id], last = r ? r.check : NaN;
+    return isNaN(last) ? Infinity : (now - last) / 60000 - p.checkInMin;
+  }
+  function compactAgo(ms) {
+    var m = Math.floor(Math.max(0, ms) / 60000);
+    if (m < 1) return "now"; if (m < 60) return m + "m";
+    var h = Math.floor(m / 60); return h < 24 ? h + "h" : Math.floor(h / 24) + "d";
   }
   function pill(k) { return el("span", "pill " + String(k || "").replace(/[^a-z-]/g, ""), String(k || "").replace(/-/g, " ")); }
 
@@ -298,17 +364,7 @@ td.num, td.t { font: 12px var(--mono); font-variant-numeric: tabular-nums; white
     else if (COLS.every(function (c) { return subState[c] === "ok"; })) setLive(true, "Live");
     else setLive(false, "Connecting");
     document.getElementById("latest").textContent = latest;
-    var checks = msgs.filter(function (m) { return m.kind === "check-in"; });
-    var lc = checks.length ? ts(checks[checks.length - 1].t) : NaN;
-    var tile = document.getElementById("t-check");
-    tile.className = "tile";
-    if (isNaN(lc)) { document.getElementById("checkVal").textContent = "none yet"; }
-    else {
-      var mins = (Date.now() - lc) / 60000;
-      document.getElementById("checkVal").textContent = agoText(lc);
-      tile.classList.add(mins > 45 ? "bad" : mins > 35 ? "warn" : "ok");
-      document.getElementById("checkHint").textContent = mins > 35 ? "late: due every 30 min" : "due every 30 min";
-    }
+    renderCheckTile();
     var open = data.agreements.filter(function (a) { return a.status !== "landed-both" && a.status !== "dropped"; });
     var held = open.filter(isHeld).length;
     document.getElementById("agreeVal").textContent = open.length;
@@ -323,6 +379,23 @@ td.num, td.t { font: 12px var(--mono); font-variant-numeric: tabular-nums; white
     var locks = data.locks.filter(function (l) { return !l.released; });
     document.getElementById("lockVal").textContent = locks.length;
     document.getElementById("lockHint").textContent = locks.length ? locks.slice(0, 2).map(function (l) { return l.path; }).join(", ") : "no shared files claimed";
+  }
+
+  // The roster's worst check-in dot: "all on time", or the latest participant, e.g. "VectorCraft 38 min late".
+  function renderCheckTile() {
+    var now = Date.now(), rank = { ok: 0, warn: 1, bad: 2 };
+    var due = Object.keys(people).map(person).filter(function (p) { return p.checkInMin != null; });
+    var late = due.map(function (p) { return { p: p, state: dotState(p, now), late: minutesLate(p, now) }; })
+      .filter(function (x) { return x.state === "warn" || x.state === "bad"; })
+      .sort(function (a, b) { return rank[b.state] - rank[a.state] || b.late - a.late; });
+    var tile = document.getElementById("t-check"), val = document.getElementById("checkVal"), hint = document.getElementById("checkHint");
+    val.className = "val text";
+    if (!due.length) { tile.className = "tile"; val.className = "val"; val.textContent = "\u2014"; hint.textContent = "no one has a check-in interval"; return; }
+    if (!late.length) { tile.className = "tile ok"; val.textContent = "all on time"; hint.textContent = due.length + (due.length === 1 ? " participant checks in" : " participants check in"); return; }
+    var w = late[0];
+    tile.className = "tile " + w.state;
+    val.textContent = displayName(w.p.id) + (isFinite(w.late) ? " " + Math.round(w.late) + " min late" : " hasn't checked in");
+    hint.textContent = (late.length > 1 ? (late.length - 1) + " more late \u00b7 " : "") + "due every " + w.p.checkInMin + " min";
   }
 
   /* ---------- tabs ---------- */
@@ -403,13 +476,21 @@ td.num, td.t { font: 12px var(--mono); font-variant-numeric: tabular-nums; white
     var f = hadFocus && document.getElementById(hadFocus); if (f && !f.disabled) f.focus();
   }
   function msgCard(m, isReply, parent) {
-    var card = el(isReply ? "div" : "article", isReply ? "reply" : "msg " + lane(m.from));
-    card.style.setProperty("--who", colorOf(String(m.from == null ? "" : m.from)));
+    var from = String(m.from == null ? "" : m.from), sender = person(from);
+    var card = el(isReply ? "div" : "article", isReply ? "reply" : "msg" + (from === "owner" ? " own" : "") + (parent ? " reply-to" : ""));
+    card.dataset.from = from;
+    card.style.setProperty("--who", colorOf(from));
+    var quarantined = sender.trust !== "approved";
+    if (quarantined) card.classList.add("quarantined");
     var stamp = el("div", "stamp"); stamp.appendChild(timeEl(m.t)); stamp.appendChild(agoEl(m.t)); card.appendChild(stamp);
     if (seenBy.messages && !seenBy.messages[m._id] && !isReply) card.classList.add("fresh");
     var imp = isImportant(m);
     if (imp && !isReply) card.classList.add("important");
-    var meta = el("div", "meta"); meta.appendChild(who(m.from)); if (m.kind) meta.appendChild(pill(m.kind)); if (imp) meta.appendChild(pill("important"));
+    var meta = el("div", "meta"); meta.appendChild(who(m.from));
+    var to = [].concat(m.to == null ? [] : m.to).filter(function (x) { return x != null && x !== ""; }).map(String);
+    if (to.length) meta.appendChild(el("span", "to", "\u2192 " + to.map(displayName).join(", ")));
+    if (m.kind) meta.appendChild(pill(m.kind)); if (imp) meta.appendChild(pill("important"));
+    if (quarantined) meta.appendChild(quarantinePill());
     if (canWrite && !isReply) {
       var star = el("button", "star", imp ? "\u2605" : "\u2606"); star.type = "button"; star.id = "star-" + m._id;
       star.setAttribute("aria-pressed", String(imp)); star.setAttribute("aria-label", imp ? "Unmark important" : "Mark important");
@@ -446,11 +527,104 @@ td.num, td.t { font: 12px var(--mono); font-variant-numeric: tabular-nums; white
     });
     return wrap;
   }
+  /* ---------- roster ---------- */
+  var GROUPS = [["projects", "Projects"], ["reviewers", "Reviewers and research"], ["tools", "Tools and people"], ["unlisted", "Not in roster"]];
+  function isWide() { return WIDE ? WIDE.matches : true; }
+  function byName(a, b) { return person(a).name.localeCompare(person(b).name) || (a < b ? -1 : a > b ? 1 : 0); }
+  function rosterEl() {
+    var d = el("details", "roster"); d.id = "roster";
+    d.appendChild(el("summary", null, "People"));
+    d.open = isWide() || rosterOpen;
+    d.addEventListener("toggle", function () { if (!isWide()) rosterOpen = d.open; });
+    var now = Date.now(), st = msgStats(), groups = { projects: [], reviewers: [], tools: [], unlisted: [] }, kids = Object.create(null);
+    Object.keys(people).sort(byName).forEach(function (id) {
+      var p = person(id);
+      if (p.kind === "agent") {
+        // A sub-agent nests under its parent; one whose parent isn't in the roster goes with tools and people.
+        if (p.parent && p.parent !== id && HAS.call(people, p.parent) && person(p.parent).kind !== "agent") (kids[p.parent] = kids[p.parent] || []).push(id);
+        else groups.tools.push(id);
+        return;
+      }
+      groups[p.kind === "project" ? "projects" : p.kind === "reviewer" || p.kind === "researcher" ? "reviewers" : "tools"].push(id);
+    });
+    // Senders seen in messages but missing from the roster.
+    Object.keys(st).sort().forEach(function (id) { if (!HAS.call(people, id)) groups.unlisted.push(id); });
+    GROUPS.forEach(function (g) {
+      if (!groups[g[0]].length) return;
+      var sec = el("section", "rgroup"); sec.dataset.group = g[0];
+      sec.appendChild(el("h3", null, g[1]));
+      var ul = el("ul");
+      groups[g[0]].forEach(function (id) { ul.appendChild(rosterEntry(id, now, st, kids, false)); });
+      sec.appendChild(ul); d.appendChild(sec);
+    });
+    return d;
+  }
+  // A nested sub-agent shows its own name; anyone else shows the full display name ("Parent › name" for an agent).
+  function rosterEntry(id, now, st, kids, nested) {
+    var p = person(id), li = el("li", "rentry"), c = colorOf(id); li.dataset.id = id;
+    var b = el("button", "rp"); b.type = "button"; b.id = "who-" + id;
+    b.setAttribute("aria-pressed", String(whoFilter === id));
+    b.title = whoFilter === id ? "Show everyone's messages" : "Show only " + displayName(id) + "'s messages";
+    b.style.setProperty("--who", c);
+    var ds = dotState(p, now);
+    if (ds) {
+      var dot = el("span", "cdot " + ds);
+      dot.setAttribute("role", "img");
+      dot.setAttribute("aria-label", ds === "ok" ? "checked in on time" : ds === "warn" ? "check-in late" : "check-in very late");
+      dot.title = dot.getAttribute("aria-label") + " (due every " + p.checkInMin + " min)";
+      b.appendChild(dot);
+    }
+    b.appendChild(el("span", "nm", nested ? p.name : displayName(id)));
+    var r = st[id];
+    if (r && !isNaN(r.msg)) { var since = el("span", "since", compactAgo(now - r.msg)); since.title = "last message " + agoText(r.msg); b.appendChild(since); }
+    b.addEventListener("click", function () { whoFilter = whoFilter === id ? null : id; renderView(true); });
+    li.appendChild(b);
+    if (p.trust !== "approved") {
+      var rx = el("div", "rx"); rx.appendChild(quarantinePill());
+      // Only a roster member can be approved: the page updates that participants doc and never writes one any other way.
+      if (canWrite && HAS.call(people, id)) {
+        var a = el("button", "btn small", "Approve"); a.type = "button"; a.id = "approve-" + id;
+        a.title = "Let the sessions act on " + displayName(id) + "'s messages";
+        a.addEventListener("click", function () {
+          a.disabled = true; delete approveErr[id];
+          db.collection("participants").doc(id).update({ trust: "approved" })
+            .then(function () { delete approveErr[id]; })
+            .catch(function (err) {
+              approveErr[id] = "Not approved: " + (err && err.message ? err.message : "try again") + ".";
+              a.disabled = false; refreshRoster();
+            });
+        });
+        rx.appendChild(a);
+      }
+      if (approveErr[id]) { var e = el("span", "status-msg", approveErr[id]); e.id = "approve-err-" + id; e.setAttribute("role", "status"); rx.appendChild(e); }
+      li.appendChild(rx);
+    }
+    if (kids[id]) {
+      var sub = el("ul", "sub");
+      kids[id].forEach(function (k) { sub.appendChild(rosterEntry(k, now, st, kids, true)); });
+      li.appendChild(sub);
+    }
+    return li;
+  }
+  // Rebuilds the roster in place (its dots and times age), keeping focus and scroll.
+  function refreshRoster() {
+    var old = document.getElementById("roster"); if (!old) return;
+    var f = captureFocus(), top = old.scrollTop, fresh = rosterEl();
+    old.replaceWith(fresh); fresh.scrollTop = top; restoreFocus(f);
+  }
+
   function renderTimeline(view) {
-    composer(view);
-    toolbar(view, true);
-    var lanes = el("div", "lanes"); lanes.appendChild(el("span", "l", "BewareILive")); lanes.appendChild(el("span", "r", "VectorCraft")); view.appendChild(lanes);
-    view.appendChild(el("p", "order", "Newest first. Each message sits in its sender's lane; a reply names the message it answers. New messages appear at the top and flash briefly."));
+    var grid = el("div", "feedgrid"), feed = el("div", "feed");
+    grid.appendChild(rosterEl());
+    composer(feed);
+    toolbar(feed, true);
+    feed.appendChild(el("p", "order", "Newest first. A reply names the message it answers. New messages appear at the top and flash briefly. Pick a name under People to see only their messages."));
+    if (whoFilter) {
+      var note = el("div", "whonote"); note.appendChild(el("span", null, "Showing only " + displayName(whoFilter) + "'s messages."));
+      var clr = el("button", "btn small", "Show everyone"); clr.type = "button"; clr.id = "who-clear";
+      clr.addEventListener("click", function () { whoFilter = null; renderView(true); });
+      note.appendChild(clr); feed.appendChild(note);
+    }
     var log = el("div", "log"); log.id = "log";
     var byId = {}; data.messages.forEach(function (m) { byId[m._id] = m; });
     // Replies keep their own cards; a parent also shows when a reply to it matches the filter or search.
@@ -460,7 +634,8 @@ td.num, td.t { font: 12px var(--mono); font-variant-numeric: tabular-nums; white
     var shown = top.filter(function (m) {
       var kids = replies[m._id] || [];
       var kindOk = kindFilter === "all" || (kindFilter === "important" ? isImportant(m) || kids.some(isImportant) : m.kind === kindFilter || kids.some(function (r) { return r.kind === kindFilter; }));
-      return kindOk && (matches(m) || kids.some(matches));
+      var whoOk = !whoFilter || String(m.from == null ? "" : m.from) === whoFilter;
+      return kindOk && whoOk && (matches(m) || kids.some(matches));
     }).sort(byT).reverse();
     if (!shown.length) {
       log.appendChild(el("div", "empty", loaded.messages ? (data.messages.length ? "No messages match." : "No messages logged yet. Each message between the two sessions shows up here.") : "Loading messages…"));
@@ -471,7 +646,9 @@ td.num, td.t { font: 12px var(--mono); font-variant-numeric: tabular-nums; white
       if (day && day !== lastDay) { log.appendChild(el("div", "day", day)); lastDay = day; }
       log.appendChild(msgCard(m, false, m.replyTo ? byId[m.replyTo] : null));
     });
-    view.appendChild(log);
+    feed.appendChild(log);
+    grid.appendChild(feed);
+    view.appendChild(grid);
   }
 
   /* ---------- agreements ---------- */
@@ -676,10 +853,15 @@ td.num, td.t { font: 12px var(--mono); font-variant-numeric: tabular-nums; white
   })();
   readHash();
   window.addEventListener("hashchange", function () { readHash(); renderAll(); });
+  // Crossing 640px opens or folds the roster.
+  if (WIDE) { var onWidth = function () { if (tab === "timeline") renderView(true); }; if (WIDE.addEventListener) WIDE.addEventListener("change", onWidth); else if (WIDE.addListener) WIDE.addListener(onWidth); }
+  // Read-only helpers for the page tests.
+  window.__crosstalk = Object.freeze({ dotState: dotState });
   renderAll();
   setInterval(function () {
     document.querySelectorAll(".ago[data-t]").forEach(function (a) { a.textContent = agoText(Number(a.dataset.t)); });
     renderStrip();
+    refreshRoster();
   }, 20000);
 
   function setLive(on, text) { document.getElementById("live").classList.toggle("on", on); document.getElementById("liveText").textContent = text; }

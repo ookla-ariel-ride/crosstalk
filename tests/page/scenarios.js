@@ -23,8 +23,9 @@
     await addDoc("messages", "gemini-1", { t: T0, from: "gemini", kind: "sync", summary: "From an unlisted sender" });
     var c = card("gemini-1"), w = c && c.querySelector(".who");
     if (!w) return res("unknownSenderNeutral", false, "no card");
-    var got = getComputedStyle(w).color, want = rgb("var(--muted)");
-    return res("unknownSenderNeutral", w.textContent === "gemini" && got === want, "name=" + JSON.stringify(w.textContent) + " color=" + got + " muted=" + want);
+    // The sender tag is a solid block of the sender's color (ruling R7).
+    var got = getComputedStyle(w).backgroundColor, want = rgb("var(--muted)");
+    return res("unknownSenderNeutral", w.textContent === "gemini" && got === want, "name=" + JSON.stringify(w.textContent) + " background=" + got + " muted=" + want);
   });
 
   S.push(async function subAgentTag() {
@@ -70,8 +71,8 @@
   S.push(async function ownerColorThemed() {
     await addDoc("messages", "own-c", { t: T0, from: "owner", kind: "owner", summary: "Owner color" });
     var c = card("own-c"), w = c && c.querySelector(".who");
-    var got = w ? getComputedStyle(w).color : null, want = rgb("var(--own)");
-    return res("ownerColorThemed", got === want && c.classList.contains("own"), "color=" + got + " --own=" + want + " class=" + (c && c.className));
+    var got = w ? getComputedStyle(w).backgroundColor : null, want = rgb("var(--own)");
+    return res("ownerColorThemed", got === want && c.classList.contains("own"), "background=" + got + " --own=" + want + " class=" + (c && c.className));
   });
 
   S.push(async function composerKindKept() {
@@ -115,6 +116,146 @@
     return res("focusKept", a === "q", "active=" + a);
   });
 
+  // ---------- Task 9: feed, roster and quarantine ----------
+  function ago(min) { return new Date(Date.now() - min * 60000).toISOString(); }
+  function entry(id) { var b = $("who-" + id); return b && b.closest("li"); }
+  function groupOf(id) { var e = entry(id), g = e && e.closest(".rgroup"); return g ? g.dataset.group : null; }
+  function shownFrom() { return [].slice.call(document.querySelectorAll("#log article.msg")).map(function (a) { return a.dataset.from; }); }
+  async function chip(k) { $("k-" + k).click(); await tick(); }
+
+  S.push(async function rosterGroups() {
+    await go("timeline");
+    await addDoc("participants", "gemini-r", { name: "Gemini", kind: "researcher", color: "#9a5b00", trust: "approved" });
+    await addDoc("participants", "githook", { name: "git hook", kind: "tool", color: "#555555", trust: "approved" });
+    await addDoc("participants", "ghost.helper", { name: "helper", kind: "agent", parent: "ghost", color: "#555555", trust: "approved" });
+    var r = $("roster");
+    var heads = r ? [].slice.call(r.querySelectorAll(".rgroup h3")).map(function (h) { return h.textContent; }) : [];
+    var verifier = entry("bewareilive.verifier"), bil = entry("bewareilive");
+    var nested = !!(verifier && bil && verifier.parentElement.closest("li") === bil);
+    var got = {
+      bewareilive: groupOf("bewareilive"), vectorcraft: groupOf("vectorcraft"), verifier: groupOf("bewareilive.verifier"),
+      codex: groupOf("codex"), "gemini-r": groupOf("gemini-r"), githook: groupOf("githook"), owner: groupOf("owner"),
+      "ghost.helper": groupOf("ghost.helper"), gemini: groupOf("gemini")
+    };
+    var want = { bewareilive: "projects", vectorcraft: "projects", verifier: "projects", codex: "reviewers", "gemini-r": "reviewers",
+      githook: "tools", owner: "tools", "ghost.helper": "tools", gemini: "unlisted" };
+    var g = entry("gemini"), unlistedPill = !!(g && /not approved/i.test(g.textContent));
+    var ok = r && r.tagName === "DETAILS" && JSON.stringify(heads) === JSON.stringify(["Projects", "Reviewers and research", "Tools and people", "Not in roster"]) &&
+      nested && JSON.stringify(got) === JSON.stringify(want) && unlistedPill;
+    return res("rosterGroups", ok, "heads=" + JSON.stringify(heads) + " nested=" + nested + " groups=" + JSON.stringify(got) + " unlistedPill=" + unlistedPill);
+  });
+
+  S.push(async function rosterFilter() {
+    await go("timeline");
+    await addDoc("messages", "vc-sync", { t: ago(3), from: "vectorcraft", kind: "sync", summary: "VC sync" });
+    await addDoc("messages", "vc-alert", { t: ago(4), from: "vectorcraft", kind: "alert", summary: "VC alert" });
+    var b = $("who-vectorcraft");
+    if (!b) return res("rosterFilter", false, "no roster entry for vectorcraft");
+    var isBtn = b.tagName === "BUTTON";
+    b.focus(); b.click(); await tick();
+    var pressed = $("who-vectorcraft").getAttribute("aria-pressed"), focused = document.activeElement && document.activeElement.id;
+    var only = shownFrom(), onlyVc = only.length === 2 && only.every(function (f) { return f === "vectorcraft"; });
+    await chip("sync");
+    var both = shownFrom(), andOk = both.length === 1 && both[0] === "vectorcraft";
+    await chip("all");
+    $("who-vectorcraft").click(); await tick();
+    var cleared = $("who-vectorcraft").getAttribute("aria-pressed"), all = shownFrom(), many = all.some(function (f) { return f !== "vectorcraft"; });
+    var ok = isBtn && pressed === "true" && focused === "who-vectorcraft" && onlyVc && andOk && cleared === "false" && many;
+    return res("rosterFilter", ok, "button=" + isBtn + " pressed=" + pressed + " focus=" + focused + " filtered=" + JSON.stringify(only) +
+      " with sync=" + JSON.stringify(both) + " cleared=" + cleared + " after clear=" + all.length + " cards");
+  });
+
+  S.push(async function quarantineDimmedAndApprove() {
+    await go("timeline");
+    await addDoc("participants", "qbot", { name: "Q bot", kind: "tool", color: "#555555" });
+    await addDoc("messages", "q-1", { t: ago(1), from: "qbot", kind: "sync", summary: "From a quarantined sender" });
+    var c = card("q-1");
+    if (!c) return res("quarantineDimmedAndApprove", false, "no card");
+    var dim = c.classList.contains("quarantined") && getComputedStyle(c).opacity === "0.55";
+    var pillOk = [].slice.call(c.querySelectorAll(".pill")).some(function (p) { return /not approved/i.test(p.textContent); });
+    var a = $("approve-qbot");
+    if (!a) return res("quarantineDimmedAndApprove", false, "dim=" + dim + " pill=" + pillOk + " no Approve button");
+    __fail.participants = true;
+    a.click(); await tick(80);
+    __fail.participants = false;
+    var err = $("approve-err-qbot"), errText = err ? err.textContent : "", stillDim = card("q-1").classList.contains("quarantined");
+    $("approve-qbot").click(); await tick(80);
+    var trust = __store.participants.qbot.trust, c2 = card("q-1");
+    var undimmed = !c2.classList.contains("quarantined") && getComputedStyle(c2).opacity === "1";
+    var pillGone = ![].slice.call(c2.querySelectorAll(".pill")).some(function (p) { return /not approved/i.test(p.textContent); });
+    var btnGone = !$("approve-qbot") && !$("approve-err-qbot");
+    var ok = dim && pillOk && /not approved/i.test(errText) && stillDim && trust === "approved" && undimmed && pillGone && btnGone;
+    return res("quarantineDimmedAndApprove", ok, "dim=" + dim + " pill=" + pillOk + " failErr=" + JSON.stringify(errText) + " stillDimAfterFail=" + stillDim +
+      " trust=" + trust + " undimmed=" + undimmed + " pillGone=" + pillGone + " approveGone=" + btnGone);
+  });
+
+  S.push(async function dotThresholds() {
+    await go("timeline");
+    var X = window.__crosstalk;
+    if (!X || typeof X.dotState !== "function") return res("dotThresholds", false, "window.__crosstalk.dotState missing");
+    // Both projects checked in just now, so the test participant is the only one that can be late.
+    await addDoc("messages", "ci-bil", { t: ago(2), from: "bewareilive", kind: "check-in", summary: "Check-in" });
+    await addDoc("messages", "ci-vc", { t: ago(2), from: "vectorcraft", kind: "check-in", summary: "Check-in" });
+    await addDoc("participants", "dt", { name: "Dot test", kind: "tool", color: "#555555", checkInMin: 30, trust: "approved" });
+    var never = X.dotState("dt", Date.now());
+    var got = {}, tiles = {}, rosterDots = {};
+    var cases = [34, 36, 46];
+    for (var i = 0; i < cases.length; i++) {
+      var n = cases[i];
+      // A newer message of another kind must not count as a check-in.
+      await addDoc("messages", "dt-ci", { t: ago(n), from: "dt", kind: "check-in", summary: "Check-in" });
+      await addDoc("messages", "dt-sync", { t: ago(1), from: "dt", kind: "sync", summary: "Not a check-in" });
+      got[n] = X.dotState("dt", Date.now());
+      tiles[n] = $("checkVal").textContent;
+      var d = entry("dt") && entry("dt").querySelector(".cdot");
+      rosterDots[n] = d ? ["ok", "warn", "bad"].filter(function (k) { return d.classList.contains(k); })[0] || "?" : null;
+    }
+    var noMin = X.dotState("codex", Date.now());
+    var lbl = document.querySelector("#t-check .lbl").textContent, since = entry("dt") && entry("dt").querySelector(".since");
+    var ok = got[34] === "ok" && got[36] === "warn" && got[46] === "bad" && never === "bad" && noMin === null &&
+      rosterDots[34] === "ok" && rosterDots[36] === "warn" && rosterDots[46] === "bad" &&
+      lbl === "Check-ins" && tiles[34] === "all on time" && tiles[36] === "Dot test 6 min late" && tiles[46] === "Dot test 16 min late" &&
+      since && since.textContent === "1m";
+    // Leave the test participant on time so the screenshots show a calm strip.
+    await addDoc("messages", "dt-ci", { t: ago(1), from: "dt", kind: "check-in", summary: "Check-in" });
+    return res("dotThresholds", ok, "dotState=" + JSON.stringify(got) + " never=" + never + " noCheckInMin=" + noMin + " roster=" + JSON.stringify(rosterDots) +
+      " label=" + lbl + " tile=" + JSON.stringify(tiles) + " since=" + (since && since.textContent));
+  });
+
+  S.push(async function toArrow() {
+    await go("timeline");
+    await addDoc("messages", "to-1", { t: ago(1), from: "codex", kind: "sync", summary: "Review: 3 findings", to: "bewareilive" });
+    await addDoc("messages", "to-2", { t: ago(1), from: "codex", kind: "sync", summary: "Two recipients", to: ["bewareilive.verifier", "vectorcraft"] });
+    await addDoc("messages", "to-3", { t: ago(1), from: "codex", kind: "sync", summary: "No recipient" });
+    function arrow(id) { var c = card(id), t = c && c.querySelector(".to"); return t ? t.textContent : null; }
+    var a = arrow("to-1"), b = arrow("to-2"), n = arrow("to-3");
+    var ok = a === "→ BewareILive" && b === "→ BewareILive › verifier, VectorCraft" && n === null;
+    return res("toArrow", ok, "one=" + JSON.stringify(a) + " two=" + JSON.stringify(b) + " none=" + JSON.stringify(n));
+  });
+
+  // Checks whichever width the window has: run once at desktop width, then again after browser_resize to 390 (see run.md).
+  S.push(async function mobileRosterFolds() {
+    await go("timeline");
+    var r = $("roster"), log = $("log"), w = window.innerWidth;
+    if (!r || !log) return res("mobileRosterFolds", false, "width=" + w + " roster=" + !!r);
+    var sum = r.querySelector("summary"), sumText = sum ? sum.textContent : null, sumShown = sum && getComputedStyle(sum).display !== "none";
+    var rb = r.getBoundingClientRect(), lb = log.getBoundingClientRect();
+    var ok, detail;
+    if (w <= 640) {
+      var above = rb.bottom <= lb.top + 1, folded = !r.open;
+      r.open = true; await tick();
+      var opens = !!$("who-vectorcraft") && $("who-vectorcraft").getClientRects().length > 0;
+      r.open = false; await tick();
+      ok = r.tagName === "DETAILS" && sumText === "People" && sumShown && folded && above && opens;
+      detail = "narrow width=" + w + " summary=" + JSON.stringify(sumText) + " shown=" + sumShown + " folded=" + folded + " aboveFeed=" + above + " opens=" + opens;
+    } else {
+      var beside = rb.right <= lb.left + 1 && rb.top < lb.bottom;
+      ok = r.tagName === "DETAILS" && r.open && !sumShown && beside;
+      detail = "wide width=" + w + " open=" + r.open + " summaryShown=" + sumShown + " besideFeed=" + beside;
+    }
+    return res("mobileRosterFolds", ok, detail);
+  });
+
   S.push(async function holdRelease() {
     await put("agreements", { "a-1": { t: T0, summary: "Old-style held", status: "held", builder: "bewareilive", adopter: "vectorcraft" } });
     await go("agreements");
@@ -140,9 +281,11 @@
     return res("participantsStopShown", after === "Partly live" && /People/.test(latest), "after=" + after + " latest=" + JSON.stringify(latest));
   });
 
-  window.runAll = async function () {
+  // runAll() runs every scenario; runAll(["name", ...]) runs only those.
+  window.runAll = async function (only) {
     var out = [];
     for (var i = 0; i < S.length; i++) {
+      if (only && only.indexOf(S[i].name) === -1) continue;
       try { out.push(await S[i]()); }
       catch (e) { out.push(res(S[i].name, false, "threw: " + (e && e.stack ? e.stack.split("\n")[0] : e))); }
     }
