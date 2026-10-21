@@ -59,10 +59,11 @@ _SAFE_RE = re.compile(r"[^A-Za-z0-9._-]")
 
 
 def _doc_file_name(batch_no: int, coll: str, did: str) -> str:
+    """Always ends in a hash of the exact id, so ids that differ only in case or in
+    unsafe characters never share a file on a case-insensitive disk (APFS)."""
     safe = _SAFE_RE.sub("_", did)
-    if safe != did or safe.startswith("."):
-        safe = "%s-%s" % (safe, hashlib.sha256(did.encode("utf-8")).hexdigest()[:12])
-    return "%03d-%s-%s.json" % (batch_no, coll, safe)
+    digest = hashlib.sha1(did.encode("utf-8")).hexdigest()[:12]
+    return "%03d-%s-%s-%s.json" % (batch_no, coll, safe, digest)
 
 
 def _clear_out(out: Path) -> None:

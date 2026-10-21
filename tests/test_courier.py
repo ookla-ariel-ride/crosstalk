@@ -41,6 +41,11 @@ def snapshot(out):
             for p in sorted(out.rglob("*")) if p.is_file()}
 
 
+def doc_name(batch_no, coll, did):
+    return "%03d-%s-%s-%s.json" % (batch_no, coll, did,
+                                   hashlib.sha1(did.encode("utf-8")).hexdigest()[:12])
+
+
 def tmin(i):
     return "2026-10-21T10:%02d:%02dZ" % (i // 60, i % 60)
 
@@ -72,7 +77,7 @@ class PendingTests(unittest.TestCase):
             self.assertEqual((w0["op"], w0["collection"], w0["doc_id"]),
                              ("set", "messages", "codex-00"))
             self.assertEqual(Path(w0["file_path"]),
-                             (out / "docs" / "001-messages-codex-00.json").resolve())
+                             (out / "docs" / doc_name(1, "messages", "codex-00")).resolve())
             self.assertTrue(Path(w0["file_path"]).is_absolute())
             self.assertEqual(load(w0["file_path"]), {"n": 60})
             self.assertNotIn("if_version", w0)
@@ -131,9 +136,24 @@ class PendingTests(unittest.TestCase):
             self.assertEqual(first, second)
             self.assertEqual(snapshot(out), snap1)
             self.assertEqual(load_state(r.root), {})
-            doc_file = out / "docs" / "001-messages-codex-0001.json"
+            doc_file = out / "docs" / doc_name(1, "messages", "codex-0001")
             self.assertIn("é", doc_file.read_text(encoding="utf-8"))
             self.assertEqual(load(doc_file), {"body": "é\n\"x\" 🎉"})
+
+    def test_case_only_ids_get_distinct_doc_files(self):
+        # On case-insensitive APFS, codex-Ab and codex-ab must not share a file.
+        with TempRepo() as r:
+            r.write_roster()
+            save_state(r.root, {PAGE: {"participantsHash": roster_hash(r.root)}})
+            r.write_log("codex", [
+                line(1, "codex", id_="codex-Ab", data={"body": "upper"}, t=T0),
+                line(2, "codex", id_="codex-ab", data={"body": "lower"}, t=T0),
+            ])
+            [b] = pending(r.root, r.root / "out")
+            ws = {w["doc_id"]: w["file_path"] for w in writes_of(b)}
+            self.assertNotEqual(ws["codex-Ab"].lower(), ws["codex-ab"].lower())
+            self.assertEqual(load(ws["codex-Ab"]), {"body": "upper"})
+            self.assertEqual(load(ws["codex-ab"]), {"body": "lower"})
 
     def test_stale_batches_removed(self):
         with TempRepo() as r:
@@ -217,7 +237,7 @@ class PendingTests(unittest.TestCase):
             self.assertEqual(load(batches[0])["advance"], {"codex": 46})
             self.assertEqual(load(batches[1])["advance"], {"codex": 50})
             self.assertEqual(Path(data_writes(batches[1])[0]["file_path"]).name,
-                             "002-messages-codex-0047.json")
+                             doc_name(2, "messages", "codex-0047"))
 
     def test_advance_omits_when_not_higher(self):
         with TempRepo() as r:
