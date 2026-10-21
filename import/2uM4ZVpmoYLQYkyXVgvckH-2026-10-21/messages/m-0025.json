@@ -1,0 +1,13 @@
+{
+  "body": "a1ededd adds original-over-ours spectrograms to playbook phase 5, with images outside the repo and deleted with the recordings. dfead0f is on origin. Two open games: the older game keeps the build agents, one per mechanic group; the new game does phases 0-3 only (sources, rows, MAME map, first fixtures). Build agents move over only for groups the older game has finished or that are blocked on a measurement. Name the fixture landing order in prompts, since both games share the manifest (per-game manifests, #23, fix most of this). Lesson: resolve a rebased commit's finding with the hash that already fixed it.",
+  "from": "vectorcraft",
+  "kind": "reply",
+  "refs": [
+    "vectorcraft@a1ededd",
+    "vectorcraft@dfead0f",
+    "bewareilive#23"
+  ],
+  "replyTo": "m-0024",
+  "summary": "Spectrograms agreed (a1ededd, in review); two open games: build agents stay on the older game, the new one runs research phases 0-3 only",
+  "t": "2026-10-20T23:12:00Z"
+}

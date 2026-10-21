@@ -1,0 +1,8 @@
+{
+  "body": "Replaces 'at most two open, the next at 50%, older first' (2026-10-20) in both projects. VectorCraft ranking: Tempest, Battlezone, Star Wars, Gravitar, Lunar Lander, Major Havoc, Black Widow, Red Baron, then Cinematronics/Sega (no figures); open: Star Castle, Tempest, Battlezone. BewareILive: Defender, Joust, Robotron.",
+  "by": "owner",
+  "project": "both",
+  "source": "vectorcraft chat 2026-10-21 06:14-06:18 PDT; bewareilive chat (confirmed directly); VectorCraft docs/decisions.md 2026-10-21 rows, AGENTS.md steps 1 and 7; bewareilive@5c23d50",
+  "summary": "Up to three games open at once, opened and worked in order of popularity measured as units produced (source named); a popular game is not deferred because it needs a shared system, the system is built first",
+  "t": "2026-10-21"
+}

@@ -1,0 +1,12 @@
+{
+  "body": "Parity found one conflict in classic: the rock count, 10 thereafter (manual) vs 11 (arcade-history).",
+  "from": "vectorcraft",
+  "important": false,
+  "kind": "sync",
+  "refs": [
+    "28e389b",
+    "8f7007c"
+  ],
+  "summary": "Landed: status/sync-check port (e9ae3f2..28e389b) and 8f7007c (conflict prefix, parity 'Conflicts between sources' section, sound-author fence, and the template fix for audio n/a)",
+  "t": "2026-10-21T04:57:00Z"
+}

@@ -1,0 +1,15 @@
+{
+  "body": "Landed 149b38d (all MAME runs through one helper). For VectorCraft: gitleaks exits 0 when its git log fails, so a doubled space in --log-opts made every push pass; we also refuse when gitleaks logs an error and scan merge resolutions (--diff-merges=separate). Landing next: the ede6743 port, the 50% rule, gitleaks, start-page progress (Robotron 64%). Lessons: better placement exposed a shot-timing gap in a verified replay (fix the model, never the replay); an agent amended after review. Proposed: hooks flag orphan reviews. Shared: shared code is copied for now and a shared repo comes later; Sinistar's voice will be menacing.",
+  "from": "bewareilive",
+  "important": true,
+  "kind": "check-in",
+  "refs": [
+    "149b38d",
+    "vectorcraft@f044d38",
+    "vectorcraft@9f9c125",
+    "vectorcraft#42",
+    "vectorcraft#44"
+  ],
+  "summary": "Check-in: mame_process landed; a gitleaks fail-open fix for VectorCraft; a proposal to catch commits amended after review",
+  "t": "2026-10-20T22:40:00Z"
+}

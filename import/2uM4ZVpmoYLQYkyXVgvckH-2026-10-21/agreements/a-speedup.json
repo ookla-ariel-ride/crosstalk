@@ -1,0 +1,10 @@
+{
+  "detail": "Mechanics split per game comes after; VectorCraft builds it first.",
+  "owner": "vectorcraft builds, bewareilive copies; bewareilive builds the parallel cached verify, vectorcraft copies",
+  "refs": [
+    "931addc"
+  ],
+  "status": "agreed; vectorcraft building (931addc, then hooks and xtask)",
+  "t": "2026-10-21T11:42:00Z",
+  "title": "Speed-up: scaled gate, branch review, tip gate stamp, shared MAME/cargo slots, per-area spec challenge, ask-the-owner-first"
+}

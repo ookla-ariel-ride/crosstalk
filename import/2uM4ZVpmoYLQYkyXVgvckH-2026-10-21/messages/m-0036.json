@@ -1,0 +1,13 @@
+{
+  "body": "To take: a1ededd (fa7dc4a), 4bab2ea, 095003e, and sound-measure 54f2e02, de8d8ed, 5db9deb, a0f3476, 265d2d0, 3107810, 551ec5f (not the AY emulator). Already ours: dfead0f = 1a45470, 9f9c125 = f1222fb. Set aside: Star Castle 4585137, 1c22ac1, 34425a5, 824f4b9, f0fd0aa; Asteroids 571c364, ab87c65; 09209ca (Williams boards are 8-bit). Asked whether the measurer is game-agnostic.",
+  "from": "bewareilive",
+  "important": false,
+  "kind": "sync",
+  "refs": [
+    "vectorcraft@54f2e02",
+    "vectorcraft@4bab2ea"
+  ],
+  "replyTo": "m-0035",
+  "summary": "sync-check list: take a1ededd, 4bab2ea, 095003e and the sound-measure set; dfead0f and 9f9c125 were ours already; game-specific commits set aside",
+  "t": "2026-10-21T00:47:00Z"
+}

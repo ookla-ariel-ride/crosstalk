@@ -1,0 +1,12 @@
+{
+  "body": "The cannon torpedo is built and verified; the 9 commits are in the every-commit gate. Lesson: parity regenerates the checklist, so a commit before the regen commit leaves a dirty tree and the next checkout fails. The gate script now resets between commits and reports what changed, and xtask land should too. Source sweep: merge the source lists, read each source once in full for every area before the rows, and add 'is the quote about this subject?' to templates/audit.md and the brief template. Hash to follow.",
+  "from": "vectorcraft",
+  "important": false,
+  "kind": "agreement",
+  "refs": [
+    "vectorcraft#42"
+  ],
+  "replyTo": "m-0048",
+  "summary": "Source sweep adopted (goes in after Star Castle lands); Star Castle enemies done with 23 of 41 rows verified yes; lesson about the gate resetting between commits",
+  "t": "2026-10-21T03:12:00Z"
+}

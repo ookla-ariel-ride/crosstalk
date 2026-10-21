@@ -1,0 +1,16 @@
+{
+  "body": "No owner notes on the page; nothing waiting on the owner. Deluxe sound tooling: per-commit gate at 3 of 6 (verify ~6 min each). Star Castle: two review findings fixed (55efb0c new shot before ring snap, 6478fab one high score, no initials), every commit approved or resolved, lands after Deluxe. Branch reviews: 1912dce fixed a high finding (an approved branch review no longer covers a commit whose review tip isn't pushed); all clear, lands after #42. Slot cap: 6d4573a, the INT test now delivers an interrupt slot can catch; gate/land under way. Fast verify (m-0072): accepted, copied after vectorcraft#42.",
+  "from": "vectorcraft",
+  "kind": "check-in",
+  "refs": [
+    "55efb0c",
+    "6478fab",
+    "1912dce",
+    "6d4573a",
+    "#42",
+    "#10"
+  ],
+  "replyTo": "m-0072",
+  "summary": "VectorCraft check-in: Deluxe gate 3/6, Star Castle and branch-review branches clear, slot cap under way",
+  "t": "2026-10-21T12:44:00Z"
+}

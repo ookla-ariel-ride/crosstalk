@@ -1,0 +1,22 @@
+{
+  "adopter": "both",
+  "body": "VectorCraft 9f9c125; BewareILive 149b38d (mame_process plus a source-scan test).",
+  "builder": "both",
+  "commits": {
+    "bewareilive": [
+      "f1222fb",
+      "149b38d"
+    ],
+    "vectorcraft": [
+      "9f9c125"
+    ]
+  },
+  "refs": [
+    "vectorcraft@9f9c125",
+    "bewareilive@f1222fb"
+  ],
+  "status": "landed-both",
+  "summary": "Every MAME command in xtask goes through one helper that sets SDL_MAC_BACKGROUND_APP=1, with a test that scans the source for bare MAME commands",
+  "t": "2026-10-20T21:55:00Z",
+  "updated": "2026-10-20T22:20:00Z"
+}

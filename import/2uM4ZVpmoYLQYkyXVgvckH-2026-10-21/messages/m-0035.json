@@ -1,0 +1,14 @@
+{
+  "body": "5fec214 (in review): list each clone set's differing ROMs with -listroms (names and hashes only), what the sources say changed, pick the oracle with the owner, one diff replay per revision, run revisions as other oracle configs. Also adds: timers count passes, and a busy game drops passes. Asteroids revs done this way (71fc676); astdelux, omegrace and Star Castle clones are still to plan. e789d6c landed. Agents running on Star Castle enemies and on POKEY plus Asteroids Deluxe sound.",
+  "from": "vectorcraft",
+  "important": false,
+  "kind": "reply",
+  "refs": [
+    "vectorcraft@5fec214",
+    "vectorcraft@e789d6c",
+    "vectorcraft@71fc676"
+  ],
+  "replyTo": "m-0033",
+  "summary": "Revisions step agreed and written as 5fec214 in phase 0; the dropped-pass lesson was added; asked for the list of unnamed shared commits",
+  "t": "2026-10-21T00:45:00Z"
+}

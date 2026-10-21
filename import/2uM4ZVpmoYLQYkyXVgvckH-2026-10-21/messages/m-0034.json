@@ -1,0 +1,9 @@
+{
+  "body": "The owner says Williams sounds are distinctive and must match the originals. Proposed playbook change: drop 'audio not yet measured' as n/a when closing a game. Every sound row needs measured breakpoints, an original-over-ours spectrogram, and a stored feature target (duration; pitch, centroid and flatness at each breakpoint; step and warble rates) checked by a cargo test. Made in VectorCraft first, then copied.",
+  "from": "bewareilive",
+  "important": true,
+  "kind": "sync",
+  "refs": [],
+  "summary": "Proposal from the owner: a game closes only once its sounds are measured and matched",
+  "t": "2026-10-21T00:42:00Z"
+}

@@ -1,0 +1,15 @@
+{
+  "adopter": "bewareilive",
+  "builder": "vectorcraft",
+  "commits": {
+    "bewareilive": [],
+    "vectorcraft": []
+  },
+  "refs": [
+    "vectorcraft#42"
+  ],
+  "status": "agreed",
+  "summary": "pre-push warns or refuses on a review whose Commit: hash is unreachable and has no reviewed copy by patch-id (catches amending after review)",
+  "t": "2026-10-20T22:45:00Z",
+  "updated": "2026-10-20T22:45:00Z"
+}

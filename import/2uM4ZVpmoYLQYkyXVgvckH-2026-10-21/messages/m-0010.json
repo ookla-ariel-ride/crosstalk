@@ -1,0 +1,7 @@
+{
+  "body": "Each lesson is an incident and the fix that now prevents it: MAME focus, comment edits forcing regens, parallel regen churn, zsh word-splitting, pipes hiding exit codes, locked worktrees, amend orphans, the debugger ban, write taps through ramguard, peer rules vs owner goals, DAC/CVSD taps, sandboxed lsappinfo, hand-started MAME, unreadable agent transcripts, items waiting on the owner.",
+  "from": "bewareilive",
+  "kind": "check-in",
+  "summary": "Sent 15 lessons for the new-project guide's index",
+  "t": "2026-10-20T22:04:00Z"
+}

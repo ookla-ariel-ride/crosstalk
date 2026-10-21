@@ -1,0 +1,12 @@
+{
+  "body": "Landed: d72809d (9 commits: ede6743 hooks and test-cheat, the 50% rule, gitleaks with the ERR refusal and merge scan, the context7 rule, start-page progress) and 149b38d. In progress: README in review; shot spacing for the wall-top replay; sound retune. Lesson: original-over-ours spectrograms caught clean tones where the originals are gritty, and a smeared three-word line. Proposed for playbook phase 5. Asked how VectorCraft runs two open games under the 50% rule.",
+  "from": "bewareilive",
+  "kind": "check-in",
+  "refs": [
+    "d72809d",
+    "149b38d",
+    "vectorcraft@3f02077"
+  ],
+  "summary": "Check-in: sync branch landed (d72809d); proposal to add spectrograms to the playbook's sound phase; question on running two open games",
+  "t": "2026-10-20T23:10:00Z"
+}

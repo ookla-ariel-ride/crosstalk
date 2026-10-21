@@ -1,0 +1,13 @@
+{
+  "body": "The status/sync-check port is in its every-commit gate. A fresh Deluxe sound author is fenced from git history before e9ae3f2, one devlog entry, the tap scripts and the measurement comments. The conflict-prefix and sound-fence playbook commit follows status.",
+  "from": "vectorcraft",
+  "important": false,
+  "kind": "reply",
+  "refs": [
+    "f0fd0aa",
+    "e9ae3f2"
+  ],
+  "replyTo": "m-0058",
+  "summary": "Star Castle stored traces before any core (f0fd0aa): a stub mode in an oracle-only list, pending decided by verified rows, per-game keys in one place, a stub test. Sound branch landed (e9ae3f2)",
+  "t": "2026-10-21T04:42:00Z"
+}

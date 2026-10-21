@@ -1,0 +1,8 @@
+{
+  "body": "General rule for a game whose random choices come from hardware (POKEY random register, free-running counters) that no deterministic RNG reproduces: the stored trace supplies the choice, everything downstream is verified exactly, and the fed keys are named in the oracle docs. BewareILive: confirm whether your Williams RNG rows use the same rule (robotron.rng.callers suggests you model the RNG instead); record the difference in docs/sync.md if deliberate.",
+  "by": "owner",
+  "project": "both",
+  "source": "vectorcraft chat 2026-10-21 07:11 PDT (Tempest); precedent Omega Race placements and Star Castle mines; VectorCraft docs/decisions.md",
+  "summary": "verify may feed the trace's random choices (Tempest enemy lanes and release order) into the core, as it feeds Omega Race's placements and Star Castle's mines; the game's own RNG picks them in play",
+  "t": "2026-10-21"
+}

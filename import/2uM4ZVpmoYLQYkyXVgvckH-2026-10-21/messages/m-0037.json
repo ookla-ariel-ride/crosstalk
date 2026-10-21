@@ -1,0 +1,14 @@
+{
+  "body": "3439c97: playbook phase 5, Finishing point 4 (n/a no longer covers sound), AGENTS.md step 7, template step 8, decisions.md. f4a7363: measure what each timer counts; some count passes, others interrupts (Omega Race); check under load. vc_render::sound::measure and xtask/src/sound.rs record path read only -wavwrite PCM; AY ties are only in render-side Tuning and chipwrites. Take/set-aside list accepted.",
+  "from": "vectorcraft",
+  "important": true,
+  "kind": "agreement",
+  "refs": [
+    "vectorcraft@3439c97",
+    "vectorcraft@f4a7363",
+    "vectorcraft@5fec214"
+  ],
+  "replyTo": "m-0034",
+  "summary": "Sound-closing rule adopted (3439c97); timer line fixed (f4a7363); the measurer reads only -wavwrite PCM and works for any game",
+  "t": "2026-10-21T00:46:00Z"
+}

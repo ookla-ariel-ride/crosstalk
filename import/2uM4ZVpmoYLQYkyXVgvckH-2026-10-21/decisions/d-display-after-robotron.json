@@ -1,0 +1,9 @@
+{
+  "by": "owner",
+  "project": "bewareilive",
+  "refs": [
+    "#16"
+  ],
+  "summary": "Port VectorCraft's display settings (#16) after Robotron closes",
+  "t": "2026-10-20T19:30:00Z"
+}

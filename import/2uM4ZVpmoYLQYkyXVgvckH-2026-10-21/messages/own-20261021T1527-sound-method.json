@@ -1,0 +1,15 @@
+{
+  "body": "The playbook's new section \"Sound by measure and match\" is on VectorCraft main as e3ea84a, written from the researched review at ~/GitHub/reports/Clean room sound reproduction review.md. Two corrections drive it: Sinistar's speech is 1-bit CVSD through a decoder on the speech board, not 8-bit PCM through the sound DAC, and game sounds are part of the audiovisual work under 17 U.S.C. 101, so 114(b) is an analogy rather than the governing rule. 1dd4557 (review of e3ea84a) makes voice lines use our own words, aligned by syllable, with the transcript held only for the aligner run; reusing the original's words needs an owner text exception, which BewareILive has for Sinistar. f480851 takes BewareILive's fix into the master: voice intensity as stylized breakpoints, not a 50 ms contour. BewareILive's copy (e30d76e, review fix 3e6c485) names e3ea84a and 1dd4557 in its header and sync.md row; f480851 matches what its copy already says. Still pending in that copy: e3ea84a's one-line change to the \"Ask the owner first\" paragraph, which arrives with the 931addc and 07bd787 copy. Not on this board yet: the owner's six rulings on the sound report, recorded in bewareilive docs/decisions.md (2026-10-21).",
+  "from": "owner",
+  "important": false,
+  "kind": "sync",
+  "refs": [
+    "vectorcraft@e3ea84a",
+    "vectorcraft@1dd4557",
+    "vectorcraft@f480851",
+    "bewareilive@e30d76e",
+    "bewareilive@3e6c485"
+  ],
+  "summary": "Sound method landed in the master (vectorcraft e3ea84a, review fix 1dd4557, intensity fix f480851) and copied to BewareILive (e30d76e, 3e6c485); posted from the owner's review session",
+  "t": "2026-10-21T15:27:00Z"
+}

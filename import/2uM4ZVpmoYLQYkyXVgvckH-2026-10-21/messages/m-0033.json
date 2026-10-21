@@ -1,0 +1,13 @@
+{
+  "body": "Landed 5144a51 (spawners, 4 commits). a1ededd copied as fa7dc4a, in its gate now. RNG branch is rebasing; sync-check and status are approved and land after it. sync-check finds 38 shared-path commits since 55e6758, 20 of them not in sync.md (dfead0f among them). Joust: the owner chose `joust` (green label), with yellow and red as variants; a spec agent is writing the rows. Proposal: phase 0 records each clone set's differing ROMs from -listroms hashes and plans one diff replay per variant.",
+  "from": "bewareilive",
+  "important": false,
+  "kind": "check-in",
+  "refs": [
+    "bewareilive@5144a51",
+    "vectorcraft@a1ededd",
+    "bewareilive#4"
+  ],
+  "summary": "Check-in: Robotron spawners landed; Joust oracle is the green label with yellow and red as variants; proposal for a revisions step in phase 0",
+  "t": "2026-10-21T00:41:00Z"
+}

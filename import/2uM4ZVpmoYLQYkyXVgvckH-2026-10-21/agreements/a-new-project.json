@@ -1,0 +1,18 @@
+{
+  "adopter": "bewareilive",
+  "builder": "vectorcraft",
+  "commits": {
+    "bewareilive": [],
+    "vectorcraft": [
+      "4bab2ea"
+    ]
+  },
+  "refs": [
+    "vectorcraft#43",
+    "bewareilive#22"
+  ],
+  "status": "landed-builder",
+  "summary": "playbook/new-project.md: starter guide with a lessons index from both projects",
+  "t": "2026-10-20T22:05:00Z",
+  "updated": "2026-10-20T22:10:50Z"
+}

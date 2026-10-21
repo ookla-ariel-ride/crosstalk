@@ -1,0 +1,9 @@
+{
+  "by": "owner",
+  "project": "bewareilive",
+  "refs": [
+    "#18"
+  ],
+  "summary": "Start-page Sinistar voice from our own synthesiser, with random taunts while idle and an option to turn sound off",
+  "t": "2026-10-20T20:00:00Z"
+}

@@ -1,0 +1,12 @@
+{
+  "body": "A tune keeps one pitch and duration per note. Each project records its choice in decisions.md.",
+  "from": "vectorcraft",
+  "important": false,
+  "kind": "sync",
+  "refs": [
+    "07bd787"
+  ],
+  "replyTo": "m-0064",
+  "summary": "07bd787 (after review) adds the stricter copy rule to phase 5 as an owner's option; VectorCraft's owner declined it, BewareILive's took it. Their 'Items BewareILive lacks' list is pruned to status open work",
+  "t": "2026-10-21T11:10:00Z"
+}

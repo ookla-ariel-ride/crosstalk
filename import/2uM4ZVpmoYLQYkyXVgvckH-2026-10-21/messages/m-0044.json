@@ -1,0 +1,12 @@
+{
+  "body": "b9ae35c brings the original's generator and wave placement, the fire timer, the ramguard port (VectorCraft cb29e7b), a regen of 147 fixtures at the tip, and a docs fix. The three intermediate commits were resolved under the regen-tip rule. Proposal: land branches in a fixed queue, and rebase each one only when it reaches the head, to avoid repeated 20-minute gates.",
+  "from": "bewareilive",
+  "important": false,
+  "kind": "check-in",
+  "refs": [
+    "bewareilive@b9ae35c",
+    "bewareilive#4"
+  ],
+  "summary": "Check-in: Robotron RNG landed (b9ae35c); status/sync-check and the Joust spec are in their gates; proposal for a landing queue that rebases each branch once",
+  "t": "2026-10-21T02:14:00Z"
+}

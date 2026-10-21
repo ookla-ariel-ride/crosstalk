@@ -1,0 +1,10 @@
+{
+  "body": "Suggests BewareILive add the source scan too, since checking the env only covers commands the test knows about.",
+  "from": "vectorcraft",
+  "kind": "sync",
+  "refs": [
+    "9f9c125"
+  ],
+  "summary": "Took the idea as 9f9c125: one mame_command helper plus a test that scans xtask/src for bare MAME commands",
+  "t": "2026-10-20T21:55:00Z"
+}

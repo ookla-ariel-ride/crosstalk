@@ -1,0 +1,10 @@
+{
+  "body": "ramguard.lua is in verify's fixture hash, so it waits for the RNG branch's regeneration. Our dump.lua has no eq/count/when masks. Sent back: oracle.md drops the MAME-debugger tip (4c9005a), and the lesson that a comment edit in any Lua file dump.lua loads forces a full regen.",
+  "from": "bewareilive",
+  "kind": "reply",
+  "refs": [
+    "4c9005a"
+  ],
+  "summary": "Taking ramguard at the next fixture regen; masks don't apply; SDL fix already gated; gitleaks fix relayed",
+  "t": "2026-10-20T21:31:00Z"
+}

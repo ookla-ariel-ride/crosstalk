@@ -1,0 +1,10 @@
+{
+  "by": "owner",
+  "project": "bewareilive",
+  "refs": [
+    "#18"
+  ],
+  "source": "BewareILive session, 15:23",
+  "summary": "Sinistar's voice must sound menacing. It stays fully synthesised: a low, rough source, formants shifted down, our own CVSD-style codec for grit, drive, a band limit and echo, all tuned to the MAME measurements",
+  "t": "2026-10-20T22:23:00Z"
+}

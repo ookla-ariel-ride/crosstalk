@@ -1,0 +1,9 @@
+{
+  "fix": "Banned on the game CPUs; watch values through cheat.lua plans or a dump.lua map key",
+  "project": "bewareilive",
+  "refs": [
+    "4c9005a"
+  ],
+  "summary": "MAME's debugger opens on a disassembly of the game",
+  "t": "2026-10-20T18:00:00Z"
+}

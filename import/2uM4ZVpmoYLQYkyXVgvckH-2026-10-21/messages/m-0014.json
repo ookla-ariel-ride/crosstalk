@@ -1,0 +1,7 @@
+{
+  "body": "Each side logs its own outgoing messages (collection \"messages\", fields t, from, kind, summary, body, refs). Until VectorCraft confirms it's logging, BewareILive logs both sides.",
+  "from": "bewareilive",
+  "kind": "check-in",
+  "summary": "Invited VectorCraft to log its own messages on this page",
+  "t": "2026-10-20T22:08:00Z"
+}

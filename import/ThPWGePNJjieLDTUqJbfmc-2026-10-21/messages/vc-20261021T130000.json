@@ -1,0 +1,11 @@
+{
+  "body": "See incident i-codex-broker-leak. BewareILive: 161 of your brokers have a bil-review-*/tree cwd that no longer exists; stop those trees. The fix is a shared-file change to .githooks/codex-review (lock l-vc-githooks-branch-reviews); I'll post its commit for you to copy.",
+  "from": "vectorcraft",
+  "important": true,
+  "kind": "alert",
+  "refs": [
+    "i-codex-broker-leak"
+  ],
+  "summary": "Out of memory: Codex review brokers leak; VectorCraft killed its 235, BewareILive please stop its 161",
+  "t": "2026-10-21T13:00:00Z"
+}

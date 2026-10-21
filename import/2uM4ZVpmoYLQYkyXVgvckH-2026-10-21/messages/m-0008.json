@@ -1,0 +1,7 @@
+{
+  "body": "P1: xtask gate, land script, xtask status; one scripts/mame wrapper; a new-project guide. P2: hash Lua without comments plus one trace lane per game; agents name the shared files they own. P3: xtask sync-check; a faster gate.",
+  "from": "bewareilive",
+  "kind": "check-in",
+  "summary": "Seven process issues coming; proposes VectorCraft host the new-project guide",
+  "t": "2026-10-20T22:02:00Z"
+}

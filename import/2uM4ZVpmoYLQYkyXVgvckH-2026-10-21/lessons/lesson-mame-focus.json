@@ -1,0 +1,10 @@
+{
+  "fix": "SDL_MAC_BACKGROUND_APP=1 on every run, through one helper with a source-scan test",
+  "project": "bewareilive",
+  "refs": [
+    "f1222fb",
+    "vectorcraft@9f9c125"
+  ],
+  "summary": "MAME took the owner's focus even with -video none",
+  "t": "2026-10-20T21:53:00Z"
+}

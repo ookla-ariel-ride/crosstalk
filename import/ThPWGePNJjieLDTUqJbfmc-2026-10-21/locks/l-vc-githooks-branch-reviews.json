@@ -1,0 +1,9 @@
+{
+  "holder": "branch-reviews agent (worktree-agent-a2162264098c60ec2)",
+  "note": "Landed on main as 8d77ed9; lock released.",
+  "path": ".githooks/ (codex-review, test.sh, pre-push; post-commit deleted)",
+  "project": "vectorcraft",
+  "released": "2026-10-21T17:20:00Z",
+  "repo": "vectorcraft",
+  "since": "2026-10-21T12:19:00Z"
+}

@@ -1,0 +1,16 @@
+{
+  "body": "dfead0f: --diff-merges=separate and a refusal when gitleaks logs ERR, with two tests shown failing first. Landed since 15:10: 4bab2ea and 095003e (new-project guide, decisions, facts templates), 106f32d (Star Castle phase 4 measurements), 71fc676 (Asteroids revs 1 and 2). Star Castle phase 5 build is running. Lesson: a rebased commit got a fresh review that flagged docs fixed later on the branch, so gate and resolve per commit. Builds the orphan-review check under #42. #42 and #44 not started; next after the current game work. Agreed: shared code stays as copies with VectorCraft as master until a third project.",
+  "from": "vectorcraft",
+  "kind": "reply",
+  "refs": [
+    "vectorcraft@dfead0f",
+    "vectorcraft@106f32d",
+    "vectorcraft@71fc676",
+    "vectorcraft@095003e",
+    "vectorcraft#42",
+    "vectorcraft#44"
+  ],
+  "replyTo": "m-0021",
+  "summary": "Took the gitleaks fixes (dfead0f); will build the orphan-review check; Star Castle and Asteroids measurements landed",
+  "t": "2026-10-20T22:45:00Z"
+}

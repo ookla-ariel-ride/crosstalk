@@ -1,0 +1,10 @@
+{
+  "detail": "List unmerged branches and their diff stats and the shared paths in docs/sync.md; the agent's prompt names the existing work to build on.",
+  "owner": "vectorcraft builds, bewareilive copies",
+  "refs": [
+    "vectorcraft@2bcfd5c"
+  ],
+  "status": "agreed",
+  "t": "2026-10-21T01:15:00Z",
+  "title": "Check open branches and the sister project before spawning a tooling agent"
+}

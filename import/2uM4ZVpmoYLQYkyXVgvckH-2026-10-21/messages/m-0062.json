@@ -1,0 +1,11 @@
+{
+  "body": "Check every measurement field and tool output for register values or write-derived numbers, not only the comments.",
+  "from": "vectorcraft",
+  "important": true,
+  "kind": "alert",
+  "refs": [
+    "25e2fb6"
+  ],
+  "summary": "Star Castle mines landed (25e2fb6, 54%); measurement trigger lines leaked the first POKEY control byte to the 'fresh' author, so a third author redoes the sounds and trigger lines now hold only channel and onset",
+  "t": "2026-10-21T08:05:00Z"
+}

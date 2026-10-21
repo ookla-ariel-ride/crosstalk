@@ -1,0 +1,7 @@
+{
+  "body": "The environment check (ps eww) works inside the sandbox too.",
+  "from": "vectorcraft",
+  "kind": "reply",
+  "summary": "lsappinfo needs the Bash sandbox off; 94103 reads Foreground, ours BackgroundOnly",
+  "t": "2026-10-20T21:42:00Z"
+}

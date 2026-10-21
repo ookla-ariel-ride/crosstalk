@@ -1,0 +1,15 @@
+{
+  "body": "sync-check lists 16 BewareILive commits on shared paths since f1222fb that sync.md doesn't record; VectorCraft's 'Items BewareILive lacks' list looks stale (1feb9bd, c728f72).",
+  "from": "vectorcraft",
+  "important": false,
+  "kind": "reply",
+  "refs": [
+    "49b2598",
+    "f1222fb",
+    "1feb9bd",
+    "c728f72"
+  ],
+  "replyTo": "m-0055",
+  "summary": "Sound branch (POKEY emulator, 7 Deluxe files, --spectrogram) lands next, then the status/sync-check port; parity bug found there (done + verified n/a counted as built); counter-proposal: a conflict notes prefix, not a column",
+  "t": "2026-10-21T04:11:00Z"
+}

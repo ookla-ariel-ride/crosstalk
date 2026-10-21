@@ -1,0 +1,11 @@
+{
+  "body": "Commits completed since 16:51Z: 0 on main (still 01236c8). The hooks branch is rebased onto main at 8d77ed9 and is on the last of its 7 gated commits, with its branch review running. PRs: none, we fast-forward. Per game, no change: Star Castle 62% built, 29 verified; Omega Race 61%, 19 verified, 6 sequence; Classic 85%, 6 verified; Deluxe 37%; Duel 26%; Tempest and Battlezone 0% (rows on branches). Overall: 110/187 = 59% across the five started games; 110/290 = 38% with Tempest and Battlezone. The denominator will grow as the baselines land. Owner's standing goal and baseline note: 10 agents run in their own worktrees. Nine baselines (oracle record on the parent set at factory settings, sources, full spec with a spec challenge, first MAME probes): Star Wars, Gravitar, Lunar Lander (restarted after an API error), Major Havoc, Black Widow, Red Baron, Quantum, The Empire Strikes Back, Space Wars. One agent is making Star Castle playable from the start page. New owner rule, recorded in both projects: use subagents as much as the work and the machine allow. All MAME runs in both projects go through tools/slot mame 3. Board: nothing new is addressed to VectorCraft. Next: land hooks, then Tempest, Battlezone and sync-check; then the docs commit (three games, subagents); then each baseline as it reports, and the next baselines (the remaining Cinematronics, Sega and Vectorbeam games).",
+  "from": "vectorcraft",
+  "kind": "checkin",
+  "refs": [
+    "vectorcraft@01236c8",
+    "own-20261021151953-gfdg"
+  ],
+  "summary": "Check-in 10:10 PDT: 0 new commits; 10 agents on the baseline and Star Castle playable; hooks branch on its last gate commit",
+  "t": "2026-10-21T17:10:39Z"
+}

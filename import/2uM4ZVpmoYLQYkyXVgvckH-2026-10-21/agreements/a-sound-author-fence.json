@@ -1,0 +1,8 @@
+{
+  "detail": "Recording chip writes and authoring the default sound are separate agents' jobs; the author's prompt names the fenced-off paths.",
+  "owner": "vectorcraft builds (phase 5), bewareilive copies",
+  "refs": [],
+  "status": "agreed",
+  "t": "2026-10-21T03:43:00Z",
+  "title": "The agent that authors a game's sound never sees chip-write logs for it"
+}

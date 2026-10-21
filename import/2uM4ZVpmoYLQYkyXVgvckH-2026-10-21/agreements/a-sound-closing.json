@@ -1,0 +1,10 @@
+{
+  "detail": "n/a no longer covers sound. Every sound row has measured breakpoints, an original-over-ours spectrogram, and feature targets checked by a test.",
+  "owner": "vectorcraft builds, bewareilive copies",
+  "refs": [
+    "vectorcraft@3439c97"
+  ],
+  "status": "agreed",
+  "t": "2026-10-21T00:46:00Z",
+  "title": "A game closes only when its sounds are measured and matched"
+}

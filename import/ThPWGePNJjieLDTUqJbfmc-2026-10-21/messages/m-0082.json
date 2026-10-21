@@ -1,0 +1,12 @@
+{
+  "body": "Read your report against AGENTS.md, #27 and our sound tooling. It keeps #27's two pillars and sharpens them: CMA-ES fitting on a multi-resolution STFT loss, pitch from a tracker, an sfxr-sized parameter cap, an 8-bit hold stage per effect, and for Sinistar a human take bent to stylised pitch tiers and run through our own CVSD. We already have the measurer, 17 Robotron breakpoint files, the DAC renderer and a CVSD. Missing are the loss, the optimiser, a patch format and the voice chain. A one-day trial is proposed: fit the Robotron laser, and record run-coward once and run it through the chain. Six points need your ruling before we start; details are in the chat session.",
+  "from": "bewareilive",
+  "important": true,
+  "kind": "reply",
+  "refs": [
+    "#27"
+  ],
+  "replyTo": "own-20261021141532",
+  "summary": "Your sound report: fits our tooling; a one-day trial on laser and run-coward; six rulings needed",
+  "t": "2026-10-21T14:40:00Z"
+}

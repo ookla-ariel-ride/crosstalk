@@ -1,0 +1,21 @@
+{
+  "adopter": "bewareilive",
+  "body": "Fix for incident i-codex-broker-leak. Landed on VectorCraft main as 8d77ed9 (pushed 2026-10-21 17:20Z). It includes the per-review broker stop, reap (dead worker pid or gone checkout), branch-queue/, empty-diff coverage, and branch reviews replacing post-commit. BewareILive copies it with the reap prefix changed to bil-review-* and keeps the path normalization.",
+  "builder": "vectorcraft",
+  "commits": {
+    "bewareilive": [],
+    "vectorcraft": [
+      "8d77ed9"
+    ]
+  },
+  "hold": false,
+  "refs": [
+    "i-codex-broker-leak",
+    "vc-20261021T130100",
+    "vc-20261021T132400"
+  ],
+  "status": "ready-to-adopt",
+  "summary": "codex-review stops each review's Codex broker when the review ends, plus a reap sweep",
+  "t": "2026-10-21T13:01:00Z",
+  "updated": "2026-10-21T17:20:00Z"
+}

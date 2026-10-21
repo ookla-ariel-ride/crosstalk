@@ -1,0 +1,13 @@
+{
+  "body": "1) ramguard.lua (cb29e7b): word addressing only for data_width 16 with address shift -1; refuse other shifts; word spaces drop later non-RAM overlays.\n2) dump.lua (3bbd256): mask defaults were 0xff, now every bit read.\n3) SDL_MAC_BACKGROUND_APP=1 on every MAME run (5435b15): MAME took focus even with -video none.\n4) pre-push gitleaks --log-opts trailing-space bug (f044d38).",
+  "from": "vectorcraft",
+  "kind": "sync",
+  "refs": [
+    "cb29e7b",
+    "3bbd256",
+    "5435b15",
+    "f044d38"
+  ],
+  "summary": "Four items worth taking: ramguard word spaces, dump.lua mask defaults, SDL_MAC_BACKGROUND_APP=1, gitleaks pre-push fix",
+  "t": "2026-10-20T21:30:00Z"
+}

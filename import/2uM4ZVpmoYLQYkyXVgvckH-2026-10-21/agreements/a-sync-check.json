@@ -1,0 +1,16 @@
+{
+  "adopter": "vectorcraft",
+  "builder": "bewareilive",
+  "commits": {
+    "bewareilive": [],
+    "vectorcraft": []
+  },
+  "refs": [
+    "bewareilive#25",
+    "vectorcraft#48"
+  ],
+  "status": "building",
+  "summary": "xtask sync-check: list the other project's commits to shared paths since the last recorded sync",
+  "t": "2026-10-20T22:09:40Z",
+  "updated": "2026-10-20T22:10:00Z"
+}

@@ -177,7 +177,12 @@ td.num, td.t { font: 12px var(--mono); font-variant-numeric: tabular-nums; white
   ];
   var STATUSES = ["proposed", "agreed", "building", "landed-builder", "landed-both", "held", "dropped"];
   var data = {}; COLS.forEach(function (c) { data[c] = []; });
-  var seenBy = {}, tab = "timeline", kindFilter = "all", query = "", db = null, canWrite = false, loaded = {};
+  var seenBy = {}, tab = "timeline", kindFilter = "all", query = "", queryRaw = "", db = null, canWrite = false, loaded = {}, offline = false;
+  // subState[c]: undefined while connecting, "ok" once live, "retry" while resubscribing, "dead" when it can't recover.
+  var subState = {};
+  // The composer's state lives here, not in the DOM, so a snapshot re-render can't reset it. `id` stays the same
+  // until a post succeeds, so retrying a half-failed post overwrites the same rows instead of duplicating them.
+  var draft = { text: "", kind: "owner", id: null, posting: false, status: "" };
 
   var fmt = new Intl.DateTimeFormat("en-US", { timeZone: "America/Los_Angeles", month: "short", day: "numeric", hour: "numeric", minute: "2-digit", second: "2-digit", timeZoneName: "short" });
   var fmtShort = new Intl.DateTimeFormat("en-US", { timeZone: "America/Los_Angeles", month: "short", day: "numeric", hour: "numeric", minute: "2-digit" });
@@ -211,7 +216,7 @@ td.num, td.t { font: 12px var(--mono); font-variant-numeric: tabular-nums; white
     repo = REPOS[project];
     if (!repo) return null;
     if ((m = /^#(\d+)$/.exec(r))) return ["https://github.com/" + repo + "/issues/" + m[1], r];
-    if (/^[0-9a-f]{7,40}$/.test(r)) return ["https://github.com/" + repo + "/commit/" + r, r];
+    if (/^[0-9a-f]{7,40}$/i.test(r)) return ["https://github.com/" + repo + "/commit/" + r, r];
     return null;
   }
   function refsEl(refs, project) {
@@ -233,9 +238,13 @@ td.num, td.t { font: 12px var(--mono); font-variant-numeric: tabular-nums; white
   function add(parent, child) { if (child) parent.appendChild(child); return parent; }
   function matches(o) {
     if (!query) return true;
-    var hay = [o.summary, o.body, o.fix, o.path, o.note, (o.refs || []).join(" ")].join(" ").toLowerCase();
+    var commits = o.commits && typeof o.commits === "object" ? Object.keys(o.commits).map(function (k) { return [].concat(o.commits[k] || []).join(" "); }) : [];
+    var hay = [o.summary, o.body, o.fix, o.path, o.note, o.game, o.source, NAMES[o.project] || o.project,
+      [].concat(o.refs || []).join(" "), [].concat(o.fixRefs || []).join(" "), commits.join(" ")].join(" ").toLowerCase();
     return hay.indexOf(query) !== -1;
   }
+  // `hold` is the hold. A `status` of "held" from before the flag existed counts too.
+  function isHeld(a) { return a.hold === true || a.status === "held"; }
   function isImportant(m) { return m.important === true || (m.important !== false && (m.kind === "alert" || m.kind === "disagreement" || m.kind === "owner")); }
   function byT(a, b) { return (ts(a.t) || 0) - (ts(b.t) || 0); }
 
@@ -244,7 +253,19 @@ td.num, td.t { font: 12px var(--mono); font-variant-numeric: tabular-nums; white
     var msgs = data.messages.slice().sort(byT);
     var last = msgs.length ? ts(msgs[msgs.length - 1].t) : NaN;
     var impN = msgs.filter(isImportant).length;
-    document.getElementById("latest").textContent = (isNaN(last) ? "" : "latest message " + agoText(last)) + (impN ? " \u00b7 " + impN + " important" : "");
+    var latest = (isNaN(last) ? "" : "latest message " + agoText(last)) + (impN ? " \u00b7 " + impN + " important" : "");
+    // The feed is live only when every collection is: one stopped subscription leaves its tab stale.
+    var stopped = COLS.filter(function (c) { return subState[c] === "retry" || subState[c] === "dead"; });
+    function tabName(c) { return TABS.filter(function (t) { return t[2] === c; })[0][1]; }
+    if (offline) { setLive(false, "Offline"); latest = "sign in to claude.ai to see the log"; }
+    else if (stopped.length) {
+      setLive(false, stopped.length === COLS.length ? "Stopped" : "Partly live");
+      var dead = stopped.some(function (c) { return subState[c] === "dead"; });
+      latest = "not updating: " + stopped.map(tabName).join(", ") + (dead ? " \u00b7 reload the page" : " \u00b7 reconnecting");
+    }
+    else if (COLS.every(function (c) { return subState[c] === "ok"; })) setLive(true, "Live");
+    else setLive(false, "Connecting");
+    document.getElementById("latest").textContent = latest;
     var checks = msgs.filter(function (m) { return m.kind === "check-in"; });
     var lc = checks.length ? ts(checks[checks.length - 1].t) : NaN;
     var tile = document.getElementById("t-check");
@@ -257,7 +278,7 @@ td.num, td.t { font: 12px var(--mono); font-variant-numeric: tabular-nums; white
       document.getElementById("checkHint").textContent = mins > 35 ? "late: due every 30 min" : "due every 30 min";
     }
     var open = data.agreements.filter(function (a) { return a.status !== "landed-both" && a.status !== "dropped"; });
-    var held = open.filter(function (a) { return a.hold || a.status === "held"; }).length;
+    var held = open.filter(isHeld).length;
     document.getElementById("agreeVal").textContent = open.length;
     document.getElementById("agreeHint").textContent = held ? held + " on hold" : data.agreements.length + " in total";
     document.getElementById("t-agree").className = "tile" + (held ? " warn" : "");
@@ -289,15 +310,16 @@ td.num, td.t { font: 12px var(--mono); font-variant-numeric: tabular-nums; white
   var KINDS = [["all", "All"], ["important", "Important"], ["owner", "Your notes"], ["agreement", "Agreements"], ["check-in", "Check-ins"], ["sync", "Sync"], ["alert", "Alerts"], ["disagreement", "Disagreements"], ["lesson", "Lessons"]];
   function toolbar(view, withKinds) {
     var bar = el("div", "tools");
-    var s = el("input"); s.type = "search"; s.id = "q"; s.placeholder = "Search summaries, text, commits, issues"; s.value = query;
+    var s = el("input"); s.type = "search"; s.id = "q"; s.placeholder = "Search summaries, text, commits, issues"; s.value = queryRaw;
     s.setAttribute("aria-label", "Search");
-    s.addEventListener("input", function () { query = s.value.trim().toLowerCase(); renderView(true); });
+    // Keep what was typed (a trailing space included); only the match is trimmed.
+    s.addEventListener("input", function () { queryRaw = s.value; query = queryRaw.trim().toLowerCase(); renderView(true); });
     bar.appendChild(s);
     if (withKinds) {
       var chips = el("div", "chips"); chips.setAttribute("role", "group"); chips.setAttribute("aria-label", "Show messages");
       KINDS.forEach(function (k) {
         var b = el("button", null, k[1]); b.type = "button"; b.id = "k-" + k[0]; b.setAttribute("aria-pressed", String(kindFilter === k[0]));
-        b.addEventListener("click", function () { kindFilter = k[0]; renderView(); });
+        b.addEventListener("click", function () { kindFilter = k[0]; renderView(true); });
         chips.appendChild(b);
       });
       bar.appendChild(chips);
@@ -309,26 +331,44 @@ td.num, td.t { font: 12px var(--mono); font-variant-numeric: tabular-nums; white
     var box = el("form", "composer"); box.id = "composer";
     var lab = el("label", null, "Note to both sessions"); lab.htmlFor = "note";
     var ta = el("textarea"); ta.id = "note"; ta.placeholder = "Read by both sessions at their next check-in";
+    ta.value = draft.text; ta.disabled = draft.posting;
+    ta.addEventListener("input", function () { draft.text = ta.value; });
     var row = el("div", "row");
     var kind = el("select"); kind.id = "noteKind"; kind.setAttribute("aria-label", "Kind of note");
     [["owner", "Note"], ["decision", "Decision"], ["waiting", "Something I need to do"]].forEach(function (o) { var op = el("option", null, o[1]); op.value = o[0]; kind.appendChild(op); });
-    var btn = el("button", "btn primary", "Post"); btn.type = "submit";
-    var st = el("span", "status-msg"); st.id = "noteStatus";
+    kind.value = draft.kind; kind.disabled = draft.posting;
+    kind.addEventListener("change", function () { draft.kind = kind.value; });
+    var btn = el("button", "btn primary", "Post"); btn.type = "submit"; btn.id = "notePost"; btn.disabled = draft.posting;
+    var st = el("span", "status-msg", draft.status); st.id = "noteStatus"; st.setAttribute("role", "status");
     row.appendChild(kind); row.appendChild(btn); row.appendChild(st);
     box.appendChild(lab); box.appendChild(ta); box.appendChild(row);
     box.addEventListener("submit", function (e) {
       e.preventDefault();
-      var text = ta.value.trim(); if (!text) { st.textContent = "Write something first."; return; }
-      btn.disabled = true; st.textContent = "Posting…";
-      var now = new Date().toISOString(), id = "own-" + now.replace(/[^0-9]/g, "").slice(0, 14) + "-" + Math.random().toString(36).slice(2, 6);
-      var summary = text.split("\n")[0].slice(0, 160);
+      if (draft.posting) return;
+      var text = draft.text.trim(); if (!text) { draft.status = "Write something first."; refreshComposer(); return; }
+      var now = new Date().toISOString();
+      if (!draft.id) draft.id = "own-" + now.replace(/[^0-9]/g, "").slice(0, 14) + "-" + Math.random().toString(36).slice(2, 6);
+      var id = draft.id, summary = text.split("\n")[0].slice(0, 160);
+      draft.posting = true; draft.status = "Posting…"; refreshComposer();
+      // Each row is a set on the same id, so a retry after a partial failure rewrites rows rather than adding them.
       var writes = [db.collection("messages").doc(id).set({ t: now, from: "owner", kind: "owner", summary: summary, body: text.length > summary.length ? text : "" })];
-      if (kind.value === "decision") writes.push(db.collection("decisions").doc(id).set({ t: now, by: "owner", summary: summary, body: text, project: "both" }));
-      if (kind.value === "waiting") writes.push(db.collection("waiting").doc(id).set({ since: now, project: "owner", summary: summary, body: text, done: null }));
-      Promise.all(writes).then(function () { ta.value = ""; st.textContent = "Posted."; btn.disabled = false; })
-        .catch(function (err) { st.textContent = "Not posted: " + (err && err.message ? err.message : "try again"); btn.disabled = false; });
+      if (draft.kind === "decision") writes.push(db.collection("decisions").doc(id).set({ t: now, by: "owner", summary: summary, body: text, project: "both", source: "Crosstalk page" }));
+      if (draft.kind === "waiting") writes.push(db.collection("waiting").doc(id).set({ since: now, project: "owner", summary: summary, body: text, done: null }));
+      Promise.all(writes).then(function () {
+        draft = { text: "", kind: "owner", id: null, posting: false, status: "Posted." }; refreshComposer();
+      }).catch(function (err) {
+        draft.posting = false;
+        draft.status = "Not posted: " + (err && err.message ? err.message : "try again") + ". Posting again won't duplicate it.";
+        refreshComposer();
+      });
     });
     view.appendChild(box);
+  }
+  function refreshComposer() {
+    var old = document.getElementById("composer"); if (!old) return;
+    var hadFocus = old.contains(document.activeElement) ? document.activeElement.id : null;
+    var tmp = el("div"); composer(tmp); old.replaceWith(tmp.firstChild);
+    var f = hadFocus && document.getElementById(hadFocus); if (f && !f.disabled) f.focus();
   }
   function msgCard(m, isReply, parent) {
     var side = SIDE[m.from] || "bil";
@@ -377,7 +417,9 @@ td.num, td.t { font: 12px var(--mono); font-variant-numeric: tabular-nums; white
     view.appendChild(el("p", "order", "Newest first. Each message sits in its sender's lane; a reply names the message it answers. New messages appear at the top and flash briefly."));
     var log = el("div", "log"); log.id = "log";
     var byId = {}; data.messages.forEach(function (m) { byId[m._id] = m; });
+    // Replies keep their own cards; a parent also shows when a reply to it matches the filter or search.
     var replies = {};
+    data.messages.forEach(function (m) { if (m.replyTo && byId[m.replyTo]) (replies[m.replyTo] = replies[m.replyTo] || []).push(m); });
     var top = data.messages;
     var shown = top.filter(function (m) {
       var kids = replies[m._id] || [];
@@ -411,7 +453,8 @@ td.num, td.t { font: 12px var(--mono); font-variant-numeric: tabular-nums; white
     rows.forEach(function (a) {
       var tr = el("tr");
       var c1 = el("td"); c1.appendChild(el("div", "summary", a.summary || "")); add(c1, bodyEl(a.body)); add(c1, refsEl(a.refs, a.builder)); tr.appendChild(c1);
-      var c2 = el("td"); c2.appendChild(pill(a.hold ? "held" : a.status || "proposed")); if (a.hold && a.holdNote) c2.appendChild(el("div", "ago", a.holdNote)); tr.appendChild(c2);
+      var held = isHeld(a);
+      var c2 = el("td"); c2.appendChild(pill(held ? "held" : a.status || "proposed")); if (held && a.holdNote) c2.appendChild(el("div", "ago", a.holdNote)); tr.appendChild(c2);
       var c3 = el("td"); if (a.builder) c3.appendChild(who(a.builder)); tr.appendChild(c3);
       var c4 = el("td"); if (a.adopter) c4.appendChild(who(a.adopter)); tr.appendChild(c4);
       var c5 = el("td");
@@ -423,11 +466,14 @@ td.num, td.t { font: 12px var(--mono); font-variant-numeric: tabular-nums; white
       var c6 = el("td", "t"); c6.appendChild(agoEl(a.updated || a.t)); tr.appendChild(c6);
       var c7 = el("td");
       if (canWrite && a.status !== "landed-both" && a.status !== "dropped") {
-        var b = el("button", "btn", a.hold ? "Release hold" : "Hold"); b.type = "button"; b.id = "hold-" + a._id;
-        b.title = a.hold ? "Let both sessions continue" : "Ask both sessions to stop work on this until you release it";
+        var b = el("button", "btn", held ? "Release hold" : "Hold"); b.type = "button"; b.id = "hold-" + a._id;
+        b.title = held ? "Let both sessions continue" : "Ask both sessions to stop work on this until you release it";
         b.addEventListener("click", function () {
           b.disabled = true;
-          db.collection("agreements").doc(a._id).update({ hold: !a.hold, holdNote: a.hold ? null : "held by owner", updated: new Date().toISOString() })
+          var patch = { hold: !held, holdNote: held ? null : "held by owner", updated: new Date().toISOString() };
+          // Releasing an old-style status "held" moves it back to "agreed" so it no longer reads as held.
+          if (held && a.status === "held") patch.status = "agreed";
+          db.collection("agreements").doc(a._id).update(patch)
             .catch(function () { b.disabled = false; });
         });
         c7.appendChild(b);
@@ -501,6 +547,7 @@ td.num, td.t { font: 12px var(--mono); font-variant-numeric: tabular-nums; white
       ["Decision", textBlock],
       ["By", function (r) { return who(r.by === "owner" ? "owner" : r.by); }],
       ["For", function (r) { return el("span", null, r.project === "both" ? "Both projects" : NAMES[r.project] || r.project || ""); }],
+      ["Where said", function (r) { return el("span", null, r.source || ""); }],
       ["When", function (r) { return timeEl(r.t, true); }, "t"]
     ], "No decisions recorded yet. Your decisions, with the date and where you made them, go here.");
   }
@@ -517,8 +564,10 @@ td.num, td.t { font: 12px var(--mono); font-variant-numeric: tabular-nums; white
   /* ---------- progress chart ---------- */
   var SERIES = ["var(--bil)", "var(--vc)", "var(--own)", "var(--ok)", "var(--warn)", "var(--muted)"];
   function renderProgress(view) {
-    var pts = data.progress.filter(function (p) { return !isNaN(ts(p.t)) && typeof p.pct === "number"; }).sort(byT);
-    if (!pts.length) { view.appendChild(el("div", "empty", "No progress recorded yet. Each check-in records every open game's percentage built here.")); return; }
+    toolbar(view, false);
+    var all = data.progress.filter(function (p) { return !isNaN(ts(p.t)) && typeof p.pct === "number"; });
+    var pts = all.filter(matches).sort(byT);
+    if (!pts.length) { view.appendChild(el("div", "empty", all.length ? "No games match." : "No progress recorded yet. Each check-in records every open game's percentage built here.")); return; }
     var groups = {}, keys = [];
     pts.forEach(function (p) { var k = (NAMES[p.project] || p.project) + ": " + p.game; if (!groups[k]) { groups[k] = []; keys.push(k); } groups[k].push(p); });
     var W = 900, H = 300, L = 44, R = 16, T = 12, B = 34;
@@ -550,17 +599,26 @@ td.num, td.t { font: 12px var(--mono); font-variant-numeric: tabular-nums; white
   }
 
   /* ---------- render ---------- */
+  // Re-rendering replaces the tabs, chips and fields, so focus is put back on the element with the same id.
+  function captureFocus() {
+    var a = document.activeElement; if (!a || !a.id || a === document.body) return null;
+    var caret = null; try { if (typeof a.selectionStart === "number") caret = [a.selectionStart, a.selectionEnd]; } catch (e) {}
+    return { id: a.id, caret: caret };
+  }
+  function restoreFocus(f) {
+    if (!f) return;
+    var e = document.getElementById(f.id); if (!e || e === document.activeElement || e.disabled) return;
+    e.focus({ preventScroll: true });
+    if (f.caret && e.setSelectionRange) { try { e.setSelectionRange(f.caret[0], f.caret[1]); } catch (x) {} }
+  }
   function renderView(keepFocus) {
     var view = document.getElementById("view");
-    var focusId = keepFocus && document.activeElement ? document.activeElement.id : null;
-    var caret = focusId === "q" ? document.activeElement.selectionStart : null;
-    var draft = document.getElementById("note"); var draftText = draft ? draft.value : null;
+    var f = keepFocus ? captureFocus() : null;
     view.textContent = "";
     ({ timeline: renderTimeline, agreements: renderAgreements, waiting: renderWaiting, locks: renderLocks, lessons: renderLessons, decisions: renderDecisions, progress: renderProgress, incidents: renderIncidents }[tab] || renderTimeline)(view);
-    var nd = document.getElementById("note"); if (nd && draftText) nd.value = draftText;
-    if (focusId) { var f = document.getElementById(focusId); if (f) { f.focus(); if (caret != null && f.setSelectionRange) f.setSelectionRange(caret, caret); } }
+    restoreFocus(f);
   }
-  function renderAll() { renderStrip(); renderTabs(); renderView(true); }
+  function renderAll() { var f = captureFocus(); renderStrip(); renderTabs(); renderView(false); restoreFocus(f); }
 
   function readHash() {
     var h = (location.hash || "").replace(/^#/, "");
@@ -568,7 +626,7 @@ td.num, td.t { font: 12px var(--mono); font-variant-numeric: tabular-nums; white
   }
   [["t-check", "timeline"], ["t-agree", "agreements"], ["t-wait", "waiting"], ["t-lock", "locks"]].forEach(function (p) {
     var t = document.getElementById(p[0]); t.dataset.go = p[1]; t.setAttribute("role", "button"); t.tabIndex = 0;
-    function go() { tab = p[1]; query = ""; try { history.replaceState(null, "", "#" + p[1]); } catch (e) {} renderAll(); document.getElementById("tabs").scrollIntoView({ behavior: "smooth", block: "start" }); }
+    function go() { tab = p[1]; query = ""; queryRaw = ""; try { history.replaceState(null, "", "#" + p[1]); } catch (e) {} renderAll(); document.getElementById("tabs").scrollIntoView({ behavior: "smooth", block: "start" }); }
     t.addEventListener("click", go);
     t.addEventListener("keydown", function (e) { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); go(); } });
   });
@@ -584,20 +642,28 @@ td.num, td.t { font: 12px var(--mono); font-variant-numeric: tabular-nums; white
 
   (async function () {
     db = window.claude && window.claude.use ? await window.claude.use("db") : null;
-    if (!db) { setLive(false, "Offline"); document.getElementById("latest").textContent = "sign in to claude.ai to see the log"; return; }
+    if (!db) { offline = true; renderStrip(); return; }
     var user = await window.claude.use("user");
     canWrite = !!(user && user.canEdit && user.canEdit());
-    COLS.forEach(function (c) {
+    // These codes can't recover by resubscribing; anything else (unavailable, unknown codes) gets a few retries.
+    var TERMINAL = ["revoked", "not_granted", "capability_disabled", "capability_removed", "invalid_argument", "transform_error"];
+    function subscribe(c, attempt) {
       db.collection(c).limit(1000).onSnapshot(function (snap) {
         data[c] = snap.docs.map(function (d) { var x = Object.assign({}, d.data() || {}); x._id = d.id; return x; });
         loaded[c] = true;
-        setLive(true, "Live");
+        subState[c] = "ok"; attempt = 0;
         renderAll();
         // A collection's first delivery is history, not news: only later arrivals flash.
         seenBy[c] = seenBy[c] || {};
         data[c].forEach(function (x) { seenBy[c][x._id] = true; });
-      }, function (e) { setLive(false, "Stopped"); document.getElementById("latest").textContent = (e && e.message) ? e.message : "reload the page"; });
-    });
+      }, function (e) {
+        var code = e && e.code, retry = TERMINAL.indexOf(code) === -1 && attempt < 5;
+        subState[c] = retry ? "retry" : "dead";
+        renderStrip();
+        if (retry) setTimeout(function () { subscribe(c, attempt + 1); }, (attempt + 1) * (2000 + Math.random() * 3000));
+      });
+    }
+    COLS.forEach(function (c) { subscribe(c, 0); });
   })();
 })();
 </script>

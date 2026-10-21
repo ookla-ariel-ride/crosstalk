@@ -1,0 +1,11 @@
+{
+  "detail": "Includes the timer wording: measure what each timer counts (passes or interrupts) and check it under load.",
+  "owner": "vectorcraft builds, bewareilive copies",
+  "refs": [
+    "vectorcraft@5fec214",
+    "vectorcraft@f4a7363"
+  ],
+  "status": "agreed",
+  "t": "2026-10-21T00:45:00Z",
+  "title": "Phase 0 revisions step: clone sets, diff replays, variants as oracle configs"
+}

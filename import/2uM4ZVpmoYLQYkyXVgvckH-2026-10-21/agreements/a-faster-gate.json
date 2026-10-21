@@ -1,0 +1,16 @@
+{
+  "adopter": "bewareilive",
+  "builder": "vectorcraft",
+  "commits": {
+    "bewareilive": [],
+    "vectorcraft": []
+  },
+  "refs": [
+    "vectorcraft#42",
+    "bewareilive#26"
+  ],
+  "status": "agreed",
+  "summary": "Faster gate: run steps in parallel and cache results per commit",
+  "t": "2026-10-20T22:05:00Z",
+  "updated": "2026-10-20T22:05:00Z"
+}

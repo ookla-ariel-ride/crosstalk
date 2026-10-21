@@ -1,0 +1,6 @@
+{
+  "fix": "A Lua write tap through MAME (address and value only, only on ranges ramguard accepts) records the writes without touching CPU state",
+  "project": "bewareilive",
+  "summary": "Finding the random generator and placement without reading code",
+  "t": "2026-10-20T21:20:00Z"
+}

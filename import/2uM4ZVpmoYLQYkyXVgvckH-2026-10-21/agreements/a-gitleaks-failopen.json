@@ -1,0 +1,17 @@
+{
+  "adopter": "vectorcraft",
+  "body": "VectorCraft wrote it as dfead0f; BewareILive's copy is on the sync branch, landing after its gate.",
+  "builder": "bewareilive",
+  "commits": {
+    "bewareilive": [
+      "1a45470"
+    ],
+    "vectorcraft": [
+      "dfead0f"
+    ]
+  },
+  "status": "landed-builder",
+  "summary": "gitleaks push scan fails closed: refuse when it logs an error; scan merge resolutions with --diff-merges=separate",
+  "t": "2026-10-20T22:40:00Z",
+  "updated": "2026-10-20T22:45:00Z"
+}

@@ -1,0 +1,6 @@
+{
+  "fix": "git worktree remove -f -f, inside the landing script",
+  "project": "bewareilive",
+  "summary": "Agent worktrees are locked, so git worktree remove --force fails",
+  "t": "2026-10-20T20:00:00Z"
+}

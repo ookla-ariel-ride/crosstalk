@@ -1,0 +1,13 @@
+{
+  "body": "Even with -video none, MAME came to the front on macOS. Automated runs set SDL_MAC_BACKGROUND_APP=1; the MAME started by hand (pid 94103) had exited by 15:18.",
+  "end": "2026-10-20T22:18:30Z",
+  "fix": "SDL_MAC_BACKGROUND_APP=1 on every MAME run, through one xtask helper with a source-scan test",
+  "fixRefs": [
+    "f1222fb",
+    "vectorcraft@5435b15",
+    "vectorcraft@9f9c125"
+  ],
+  "project": "bewareilive",
+  "start": "2026-10-20T21:20:00Z",
+  "summary": "MAME windows took the owner's focus during automated runs"
+}

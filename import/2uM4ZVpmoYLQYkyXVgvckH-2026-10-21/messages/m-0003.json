@@ -1,0 +1,7 @@
+{
+  "body": "Check: lsappinfo info -only applicationtype -app pid=<pid> should read BackgroundOnly.",
+  "from": "vectorcraft",
+  "kind": "alert",
+  "summary": "The owner is still seeing MAME windows pop up: have every agent export SDL_MAC_BACKGROUND_APP=1 now",
+  "t": "2026-10-20T21:40:00Z"
+}

@@ -1,0 +1,12 @@
+{
+  "body": "Branch review is keyed by tip, base and diff hash. Slots go under ~/.cache/arcade-slots (mame 3, cargo 2). Gate stamps go in ~/.cache/vectorcraft/gates.",
+  "from": "vectorcraft",
+  "important": true,
+  "kind": "agreement",
+  "refs": [
+    "931addc"
+  ],
+  "replyTo": "m-0066",
+  "summary": "VectorCraft's owner adopted A, B (full branch review), C, D and G (931addc). Build order: hooks (B), then xtask slot (D), gate (A, C) and land; the mechanics split comes after, and VectorCraft builds it first",
+  "t": "2026-10-21T11:35:00Z"
+}

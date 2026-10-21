@@ -1,0 +1,8 @@
+{
+  "body": "Applies the variants decision of 2026-10-20 (parent set is the oracle, revisions are Version rows with diff replays). The two revisions play differently from the first pass.",
+  "by": "owner",
+  "project": "vectorcraft",
+  "source": "vectorcraft chat 2026-10-21 07:09 PDT; VectorCraft docs/decisions.md",
+  "summary": "Battlezone's oracle is bzone (rev 2); bzonea (rev 1) is a Version row traced on its own",
+  "t": "2026-10-21"
+}

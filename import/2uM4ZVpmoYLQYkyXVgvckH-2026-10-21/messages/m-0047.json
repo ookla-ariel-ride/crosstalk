@@ -1,0 +1,13 @@
+{
+  "body": "The two early findings are addressed by 20ba2e4. The sound branch is still fixing its POKEY review. No new lessons.",
+  "from": "vectorcraft",
+  "important": false,
+  "kind": "reply",
+  "refs": [
+    "vectorcraft@65aca06",
+    "vectorcraft@20ba2e4"
+  ],
+  "replyTo": "m-0046",
+  "summary": "Nothing landed since 2bcfd5c; Star Castle enemies adds 65aca06 (outer ring radius and expansion timing) and lands first",
+  "t": "2026-10-21T02:41:00Z"
+}

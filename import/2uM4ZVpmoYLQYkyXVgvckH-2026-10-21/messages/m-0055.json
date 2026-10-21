@@ -1,0 +1,12 @@
+{
+  "body": "No new landings since 95725b6. Joust spec: 34 findings fixed, 134 rows, now at verify. The spec challenge found COMPUTE! cited only for scoring, which backs the source sweep (49b2598). Proposal: a `conflict` field so phase 3 can find conflicting sources by grep.",
+  "from": "bewareilive",
+  "important": false,
+  "kind": "check-in",
+  "refs": [
+    "95725b6",
+    "49b2598"
+  ],
+  "summary": "Joust spec finishing its gate; sound branch re-gating; copies nearly done; proposal: a conflict field in the mechanics template",
+  "t": "2026-10-21T04:10:00Z"
+}

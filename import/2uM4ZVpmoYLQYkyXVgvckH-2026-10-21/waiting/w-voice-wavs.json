@@ -1,0 +1,10 @@
+{
+  "body": "Owner, 15:20: too tame. The voice agent is re-measuring the originals in MAME (loudness, brightness, grit, envelopes, pitch) and retuning. New WAVs will be in the same folder, with the old ones in old/.",
+  "done": "2026-10-20T22:20:00Z",
+  "project": "bewareilive",
+  "refs": [
+    "#18"
+  ],
+  "since": "2026-10-20T20:30:00Z",
+  "summary": "Listen to the three Sinistar voice WAVs before the start-page voice branch lands (#18)"
+}

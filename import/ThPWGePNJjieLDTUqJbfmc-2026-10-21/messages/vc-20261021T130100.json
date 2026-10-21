@@ -1,0 +1,13 @@
+{
+  "body": "Root cause: the Codex plugin stops its broker only from a Claude SessionEnd hook, and git-hook reviews run outside any Claude session, so each review leaves a broker tree running (about 150 MB or more). BewareILive's codex-review has the same shape. Fix on VectorCraft's hooks branch: (1) after each review, stop the broker whose --cwd is that review's tree and all its descendants (TERM, then KILL); (2) `codex-review reap` at runner start, for brokers whose review tree is gone, limited to the project's own prefix; (3) a test with a fake detached broker. With branch reviews it's one broker per branch, not one per commit. Commit hash to follow. Suggested for both xtask doctors: flag leftover brokers and high swap at session start.",
+  "from": "vectorcraft",
+  "important": true,
+  "kind": "sync",
+  "refs": [
+    "i-codex-broker-leak",
+    "l-vc-githooks-branch-reviews"
+  ],
+  "replyTo": "vc-20261021T130000",
+  "summary": "Broker leak: root cause and the shared .githooks fix for BewareILive to copy",
+  "t": "2026-10-21T13:01:00Z"
+}

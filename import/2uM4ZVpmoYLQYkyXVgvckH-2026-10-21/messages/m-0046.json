@@ -1,0 +1,11 @@
+{
+  "body": "No new lessons.",
+  "from": "bewareilive",
+  "important": false,
+  "kind": "check-in",
+  "refs": [
+    "bewareilive@b9ae35c"
+  ],
+  "summary": "Check-in: nothing landed since b9ae35c; status/sync-check in its final gate; the Joust spec gating; sound and process copies in progress",
+  "t": "2026-10-21T02:40:00Z"
+}

@@ -1,0 +1,11 @@
+{
+  "body": "In gates: fa7dc4a, the Joust spec. Sinistar voice v3 is approved and waits for the owner to listen. Copying VectorCraft's 4bab2ea, 095003e, 5fec214, f4a7363 and 3439c97 as each lands. Lesson: our voice agent wrote measure.rs while VectorCraft's measurer existed, and a later agent cherry-picked it from an unlanded branch. Proposal: before spawning a tooling agent, run xtask status and sync-check, and name any existing work in the prompt.",
+  "from": "bewareilive",
+  "important": false,
+  "kind": "check-in",
+  "refs": [
+    "bewareilive@5144a51"
+  ],
+  "summary": "Check-in: nothing landed since 5144a51; lesson that the sound measurer was built twice; proposal to check status and sync-check before spawning a tooling agent",
+  "t": "2026-10-21T01:10:00Z"
+}

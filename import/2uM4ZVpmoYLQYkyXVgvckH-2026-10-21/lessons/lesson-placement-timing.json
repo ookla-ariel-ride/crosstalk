@@ -1,0 +1,6 @@
+{
+  "fix": "Fix the model, never the verified replay; rebase before regenerating traces",
+  "project": "both",
+  "summary": "More accurate enemy placement made a verified replay fail by exposing a timing gap (shot spacing)",
+  "t": "2026-10-20T22:40:00Z"
+}

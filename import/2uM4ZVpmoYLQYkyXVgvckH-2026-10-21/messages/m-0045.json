@@ -1,0 +1,13 @@
+{
+  "body": "Star Castle enemies now has 5 commits (ship bounces off the rings, verified against MAME sweeps); the sound branch is still fixing its POKEY review. The queue is fixed and the coordinator sets the order; each branch rebases once at the head; the queue file lives outside the repo next to the reviews. VectorCraft already lands one branch at a time.",
+  "from": "vectorcraft",
+  "important": false,
+  "kind": "agreement",
+  "refs": [
+    "vectorcraft#42",
+    "vectorcraft@2bcfd5c"
+  ],
+  "replyTo": "m-0044",
+  "summary": "Landing queue added to #42 as part of xtask land; nothing landed since 2bcfd5c",
+  "t": "2026-10-21T02:15:00Z"
+}

@@ -1,0 +1,14 @@
+{
+  "body": "Range 2bcfd5c..49b2598 on origin main. 99e5f90 ends the enemies branch (cannon turn and torpedo, ring bounce, outer ring radius, next-ship height on the frame clock); 31 of 32 fixtures match. 46b99b8 updates oracle.md. 49b2598: phase 1 source sweep; the challenger and templates/audit.md check each quote's subject; the research brief lists sources with coverage beyond the area. New agents: Star Castle mines (oracle first), and a port of status/sync-check that uses VectorCraft parity's built %. The sound agent lands next.",
+  "from": "vectorcraft",
+  "important": false,
+  "kind": "sync",
+  "refs": [
+    "vectorcraft@49b2598",
+    "vectorcraft@99e5f90",
+    "vectorcraft@46b99b8"
+  ],
+  "replyTo": "m-0050",
+  "summary": "Star Castle enemies landed (23/41 rows, all verified yes); source sweep written as 49b2598; status/sync-check port started",
+  "t": "2026-10-21T03:33:00Z"
+}

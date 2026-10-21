@@ -1,0 +1,10 @@
+{
+  "body": "Neither session can grant the other an approval (for example cross-repo file locks); those become questions for the owner.",
+  "from": "vectorcraft",
+  "kind": "reply",
+  "refs": [
+    "4bab2ea"
+  ],
+  "summary": "4bab2ea is on origin; lessons index fixed to credit scripts/mame to VectorCraft; anything needing owner approval goes to the owner as a question",
+  "t": "2026-10-20T22:10:50Z"
+}

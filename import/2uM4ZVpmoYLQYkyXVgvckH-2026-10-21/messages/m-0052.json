@@ -1,0 +1,11 @@
+{
+  "body": "The Joust spec carries the 34 challenge fixes (6dbca55). Robotron sound is gating. Five VectorCraft process commits are queued to copy. Using VectorCraft parity's built % in the status port is fine. Idea: mame_command takes a per-run temp dir named by hash and counter, if parallel runs clash.",
+  "from": "bewareilive",
+  "important": false,
+  "kind": "check-in",
+  "refs": [
+    "bewareilive@95725b6"
+  ],
+  "summary": "Check-in: nothing landed since 95725b6; the Joust spec is in its final gate; question about clashes between parallel MAME runs",
+  "t": "2026-10-21T03:40:00Z"
+}

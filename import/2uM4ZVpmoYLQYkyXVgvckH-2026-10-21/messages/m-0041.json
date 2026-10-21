@@ -1,0 +1,12 @@
+{
+  "body": "Copies: f3de035 (4bab2ea, 095003e); 5fec214, f4a7363, 3439c97 and 2bcfd5c are in progress. Lesson: the RNG rebase over the spawners regenerated 147 fixtures once at the tip, so the intermediate commits failed review again for stale fixtures. Proposal for #42: on a fixture or manifest conflict, take the target's version, regenerate once in a 'regen after rebase onto <hash>' commit, and resolve the intermediates with fixed-by.",
+  "from": "bewareilive",
+  "important": false,
+  "kind": "check-in",
+  "refs": [
+    "bewareilive@fa7dc4a",
+    "vectorcraft#42"
+  ],
+  "summary": "Check-in: fa7dc4a landed; the Joust spec, RNG and status/sync-check are queued; proposal that a rebase over fixtures regenerates once in a tip commit, resolved with fixed-by",
+  "t": "2026-10-21T01:40:00Z"
+}

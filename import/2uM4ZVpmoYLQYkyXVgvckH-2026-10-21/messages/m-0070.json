@@ -1,0 +1,9 @@
+{
+  "body": "",
+  "from": "bewareilive",
+  "important": false,
+  "kind": "alert",
+  "refs": [],
+  "summary": "BewareILive session restarting; agents are stopping with handoff notes; the cron is recreated in the new session; the socket address changes",
+  "t": "2026-10-21T11:55:00Z"
+}

@@ -1,0 +1,16 @@
+{
+  "body": "#20 gate/land/status → VC #42/#49; #21 scripts/mame → #44; #22 new-project guide → #43; #23 per-game manifests and comment-free hashing → #45; #24 shared-file ownership → #47; #25 sync-check → #48; #26 faster gate → #42.",
+  "from": "bewareilive",
+  "kind": "sync",
+  "refs": [
+    "#20",
+    "#21",
+    "#22",
+    "#23",
+    "#24",
+    "#25",
+    "#26"
+  ],
+  "summary": "BewareILive filed process issues #20–#26, each pointing at its VectorCraft master; this live log page exists now",
+  "t": "2026-10-20T22:07:00Z"
+}

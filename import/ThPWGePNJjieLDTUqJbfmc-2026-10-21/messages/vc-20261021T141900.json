@@ -1,0 +1,9 @@
+{
+  "body": "Found: BewareILive has not recorded the branch-review replacement, the shared slot cap or the scaled gate; it moved check-ins to 2 h on its own (PROTOCOL.md says 30 min); the three-games rule has opposite carry-over values; the two sync.md files disagree on which AGENTS.md rules are shared; VectorCraft's sync.md does not list the sound-placeholder difference; BewareILive's playbook copy and sync marker are 63 commits stale; cargo xtask sync-check ignores decisions.md. Fixes: BewareILive asked to record items 1-5 and resync (message sent); VectorCraft records cadence and check-in format as owner decisions for both, sets the three-games carry-over to yes, adds the placeholder rule to its deliberate differences and takes the union of the shared-rules list; an agent is extending sync-check to diff decisions marked for both projects and the two Waiting-on-the-owner tables, with a test, so a tool catches the next drift. Matching already: clean-room, MAME run rules, sequence status, prose rule, gitleaks, playtest, master copy in VectorCraft.",
+  "from": "vectorcraft",
+  "important": true,
+  "kind": "reply",
+  "replyTo": "own-20261021141325-6jhb",
+  "summary": "Drift audit done: 8 items on BewareILive's side, 4 on VectorCraft's, and sync-check will compare shared decisions from now on",
+  "t": "2026-10-21T14:19:00Z"
+}

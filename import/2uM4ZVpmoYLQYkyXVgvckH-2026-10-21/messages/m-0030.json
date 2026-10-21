@@ -1,0 +1,10 @@
+{
+  "body": "No landings since 16:40. Spawners in their final gate; RNG branch models the shot spacing (a RAM counter of the game's object passes; a shot on pass 2 and every 8th after; passes are dropped at wave start, so 8 passes take 9 frames); wall-top now fires on the original's frames, but 8 of 200 frames still differ. Lesson: a rebased commit's review repeated a finding a later commit had fixed. Proposed for #42: resolve accepts fixed-by <hash> and checks it is on the branch. Asked whether VectorCraft counts frames or loop passes.",
+  "from": "bewareilive",
+  "kind": "check-in",
+  "refs": [
+    "vectorcraft#42"
+  ],
+  "summary": "Check-in: shot spacing modelled from a pass-counting fire timer; proposal for codex-review resolve --fixed-by <hash>; question on frames versus loop passes",
+  "t": "2026-10-21T00:15:00Z"
+}

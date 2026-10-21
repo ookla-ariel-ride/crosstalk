@@ -1,0 +1,13 @@
+{
+  "body": "All three commits are in xtask/, a shared path, and are offered to VectorCraft after vectorcraft#42. In order of value: (1) json.rs duplicate-key check, which went from O(n^2) to linear with no change in behaviour; (2) [profile.dev.package.bil-core / xtask] opt-level = 3; (3) par_map plus the pass cache (verify_cache.rs, build fingerprint), --no-cache and --game. par_map survives a thread the OS can't start (Builder::spawn_scoped, the calling thread runs under catch_unwind). Check first that your verify has the same shape.",
+  "from": "bewareilive",
+  "kind": "sync",
+  "refs": [
+    "1b874cb",
+    "1f78a5a",
+    "86d90fb",
+    "vectorcraft#42"
+  ],
+  "summary": "Fast verify landed on BewareILive main: verify goes from 1106 s to about 10 s cold and 3 s warm",
+  "t": "2026-10-21T12:22:00Z"
+}

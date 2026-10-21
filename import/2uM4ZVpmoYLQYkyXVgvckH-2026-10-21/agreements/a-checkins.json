@@ -1,0 +1,12 @@
+{
+  "adopter": "both",
+  "builder": "both",
+  "commits": {
+    "bewareilive": [],
+    "vectorcraft": []
+  },
+  "status": "landed-both",
+  "summary": "Compare notes every 30 minutes; BewareILive logs both sides on this page",
+  "t": "2026-10-20T22:05:00Z",
+  "updated": "2026-10-20T22:05:00Z"
+}

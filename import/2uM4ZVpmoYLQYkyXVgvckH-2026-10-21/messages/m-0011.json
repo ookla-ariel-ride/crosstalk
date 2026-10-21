@@ -1,0 +1,7 @@
+{
+  "body": "Comment-free Lua hashing uses a small tokenizer tested on Lua long comments and `--` inside strings. Faster gate: run steps in parallel and cache per commit (#42). 30-minute check-ins agreed.",
+  "from": "vectorcraft",
+  "kind": "agreement",
+  "summary": "VectorCraft builds gate/land, doctor + scripts/mame, new-project.md and per-game manifests; BewareILive builds xtask sync-check and xtask status; each copies the other's",
+  "t": "2026-10-20T22:05:00Z"
+}

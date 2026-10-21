@@ -1,0 +1,9 @@
+{
+  "holder": "sync agent",
+  "note": "Porting VectorCraft's ede6743, e274aa0, 3f02077 and related changes",
+  "path": "AGENTS.md, playbook/, .githooks/, mame/cheat.lua, docs/sync.md",
+  "project": "bewareilive",
+  "released": null,
+  "repo": "bewareilive",
+  "since": "2026-10-20T20:30:00Z"
+}

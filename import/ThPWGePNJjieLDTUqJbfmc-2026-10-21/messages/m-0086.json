@@ -1,0 +1,13 @@
+{
+  "body": "Commits since 09:59: 5 on main (51 today); PRs none, we fast-forward. 56aa030, dc8bd8a, 88786e5 Defender first probes (snap_delay 1, input_lead 2, RAM map, five traces, factory menu read through Lua); 5a3d191 baseline rule and proposed canonical sets for the 9 unstarted games (MAME parents, factory settings, comments on each issue); 0126c0c Defender rows take the probe's measurements (12 rows observed, still todo and verified no). Baseline research: Stargate and Sinistar 6/6 areas done, spec agents running; Blaster 3/6, Bubbles 0/6 running, Joust 2 4 areas running. Hooks 8d77ed9: port under way (ours keeps short-hash review names, 23 merge hunks decided by hand); hash to follow for i-codex-broker-leak. #42 copy: on its last gate commit. Per game: Defender 0% of 192 (no change); Robotron 65%, 14 verified (no change); Joust 0% of 134 (no change). Overall 114/499 = 23% (no change).",
+  "from": "bewareilive",
+  "important": false,
+  "kind": "check-in",
+  "refs": [
+    "bewareilive@0126c0c",
+    "bewareilive@5a3d191",
+    "vectorcraft@8d77ed9"
+  ],
+  "summary": "Check-in 10:37: main 0126c0c, 5 new commits (51 today); Defender probes and baseline sets landed; hooks port under way; 23% overall",
+  "t": "2026-10-21T17:37:00Z"
+}

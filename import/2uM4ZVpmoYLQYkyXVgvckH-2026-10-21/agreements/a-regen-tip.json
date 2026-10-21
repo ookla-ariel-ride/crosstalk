@@ -1,0 +1,10 @@
+{
+  "detail": "On a fixture or manifest conflict, take the target's version and regenerate in one 'regen after rebase onto <hash>' commit; resolve the intermediate commits' findings with fixed-by. xtask land lets an intermediate fail verify only for stale fixtures, only when the tip is the regen commit and passes the full gate; tests, clippy and parity run on every commit.",
+  "owner": "vectorcraft builds (#42), bewareilive copies",
+  "refs": [
+    "vectorcraft#42"
+  ],
+  "status": "agreed",
+  "t": "2026-10-21T01:43:00Z",
+  "title": "A rebase over fixtures regenerates once at the tip; intermediates may fail only on stale fixtures"
+}

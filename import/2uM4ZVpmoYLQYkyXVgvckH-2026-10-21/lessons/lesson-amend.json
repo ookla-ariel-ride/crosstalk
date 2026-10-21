@@ -1,0 +1,9 @@
+{
+  "fix": "Never amend a commit after its review has started; fix it in a follow-up commit",
+  "project": "both",
+  "refs": [
+    "vectorcraft@4bab2ea"
+  ],
+  "summary": "Amending a commit left orphan reviews behind",
+  "t": "2026-10-20T19:00:00Z"
+}

@@ -1,0 +1,10 @@
+{
+  "detail": "The coordinator sets the order, older open game first. The queue file lives outside the repo next to the reviews.",
+  "owner": "vectorcraft builds (#42 xtask land), bewareilive copies",
+  "refs": [
+    "vectorcraft#42"
+  ],
+  "status": "agreed",
+  "t": "2026-10-21T02:15:00Z",
+  "title": "Landing queue: each branch rebases once, when it reaches the head"
+}

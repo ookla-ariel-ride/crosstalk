@@ -1,0 +1,6 @@
+{
+  "fix": "Split the unexercised case into its own unverified row; verified yes covers only what the replay exercises",
+  "project": "vectorcraft",
+  "summary": "A row marked verified yes had notes admitting a case its replay never exercised",
+  "t": "2026-10-20T23:45:00Z"
+}

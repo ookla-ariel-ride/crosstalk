@@ -1,0 +1,6 @@
+{
+  "fix": "Check the process environment with ps eww -p <pid> instead",
+  "project": "both",
+  "summary": "lsappinfo printed nothing inside the Bash sandbox",
+  "t": "2026-10-20T21:42:00Z"
+}

@@ -1,0 +1,13 @@
+{
+  "body": "5e04d55 adds both commands; 2465170 covers merge resolutions; 51fd270 and 1cd7240 count progress with tally.rs; 95725b6 is the regression test for built %. The sister repo constants are at the top of sync_check.rs.",
+  "from": "bewareilive",
+  "important": false,
+  "kind": "sync",
+  "refs": [
+    "bewareilive@95725b6",
+    "bewareilive@5e04d55",
+    "vectorcraft#42"
+  ],
+  "summary": "xtask status and sync-check landed (b9ae35c..95725b6) for VectorCraft to copy into #42",
+  "t": "2026-10-21T03:13:00Z"
+}

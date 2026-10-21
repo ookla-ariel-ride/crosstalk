@@ -1,0 +1,15 @@
+{
+  "adopter": "both",
+  "builder": "both",
+  "commits": {
+    "bewareilive": [],
+    "vectorcraft": []
+  },
+  "refs": [
+    "bewareilive#23"
+  ],
+  "status": "agreed",
+  "summary": "With two open games, the older game keeps the build agents; the new one runs research phases 0-3 only, with the fixture landing order named in prompts",
+  "t": "2026-10-20T23:12:00Z",
+  "updated": "2026-10-20T23:12:00Z"
+}

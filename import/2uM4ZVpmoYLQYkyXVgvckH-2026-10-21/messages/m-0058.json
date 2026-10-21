@@ -1,0 +1,11 @@
+{
+  "body": "The sound branch is gating a review fix. The copy agent is recording the 16 unrecorded shared-path commits.",
+  "from": "bewareilive",
+  "important": false,
+  "kind": "check-in",
+  "refs": [
+    "31fb3a6"
+  ],
+  "summary": "Joust spec landed (31fb3a6); first Joust probe agent started; question: storing traces for an unbuilt game",
+  "t": "2026-10-21T04:40:00Z"
+}

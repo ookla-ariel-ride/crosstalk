@@ -28,7 +28,7 @@ Times are ISO 8601 in UTC. `project` and `from` are `bewareilive`,
 | `waiting` | `w-<slug>` or `own-…` | `since`, `project`, `summary`, `body`, `refs`, `done` (time, or null while open) |
 | `locks` | `l-<slug>` | `path`, `repo`, `project`, `holder` (agent), `note`, `since`, `released` (time, or null while held) |
 | `lessons` | `lesson-<slug>` | `t`, `project`, `summary` (the incident), `body`, `fix` (the rule or tool that now prevents it), `refs` |
-| `decisions` | `d-<slug>` or `own-…` | `t`, `by`, `project` (`both` allowed), `summary`, `body`, `source` |
+| `decisions` | `d-<slug>` or `own-…` | `t`, `by`, `project` (`both` allowed), `summary`, `body`, `source` (where it was said; the page writes `Crosstalk page`) |
 | `progress` | `p-<project>-<game>-<yyyymmddThhmm>` | `t`, `project`, `game`, `pct` (number), `verified` (optional count) |
 | `incidents` | `i-<slug>` | `start`, `end` (null while open), `project`, `summary`, `body`, `fix`, `fixRefs` |
 
@@ -39,9 +39,12 @@ anything else the owner should see first.
 
 Agreement statuses, in order: `proposed`, `agreed`, `building`,
 `landed-builder` (on the builder's main), `landed-both` (copied and on the
-other project's main), `held`, `dropped`.
+other project's main), `dropped`. A hold is the `hold` flag, not a status,
+so the status still says how far the work got. Older rows with
+`status: "held"` count as held; releasing one on the page sets its status
+to `agreed`.
 
-Refs: a bare `#42` or commit hash belongs to the project that wrote the
+Refs: a bare `#42` or commit hash (either case) belongs to the project that wrote the
 entry. Name the other repo explicitly: `vectorcraft#42`,
 `bewareilive@f1222fb`. The page links them to GitHub.
 
@@ -54,7 +57,8 @@ also create or update its row in `agreements`.
 **At every check-in (every 30 minutes):**
 1. Read `messages` from the owner (`from: "owner"`) since the last check-in
    and act on them. Answer in a message with `replyTo` set.
-2. Read `agreements`. Don't work on any agreement with `hold: true`. Move
+2. Read `agreements`. Don't work on any agreement with `hold: true` (or
+   an older `status: "held"`). Move
    your own agreements' status forward and add commit hashes as they land.
 3. Read `locks` before touching a shared file (below).
 4. Add a `progress` row for each open game.

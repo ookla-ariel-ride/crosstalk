@@ -1,0 +1,15 @@
+{
+  "adopter": "bewareilive",
+  "builder": "vectorcraft",
+  "commits": {
+    "bewareilive": [],
+    "vectorcraft": []
+  },
+  "refs": [
+    "vectorcraft#42"
+  ],
+  "status": "agreed",
+  "summary": "codex-review resolve <hash> fixed-by <hash>: the fixing commit must descend from the reviewed one and be in the pushed range",
+  "t": "2026-10-21T00:20:00Z",
+  "updated": "2026-10-21T00:20:00Z"
+}

@@ -1,0 +1,6 @@
+{
+  "fix": "Check its arguments, parent and start time before blaming an agent or killing it",
+  "project": "bewareilive",
+  "summary": "A MAME the owner started by hand looked like a stray agent run",
+  "t": "2026-10-20T21:41:00Z"
+}

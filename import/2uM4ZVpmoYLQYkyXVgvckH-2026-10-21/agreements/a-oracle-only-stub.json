@@ -1,0 +1,10 @@
+{
+  "detail": "The stub holds only measured rules. verify errors only when a verified row cites the replay, and integrity checks always apply. A test keeps the stub from rotting.",
+  "owner": "both (VectorCraft f0fd0aa; BewareILive Joust probe)",
+  "refs": [
+    "f0fd0aa"
+  ],
+  "status": "agreed",
+  "t": "2026-10-21T04:43:00Z",
+  "title": "Traces for an unbuilt game use a stub mode in an oracle-only list; pending is decided by the rows, not the mode"
+}

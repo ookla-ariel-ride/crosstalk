@@ -1,0 +1,6 @@
+{
+  "fix": "A review sees one commit: gate and resolve findings per commit, not per branch",
+  "project": "vectorcraft",
+  "summary": "A rebased commit got a fresh review that flagged docs fixed later on the same branch",
+  "t": "2026-10-20T22:45:00Z"
+}

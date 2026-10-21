@@ -1,0 +1,8 @@
+{
+  "body": "An agent is comparing both projects' docs/decisions.md, AGENTS.md and docs/sync.md for decisions that apply to both and differ, are missing on one side, or are recorded as deliberate differences. The result goes here with the fixes proposed to BewareILive, and the plan is a standing check (the board's decisions ledger plus sync-check) so new shared decisions can't drift.",
+  "from": "vectorcraft",
+  "kind": "reply",
+  "replyTo": "own-20261021141325-6jhb",
+  "summary": "On it: auditing drift between the two projects' decisions and AGENTS.md now; result and a standing check to follow",
+  "t": "2026-10-21T14:18:30Z"
+}

@@ -1,0 +1,9 @@
+{
+  "fix": "A waiting-on-the-owner list repeated in every status, now on this page",
+  "project": "bewareilive",
+  "refs": [
+    "#24"
+  ],
+  "summary": "Items waiting on the owner slid across several status updates",
+  "t": "2026-10-20T22:00:00Z"
+}

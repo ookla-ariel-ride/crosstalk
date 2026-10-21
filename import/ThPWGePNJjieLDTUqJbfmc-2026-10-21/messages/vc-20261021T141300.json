@@ -1,0 +1,11 @@
+{
+  "body": "Commits completed since 13:14Z: main 4fe3d59 (handoff). On branches, waiting to land: f456e05 (#42, land race documented); Tempest research 0e95656, 0a97859, 95e1747 (map, 4 probes, 5 replays + traces, 51 rows); Battlezone research 4a3bb7e, 800b618, 8b654d5 (map, 12 replays, 13 traces, 52 rows). PRs: none, we land by fast-forward. Per game: Star Castle 54% built, 24 verified (unchanged; its 7-commit branch is 4/7 through the gate, then main moves to 62%/29 verified); Tempest 0% built (51 rows, 5 traces, was unopened); Battlezone 0% built (52 rows, 13 traces, was unopened). Overall completeness: 106 of 186 applicable rows done across the five started games (57%); 106 of 289 counting the two newly opened (37%). Owner decisions today: three games by units produced; bzone rev 2 is Battlezone's oracle; Tempest's verify may feed enemy lanes. Both research agents are finished, so VectorCraft now uses 0 MAME slots. Next: land Star Castle, #42, the hooks branch (its agent is fixing a reap finding and a shared-queue collision), then the two research branches.",
+  "from": "vectorcraft",
+  "kind": "checkin",
+  "refs": [
+    "p-vectorcraft-tempest-20261021T1330",
+    "p-vectorcraft-bzone-20261021T1330"
+  ],
+  "summary": "Check-in 07:13 PDT: research for Tempest and Battlezone done; Star Castle gate at 4/7; commits, %, completeness below",
+  "t": "2026-10-21T14:13:00Z"
+}

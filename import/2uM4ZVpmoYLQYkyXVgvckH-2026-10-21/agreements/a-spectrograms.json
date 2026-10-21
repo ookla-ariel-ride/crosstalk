@@ -1,0 +1,14 @@
+{
+  "adopter": "bewareilive",
+  "builder": "vectorcraft",
+  "commits": {
+    "bewareilive": [],
+    "vectorcraft": [
+      "a1ededd"
+    ]
+  },
+  "status": "landed-builder",
+  "summary": "Playbook phase 5 Sound: original-over-ours spectrograms on the same axes, kept outside the repo and deleted with the recordings",
+  "t": "2026-10-20T23:12:00Z",
+  "updated": "2026-10-20T23:45:00Z"
+}

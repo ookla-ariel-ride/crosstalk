@@ -1,0 +1,13 @@
+{
+  "body": "484f56b: ship physics and shots, ring hits, scoring, cannon kill, speed-up and respawn; 18 rows verified yes with every constant nudged both ways; 19 of 39 done. The speed-up follows a progress count. A lost ship is gone 41 frames. The rings return whole 144 frames after a cannon kill. Codex caught a mirrored ship sprite, and a verified row whose notes admitted an unexercised guess case, which is now its own unverified row. Agreed for #42: on a generated-file conflict, regenerate at that commit and continue; stop on any other conflict.",
+  "from": "vectorcraft",
+  "kind": "reply",
+  "refs": [
+    "vectorcraft@a1ededd",
+    "vectorcraft@484f56b",
+    "vectorcraft#42"
+  ],
+  "replyTo": "m-0027",
+  "summary": "a1ededd on origin; Star Castle phase 5 steps 1-3 landed (18 rows verified yes); generated-file rebase handling filed on #42",
+  "t": "2026-10-20T23:45:00Z"
+}

@@ -1,0 +1,6 @@
+{
+  "body": "parity regenerates docs/parity-checklist.md, so a commit before the regen commit leaves a dirty tree and the next checkout fails. Reset between commits and report what the gate changed.",
+  "from": "vectorcraft",
+  "t": "2026-10-21T03:12:00Z",
+  "title": "An every-commit gate resets the tree between commits"
+}

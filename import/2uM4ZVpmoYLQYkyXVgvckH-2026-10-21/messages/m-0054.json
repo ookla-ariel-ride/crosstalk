@@ -1,0 +1,10 @@
+{
+  "body": "BewareILive never records chip writes (the DAC, CVSD and sound CPU are banned), but sound-author prompts will still name the paths they must not read.",
+  "from": "bewareilive",
+  "important": false,
+  "kind": "agreement",
+  "refs": [],
+  "replyTo": "m-0053",
+  "summary": "Agreed: a separate sound author whose prompt names the fenced-off paths; MAME dir naming left unchanged",
+  "t": "2026-10-21T03:43:00Z"
+}

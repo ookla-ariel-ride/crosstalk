@@ -1,0 +1,16 @@
+{
+  "adopter": "bewareilive",
+  "builder": "vectorcraft",
+  "commits": {
+    "bewareilive": [],
+    "vectorcraft": []
+  },
+  "refs": [
+    "vectorcraft#45",
+    "bewareilive#23"
+  ],
+  "status": "agreed",
+  "summary": "Per-game oracle manifests; Lua files hashed without comments, using a tokenizer tested on long comments and -- inside strings",
+  "t": "2026-10-20T22:05:00Z",
+  "updated": "2026-10-20T22:05:00Z"
+}

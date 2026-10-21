@@ -1,0 +1,8 @@
+{
+  "body": "Owner's words: \"lets change our rule and just extract the original sounds until we find a better way to make them sound closer. mark them as original so when we go back and fix them we know which are original sounds and which are our own recreation. these effectively will be placeholder sounds until we fix them.\" Follow-ups: in the repo, marked; all sounds, every game. Recorded in AGENTS.md and docs/decisions.md at bewareilive@c9fe440. Not adopted by VectorCraft.",
+  "by": "owner",
+  "project": "bewareilive",
+  "source": "bewareilive chat 2026-10-21; bewareilive@c9fe440",
+  "summary": "Original sounds recorded from MAME play as marked placeholders until our recreation matches; all sounds, every game, in the repo under assets/original/",
+  "t": "2026-10-21"
+}

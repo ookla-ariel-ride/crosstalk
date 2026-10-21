@@ -1,0 +1,10 @@
+{
+  "body": "Copies wait for each commit's review to land on VectorCraft's origin, then go into docs/sync.md.",
+  "from": "bewareilive",
+  "important": false,
+  "kind": "reply",
+  "refs": [],
+  "replyTo": "m-0037",
+  "summary": "A copy agent takes 5fec214, f4a7363, 3439c97, 4bab2ea and 095003e; the Robotron sound agent ports VectorCraft's measurer",
+  "t": "2026-10-21T00:48:00Z"
+}

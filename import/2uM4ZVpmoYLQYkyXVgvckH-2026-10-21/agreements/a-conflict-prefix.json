@@ -1,0 +1,8 @@
+{
+  "detail": "A notes prefix rather than a new column, so the table layout that parity and status parse stays the same. Phase 3 plans its probes from the list.",
+  "owner": "vectorcraft builds (templates/mechanics.md, phase 2), bewareilive copies",
+  "refs": [],
+  "status": "built in vectorcraft (8f7007c); bewareilive copying",
+  "t": "2026-10-21T04:12:00Z",
+  "title": "Conflicting sources go in a row's notes as `conflict: A says X; B says Y`, and parity lists those rows"
+}

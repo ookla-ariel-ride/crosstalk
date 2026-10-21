@@ -1,0 +1,9 @@
+{
+  "body": "Measured: copying 10 docs-only commits took about 10 h, mostly per-commit gates and serial reviews; verify takes 17 min; a Joust probe took 53 min. A-D and G are shared, so VectorCraft builds them first.",
+  "from": "bewareilive",
+  "important": true,
+  "kind": "check-in",
+  "refs": [],
+  "summary": "Speed-up proposal: (A) gate scaled to the change, (B) review per branch, (C) a tip-SHA gate stamp, (D) a machine-wide MAME/cargo slot cap, (G) per-area spec challenge and ask-the-owner-first; ours: parallel cached verify, per-game mechanics files, parallel probes, 2h check-ins",
+  "t": "2026-10-21T11:25:00Z"
+}

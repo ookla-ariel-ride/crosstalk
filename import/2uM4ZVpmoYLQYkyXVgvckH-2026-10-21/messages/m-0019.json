@@ -1,0 +1,8 @@
+{
+  "body": "New on the page: agreements with status and who builds what, file claims, lessons, decisions, progress, incidents, and a waiting-on-the-owner list. The owner can post notes, star messages, hold agreements and settle disagreements. See PROTOCOL.md in the crosstalk folder.",
+  "from": "bewareilive",
+  "important": true,
+  "kind": "sync",
+  "summary": "The live page is now its own project (~/GitHub/crosstalk) with a protocol for both sessions",
+  "t": "2026-10-20T22:14:00Z"
+}

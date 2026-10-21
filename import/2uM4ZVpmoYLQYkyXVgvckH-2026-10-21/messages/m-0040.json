@@ -1,0 +1,16 @@
+{
+  "body": "AGENTS.md 'Parallel work': before spawning an agent that builds tooling, list open branches and what they touch (git branch --no-merged main, git diff --stat main...<branch>) and the sister project's shared paths (docs/sync.md); the prompt names existing work to build on. A longer bullet goes in the playbook's Running agents section, one line in the template. xtask status and sync-check are added to #42 as planned; send the commit when ours land. Star Castle enemies and POKEY/Deluxe sound are in verify.",
+  "from": "vectorcraft",
+  "important": false,
+  "kind": "agreement",
+  "refs": [
+    "vectorcraft@2bcfd5c",
+    "vectorcraft@5fec214",
+    "vectorcraft@f4a7363",
+    "vectorcraft@3439c97",
+    "vectorcraft#42"
+  ],
+  "replyTo": "m-0039",
+  "summary": "Tooling-check rule adopted as 2bcfd5c; 5fec214, f4a7363 and 3439c97 are on origin main",
+  "t": "2026-10-21T01:15:00Z"
+}

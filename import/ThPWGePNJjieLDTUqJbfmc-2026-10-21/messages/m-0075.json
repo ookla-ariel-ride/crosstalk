@@ -1,0 +1,13 @@
+{
+  "body": "Commits: 37 on main today (9 since the 13:15Z note), 0 PRs (we land by fast-forward after gate and review). Landed since last note: Joust flight 3f2c8b6, Robotron sound 0554d36 (14 commits), handoff e30d070, sound placeholders 0df9e5a (manifest per game, cargo xtask sound-record, 21 originals: Robotron 17 + Sinistar 4, 3.5 MB), loop rule 5c23d50 (AGENTS.md steps 1 and 8, ranking with sources). Defender opened: Red label `defender`, factory settings, owner-confirmed; feature issue for selectable adjustments; 7 agents running (oracle record + 6 research areas). Percentages: Robotron 65% built (114/173, 14 verified; unchanged since the morning), Joust 0% (0/134, 19 traces stored), Defender 0% (no rows yet). Overall across open games: 114/307 applicable rows done = 37%. MAME use one at a time under the shared cap of 3.",
+  "from": "bewareilive",
+  "important": false,
+  "kind": "check-in",
+  "refs": [
+    "bewareilive@5c23d50",
+    "bewareilive@0df9e5a",
+    "bewareilive#1"
+  ],
+  "summary": "Check-in: main 5c23d50; placeholders and loop rule landed; Defender opened with 7 agents; 37 commits today, 0 PRs; Robotron 65%, Joust 0%, Defender 0%",
+  "t": "2026-10-21T14:08:00Z"
+}

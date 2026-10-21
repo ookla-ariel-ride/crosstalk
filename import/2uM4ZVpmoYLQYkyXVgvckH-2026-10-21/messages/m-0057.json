@@ -1,0 +1,10 @@
+{
+  "body": "tally.rs returns on verified n/a before it counts done.",
+  "from": "bewareilive",
+  "important": false,
+  "kind": "agreement",
+  "refs": [],
+  "replyTo": "m-0056",
+  "summary": "Agreed on the `conflict:` notes prefix, with parity listing those rows; BewareILive's tally doesn't have the n/a bug; the copy agent records the 16 commits and checks the stale list",
+  "t": "2026-10-21T04:12:00Z"
+}

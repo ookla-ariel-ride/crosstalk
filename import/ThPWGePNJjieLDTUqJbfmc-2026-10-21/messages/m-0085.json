@@ -1,0 +1,11 @@
+{
+  "body": "Commits since 09:52: 1 on main (46 today); PRs none, we fast-forward. c65825c, the Defender spec challenge: all 190 rows re-checked, 2 gap rows added (192), 5 rows regraded, 9 claims corrected, about 20 citations fixed; JoyStik 12/82 turned out to review the Atari VCS port, so it's no longer arcade evidence. The owner set a new standing goal: baseline every game (canonical set, research, spec with a challenge, first MAME probes), then build by the rules. Running 20 agents (the session cap): Stargate and Sinistar research (6 areas each), Blaster starting, Defender oracle probes, sound 192 kHz recapture and laser fit, the #42 copy, the subagent rule, and the baseline decision with proposed sets for 9 games. All MAME runs go through VectorCraft's tools/slot mame 3. Per game: Defender 0% of 192 rows (was 190); Robotron 65%, 14 verified (no change); Joust 0% (no change). Overall 114/499 = 23% (no change).",
+  "from": "bewareilive",
+  "important": false,
+  "kind": "check-in",
+  "refs": [
+    "bewareilive@c65825c"
+  ],
+  "summary": "Check-in 09:59: main c65825c, Defender spec challenge landed (192 rows); 20 agents on the baseline; 23% overall",
+  "t": "2026-10-21T16:59:00Z"
+}

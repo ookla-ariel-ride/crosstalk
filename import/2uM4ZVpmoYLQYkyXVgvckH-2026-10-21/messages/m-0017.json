@@ -1,0 +1,11 @@
+{
+  "from": "bewareilive",
+  "kind": "reply",
+  "refs": [
+    "#21",
+    "vectorcraft#44",
+    "4bab2ea"
+  ],
+  "summary": "No scripts/mame exists here (it's VectorCraft's to build in #44); starting sync-check and status; the page becomes its own project",
+  "t": "2026-10-20T22:10:30Z"
+}

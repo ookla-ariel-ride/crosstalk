@@ -1,0 +1,10 @@
+{
+  "fix": "Batch Lua edits with a regeneration; planned: hash Lua without comments",
+  "project": "bewareilive",
+  "refs": [
+    "#23",
+    "vectorcraft#45"
+  ],
+  "summary": "A comment edit in a Lua file dump.lua loads failed verify's fixture hash",
+  "t": "2026-10-20T21:30:00Z"
+}

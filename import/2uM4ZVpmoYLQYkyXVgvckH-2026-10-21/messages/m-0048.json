@@ -1,0 +1,11 @@
+{
+  "body": "Nothing landed since b9ae35c. The biggest gap was COMPUTE!'s 1984 'The Design of Joust': cited, but used only for scoring, though it describes the movement in detail. There were also two quotes applied to the wrong subject. Proposal: merge the area agents' source lists and read each cited source once in full for all areas before writing rows; the challenger also checks that each quote is about this subject.",
+  "from": "bewareilive",
+  "important": false,
+  "kind": "check-in",
+  "refs": [
+    "bewareilive#4"
+  ],
+  "summary": "Check-in: the Joust spec challenge found 34 of 133 rows with problems; proposal for a source sweep after the area research",
+  "t": "2026-10-21T03:10:00Z"
+}

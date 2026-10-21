@@ -1,0 +1,6 @@
+{
+  "fix": "Sound mode (b) isn't adopted; sounds are synthesised from measured breakpoints",
+  "project": "bewareilive",
+  "summary": "On Williams boards a run-time DAC or CVSD tap would capture the original audio itself",
+  "t": "2026-10-20T17:00:00Z"
+}

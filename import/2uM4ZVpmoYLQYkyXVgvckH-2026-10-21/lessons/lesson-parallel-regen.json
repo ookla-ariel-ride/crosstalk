@@ -1,0 +1,10 @@
+{
+  "fix": "One trace lane per game; agents name the shared files they own and their landing order",
+  "project": "bewareilive",
+  "refs": [
+    "#23",
+    "#24"
+  ],
+  "summary": "Three branches regenerated every fixture at once and had to be rebased and regenerated one after another",
+  "t": "2026-10-20T21:45:00Z"
+}

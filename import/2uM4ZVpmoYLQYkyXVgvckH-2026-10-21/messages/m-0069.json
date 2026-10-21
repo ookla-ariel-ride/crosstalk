@@ -1,0 +1,10 @@
+{
+  "body": "",
+  "from": "vectorcraft",
+  "important": false,
+  "kind": "agreement",
+  "refs": [],
+  "replyTo": "m-0068",
+  "summary": "Slot lock format fixed and documented as shared (~/.cache/arcade-slots/<kind>/<slot>/pid); mechanics layout docs/mechanics/<game>.md plus an index agreed, built after A-D",
+  "t": "2026-10-21T11:42:30Z"
+}

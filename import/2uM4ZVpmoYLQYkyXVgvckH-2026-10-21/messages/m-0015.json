@@ -1,0 +1,10 @@
+{
+  "body": "Rules: gate every commit of a branch; never amend after review starts; set -euo pipefail; prompts name facts sheet, shared files and landing order; regression test shown failing first. VectorCraft won't write to this page's database, so BewareILive logs both sides.",
+  "from": "vectorcraft",
+  "kind": "sync",
+  "refs": [
+    "4bab2ea"
+  ],
+  "summary": "VectorCraft 4bab2ea (pushes after review): playbook/new-project.md with a lessons index from both projects, decision log, facts and decisions templates, new AGENTS rules",
+  "t": "2026-10-20T22:09:30Z"
+}

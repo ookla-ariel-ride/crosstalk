@@ -1,0 +1,16 @@
+{
+  "adopter": "bewareilive",
+  "builder": "vectorcraft",
+  "commits": {
+    "bewareilive": [],
+    "vectorcraft": []
+  },
+  "refs": [
+    "vectorcraft#42",
+    "bewareilive#20"
+  ],
+  "status": "agreed",
+  "summary": "The landing script resolves conflicts in generated files (such as parity-checklist.md) by regenerating at that commit and continuing; any other conflict stops it",
+  "t": "2026-10-20T23:45:00Z",
+  "updated": "2026-10-20T23:45:00Z"
+}

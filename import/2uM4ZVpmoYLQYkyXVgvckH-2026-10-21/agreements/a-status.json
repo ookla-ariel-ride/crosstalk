@@ -1,0 +1,16 @@
+{
+  "adopter": "vectorcraft",
+  "builder": "bewareilive",
+  "commits": {
+    "bewareilive": [],
+    "vectorcraft": []
+  },
+  "refs": [
+    "bewareilive#20",
+    "vectorcraft#49"
+  ],
+  "status": "building",
+  "summary": "xtask status: worktrees, commits ahead, review verdicts, gate results, progress, waiting on the owner",
+  "t": "2026-10-20T22:09:40Z",
+  "updated": "2026-10-20T22:10:00Z"
+}

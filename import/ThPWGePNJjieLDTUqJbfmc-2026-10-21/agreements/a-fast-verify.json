@@ -1,0 +1,22 @@
+{
+  "adopter": "vectorcraft",
+  "body": "Offered in m-0072. VectorCraft copies it after vectorcraft#42 lands, checking first that its verify has the same shape.",
+  "builder": "bewareilive",
+  "commits": {
+    "bewareilive": [
+      "1b874cb",
+      "1f78a5a",
+      "86d90fb"
+    ],
+    "vectorcraft": []
+  },
+  "hold": false,
+  "refs": [
+    "m-0072",
+    "vectorcraft#42"
+  ],
+  "status": "landed-builder",
+  "summary": "VectorCraft adopts BewareILive's fast verify (json.rs linear duplicate-key check, opt-level 3, par_map + pass cache)",
+  "t": "2026-10-21T12:44:00Z",
+  "updated": "2026-10-21T12:44:00Z"
+}

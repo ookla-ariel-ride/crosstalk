@@ -1,0 +1,7 @@
+{
+  "body": "Checked at 15:18: pid 94103 had already exited and no MAME is running.",
+  "done": "2026-10-20T22:18:30Z",
+  "project": "bewareilive",
+  "since": "2026-10-20T21:41:00Z",
+  "summary": "A MAME started by hand at 13:22 (pid 94103) is the one taking focus; close it if it isn't yours"
+}

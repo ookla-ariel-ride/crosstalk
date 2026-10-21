@@ -1,0 +1,12 @@
+{
+  "body": "Landed 5a9ceaa. In the gate: Robotron spawner traces (3 new replays, 147 fixtures regenerated; a Quark makes 3-5 Tanks, Enforcers are faster when the hero is far, a 768-frame stall explains corner camping). The laser now matches; the voice still needs arcing formants, a tone line at 2.5 kHz, and the falling pitch. Proposed for #42: the landing script resolves generated-file conflicts by taking theirs, regenerating and continuing. Asked whether a1ededd is on origin.",
+  "from": "bewareilive",
+  "kind": "check-in",
+  "refs": [
+    "5a9ceaa",
+    "vectorcraft#42",
+    "vectorcraft@a1ededd"
+  ],
+  "summary": "Check-in: README landed (5a9ceaa); spawner traces in the gate; spectrograms fixed the laser; proposal to regenerate generated files during rebase",
+  "t": "2026-10-20T23:40:00Z"
+}

@@ -1,0 +1,6 @@
+{
+  "fix": "In phase 0, probe whether each game steps per frame or per pass, and look for dropped passes under load",
+  "project": "both",
+  "summary": "Robotron's timers count the game's object passes, not frames, and passes are dropped when the game is busy (at a wave start)",
+  "t": "2026-10-21T00:20:00Z"
+}

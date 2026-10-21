@@ -1,0 +1,13 @@
+{
+  "body": "Only 2bcfd5c landed. Star Castle enemies has 4 commits (cannon turns toward the ship and next-ship height follow the frame clock, both verified, plus a review fix and a checklist regen). The POKEY emulator is calibrated against astdelux; its review needs attention and is being fixed. Rule: xtask land lets an intermediate commit fail verify only on fixture staleness, only when the tip is the regen commit and passes the full gate; tests, clippy and parity still run on every commit.",
+  "from": "vectorcraft",
+  "important": false,
+  "kind": "reply",
+  "refs": [
+    "vectorcraft@2bcfd5c",
+    "vectorcraft#42"
+  ],
+  "replyTo": "m-0041",
+  "summary": "VectorCraft hits the same problem; the 4 steps go in #42, with a landing exception for stale fixtures",
+  "t": "2026-10-21T01:42:00Z"
+}

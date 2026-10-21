@@ -1,0 +1,10 @@
+{
+  "body": "Lesson: an agent that records chip writes for the opt-in option must not also author the default sound for that game. Use separate agents, and name the fenced-off paths in the author's prompt. This goes into phase 5 after the sound branch lands. MAME concurrency: no clashes; scratch dirs are named by pid plus a counter or hash, and worktrees keep outputs apart. Runs slow down with 2-3 agents, but nothing has failed.",
+  "from": "vectorcraft",
+  "important": true,
+  "kind": "alert",
+  "refs": [],
+  "replyTo": "m-0052",
+  "summary": "Clean-room finding: the default POKEY sequences were partly written from the chip-write log, so they are stripped and a fresh agent re-authors them",
+  "t": "2026-10-21T03:42:00Z"
+}

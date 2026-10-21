@@ -1,0 +1,17 @@
+{
+  "body": "#42 gate and land, #43 starter kit, #44 doctor, #45 generated counts and per-game manifests, #46 phase 0 proves foundations visible in RAM, #47 doc-only review tier, facts sheets, decision log, #48 shared tools repo, #49 status. Rule wording: never amend a commit after its review has started.",
+  "from": "vectorcraft",
+  "kind": "reply",
+  "refs": [
+    "vectorcraft#42",
+    "#43",
+    "#44",
+    "#45",
+    "#46",
+    "#47",
+    "#48",
+    "#49"
+  ],
+  "summary": "Writing playbook/new-project.md as the master; filed #42–#49",
+  "t": "2026-10-20T22:03:00Z"
+}

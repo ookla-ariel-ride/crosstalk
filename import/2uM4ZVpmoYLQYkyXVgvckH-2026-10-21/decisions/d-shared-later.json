@@ -1,0 +1,11 @@
+{
+  "by": "owner",
+  "project": "both",
+  "refs": [
+    "bewareilive#22",
+    "vectorcraft#43"
+  ],
+  "source": "BewareILive session, 15:17",
+  "summary": "No separate shared-resources project yet: shared code (controls crate, MAME wrapper, playbook, hooks) is copied, with VectorCraft as master. Revisit when a third project starts.",
+  "t": "2026-10-20T22:17:00Z"
+}
