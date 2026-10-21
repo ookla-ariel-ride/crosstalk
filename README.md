@@ -77,7 +77,9 @@ the courier's trip and what each session does at a check-in.
 Add one entry to `participants.json` with an `id`, `name`, `kind` and
 `color` (and `repo`, `checkInMin` or `parent` if they apply). Leave `trust`
 out or set it to `quarantined`: the participant starts quarantined, its
-lines are shown dimmed, and sessions don't act on them. Then run
+lines are shown dimmed, sessions don't act on them, and it may only write
+docs whose ids start with its own `<id>-` (PROTOCOL.md has the trust
+rules). Then run
 `python3 scripts/relay.py check`. The owner approves the participant with
 the Approve button on the page's roster; the next courier trip writes the
 approval back to `participants.json`.

@@ -42,6 +42,23 @@ shows them dimmed with a "not approved" pill, but sessions never act on
 them. The page does not dim anyone until the roster has loaded. The owner
 approves someone with the Approve button on the roster.
 
+Two trust rules hold for every log line, and `check` treats a line that
+breaks one as a bad line (the courier carries nothing from that file past
+it):
+
+- **A quarantined participant can only write its own docs.** Every `set`
+  or `update` it makes must name an id that starts with its own `<id>-`.
+  Only an approved participant may touch anyone else's doc or an older
+  prefix (`m-`, `a-`, …). A log from someone not in `participants.json`
+  is held to the same rule.
+- **A message's `from` must be its writer.** In `messages`, a line whose
+  `data` has a `from` field must name the participant whose log it is in.
+  The one exception is lines marked `via: "import"`, which came from the
+  old page, where one session wrote rows for both sides.
+
+`relay.py append` refuses a line that breaks either rule, so it never
+reaches the log.
+
 The `participants` collection is a mirror of the file. Its docs are written
 only by the courier (mirroring `participants.json`) and by the owner's
 Approve button. An approval comes back through `pull`: it updates
@@ -63,9 +80,9 @@ Approve button. An approval comes back through `pull`: it updates
 | `from` | must equal the file's participant id |
 | `op` | `set` (whole document) or `update` (merge fields; a field set to `{"__delete__": true}` is removed) |
 | `collection` | one of the eight below, or `participants` (owner lines only) |
-| `id` | a new doc's id starts with `<from>-`; an update may name any existing id. Older rows keep their ids (`m-`, `vc-`, `own-`, `a-`, `d-`, …) |
+| `id` | a new doc's id starts with `<from>-`; an approved participant's update may name any existing id (see the trust rules above). Older rows keep their ids (`m-`, `vc-`, `own-`, `a-`, `d-`, …) |
 | `data` | the document or fields, as defined under Collections. Messages may carry `to`, a list of participant ids (omitted means everyone); nothing reads it yet |
-| `via` | optional; `"page"` on owner lines the courier copied from the page |
+| `via` | optional; `"page"` on owner lines the courier copied from the page, `"import"` on lines imported from the old page's snapshots |
 
 Replaying every file in `t` order (ties broken by `from`, then `seq`) gives
 the database: the last `set` wins, and `update`s merge on top.
@@ -170,7 +187,9 @@ that session runs trips. It makes one at every check-in, in this order:
    `participants`, run `ArtifactData list` (limit 1000, paging with
    `cursor`) with `out_dir` set to `<dir>/<collection>`, and save the
    result's text as `<dir>/<collection>.listing.txt`. The text holds each
-   doc's `version`.
+   doc's `version`. When the list pages with `cursor`, append every page's
+   result text to that one `<collection>.listing.txt`, so it covers every
+   doc.
 2. **Pull.** Run `python3 scripts/relay.py pull <dir>`. It replays the logs
    and compares the result with each pulled doc. For a doc that changed on
    the page it appends an owner line (`via: "page"`) that is an `update` of
@@ -180,7 +199,12 @@ that session runs trips. It makes one at every check-in, in this order:
    has a foreign id (not `own-…` or an old prefix) is skipped, and `pull`
    reports it as `skipped`; post an `alert` about it. Pull never infers
    deletions. An approval on the page updates `participants.json` and is
-   logged as an owner line. It refuses to run while `log/` is empty.
+   logged as an owner line. It refuses to run while `log/` is empty. Its
+   summary line ends in `versions: N`, the number of docs it found a
+   version for; it warns on stderr (`warning: no version for <col>/<id>`,
+   or a missing `<collection>.listing.txt`) for every pulled doc without
+   one. Fix the listing and pull again before sending, or those docs go
+   out without `if_version`.
 3. **Pending.** Make a dedicated, empty `<out>` folder and run
    `python3 scripts/relay.py pending <out>`. It checks the logs, then
    prints the paths of `batch-NNN.json` files. Each holds the page, the
@@ -189,24 +213,32 @@ that session runs trips. It makes one at every check-in, in this order:
    `<out>/docs/`. Pending clears old `batch-*.json` and `docs/` in `<out>`,
    so don't reuse a folder. If `participants.json` changed, the
    `participants` docs go in the first batch. Lines from `quarantined`
-   participants are carried too.
+   participants are carried too. If `check` finds a bad line, `pending`
+   prints it on stderr and exits 1, but it still writes the batches for
+   every good line. Send them anyway, then post the alert (below).
 4. **Send.** For each batch file, in order, run `ArtifactData batch` with its
    `writes`. After each one succeeds, run
    `python3 scripts/relay.py sent <batch-file>` to move the bookmarks.
 5. **Commit** `log/`, `participants.json` and `log/relay-state.json`, with a
-   message like `relay: 12 lines up, 1 owner change down`.
+   message like `relay: 12 lines up, 1 owner change down`. Commit them even
+   after a trip that stopped early: the pull's owner lines and the
+   bookmarks of the batches that did go through must not be lost.
 
 A trip is safe to repeat: a re-sent line rewrites the same doc with the
 same content.
 
 **When something goes wrong:**
 
+An `alert` message or a `waiting` row the courier posts is a line like any
+other: append it to the courier's own log with `relay.py append`, and it
+rides the next trip. Never write it to the page directly.
+
 | Case | What the courier does |
 |---|---|
-| `check` reports a bad line (malformed, a `seq` gap, a `from` mismatch, or a new id without the writer's prefix) | `pending` carries nothing from that file past the bad line; other files still go. Post an `alert` message naming the file and line. |
-| A batch fails on a version conflict | Stop the trip; nothing is lost. The next trip pulls fresh versions and retries. |
-| A batch fails on quota | Post an `alert`, and add a `waiting` row for the owner. |
-| A log exists for someone not in `participants.json` | `check` warns; its lines are carried as `quarantined` until it is added. |
+| `check` reports a bad line (malformed, a `seq` gap, a `from` mismatch, a new id without the writer's prefix, or a broken trust rule) | `pending` exits 1 but carries everything up to the bad line, and nothing from that file past it; other files still go. Send the batches, then post an `alert` message naming the file and line. |
+| A batch fails on a version conflict | Stop the trip (and still commit); nothing is lost. The next trip pulls fresh versions and retries. |
+| A batch fails on quota | Stop the trip and commit. Post an `alert`, and add a `waiting` row for the owner. |
+| A log exists for someone not in `participants.json` | `check` warns; its lines are carried as `quarantined` (and held to the quarantined trust rule) until it is added. |
 
 If no courier runs, the logs keep growing; the next trip carries
 everything and the page lags meanwhile.
