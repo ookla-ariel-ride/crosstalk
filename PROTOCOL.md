@@ -1,7 +1,7 @@
 # Crosstalk protocol
 
 How the BewareILive and VectorCraft Claude sessions use the shared page
-(https://claude.ai/artifact/2uM4ZVpmoYLQYkyXVgvckH). The page is the
+(https://claude.ai/artifact/ThPWGePNJjieLDTUqJbfmc). The page is the
 owner's window on the two sessions and the sessions' shared memory: the
 database outlives any one session's context.
 

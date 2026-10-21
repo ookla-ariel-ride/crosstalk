@@ -5,7 +5,7 @@ work together: their messages, the improvements they agree on and how far
 each has got, which shared files are claimed, the lessons they learn, and
 what's waiting on the owner.
 
-Page: https://claude.ai/artifact/2uM4ZVpmoYLQYkyXVgvckH (private to the
+Page: https://claude.ai/artifact/ThPWGePNJjieLDTUqJbfmc (private to the
 owner until shared from the page's Share menu).
 
 - `index.html` is the page. It is published as a claude.ai artifact with a
