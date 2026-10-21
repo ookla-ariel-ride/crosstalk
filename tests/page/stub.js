@@ -15,4 +15,10 @@ function coll(c){ return {
     update:function(d){ return new Promise(function(res,rej){ setTimeout(function(){ if(__fail[c]){ rej({code:"unavailable",message:"boom"}); return; } __store[c]=__store[c]||{}; __store[c][id]=Object.assign({}, __store[c][id], d); __emit(c); res(); }, __delay); }); } }; },
   onSnapshot:function(cb, err){ __subscribeCount[c]=(__subscribeCount[c]||0)+1; (__subs[c]=__subs[c]||[]).push({cb:cb,err:err}); setTimeout(function(){ cb(snapFor(c)); }, 10); }
 }; }
-window.claude = { use: async function(n){ if(n==="db") return { collection: coll }; if(n==="user") return { canEdit:function(){return true;} }; return null; } };
+// __viewer is what user.me() reports: the stub viewer is a named owner who can edit.
+window.__viewer = { id: "u_test", name: "Test Owner", isOwner: true, canEdit: true, email: null, avatarUrl: "", color: "#888" };
+// Opened with ?viewer=reader, the stub viewer is an unnamed read-only viewer.
+if (/[?&]viewer=reader\b/.test(location.search)) __viewer = { id: "u_reader", name: "", isOwner: false, canEdit: false, email: null, avatarUrl: "", color: "#888" };
+window.claude = { use: async function(n){ if(n==="db") return { collection: coll };
+  if(n==="user") return { canEdit:async function(){return __viewer.canEdit;}, isOwner:async function(){return __viewer.isOwner;}, me:async function(){ return Object.assign({}, __viewer); } };
+  return null; } };

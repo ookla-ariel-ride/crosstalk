@@ -184,6 +184,7 @@ td.num, td.t { font: 12px var(--mono); font-variant-numeric: tabular-nums; white
 
   <p class="note">Every participant logs each message here as it sends or receives it. Times are Pacific. Notes you post here are read by every session at its next check-in. A file claim is a notice between the sessions, not a permission.</p>
   <p class="note" id="build"></p>
+  <p class="note" id="viewer"></p>
 </div>
 
 <script>
@@ -862,8 +863,16 @@ td.num, td.t { font: 12px var(--mono); font-variant-numeric: tabular-nums; white
   window.addEventListener("hashchange", function () { readHash(); renderAll(); });
   // Crossing 640px opens or folds the roster.
   if (WIDE) { var onWidth = function () { if (tab === "timeline") renderView(true); }; if (WIDE.addEventListener) WIDE.addEventListener("change", onWidth); else if (WIDE.addListener) WIDE.addListener(onWidth); }
+  // Who is viewing, from user.me(): "Viewing as Jim (editor)". The name needs the user capability's
+  // "profile" scope and may be withheld; without it the line names the role alone.
+  function viewerText(me) {
+    if (!me) return "";
+    var role = me.isOwner ? "owner" : me.canEdit ? "editor" : "viewer (read only)";
+    if (me.name) return "Viewing as " + me.name + " (" + role + ")";
+    return "Viewing as " + (me.isOwner ? "the owner" : me.canEdit ? "an editor" : "a viewer (read only)");
+  }
   // Read-only helpers for the page tests.
-  window.__crosstalk = Object.freeze({ dotState: dotState });
+  window.__crosstalk = Object.freeze({ dotState: dotState, viewerText: viewerText });
   renderAll();
   setInterval(function () {
     document.querySelectorAll(".ago[data-t]").forEach(function (a) { a.textContent = agoText(Number(a.dataset.t)); });
@@ -877,7 +886,10 @@ td.num, td.t { font: 12px var(--mono); font-variant-numeric: tabular-nums; white
     db = window.claude && window.claude.use ? await window.claude.use("db") : null;
     if (!db) { offline = true; renderStrip(); return; }
     var user = await window.claude.use("user");
-    canWrite = !!(user && user.canEdit && user.canEdit());
+    // me() resolves every field at once; canEdit() is a promise, so it can't be tested for truth directly.
+    var me = user && user.me ? await user.me() : null;
+    canWrite = !!(me && me.canEdit);
+    document.getElementById("viewer").textContent = viewerText(me);
     // These codes can't recover by resubscribing; anything else (unavailable, unknown codes) gets a few retries.
     var TERMINAL = ["revoked", "not_granted", "capability_disabled", "capability_removed", "invalid_argument", "transform_error"];
     function subscribe(c, attempt) {

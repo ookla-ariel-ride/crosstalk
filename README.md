@@ -110,8 +110,12 @@ it replaces the page's rules, so list every collection every time.
   {"path": "progress", "read": "view", "write": "admin"},
   {"path": "incidents", "read": "view", "write": "admin"},
   {"path": "participants", "read": "view", "write": "admin"}
-]}, "user": {}}
+]}, "user": {"scopes": ["profile"]}}
 ```
+
+The `profile` scope lets the footer name the viewer ("Viewing as Jim
+(editor)"); without it, or when a name is withheld, the line names only the
+role.
 
 A new collection needs three changes: a rule above, its name in `COLS`
 and a tab in `TABS` in `index.html`, and a row in PROTOCOL.md.

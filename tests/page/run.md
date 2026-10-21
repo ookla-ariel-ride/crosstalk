@@ -38,6 +38,9 @@ sees the real roster from its first snapshot.
    Run them at a desktop width (`browser_resize` to 1100 wide) first. Then `browser_resize`
    to 390 wide and run `await runAll(["mobileRosterFolds"])`, which checks the narrow layout.
 
+   Then open `index.html?viewer=reader` (a read-only stub viewer) and run
+   `await runAll(["readerNoControls"])`. In the normal run that scenario reports a skip.
+
 5. Check `browser_console_messages` at level `error`. The only expected error is the
    missing `favicon.ico`.
 
@@ -69,5 +72,9 @@ sees the real roster from its first snapshot.
 - `mobileRosterFolds`: wide, the roster is open beside the feed; at 390 wide it folds into a "People"
   disclosure above the feed.
 - `holdRelease`: releasing an old-style `status: "held"` agreement sets `agreed` and `hold: false`.
+- `viewerRole`: the footer reads "Viewing as Test Owner (owner)" for the stub viewer; `__crosstalk.viewerText`
+  gives "(editor)", "a viewer (read only)" and "the owner" for an unnamed owner, and nothing without a viewer.
+- `readerNoControls`: at `?viewer=reader`, no composer, star, resolve, Approve, Hold or Mark done
+  control is shown, and the footer reads "Viewing as a viewer (read only)".
 - `partlyLive`: one stopped collection shows "Partly live" and names its tab.
 - `participantsStopShown`: a stopped `participants` subscription is named too.

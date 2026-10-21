@@ -285,6 +285,29 @@
       "before=" + t1 + " after=" + t2 + " status=" + a.status + " hold=" + a.hold);
   });
 
+  S.push(async function viewerRole() {
+    // The footer says who is viewing and with what role: owner, editor or read-only viewer.
+    var shown = $("viewer") ? $("viewer").textContent : null, f = window.__crosstalk.viewerText;
+    var cases = [
+      [{ name: "Jim", isOwner: false, canEdit: true }, "Viewing as Jim (editor)"],
+      [{ name: "", isOwner: false, canEdit: false }, "Viewing as a viewer (read only)"],
+      [{ name: "", isOwner: true, canEdit: true }, "Viewing as the owner"],
+      [null, ""]
+    ];
+    var bad = typeof f !== "function" ? ["no viewerText"] : cases.filter(function (c) { return f(c[0]) !== c[1]; }).map(function (c) { return JSON.stringify(c[0]) + " -> " + JSON.stringify(f(c[0])); });
+    return res("viewerRole", shown === "Viewing as Test Owner (owner)" && !bad.length, "shown=" + JSON.stringify(shown) + " bad=" + bad.join("; "));
+  });
+
+  S.push(async function readerNoControls() {
+    // Only meaningful on index.html?viewer=reader; elsewhere it reports a skip.
+    if (!/[?&]viewer=reader\b/.test(location.search)) return res("readerNoControls", true, "skipped: open index.html?viewer=reader");
+    await go("timeline");
+    await addDoc("messages", "rd-1", { t: T0, from: "codex", kind: "sync", summary: "Seen by a reader" });
+    var controls = document.querySelectorAll("#composer, .star, .resolve, [id^=approve-], [id^=hold-], [id^=done-]").length;
+    var shown = $("viewer").textContent;
+    return res("readerNoControls", controls === 0 && shown === "Viewing as a viewer (read only)", "controls=" + controls + " shown=" + JSON.stringify(shown));
+  });
+
   S.push(async function partlyLive() {
     var before = $("liveText").textContent;
     __kill("locks", "revoked"); await tick();
