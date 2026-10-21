@@ -60,6 +60,8 @@ def import_snapshots(root: Path, snapshot_dirs: List[Path]) -> Dict[str, int]:
 
     counts = {}  # type: Dict[str, int]
     for t, writer, coll, did, fields in plan:
-        append_line(root, writer, "set", coll, did, fields, t=t)
+        # The old page's rows were written by one session for both sides, so a row's
+        # own "from" need not match the log it lands in; via="import" marks that.
+        append_line(root, writer, "set", coll, did, fields, t=t, via="import")
         counts[writer] = counts.get(writer, 0) + 1
     return counts

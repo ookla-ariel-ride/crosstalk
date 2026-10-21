@@ -66,6 +66,21 @@ class CliTests(unittest.TestCase):
                 self.assertEqual(p.stdout, "")
             self.assertFalse((r.root / "log" / "codex.jsonl").exists())
 
+    def test_append_refuses_trust_violation(self):
+        with TempRepo() as r:
+            c = Cli(r)
+            base = ["append", "--op", "set", "--collection", "messages"]
+            p = c.run(*(base + ["--from", "gemini", "--id", "m-0001", "--data", "{}"]))
+            self.assertEqual(p.returncode, 1)
+            self.assertIn("gemini-", p.stderr)
+            p = c.run(*(base + ["--from", "codex", "--id", "codex-1",
+                                "--data", '{"from": "owner"}']))
+            self.assertEqual(p.returncode, 1)
+            self.assertEqual(sorted(x.name for x in (r.root / "log").iterdir()), [])
+            p = c.run(*(base + ["--from", "Codex", "--id", "Codex-1", "--data", "{}"]))
+            self.assertEqual(p.returncode, 1)
+            self.assertEqual(sorted(x.name for x in (r.root / "log").iterdir()), [])
+
     def test_append_data_file(self):
         with TempRepo() as r:
             c = Cli(r)

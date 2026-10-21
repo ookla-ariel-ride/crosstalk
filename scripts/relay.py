@@ -59,7 +59,8 @@ def cmd_append(args):
         err("bad data: expected a JSON object")
         return 1
     try:
-        ln = append_line(ROOT, args.from_, args.op, args.collection, args.id, data)
+        ln = append_line(ROOT, args.from_, args.op, args.collection, args.id, data,
+                         roster=load_roster(ROOT / "participants.json"))
     except ValueError as e:
         err(str(e))
         return 1

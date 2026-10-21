@@ -47,8 +47,11 @@ def _rel(path: Path) -> str:
     return "log/" + Path(path).name
 
 
-def read_log(path: Path) -> Tuple[List[Line], List[Problem]]:
-    """Read one log file. Stops at the first fatal problem; returns the good lines before it."""
+def read_log(path: Path, roster: Optional[Roster] = None) -> Tuple[List[Line], List[Problem]]:
+    """Read one log file. Stops at the first fatal problem; returns the good lines before it.
+
+    With a roster, the trust rules (ruling R9) apply too; without one they are skipped.
+    """
     path = Path(path)
     owner = path.stem
     name = _rel(path)
@@ -61,7 +64,7 @@ def read_log(path: Path) -> Tuple[List[Line], List[Problem]]:
     for n, raw in enumerate(text.split("\n"), start=1):
         if raw == "" and n == len(text.split("\n")):
             break  # trailing newline
-        msg = _validate(raw, owner, expected, lines)
+        msg = _validate(raw, owner, expected, lines, roster)
         if isinstance(msg, str):
             return lines, [Problem(name, n, msg, True)]
         lines.append(msg)
@@ -69,7 +72,8 @@ def read_log(path: Path) -> Tuple[List[Line], List[Problem]]:
     return lines, []
 
 
-def _validate(raw: str, owner: str, expected: int, _prior: List[Line]):
+def _validate(raw: str, owner: str, expected: int, _prior: List[Line],
+              roster: Optional[Roster] = None):
     try:
         d = json.loads(raw)
     except ValueError as e:
@@ -102,8 +106,25 @@ def _validate(raw: str, owner: str, expected: int, _prior: List[Line]):
     if d["op"] == "set" and not d["id"].startswith(owner + "-") \
             and not d["id"].startswith(LEGACY_PREFIXES):
         return "set of id %r must start with %r" % (d["id"], owner + "-")
+    if roster is not None:
+        msg = _trust_problem(d, owner, roster)
+        if msg:
+            return msg
     return Line(seq=seq, t=d["t"], from_=d["from"], op=d["op"], collection=d["collection"],
                 id=d["id"], data=d["data"], via=via)
+
+
+def _trust_problem(d: dict, owner: str, roster: Roster) -> Optional[str]:
+    """Ruling R9. Only an approved participant may write ids outside its own prefix,
+    and a message's data.from must be its writer (imported lines excepted)."""
+    p = roster.participants.get(owner)
+    if (p is None or p.trust != "approved") and not d["id"].startswith(owner + "-"):
+        return ("%s participant %r may only write ids starting with %r, not %r"
+                % ("unknown" if p is None else p.trust, owner, owner + "-", d["id"]))
+    if d["collection"] == "messages" and "from" in d["data"] \
+            and d["data"]["from"] != owner and d.get("via") != "import":
+        return "message data.from %r is not its writer %r" % (d["data"]["from"], owner)
+    return None
 
 
 def check_all(root: Path, roster: Roster) -> List[Problem]:
@@ -114,19 +135,28 @@ def check_all(root: Path, roster: Roster) -> List[Problem]:
             problems.append(Problem(_rel(path), 0,
                                     "participant %r not in participants.json; "
                                     "lines are carried as quarantined" % path.stem, False))
-        problems.extend(read_log(path)[1])
+        problems.extend(read_log(path, roster)[1])
     return problems
 
 
 def append_line(root: Path, from_: str, op: str, collection: str, id: str, data: dict,
-                t: Optional[str] = None, via: Optional[str] = None) -> Line:
-    """Append one line to log/<from_>.jsonl under an exclusive lock; returns the Line written."""
+                t: Optional[str] = None, via: Optional[str] = None,
+                roster: Optional[Roster] = None) -> Line:
+    """Append one line to log/<from_>.jsonl under an exclusive lock; returns the Line written.
+
+    With a roster, a line that breaks the trust rules is refused before the file is opened.
+    """
     if not isinstance(from_, str) or not ID_RE.fullmatch(from_):
         # Checked before any path is built: on a case-insensitive disk "Codex" would
         # open codex.jsonl.
         raise ValueError("bad participant id %r" % (from_,))
     if op not in OPS:
         raise ValueError("unknown op %r" % (op,))
+    if roster is not None:
+        msg = _trust_problem({"collection": collection, "id": id, "data": data, "via": via},
+                             from_, roster)
+        if msg:
+            raise ValueError(msg)
     if t is None:
         t = time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime())
     log_dir = Path(root) / "log"

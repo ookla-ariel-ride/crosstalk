@@ -92,7 +92,7 @@ def pull(root: Path, export_dir: Path) -> PullResult:
     root, export_dir = Path(root), Path(export_dir)
     roster_path = root / "participants.json"
     roster = load_roster(roster_path)
-    lines = load_all_lines(root)
+    lines = load_all_lines(root, roster)
     if not lines:
         raise RuntimeError("log is empty; run import first")
 

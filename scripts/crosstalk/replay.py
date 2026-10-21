@@ -1,9 +1,10 @@
 """Replay log lines into documents."""
 import copy
 from pathlib import Path
-from typing import Dict, Iterable, List, Tuple
+from typing import Dict, Iterable, List, Optional, Tuple
 
 from .logs import Line, read_log
+from .participants import Roster
 
 DocKey = Tuple[str, str]
 
@@ -35,9 +36,12 @@ def replay(lines: Iterable[Line]) -> Dict[DocKey, dict]:
     return docs
 
 
-def load_all_lines(root: Path) -> List[Line]:
-    """Good lines from every log/*.jsonl under root."""
+def load_all_lines(root: Path, roster: Optional[Roster] = None) -> List[Line]:
+    """Good lines from every log/*.jsonl under root.
+
+    With a roster, each file also stops at its first trust violation (see read_log).
+    """
     out = []  # type: List[Line]
     for path in sorted((Path(root) / "log").glob("*.jsonl")):
-        out.extend(read_log(path)[0])
+        out.extend(read_log(path, roster)[0])
     return out

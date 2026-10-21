@@ -84,7 +84,7 @@ def _build(root: Path, out: Path, bookmarks: Dict[str, int], versions: Dict[str,
     roster_bytes = roster_path.read_bytes()
     roster_hash = hashlib.sha256(roster_bytes).hexdigest()
 
-    lines = load_all_lines(root)
+    lines = load_all_lines(root, roster)
     unsent = [ln for ln in lines if ln.seq > bookmarks.get(ln.from_, 0)]
     all_docs = replay(lines)
 

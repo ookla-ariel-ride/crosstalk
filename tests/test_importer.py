@@ -53,7 +53,22 @@ class ImportTests(unittest.TestCase):
             self.assertEqual(writer_of(r.root, "decisions", "d-q")[0], "vectorcraft")
             self.assertEqual(counts, {"bewareilive": 2, "vectorcraft": 3, "owner": 1})
             _, ln = writer_of(r.root, "messages", "m-0001")
-            self.assertEqual((ln.op, ln.via), ("set", None))
+            self.assertEqual((ln.op, ln.via), ("set", "import"))
+
+    def test_every_imported_line_is_via_import_and_checks_clean(self):
+        with TempRepo() as r:
+            r.write_roster()
+            snap = make_snap(r.root, "s", {
+                ("messages", "m-0001"): {"t": "2026-01-01T00:00:00Z", "from": "vectorcraft"},
+                ("messages", "vc-1"): {"t": "2026-01-01T00:00:01Z", "from": "bewareilive"},
+                ("agreements", "a-y"): {"builder": "vectorcraft"},
+            })
+            import_snapshots(r.root, [snap])
+            lines = load_all_lines(r.root)
+            self.assertEqual(len(lines), 3)
+            self.assertEqual({ln.via for ln in lines}, {"import"})
+            roster = load_roster(r.root / "participants.json")
+            self.assertEqual(check_all(r.root, roster), [])
 
     def test_time_fields(self):
         with TempRepo() as r:
@@ -118,7 +133,8 @@ class ImportTests(unittest.TestCase):
             shutil.copy(str(REPO / "participants.json"), str(r.root / "participants.json"))
             import_snapshots(r.root, [SNAP_A, SNAP_B])
             roster = load_roster(r.root / "participants.json")
-            self.assertEqual([p for p in check_all(r.root, roster) if p.fatal], [])
+            self.assertEqual(check_all(r.root, roster), [])
+            self.assertEqual({ln.via for ln in load_all_lines(r.root, roster)}, {"import"})
             docs = replay(load_all_lines(r.root))
             self.assertEqual(len(docs), 215)
             self.assertEqual(docs[("agreements", "a-review-broker-cleanup")]["status"], "ready-to-adopt")

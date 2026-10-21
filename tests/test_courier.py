@@ -270,6 +270,22 @@ class PendingTests(unittest.TestCase):
             [b] = pending(r.root, r.root / "out")
             self.assertEqual([w["doc_id"] for w in writes_of(b)], ["stranger-0001"])
 
+    def test_trust_violation_stops_that_file_only(self):
+        with TempRepo() as r:
+            data = json.loads(json.dumps(SPEC_ROSTER))
+            data["participants"].append({"id": "gemini", "name": "Gemini",
+                                         "kind": "researcher", "trust": "quarantined"})
+            r.write_roster(data)
+            save_state(r.root, {PAGE: {"participantsHash": roster_hash(r.root)}})
+            r.write_log("gemini", [line(1, "gemini", t=T0),
+                                   line(2, "gemini", id_="m-0001", t=T0),
+                                   line(3, "gemini", t=T0)])
+            r.write_log("codex", [line(1, "codex", t=T0)])
+            [b] = pending(r.root, r.root / "out")
+            self.assertEqual(sorted(w["doc_id"] for w in writes_of(b)),
+                             ["codex-0001", "gemini-0001"])
+            self.assertEqual(load(b)["advance"], {"codex": 1, "gemini": 1})
+
     def test_other_page_bookmarks_ignored(self):
         with TempRepo() as r:
             r.write_roster()
