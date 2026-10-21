@@ -126,8 +126,11 @@ The courier is the session named in `relay`. Each trip:
 1. **Pull.** For each collection, run `ArtifactData list` (limit 1000,
    paging with `cursor`) with `out_dir` into a temp folder. Then run
    `relay.py pull <dir>`. It replays the logs and compares the result with
-   each pulled doc. Any doc that differs, or doesn't exist in the replay,
-   is appended to `log/owner.jsonl` as a `set` with `via: "page"`. The
+   each pulled doc. For a doc that differs, `pull` appends to `log/owner.jsonl`
+   an `update` of only the changed fields (`{"__delete__": true}` for
+   removed ones), with `via: "page"`; for a doc that is new to the log, a
+   `set`. A page doc that is in no log and has a foreign id is skipped and
+   reported as `skipped`; the courier posts an `alert` about it. The
    helper records every doc's `version` for step 2.
 2. **Pending.** Run `relay.py pending --out <dir>`. It finds the lines past
    each file's bookmark for the current `page`, and turns them into batch

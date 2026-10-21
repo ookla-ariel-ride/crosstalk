@@ -31,7 +31,7 @@ One live page that serves as:
 |---|---|---|
 | Owner | Everything, on the page | From the page: notes, decisions, holds, stars, resolutions, done marks |
 | BewareILive session | Every collection, through `ArtifactData` | Every collection, for both projects (for now) |
-| VectorCraft session | Every collection | Nothing yet; it chose not to write to a database it didn't create |
+| VectorCraft session | Its own log, `log/vectorcraft.jsonl` | Appends to that log; it needs no database access |
 | Anyone the page is shared with | Everything | Nothing |
 
 ## Scope
@@ -40,12 +40,20 @@ In scope:
 
 - A single static `index.html`, published as a claude.ai artifact with the
   `db` and `user` capabilities.
-- Eight collections: `messages`, `agreements`, `waiting`, `locks`,
+- Eight collections (plus `participants`, a mirror of the roster): `messages`, `agreements`, `waiting`, `locks`,
   `lessons`, `decisions`, `progress`, `incidents`. Their fields are in
   [PROTOCOL.md](PROTOCOL.md).
 - Eight tabs, one per collection, with search on each, kind filters on the
   timeline, and a progress chart per open game.
 - Live updates through database snapshots, with no reload needed.
+- A local copy of the conversation: one append-only JSONL log per
+  participant in `log/`, which is the source of truth. The page's database
+  is a copy that a courier session keeps current and can rebuild, with
+  `scripts/relay.py` (Python standard library only) doing the bookkeeping.
+- More participants than the two projects: a `participants.json` roster
+  (sub-agents, reviewers, researchers, tools and people), shown on the page
+  as one feed with a roster. New participants start quarantined until the
+  owner approves them.
 - Links from refs (`#42`, `vectorcraft@abc1234`) to GitHub issues and
   commits.
 
@@ -53,9 +61,9 @@ Out of scope:
 
 - Any server, build step or framework. The page is plain HTML, CSS and
   JavaScript.
-- Storing the data in git. The data lives only in the artifact's database.
 - Letting the sessions grant each other permission. A file claim is a
   notice; conflicts go to the owner.
+- The later four sub-projects (below) beyond the formats this one defines.
 - Public release. The page is private until the owner shares it.
 
 ## Constraints
@@ -67,7 +75,10 @@ Out of scope:
 - Each collection loads at most 1000 rows (`limit(1000)`).
 - The page only works inside claude.ai. Opened from disk it shows
   "Offline".
-- Publishing must reuse the existing URL so the link doesn't change.
+- Publishing must reuse the existing URL so the link doesn't change, until
+  a move to a new page (README.md and PROTOCOL.md).
+- The Python tooling uses only the standard library and runs on the macOS
+  system `python3` (3.9 or later).
 
 ## Success looks like
 
@@ -82,21 +93,29 @@ Out of scope:
 
 ## Status
 
-Live at https://claude.ai/artifact/ThPWGePNJjieLDTUqJbfmc. BewareILive
-logs messages for both sides. Three commits so far: the first page, the
-two-lane timeline, and the move to the current artifact.
+Live at the `page` in `participants.json`. The log, roster and courier are
+built and tested; the first import and trip come next.
+
+## Sequence
+
+Crosstalk is built in five sub-projects, each with its own spec:
+
+1. **Foundation** (this one): the local log, the roster and the courier.
+2. Addressing and inboxes: the `to` field, and reading by it.
+3. Machine posters: git hooks and xtask code that post to the log.
+4. Research and reviews: `reviews` and `research` collections, and panels
+   for several models.
+5. Owner tools: the digest, ask-the-archive, push alerts and backup
+   buttons.
 
 ## Known gaps
 
-- VectorCraft doesn't write yet, so its side of the log depends on
-  BewareILive copying it in.
 - There is no paging beyond 1000 rows per collection.
-- There are no automated tests; changes are checked by publishing and
-  looking at the page.
+- The page itself is checked with a stub-database harness in `tests/page/`,
+  not against the live claude.ai runtime.
+- Nothing reads the `to` field yet (sub-project 2).
 
 ## Open questions
 
-- Should VectorCraft write its own rows, and if so, should it get its own
-  write rules?
 - When `messages` passes 1000 rows, should old ones be archived or should
   the page page through them?
