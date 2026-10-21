@@ -161,11 +161,14 @@ td.num, td.t { font: 12px var(--mono); font-variant-numeric: tabular-nums; white
   <main id="view"></main>
 
   <p class="note">The two sessions log every message here as they send or receive it. Times are Pacific. Notes you post here are read by both sessions at their next check-in. A file claim is a notice between the sessions, not a permission.</p>
+  <p class="note" id="build"></p>
 </div>
 
 <script>
 (function () {
   "use strict";
+  // scripts/stamp.sh replaces these placeholders in the published copy; the repo file keeps them.
+  var BUILD = { commit: "__COMMIT__", published: "__PUBLISHED__" };
   var REPOS = { bewareilive: "ookla-ariel-ride/bewareilive", vectorcraft: "ookla-ariel-ride/vectorcraft" };
   var NAMES = { bewareilive: "BewareILive", vectorcraft: "VectorCraft", owner: "Owner" };
   var SIDE = { bewareilive: "bil", vectorcraft: "vc", owner: "own" };
@@ -630,6 +633,14 @@ td.num, td.t { font: 12px var(--mono); font-variant-numeric: tabular-nums; white
     t.addEventListener("click", go);
     t.addEventListener("keydown", function (e) { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); go(); } });
   });
+  (function renderBuild() {
+    var p = document.getElementById("build");
+    if (!/^[0-9a-f]{7,40}$/.test(BUILD.commit)) { p.textContent = "Page version: unstamped local copy (publish with scripts/stamp.sh)."; return; }
+    p.appendChild(document.createTextNode("Page version "));
+    var a = el("a", null, BUILD.commit.slice(0, 7)); a.href = "https://github.com/ookla-ariel-ride/crosstalk/commit/" + BUILD.commit;
+    a.target = "_blank"; a.rel = "noopener"; a.title = "This page's code on GitHub"; p.appendChild(a);
+    p.appendChild(document.createTextNode(" · published ")); p.appendChild(timeEl(BUILD.published, true));
+  })();
   readHash();
   window.addEventListener("hashchange", function () { readHash(); renderAll(); });
   renderAll();

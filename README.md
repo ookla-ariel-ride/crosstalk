@@ -16,6 +16,7 @@ Why it exists, who uses it and what's out of scope:
 | File | Purpose |
 |---|---|
 | `index.html` | The whole page: markup, styles and script in one file, with no build step |
+| `scripts/stamp.sh` | Writes `build/index.html`, the copy that gets published, with the commit hash and publish time filled in |
 | `PROTOCOL.md` | What each session writes and reads, and when; the fields of every collection |
 | `projectbrief.md` | The problem, goals, scope, constraints and known gaps |
 | `import/` | Read-only snapshots of each page's database, one JSON file per row, in a folder named after the page and the date. `2uM4ZVpmoYLQYkyXVgvckH-…` is the first page, under the other Claude login, holding messages `m-0001` to `m-0070` |
@@ -60,10 +61,14 @@ session does at a check-in.
 
 ## Publishing
 
-There is nothing to build. From a Claude Code session, publish
-`index.html` with the Artifact tool and pass the page URL above as `url`
-so the link stays the same. The data lives in the artifact's database,
-not in this repository, and survives republishing.
+Commit your changes, then run `scripts/stamp.sh`. It writes
+`build/index.html`, a copy of the page with the commit and the publish time
+filled in, and refuses if `index.html` has uncommitted changes. From a
+Claude Code session, publish `build/index.html` with the Artifact tool and
+pass the page URL above as `url` so the link stays the same. The page's
+footer then shows the commit it runs, linked to GitHub (the link works once
+the commit is pushed). The data lives in the artifact's database, not in
+this repository, and survives republishing.
 
 Leave `capabilities` out to keep the current rules. Pass them only when
 the data rules change:
