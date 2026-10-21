@@ -182,7 +182,7 @@ td.num, td.t { font: 12px var(--mono); font-variant-numeric: tabular-nums; white
   <nav class="tabs" role="tablist" id="tabs"></nav>
   <main id="view"></main>
 
-  <p class="note">The two sessions log every message here as they send or receive it. Times are Pacific. Notes you post here are read by both sessions at their next check-in. A file claim is a notice between the sessions, not a permission.</p>
+  <p class="note">Every participant logs each message here as it sends or receives it. Times are Pacific. Notes you post here are read by every session at its next check-in. A file claim is a notice between the sessions, not a permission.</p>
   <p class="note" id="build"></p>
 </div>
 
@@ -440,8 +440,8 @@ td.num, td.t { font: 12px var(--mono); font-variant-numeric: tabular-nums; white
   function composer(view) {
     if (!canWrite) return;
     var box = el("form", "composer"); box.id = "composer";
-    var lab = el("label", null, "Note to both sessions"); lab.htmlFor = "note";
-    var ta = el("textarea"); ta.id = "note"; ta.placeholder = "Read by both sessions at their next check-in";
+    var lab = el("label", null, "Note to every session"); lab.htmlFor = "note";
+    var ta = el("textarea"); ta.id = "note"; ta.placeholder = "Read by every session at its next check-in";
     ta.value = draft.text; ta.disabled = draft.posting;
     ta.addEventListener("input", function () { draft.text = ta.value; });
     var row = el("div", "row");
@@ -687,7 +687,7 @@ td.num, td.t { font: 12px var(--mono); font-variant-numeric: tabular-nums; white
       var c7 = el("td");
       if (canWrite && a.status !== "landed-both" && a.status !== "dropped") {
         var b = el("button", "btn", held ? "Release hold" : "Hold"); b.type = "button"; b.id = "hold-" + a._id;
-        b.title = held ? "Let both sessions continue" : "Ask both sessions to stop work on this until you release it";
+        b.title = held ? "Let the sessions continue" : "Ask every session to stop work on this until you release it";
         b.addEventListener("click", function () {
           b.disabled = true;
           var patch = { hold: !held, holdNote: held ? null : "held by owner", updated: new Date().toISOString() };
