@@ -85,6 +85,7 @@ a { color: inherit; }
 .msg.bil::after, .msg.vc::after { content: ""; position: absolute; top: 14px; width: 10px; height: 10px; border-radius: 50%; background: var(--bg); border: 2px solid currentColor; }
 .msg.bil::after { right: -29px; } .msg.vc::after { left: -29px; }
 .msg > * { color: var(--fg); }
+.msg .re { font: 12px/1.35 var(--mono); color: var(--muted); margin: 4px 0 2px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .msg.important { border-width: 2px; border-color: currentColor; border-top-width: 5px; }
 .msg.important .summary { font-size: 16px; }
 .pill.important { background: var(--bad); color: var(--panel); }
@@ -329,7 +330,7 @@ td.num, td.t { font: 12px var(--mono); font-variant-numeric: tabular-nums; white
     });
     view.appendChild(box);
   }
-  function msgCard(m, isReply) {
+  function msgCard(m, isReply, parent) {
     var side = SIDE[m.from] || "bil";
     var card = el(isReply ? "div" : "article", (isReply ? "reply " : "msg ") + side);
     var stamp = el("div", "stamp"); stamp.appendChild(timeEl(m.t)); stamp.appendChild(agoEl(m.t)); card.appendChild(stamp);
@@ -344,6 +345,7 @@ td.num, td.t { font: 12px var(--mono); font-variant-numeric: tabular-nums; white
       meta.appendChild(star);
     }
     card.appendChild(meta);
+    if (parent) card.appendChild(el("div", "re", "↩ Replying to " + (NAMES[parent.from] || parent.from || "") + ": " + (parent.summary || "")));
     if (m.summary) card.appendChild(el("div", "summary", m.summary));
     add(card, bodyEl(m.body));
     if (m.kind === "disagreement" && m.positions) card.appendChild(positionsEl(m));
@@ -372,12 +374,11 @@ td.num, td.t { font: 12px var(--mono); font-variant-numeric: tabular-nums; white
     composer(view);
     toolbar(view, true);
     var lanes = el("div", "lanes"); lanes.appendChild(el("span", "l", "BewareILive")); lanes.appendChild(el("span", "r", "VectorCraft")); view.appendChild(lanes);
-    view.appendChild(el("p", "order", "Newest first. New messages appear at the top and flash briefly. Replies sit under the message they answer."));
+    view.appendChild(el("p", "order", "Newest first. Each message sits in its sender's lane; a reply names the message it answers. New messages appear at the top and flash briefly."));
     var log = el("div", "log"); log.id = "log";
     var byId = {}; data.messages.forEach(function (m) { byId[m._id] = m; });
     var replies = {};
-    data.messages.forEach(function (m) { if (m.replyTo && byId[m.replyTo]) (replies[m.replyTo] = replies[m.replyTo] || []).push(m); });
-    var top = data.messages.filter(function (m) { return !(m.replyTo && byId[m.replyTo]); });
+    var top = data.messages;
     var shown = top.filter(function (m) {
       var kids = replies[m._id] || [];
       var kindOk = kindFilter === "all" || (kindFilter === "important" ? isImportant(m) || kids.some(isImportant) : m.kind === kindFilter || kids.some(function (r) { return r.kind === kindFilter; }));
@@ -390,10 +391,7 @@ td.num, td.t { font: 12px var(--mono); font-variant-numeric: tabular-nums; white
     shown.forEach(function (m) {
       var t = ts(m.t), day = isNaN(t) ? "" : fmtDay.format(new Date(t));
       if (day && day !== lastDay) { log.appendChild(el("div", "day", day)); lastDay = day; }
-      var card = msgCard(m, false);
-      var kids = (replies[m._id] || []).slice().sort(byT);
-      if (kids.length) { var box = el("div", "replies"); kids.forEach(function (r) { box.appendChild(msgCard(r, true)); }); card.appendChild(box); }
-      log.appendChild(card);
+      log.appendChild(msgCard(m, false, m.replyTo ? byId[m.replyTo] : null));
     });
     view.appendChild(log);
   }
