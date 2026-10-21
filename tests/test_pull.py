@@ -77,6 +77,7 @@ class PullTests(unittest.TestCase):
             self.assertIsInstance(res, PullResult)
             self.assertEqual(res.owner_lines, 0)
             self.assertEqual(res.approvals, [])
+            self.assertEqual(res.skipped, [])
             self.assertEqual(owner_lines(r.root), [])
 
     def test_owner_created_doc(self):
@@ -155,6 +156,24 @@ class PullTests(unittest.TestCase):
             res = pull(r.root, exp)
             self.assertEqual(res.owner_lines, 0)
             self.assertEqual(owner_lines(r.root), [])
+
+    def test_foreign_doc_skipped_not_blocking(self):
+        with TempRepo() as r:
+            r.write_roster()
+            r.write_log("codex", [line(1, "codex", data={"body": "a"}, t=T0)])
+            exp = make_export(
+                r.root, {("messages", "codex-0001"): {"body": "a"},
+                         ("messages", "stranger-1"): {"body": "unlogged"},
+                         ("messages", "own-x"): {"body": "from owner"}},
+                {"messages": '- "stranger-1"  10 bytes  version 5  "t"\n'
+                             '- "own-x"  10 bytes  version 1  "t"\n'})
+            res = pull(r.root, exp)
+            self.assertEqual(res.skipped, ["messages/stranger-1"])
+            self.assertEqual(res.owner_lines, 1)
+            [ln] = owner_lines(r.root)
+            self.assertEqual((ln.op, ln.id), ("set", "own-x"))
+            self.assertEqual(res.versions, {"messages/stranger-1": 5, "messages/own-x": 1})
+            self.assertEqual(load_state(r.root)[PAGE]["versions"], res.versions)
 
     def test_ignores_unknown_dirs(self):
         with TempRepo() as r:
