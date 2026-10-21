@@ -15,6 +15,9 @@ from crosstalk.participants import load_roster  # noqa: E402
 from crosstalk.pull import pull  # noqa: E402
 
 
+MISSING_SHOWN = 10
+
+
 def err(msg):
     print(msg, file=sys.stderr)
 
@@ -85,10 +88,19 @@ def cmd_pull(args):
     except RuntimeError as e:
         err(str(e))
         return 1
-    print("owner lines: %d, approvals: %s, skipped: %s"
-          % (res.owner_lines, ",".join(res.approvals) or "-", ",".join(res.skipped) or "-"))
+    print("owner lines: %d, approvals: %s, skipped: %s, versions: %d"
+          % (res.owner_lines, ",".join(res.approvals) or "-", ",".join(res.skipped) or "-",
+             len(res.versions)))
     for s in res.skipped:
         err("warning: skipped %s (not in any log)" % s)
+    for name in res.missing_listings:
+        coll = name[:-len(".listing.txt")]
+        n = sum(1 for m in res.missing_versions if m.startswith(coll + "/"))
+        err("warning: no listing %s for %s/ (%d docs)" % (name, coll, n))
+    for m in res.missing_versions[:MISSING_SHOWN]:
+        err("warning: no version for %s" % m)
+    if len(res.missing_versions) > MISSING_SHOWN:
+        err("... and %d more" % (len(res.missing_versions) - MISSING_SHOWN))
     return 0
 
 

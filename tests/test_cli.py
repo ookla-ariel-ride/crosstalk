@@ -125,7 +125,33 @@ class CliTests(unittest.TestCase):
             r.write_log("codex", [line(1, "codex")])
             p = c.run("pull", str(exp))
             self.assertEqual(p.returncode, 0, p.stderr)
-            self.assertEqual(p.stdout.strip(), "owner lines: 0, approvals: -, skipped: -")
+            self.assertEqual(p.stdout.strip(),
+                             "owner lines: 0, approvals: -, skipped: -, versions: 0")
+            self.assertEqual(p.stderr, "")
+
+    def test_pull_warns_on_missing_versions_and_listings(self):
+        with TempRepo() as r:
+            c = Cli(r)
+            r.write_log("codex", [line(i + 1, "codex", data={"n": i}) for i in range(13)])
+            exp = r.root / "export"
+            (exp / "messages").mkdir(parents=True)
+            (exp / "locks").mkdir()
+            for i in range(13):
+                (exp / "messages" / ("codex-%04d.json" % (i + 1))).write_text(
+                    json.dumps({"n": i}), encoding="utf-8")
+            (exp / "locks" / "l-1.json").write_text("{}", encoding="utf-8")
+            (exp / "messages.listing.txt").write_text(
+                '- "codex-0001"  10 bytes  version 2  "t"\n', encoding="utf-8")
+            p = c.run("pull", str(exp))
+            self.assertEqual(p.returncode, 0, p.stderr)
+            self.assertEqual(p.stdout.strip(),
+                             "owner lines: 1, approvals: -, skipped: -, versions: 1")
+            err = p.stderr.splitlines()
+            self.assertIn("warning: no listing locks.listing.txt for locks/ (1 docs)", err)
+            missing = [e for e in err if e.startswith("warning: no version for ")]
+            self.assertEqual(missing[0], "warning: no version for locks/l-1")
+            self.assertEqual(len(missing), 10)
+            self.assertIn("... and 3 more", err)
 
     def test_import_then_check(self):
         with TempRepo() as r:

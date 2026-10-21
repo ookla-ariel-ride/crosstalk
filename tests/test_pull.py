@@ -206,6 +206,30 @@ class PullTests(unittest.TestCase):
             self.assertEqual(state["https://other"], {"bookmarks": {"codex": 5}})
 
 
+    def test_missing_versions_reported(self):
+        with TempRepo() as r:
+            r.write_roster()
+            r.write_log("codex", [line(1, "codex", data={"body": "a"}, t=T0),
+                                  line(2, "codex", data={"body": "b"}, t=T0)])
+            exp = make_export(
+                r.root, {("messages", "codex-0001"): {"body": "a"},
+                         ("messages", "codex-0002"): {"body": "b"},
+                         ("locks", "l-1"): {"x": 1}},
+                {"messages": '- "codex-0001"  10 bytes  version 3  "t"\n'})
+            res = pull(r.root, exp)
+            self.assertEqual(res.missing_versions, ["locks/l-1", "messages/codex-0002"])
+            self.assertEqual(res.missing_listings, ["locks.listing.txt"])
+
+    def test_nothing_missing_when_listings_cover_docs(self):
+        with TempRepo() as r:
+            r.write_roster()
+            r.write_log("codex", [line(1, "codex", data={"body": "a"}, t=T0)])
+            exp = make_export(r.root, {("messages", "codex-0001"): {"body": "a"}},
+                              {"messages": '- "codex-0001"  10 bytes  version 3  "t"\n',
+                               "locks": ""})
+            res = pull(r.root, exp)
+            self.assertEqual((res.missing_versions, res.missing_listings), ([], []))
+
 class ApprovalTests(unittest.TestCase):
     def test_approval_updates_roster(self):
         with TempRepo() as r:

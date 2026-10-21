@@ -26,6 +26,10 @@ class PullResult:
     approvals: List[str] = field(default_factory=list)
     versions: Dict[str, int] = field(default_factory=dict)
     skipped: List[str] = field(default_factory=list)
+    # collection/id of exported docs that no listing gave a version for
+    missing_versions: List[str] = field(default_factory=list)
+    # <collection>.listing.txt files absent for a collection dir that holds docs
+    missing_listings: List[str] = field(default_factory=list)
 
 
 def parse_listing(text: str) -> Dict[str, int]:
@@ -69,13 +73,17 @@ def _owner_change(page: dict, all_doc: dict, sent_doc: dict) -> dict:
     return changes
 
 
-def _read_export(export_dir: Path) -> Tuple[Dict[Tuple[str, str], dict], Dict[str, int]]:
+def _read_export(export_dir: Path) -> Tuple[Dict[Tuple[str, str], dict], Dict[str, int],
+                                             List[str]]:
     docs = {}  # type: Dict[Tuple[str, str], dict]
     versions = {}  # type: Dict[str, int]
+    missing_listings = []  # type: List[str]
     for coll in PULL_COLLECTIONS:
         coll_dir = export_dir / coll
+        has_docs = False
         if coll_dir.is_dir():
             for f in sorted(coll_dir.glob("*.json")):
+                has_docs = True
                 fields = json.loads(f.read_text(encoding="utf-8"))
                 if not isinstance(fields, dict):
                     raise RuntimeError("%s is not a JSON object" % f)
@@ -84,7 +92,9 @@ def _read_export(export_dir: Path) -> Tuple[Dict[Tuple[str, str], dict], Dict[st
         if listing.is_file():
             for did, v in parse_listing(listing.read_text(encoding="utf-8")).items():
                 versions["%s/%s" % (coll, did)] = v
-    return docs, versions
+        elif has_docs:
+            missing_listings.append(listing.name)
+    return docs, versions, missing_listings
 
 
 def pull(root: Path, export_dir: Path) -> PullResult:
@@ -100,7 +110,9 @@ def pull(root: Path, export_dir: Path) -> PullResult:
     bookmarks = state.get(roster.page, {}).get("bookmarks", {})
     all_docs = replay(lines)
     sent_docs = replay(ln for ln in lines if ln.seq <= bookmarks.get(ln.from_, 0))
-    page_docs, versions = _read_export(export_dir)
+    page_docs, versions, missing_listings = _read_export(export_dir)
+    missing_versions = sorted("%s/%s" % key for key in page_docs
+                              if "%s/%s" % key not in versions)
 
     # Plan every owner line first, then write.
     plan = []  # (op, collection, id, data)
@@ -147,4 +159,5 @@ def pull(root: Path, export_dir: Path) -> PullResult:
     state.setdefault(roster.page, {})["versions"] = versions
     save_state(root, state)
     return PullResult(owner_lines=len(plan), approvals=approvals, versions=versions,
-                      skipped=skipped)
+                      skipped=skipped, missing_versions=missing_versions,
+                      missing_listings=missing_listings)
