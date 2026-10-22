@@ -10,7 +10,10 @@ EPOCH = "1970-01-01T00:00:00Z"
 PREFIX_WRITERS = (("m-", "bewareilive"), ("vc-", "vectorcraft"), ("own-", "owner"))
 
 
-def _writer(doc_id: str, fields: dict, projects) -> str:
+def _writer(doc_id: str, fields: dict, projects, people) -> str:
+    for pid in people:
+        if doc_id.startswith(pid + "-"):
+            return pid
     for prefix, writer in PREFIX_WRITERS:
         if doc_id.startswith(prefix):
             return writer
@@ -55,7 +58,8 @@ def import_snapshots(root: Path, snapshot_dirs: List[Path]) -> Dict[str, int]:
 
     plan = []
     for (coll, did), (fields, _src) in rows.items():
-        plan.append((_time(fields), _writer(did, fields, projects), coll, did, fields))
+        plan.append((_time(fields), _writer(did, fields, projects, roster.participants),
+                     coll, did, fields))
     plan.sort(key=lambda r: r[:4])
 
     counts = {}  # type: Dict[str, int]

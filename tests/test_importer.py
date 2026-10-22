@@ -55,6 +55,21 @@ class ImportTests(unittest.TestCase):
             _, ln = writer_of(r.root, "messages", "m-0001")
             self.assertEqual((ln.op, ln.via), ("set", "import"))
 
+    def test_participant_prefix_names_writer(self):
+        # A row written under the new id rule (`<id>-…`) belongs to that participant,
+        # whatever its project field says.
+        with TempRepo() as r:
+            r.write_roster()
+            snap = make_snap(r.root, "s", {
+                ("messages", "codex-20261022T132907"): {"t": "2026-01-01T00:00:00Z",
+                                                        "project": "vectorcraft"},
+                ("waiting", "vectorcraft-w1"): {"since": "2026-01-01T00:00:01Z"},
+            })
+            import_snapshots(r.root, [snap])
+            self.assertEqual(writer_of(r.root, "messages", "codex-20261022T132907")[0], "codex")
+            self.assertEqual(writer_of(r.root, "waiting", "vectorcraft-w1")[0], "vectorcraft")
+            self.assertEqual(check_all(r.root, load_roster(r.root / "participants.json")), [])
+
     def test_every_imported_line_is_via_import_and_checks_clean(self):
         with TempRepo() as r:
             r.write_roster()
