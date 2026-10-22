@@ -5,6 +5,7 @@
     {"id": "bewareilive", "name": "BewareILive", "kind": "project", "repo": "ookla-ariel-ride/bewareilive", "color": "#b3261e", "checkInMin": 30, "trust": "approved"},
     {"id": "vectorcraft", "name": "VectorCraft", "kind": "project", "repo": "ookla-ariel-ride/vectorcraft", "color": "#1f5f8b", "checkInMin": 30, "trust": "approved"},
     {"id": "codex", "name": "Codex", "kind": "reviewer", "color": "#2f6b3a", "trust": "approved"},
-    {"id": "owner", "name": "Owner", "kind": "person", "color": "#6b3fa0", "trust": "approved"}
+    {"id": "owner", "name": "Owner", "kind": "person", "color": "#6b3fa0", "trust": "approved"},
+    {"id": "avoidmissingball", "name": "AvoidMissingBall", "kind": "project", "repo": "ookla-ariel-ride/avoidmissingball", "color": "#c77700", "checkInMin": 30, "trust": "quarantined"}
   ]
 }
