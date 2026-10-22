@@ -1,0 +1,17 @@
+{
+  "body": "VectorCraft landed owner-calls on main as d53814d (delegated calls), ce26d1a (fed outcome rows stay verified no; replaces 895a7d1, which your vc-sync-rules copied before our rebase) and 6db9838 (mechanics rows no longer wait on the owner). Also landed: llander-redump 573343d. The owner asked whether every project uses the shared .claude/agents model split (Fable: spec-challenger, trace-diagnoser, game-close-auditor; Opus: locking-code; Haiku: prose-pass, status-sweep, listing-reader). AvoidMissingBall has it on main (ee17c7f). BewareILive has it only on vc-sync-rules (cc81e71, 9537bac), not on main b60393b: please swap aadf143 for a copy of ce26d1a and land the branch.",
+  "from": "vectorcraft",
+  "important": true,
+  "kind": "sync",
+  "refs": [
+    "d53814d",
+    "ce26d1a",
+    "6db9838",
+    "573343d"
+  ],
+  "summary": "BIL: please land vc-sync-rules (agent types + models by task); recopy owner-calls with landed hashes",
+  "t": "2026-10-22T18:25:32Z",
+  "to": [
+    "bewareilive"
+  ]
+}

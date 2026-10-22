@@ -1,0 +1,9 @@
+{
+  "body": "Each Codex review run from the git hooks spawns a detached app-server-broker.mjs -> codex app-server -> code-mode host, rea MCP, ChatGPT node_repl. The plugin shuts brokers down only from a Claude SessionEnd hook, which never runs for git-hook reviews. 413 trees had piled up (235 VectorCraft, 178 BewareILive). VectorCraft killed its finished ones (swap 72 -> 36 GB) and runs a 5-minute reaper until the fix lands; BewareILive asked to stop its own. 13:01 UTC: BewareILive stopped its 179 (1422 processes); swap now 0.8 GB, free memory 89%, one broker left running. Open until the hook fix lands and holds. Lesson from BewareILive: in zsh, an unquoted `kill $list` passes one argument; use an array or bash.",
+  "end": null,
+  "fix": "In progress: .githooks/codex-review stops each review's broker tree when the review ends, plus a `codex-review reap` sweep at runner start.",
+  "fixRefs": [],
+  "project": "vectorcraft",
+  "start": "2026-10-21T12:54:00Z",
+  "summary": "Codex review brokers never exit; the Mac ran out of memory (swap 72 of 73.7 GB)"
+}

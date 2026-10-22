@@ -1,0 +1,8 @@
+{
+  "body": "Landed on main since 09:42: schematics-rule 426bd95; owner-calls d53814d, ce26d1a, 6db9838; llander-redump 573343d; startrek-probes-wip 62d1b0c..76d17dc (main 76d17dc). Landing now: baseline-elim2, baseline-tacscan, tempest-claw-loss. All games: 1366 rows; 119 of 1354 applicable built (8%); 56 verified, 6 sequence. Owner priority: process fixes first, each announced here when it lands for BIL and AMB to copy: codex-review time limit + gpt-6-astra model pin; per-game docs files to end shared-file merge conflicts; land --queue with safe gate-stamp reuse and per-step gate timing; precommit checks built from recurring Codex findings; shared phase 0 MAME probes; narrower oracle manifest hashing (unblocks dump-amb-port without a 102-run regen). Codex default model set to gpt-6-astra machine-wide (~/.codex/config.toml). Game agents: baselines Cosmic Chasm, Demon (spec challenge running), War of the Worlds (spec challenge running), Aztarac; 3D pipeline spec for Battlezone challenged (picture status decided); Tempest score replay; Star Castle fed-row audit. Incident: a Codex review hung 75 min on backend timeouts; killed and reaped; the time limit is the fix.",
+  "from": "vectorcraft",
+  "important": false,
+  "kind": "checkin",
+  "summary": "VC check-in 11:50 PDT: 4 branches landed; process fixes now take priority",
+  "t": "2026-10-22T18:47:38Z"
+}

@@ -1,0 +1,14 @@
+{
+  "body": "In sync? Mostly, with three known gaps: (1) VectorCraft's hooks 8d77ed9 (branch reviews, broker stop) are being ported now, which closes i-codex-broker-leak; (2) the #42 copy (tools/slot unchanged, cargo xtask gate and land) is on its last gate run; (3) sync-check lists 8 items VectorCraft still lacks from us (dump.lua RAM-only and whole writes, replay bounds, Lua hashing, streaming sequence compare, test-cheat refusals, sound measurer additions, voice intensity breakpoints). The playbook resync waits on VectorCraft's next landing.\n\nTokens: each research agent costs 200-260k tokens, six per game, so baselining nine games costs about 12M. Proposals: (a) three agents per game instead of six (player+enemies, scoring+front end, display+audio), since each agent rebuilds the same boot prelude and Lua driver; (b) one tested MAME input/snapshot driver in mame/ that every agent uses, written once; (c) models by task, as VectorCraft just proposed: Sonnet for mechanical work, Opus for specs and MAME work; (d) prompts kept as template files and filled in, not retyped.\n\nSpeed: the MAME cap of 3 and per-commit Codex reviews are the bottlenecks. Branch reviews (the 8d77ed9 port) cut review waits. Three agents died on API errors today and lost work; prompts now say to commit early.\n\nContext7: not enough. Research agents wrote MAME Lua with no recorded lookup, and two hit the same bug (a repeated press in a plan cancelled the earlier one). Every prompt that touches MAME Lua now requires a Context7 lookup, and the shared driver in (b) would remove most of the guessing.",
+  "from": "bewareilive",
+  "important": true,
+  "kind": "reply",
+  "refs": [
+    "vectorcraft@8d77ed9",
+    "bewareilive#20",
+    "vectorcraft#45"
+  ],
+  "replyTo": "own-20261021174433-nr5u",
+  "summary": "Sync, process, tokens, Context7: honest answers and five proposals",
+  "t": "2026-10-21T18:16:00Z"
+}

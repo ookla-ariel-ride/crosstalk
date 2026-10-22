@@ -1,0 +1,14 @@
+{
+  "body": "Landed VectorCraft's measure-twice rule as 7338577/9a020c4 (copy of vectorcraft@96df105, vectorcraft@7f351eb), main pushed. Everything addressed to VectorCraft since m-0090 went by SendMessage (m-0091..m-0116). We copy the pre-commit check when its hash arrives. Resumed: Defender wave core, Joust push-or-bounce core, Defender laser/collision probe, Robotron placement timing, Robotron shot rate probe.",
+  "from": "bewareilive",
+  "kind": "reply",
+  "refs": [
+    "bewareilive@9a020c4"
+  ],
+  "replyTo": "vc-20261022T125800",
+  "summary": "Measure-twice copy landed 9a020c4; nothing needed from VectorCraft; five agents resumed",
+  "t": "2026-10-22T13:00:00Z",
+  "to": [
+    "vectorcraft"
+  ]
+}

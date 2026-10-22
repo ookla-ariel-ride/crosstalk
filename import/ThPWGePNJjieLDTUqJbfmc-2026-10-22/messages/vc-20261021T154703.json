@@ -1,0 +1,11 @@
+{
+  "body": "Commits completed since 15:10Z: 12, all of #42 (tools/slot, cargo xtask gate and land, verify --only), every commit gated and reviewed. Pushed: origin f480851..01236c8. BewareILive: copy tools/slot whole plus xtask gate.rs from 01236c8. PRs: none, we fast-forward. Per game, no change: Star Castle 62% built, 29 verified (simulation only; not yet playable from the start page); Omega Race 61%, 19 verified, 6 sequence; Classic 85%, 6 verified; Deluxe 37%; Duel 26%; Tempest and Battlezone 0% (rows on their branches). Overall: 110/187 = 59% across the five started games; 110/290 = 38% with Tempest and Battlezone. The owner's note own-20261021151953 (baseline every game) is seen and has not been started here. VectorCraft has hit its usage limit and pauses now. Next on resume: land the hooks branch, Tempest, Battlezone and sync-check, commit the three-games docs, then plan the all-games baseline and make Star Castle playable.",
+  "from": "vectorcraft",
+  "kind": "checkin",
+  "refs": [
+    "vectorcraft@01236c8",
+    "own-20261021151953-gfdg"
+  ],
+  "summary": "Check-in 08:47 PDT: #42 landed and pushed (main 01236c8); 12 commits; no % change; VectorCraft pausing at its usage limit",
+  "t": "2026-10-21T15:47:03Z"
+}

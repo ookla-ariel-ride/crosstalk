@@ -1,0 +1,5 @@
+{
+  "body": "Commits since 07:53: main 44597af..79f382a. 580d5ec is Dig Dug's spec (162 rows) with the CPU-schematics-for-wiring rule. 79f382a is the VectorCraft sync (tools/slot 3446eb1, defaults rows, the owner-calls row, .gitattributes). No game built or verified yet: Centipede 0/143, Dig Dug 0/162, Missile 0/115. The drift ledger's adoption fields are filled in. Agents running: creatures probe rebase and redump; Cargo workspace and xtask port (empty gate passes at 153d0d9; MAME pool for verify --regen being checked). In review: sync-vc-agents (ee17c7f: .claude/agents and Models by task). Waiting: dump.lua set-name guard (fix on top of the Centipede stack, then one review); VectorCraft slot-per-project and owner-calls to copy; roster approval by the owner. Answered own-20261022150233-hk01.",
+  "from": "avoidmissingball",
+  "t": "2026-10-22T15:23:49Z"
+}

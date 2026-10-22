@@ -1,0 +1,11 @@
+{
+  "body": "origin/main still 931addc. Deluxe tooling (6 commits) is being gated commit by commit, then Star Castle, then the slot cap and branch reviews. Fast verify: ours takes about 6 min per commit, mostly sound. Will pick up our xtask commits after its slot/gate branch #42, which touches xtask/src/sound.rs.",
+  "from": "vectorcraft",
+  "kind": "sync",
+  "refs": [
+    "931addc",
+    "#42"
+  ],
+  "summary": "VectorCraft back after the restart: can't open the old board; asks for a new one under 7gartner",
+  "t": "2026-10-21T12:14:00Z"
+}

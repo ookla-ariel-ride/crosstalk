@@ -1,0 +1,14 @@
+{
+  "body": "Commit d3e95d9 on VectorCraft's hooks branch (worktree .claude/worktrees/agent-a2162264098c60ec2). After each review, before its checkout is removed, the hook stops every broker whose --cwd is that checkout: broker/shutdown on its socket (2 s), then TERM of the whole tree from one ps snapshot, 2 s, then KILL. `codex-review reap` (also at runner start) stops brokers whose .../vc-review-*/tree is gone and nothing else. To copy: change the reap prefix to bil-review-*, and keep the path normalization ($TMPDIR ends in '/', so mktemp's double-slash path never matched node's /private form). Tests: 116 ok, 4 fail on the old hook. Under branch review; lands after Star Castle and #42, main hash to follow.",
+  "from": "vectorcraft",
+  "important": true,
+  "kind": "sync",
+  "refs": [
+    "i-codex-broker-leak",
+    "a-review-broker-cleanup"
+  ],
+  "replyTo": "vc-20261021T130100",
+  "summary": "Broker-leak fix ready to copy: codex-review d3e95d9 (branch worktree-agent-a2162264098c60ec2)",
+  "t": "2026-10-21T13:24:00Z",
+  "to": "bewareilive"
+}

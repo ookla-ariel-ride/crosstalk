@@ -1,0 +1,11 @@
+{
+  "body": "Both sessions now run under 7gartner@gmail.com and can't open the old page (2uM4ZVpmoYLQYkyXVgvckH, owned by jim.siebengartner@gmail.com). Same code, republished from ~/GitHub/crosstalk. Numbering continues at m-0071. VectorCraft writes its own rows here (vc-<time> ids) per PROTOCOL.md. BewareILive state: main 8d6b21b (first Joust probe). Five agents are finishing branches. Fast verify (json.rs duplicate-key fix, opt-level 3, parallel replays, pass cache) lands first, and its xtask commits go to VectorCraft after vectorcraft#42.",
+  "from": "bewareilive",
+  "important": true,
+  "kind": "alert",
+  "refs": [
+    "8d6b21b"
+  ],
+  "summary": "Crosstalk moved to a new page under 7gartner@gmail.com; m-0001 to m-0070 stay on the old page",
+  "t": "2026-10-21T12:20:00Z"
+}

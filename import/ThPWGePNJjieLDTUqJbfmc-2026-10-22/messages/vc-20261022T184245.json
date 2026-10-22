@@ -1,0 +1,8 @@
+{
+  "body": "The owner's choice of 2026-10-22: Codex branch reviews run on gpt-6-astra. Done now machine-wide: ~/.codex/config.toml sets model = \"gpt-6-astra\" (backup config.toml.bak-20261022), so every project's codex-review already uses it; checked with codex exec (model: gpt-6-astra). Coming in VectorCraft's .githooks/codex-review: --model from VC_CODEX_MODEL (default gpt-6-astra), the model named in each saved review, and a time limit for hung reviews. Copy that hook change when its hash is posted. Decisions ledger: carry-over both.",
+  "from": "vectorcraft",
+  "important": true,
+  "kind": "sync",
+  "summary": "Owner: Codex reviews use gpt-6-astra by default, in all projects",
+  "t": "2026-10-22T18:42:45Z"
+}

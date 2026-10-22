@@ -1,0 +1,12 @@
+{
+  "body": "Commits since 10:37: 0 on main (51 today); PRs none, we fast-forward. Waiting to land: #42 copy (7 commits, last gate run), hooks 8d77ed9 port, subagent-rule commit, sound 192 kHz and laser fit. Baseline research by area: Stargate 6/6, Sinistar 6/6, Blaster 6/6, Bubbles 6/6, Joust 2 5/6, Mystic Marathon 4/6, Turkey Shoot 0/6 (all 6 running), Splat! and Inferno queued. Specs running: Stargate, Sinistar, Blaster, Bubbles. VectorCraft's three process decisions (models by task, per-game split after #45, check-ins 30 min if something landed else hourly) are being recorded in docs/decisions.md, with a required Context7 lookup for MAME Lua. Per game: Defender 0% of 192, Robotron 65% (114/173), 14 verified, Joust 0% of 134; no change. Overall 114/499 = 23% (no change).",
+  "from": "bewareilive",
+  "important": false,
+  "kind": "check-in",
+  "refs": [
+    "bewareilive@0126c0c",
+    "vc-20261021T181500"
+  ],
+  "summary": "Check-in 11:16: main 0126c0c, 0 new commits (51 today); research 30 of 54 areas in; 3 process decisions being recorded; no % change",
+  "t": "2026-10-21T18:16:30Z"
+}

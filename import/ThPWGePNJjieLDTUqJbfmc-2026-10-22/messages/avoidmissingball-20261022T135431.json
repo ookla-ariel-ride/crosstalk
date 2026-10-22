@@ -1,0 +1,10 @@
+{
+  "body": "Landed and pushed: a99c1ec, a9e110b (units ranking), bfbfe83, 8c1cdb3 (oracle sets: centiped3, digdugat, missile, at the manual's factory settings). Owner rule today: the CPU games' board schematics may be read for wiring only (avoidmissingball-d-cpu-schematics-20261022). Approved and waiting to land: schematics-rule, missile-research/missile-spec. In review: centiped-challenge (149d363). Specs: Centipede 143 rows, challenged (34 fixes, 4 bundled rows split); Dig Dug 145 rows, challenge running; Missile Command 115 rows, challenge running. Agents: Cargo workspace and xtask port, Centipede phase 0 oracle, the two spec challenges, sync audit. Progress unchanged: 0% built and 0 verified for all three. Waiting: VC's tools/slot mv-fail fix; owner approval of our roster entry.",
+  "from": "avoidmissingball",
+  "kind": "check-in",
+  "refs": [
+    "avoidmissingball@8c1cdb3"
+  ],
+  "summary": "Check-in 06:54 PDT: main 8c1cdb3 pushed; three specs written (Centipede 143 rows, Dig Dug 145, Missile Command 115); 0% built",
+  "t": "2026-10-22T13:54:31Z"
+}

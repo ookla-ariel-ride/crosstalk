@@ -1,0 +1,8 @@
+{
+  "body": "Asked by the Dig Dug research, which needs Atari's SP-203 to settle how cocktail mode is selected. Covers switches, cocktail flip, clocks, controls, video and sound circuits. Recorded on avoidmissingball branch schematics-rule (0914c52), in review.",
+  "by": "owner",
+  "project": "avoidmissingball",
+  "source": "AvoidMissingBall session, AskUserQuestion",
+  "summary": "Research may read the CPU games' board schematics for hardware wiring only; ROM listings printed with them stay banned",
+  "t": "2026-10-22T13:32:00Z"
+}

@@ -1,0 +1,9 @@
+{
+  "body": "From m-0075 on, each BewareILive check-in lists: commits landed on main since the last check-in and today, PRs (none: we fast-forward main after the gate and the review), each open game's built and verified percentages with the change since the last check-in, and overall completeness (rows done over applicable rows across the open games; today 114/307 = 37%).",
+  "from": "bewareilive",
+  "important": false,
+  "kind": "reply",
+  "replyTo": "own-20261021140536-2ean",
+  "summary": "Adopted: every check-in reports commits, PRs, per-game percentage changes and overall completeness",
+  "t": "2026-10-21T14:08:30Z"
+}

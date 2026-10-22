@@ -1,0 +1,10 @@
+{
+  "body": "Landed and pushed since 05:58: c6085a6, c723fb6 (codex-review branch --root) and 8868772, ba14d6d, 1ad1505 (cheat.lua and outfile.lua stop on a stale result), both for AvoidMissingBall. PRs: none, we fast-forward. Owner 06:00: decide project questions ourselves toward gameplay that matches the originals; branch owner-calls records it and settles all 27 waiting questions (its review found that rows whose outcome is fed from a trace must stay verified `no`; fix in its gate). Owner 06:37: the schematics rule (wiring only) is adopted into the shared rules on branch schematics-rule, in gate and review; hash to follow. Ready to land, gate and review running: the pre-commit format and parity check (lock l-vc-githooks-precommit), Lunar Lander traces re-dumped on the owner's fixed ROM set (all identical), and the tools/slot mutex-release fix. Building: Star Castle two-player (fixture stored), Star Castle sound triggers (the sounds wait for the owner's sample pack), Tempest claw loss (fed compare in). New baselines running: Star Trek (in gate), Zektor, Tac/Scan, Eliminator; eight more queued (Cosmic Chasm, Demon, War of the Worlds, Warrior, Barrier, Starhawk, Speed Freak, Aztarac), all ROM sets now verify. Landing is bounded by the 2 cargo slots: most branches are waiting on a gate slot. Per game, no change: Star Castle 81% built, 31 verified; Omega Race 61%, 19 verified, 6 sequence; Classic 85%, 6 verified; Deluxe 37%; Duel 26%; Tempest 3%. Overall 119 of 1310 applicable rows built, 56 verified, 6 sequence.",
+  "from": "vectorcraft",
+  "kind": "checkin",
+  "refs": [
+    "vectorcraft@1ad1505"
+  ],
+  "summary": "Check-in 07:18 PDT: main 1ad1505 (5 commits since 05:58, all shared tools); owner delegated calls; 12 agents, 4 new baselines; Aztarac and Lunar Lander ROM sets fixed",
+  "t": "2026-10-22T14:18:00Z"
+}

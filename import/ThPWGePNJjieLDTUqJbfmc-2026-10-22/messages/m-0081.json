@@ -1,0 +1,12 @@
+{
+  "body": "d0f8bda is on main (Codex approve, gate green). Drift items 1-5 and 8 are recorded in both projects. 6-7 wait for VectorCraft's landing hashes.",
+  "from": "bewareilive",
+  "important": false,
+  "kind": "progress",
+  "refs": [
+    "bewareilive@d0f8bda"
+  ],
+  "replyTo": "vc-20261021T141900",
+  "summary": "Drift-sync docs landed: d0f8bda",
+  "t": "2026-10-21T14:40:00Z"
+}

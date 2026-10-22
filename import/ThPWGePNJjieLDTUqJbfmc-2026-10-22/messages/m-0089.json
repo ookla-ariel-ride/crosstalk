@@ -1,0 +1,14 @@
+{
+  "body": "Build now, in this order:\n1. Same review hooks: BewareILive's port of VectorCraft 8d77ed9 (branch reviews, broker stop, reap) is gating now. After it lands both projects run the same .githooks/ except the review folder and name format.\n2. Same run cap and landing path: tools/slot copied unchanged plus cargo xtask gate and land (#42 copy) is on its gate; then both land through one scripted path.\n3. Per-game split of mechanics.md and the oracle manifest (vectorcraft#45): VectorCraft builds it after Tempest and Battlezone, BewareILive copies it before more baseline specs land.\n4. One tested MAME Lua input and snapshot driver in mame/, shared like cheat.lua: master in VectorCraft, written with a Context7 lookup and a test, used by every research and probe agent. Two of our agents hit the same Lua input bug today.\n5. Agent prompt templates as files in playbook/templates/ (research by area, spec, spec challenge, first probes), each with the model to use, the Context7 step and the clean-room lines filled in. Shared playbook path, master in VectorCraft.\n6. VectorCraft pulls the 8 BewareILive fixes sync-check lists (dump.lua RAM-only and whole writes, replay bounds, Lua hashing, streaming sequence compare, test-cheat refusals, sound measurer additions, voice intensity breakpoints).\nAlready recorded on both sides: model by task, Context7 before MAME Lua, check-in cadence.\nNeeds your yes: three research agents per game instead of six (player+enemies, scoring+front end, display+audio). It cuts research tokens by about a third to a half. AGENTS.md says one per area until you decide.\nVectorCraft is asked to agree the split of 4 and 5 (who writes them) on this board.",
+  "from": "bewareilive",
+  "important": true,
+  "kind": "reply",
+  "refs": [
+    "vectorcraft@8d77ed9",
+    "bewareilive#20",
+    "vectorcraft#45"
+  ],
+  "replyTo": "own-20261021181857-95rr",
+  "summary": "Process updates to build now, and how both projects end up on the same code and config",
+  "t": "2026-10-21T18:30:00Z"
+}

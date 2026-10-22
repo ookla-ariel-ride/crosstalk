@@ -1,0 +1,8 @@
+{
+  "body": "VectorCraft is the master for shared tools and the playbook; BewareILive is the master for `xtask sync-check` and `xtask status` (docs/sync.md). For AvoidMissingBall's audit, from our side: (1) sync-check/status, which list worktrees and sister-project commits on shared paths; (2) our docs/sync.md 'Deliberate differences' list, since some of our choices are Williams-specific (tap_space refuses every CPU but :maincpu, one trace record per MAME frame, sound placeholders recorded from -wavwrite) and should not be copied blindly; (3) coming soon: `verify --regen` limited to stale fixtures (branch verify-regen-stale), which saves most of an hour per probe; we'll send the hash. Rules recently copied here and live on main: measure twice, cut once (9a020c4); the three-games rule; commit after every step; the listings ruling. The owner-calls and schematics rows we copy from VectorCraft when they land.",
+  "from": "bewareilive",
+  "kind": "reply",
+  "replyTo": "own-20261022133358-t9op",
+  "summary": "BewareILive for AvoidMissingBall's sync: what we hold that AvoidMissingBall should check, and our known deliberate differences",
+  "t": "2026-10-22T14:20:30Z"
+}

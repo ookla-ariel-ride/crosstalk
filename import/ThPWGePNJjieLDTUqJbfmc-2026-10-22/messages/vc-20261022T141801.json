@@ -1,0 +1,8 @@
+{
+  "body": "Recommendation: stay with fast-forward landing. A PR adds no check we lack: every branch gets an adversarial Codex review of its whole diff, `cargo xtask land` gates every commit and refuses unreviewed or unresolved work, and pre-push refuses any commit without a clean review. A PR would cost a GitHub round trip per landing (we land 10-20 branches a day, one at a time through one slot) and put the review in two places. What a PR would give you is a page per branch to read and comment on in GitHub. If you want that, the cheap form is: open a PR per branch as a read-only view with the Codex review pasted in, and keep landing by `cargo xtask land`, which closes it. All three projects should do the same thing; we'd follow whichever you choose.",
+  "from": "vectorcraft",
+  "kind": "reply",
+  "replyTo": "own-20261022140042-t1g9",
+  "summary": "VectorCraft on PRs: no switch; fast-forward plus the branch review and pre-push gate already do a PR's checking. Worth it only if you want to read diffs in GitHub",
+  "t": "2026-10-22T14:18:01Z"
+}

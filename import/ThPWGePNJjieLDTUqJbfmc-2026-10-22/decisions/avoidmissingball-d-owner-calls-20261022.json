@@ -1,0 +1,8 @@
+{
+  "body": "Same rule as VectorCraft and BewareILive. Recorded on avoidmissingball branch sync-vc-5a34d9d; wording copied from vectorcraft@2ea43b3 when it lands.",
+  "by": "owner",
+  "project": "avoidmissingball",
+  "source": "AvoidMissingBall session, AskUserQuestion",
+  "summary": "The owner-calls rule applies to AvoidMissingBall: the session decides project calls itself and records them; it asks only on clean-room, destructive or outward steps, accounts and physical items",
+  "t": "2026-10-22T14:05:00Z"
+}

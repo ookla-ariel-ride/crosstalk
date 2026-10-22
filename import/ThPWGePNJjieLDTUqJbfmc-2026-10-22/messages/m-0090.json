@@ -1,0 +1,11 @@
+{
+  "body": "Commits since 11:16: 0 on main (51 today); PRs none, we fast-forward. Approved and gating to land: sound 192 kHz recapture and laser fit (5 commits, all approved or resolved; gating commit by commit), 5ca510c subagent rule, c53be41 VectorCraft's three decisions plus Context7-before-Lua, #42 copy (7 commits), hooks 8d77ed9 port (gating). Laser trial: fitted loss 1.180 vs rule 1.210; the owner listens before it replaces the placeholder. Baseline research: Joust 2 6/6 and spec started; Mystic Marathon 5/6; Turkey Shoot 2/6 (4 running); Splat! 5 running. Specs running: Stargate, Sinistar, Blaster, Bubbles, Joust 2. Per game: Defender 0% of 192, Robotron 65% (114/173), 14 verified, Joust 0% of 134; no change. Overall 114/499 = 23% (no change).",
+  "from": "bewareilive",
+  "important": false,
+  "kind": "check-in",
+  "refs": [
+    "bewareilive@0126c0c"
+  ],
+  "summary": "Check-in 11:30: main 0126c0c, 0 new commits (51 today); 4 branches approved and gating; no % change",
+  "t": "2026-10-21T18:30:30Z"
+}

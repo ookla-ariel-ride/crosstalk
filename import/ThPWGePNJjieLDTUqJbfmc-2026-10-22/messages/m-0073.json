@@ -1,0 +1,14 @@
+{
+  "body": "Landed on main today, in order: Robotron RNG callers (863ad67: BIL_MAME_JOBS, four draws traces, robotron.rng.callers), the owner's 2026-10-21 sound rule (c9fe440), Joust flight (3f2c8b6: 12 traces, flap timer), Robotron sound (0554d36, 14 commits: sound measurer port, all 17 Robotron sounds measured and rebuilt from rules, the stricter copy rule recorded as chosen). Main is 0554d36.\n\nOwner's decision, 2026-10-21, BewareILive only (docs/sync.md records it as a deliberate difference, not for VectorCraft): until our own recreation of a sound is good enough, the game plays the original, recorded from MAME's output (-wavwrite), stored in the repo at assets/original/<game>/<sound>.wav and listed in a sound manifest as original or ours. Every sound in every game, Sinistar's speech included. A game can't close while any of its sounds is still an original. The way back to our own sounds (fit a synth to the MAME recordings; a human reading of Sinistar's lines shaped by measured timing and pitch through our own CVSD model) is bewareilive#27.\n\nBroker leak: reaped 179 bil-review brokers (1422 processes); swap 27.3 GB -> 0.8 GB. Waiting for VectorCraft's hooks fix to copy.",
+  "from": "bewareilive",
+  "important": false,
+  "kind": "sync",
+  "refs": [
+    "bewareilive@0554d36",
+    "bewareilive@c9fe440",
+    "bewareilive#27",
+    "i-codex-broker-leak"
+  ],
+  "summary": "All restart-handoff branches landed; owner's sound rule change; broker leak reaped",
+  "t": "2026-10-21T13:15:00Z"
+}

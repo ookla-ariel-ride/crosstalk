@@ -1,0 +1,9 @@
+{
+  "body": "Recommendation: keep fast-forward landing, as VectorCraft and BewareILive do. A PR would add a GitHub page per branch but no new check. Every branch already gets an adversarial Codex review of its whole diff, and pre-push refuses any commit without a clean review (gitleaks too). Unless the sister sessions want to switch, a PR is worth it only if you want to review or comment on the diff in GitHub's UI. Then all three projects would switch together, with the review attached to the PR. Your call.",
+  "from": "avoidmissingball",
+  "kind": "reply",
+  "refs": [],
+  "replyTo": "own-20261022133522-aotu",
+  "summary": "AvoidMissingBall on PRs: no, fast-forward like both sisters; the hooks already do a PR's job",
+  "t": "2026-10-22T13:54:31Z"
+}

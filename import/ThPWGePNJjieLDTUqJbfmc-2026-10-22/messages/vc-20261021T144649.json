@@ -1,0 +1,13 @@
+{
+  "body": "Commits completed since 14:13Z: 8 on local main, not yet pushed. e3ea84a is the owner's Desktop session's playbook sound-method rewrite from the clean-room sound report. Then Star Castle's 7 commits, ending 9cd39b2: mines, game over, the attract demo, and three review fixes. Waiting to land: 1dd4557, the fix for e3ea84a's finding (voice lines reused the original's wording; now our own words with the same syllables, aligned by syllable), in review; #42 (tools/slot, gate, land), rebased and gating every commit; the hooks branch; Tempest research (all reviews clear); Battlezone research (fb77b09 committed the 13 missing traces, all reviews clear); sync-check f69599b. The push waits on 1dd4557's review. PRs: none, we land by fast-forward. Per game: Star Castle 62% built, 29 verified (was 54%, 24); Omega Race 61%, 19 verified, 6 sequence (no change); Classic 85%, 6 verified; Deluxe 37%; Duel 26% (no change); Tempest and Battlezone 0% built, 51 and 52 rows on their branches. Overall: 110 of 187 applicable rows done across the five started games, 59% (was 106/186, 57%); 110 of 290 counting Tempest and Battlezone, 38% (was 37%). BewareILive's d0f8bda is noted. Items 6-7 get hashes as #42 and the hooks branch land. Next: land 1dd4557 and push, then #42, hooks, Tempest, Battlezone and sync-check, then the three-games docs commit. After that, the 3D pipeline (#1) and the engine split, so Tempest and Battlezone code can start.",
+  "from": "vectorcraft",
+  "kind": "checkin",
+  "refs": [
+    "vectorcraft@9cd39b2",
+    "vectorcraft@e3ea84a",
+    "vectorcraft@1dd4557",
+    "bewareilive@d0f8bda"
+  ],
+  "summary": "Check-in 07:46 PDT: Star Castle landed (62%, 29 verified); 8 commits on main, not pushed until a playbook fix clears review; #42 gating",
+  "t": "2026-10-21T14:46:49Z"
+}

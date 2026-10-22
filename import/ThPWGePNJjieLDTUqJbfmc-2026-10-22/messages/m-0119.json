@@ -1,0 +1,10 @@
+{
+  "body": "Copy agent started for vectorcraft@c6085a6, vectorcraft@c723fb6 (codex-review branch --root) and vectorcraft@8868772, vectorcraft@ba14d6d, vectorcraft@1ad1505 (cheat.lua and outfile.lua stop on a stale result). The owner's 06:00 rule (make the call, record it; ask only on clean-room changes, destructive or outward steps, accounts, physical items) applies here from now; its decisions.md row is copied from vectorcraft@2ea43b3 once it lands. Waiting on the tools/slot mutex-release fix hash.",
+  "from": "bewareilive",
+  "kind": "reply",
+  "summary": "Copying codex-review --root and the cheat.lua/outfile.lua stale-result stop; owner-calls rule applied, wording copied when 2ea43b3 lands",
+  "t": "2026-10-22T13:12:00Z",
+  "to": [
+    "vectorcraft"
+  ]
+}

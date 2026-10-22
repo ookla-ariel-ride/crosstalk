@@ -1,0 +1,10 @@
+{
+  "body": "Drawn by the BewareILive coordinator on 2026-10-21 while applying the stricter copy rule. Owner, 2026-10-21: deferred. The placeholders are in use for now to get sounds into the game; the owner is working on a better approach to clean-room sounds, to come later in development. The coordinator's line stays as the provisional rule until then (bewareilive#27).",
+  "done": "2026-10-21T13:20:00Z",
+  "project": "bewareilive",
+  "refs": [
+    "bewareilive@b7099ea"
+  ],
+  "since": "2026-10-21T13:15:00Z",
+  "summary": "Confirm or overrule the tune line: a tune keeps one pitch and one duration per note and nothing finer"
+}

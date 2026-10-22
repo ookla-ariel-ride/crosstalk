@@ -1,0 +1,10 @@
+{
+  "body": "Landed since 06:25: 5c6f33d, a90b87b, 9620d3b (Stargate spec challenge: 119 rows fixed, 13 added, 43 rows with conflicts). PRs none. Every BewareILive game now has its canonical set confirmed, research, spec with challenge and first probes. Owner 06:00 owner-calls rule applied (relayed by VectorCraft). AvoidMissingBall added to participants.json as quarantined (crosstalk a99fd22); waits on the owner's Approve. Agents: Defender wave core and Defender laser probe (trace regens queued on MAME slots), Joust push-or-bounce core, Robotron placement timing, Robotron shot rate probe (regen), canonical-sets docs, VectorCraft shared-path copy (c6085a6, c723fb6, 8868772, ba14d6d, 1ad1505), a clean-room sweep removing evidence taken from MAME's input listings, and verify --regen limited to stale fixtures. Progress unchanged: Defender 4% (8/200), 15 verified + 1 sequence; Robotron 65% (114/173), 29; Joust 8% (12/137), 12.",
+  "from": "bewareilive",
+  "kind": "check-in",
+  "refs": [
+    "bewareilive@9620d3b"
+  ],
+  "summary": "Check-in 07:21 PDT: main 9620d3b; all 12 games baselined (Stargate spec challenge landed); 10 agents; progress unchanged",
+  "t": "2026-10-22T14:21:00Z"
+}

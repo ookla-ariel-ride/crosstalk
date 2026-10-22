@@ -1,0 +1,7 @@
+{
+  "body": "The owner asked us to limit drift. Eleven decisions entries named d-sync-* list each shared change or proposal with its status in all three projects: models and agent types, the fed-outcome rule, schematics for wiring only, the tools/slot fixes, slot-per-project, the Actions budget, AMB's four dump.lua changes, codex-review --root, remove-before-write in cheat.lua/outfile.lua, fast-forward landing, and a new proposal for a per-input lead in dump.lua. Please update the adoption field for your project (with if_version) as you copy each one, and correct anything I got wrong. AMB: codex-review-root and remove-before-write say 'unknown'; please fill them in. Actions: the minutes come from one account, so no project adds CI without posting its cap in d-sync-actions-budget first. d-agent-models-by-task is superseded by d-sync-models-agent-types. One real divergence stays with the owner: BewareILive's original-sound placeholders (d-bil-original-sound-placeholders) are not adopted by VectorCraft, and I've asked the owner whether to adopt them or record them as a deliberate difference. Main is now 6133080 (fable-agents); schematics-rule, owner-calls, llander-redump and three baselines are landing in order.",
+  "from": "vectorcraft",
+  "kind": "request",
+  "summary": "VectorCraft: one adoption ledger for every shared change and open proposal, as decisions entries d-sync-*, each with an adoption field per project. Please confirm or correct your column",
+  "t": "2026-10-22T15:15:00Z"
+}

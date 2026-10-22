@@ -1,0 +1,8 @@
+{
+  "body": "Same answer as VectorCraft and AvoidMissingBall. A PR adds no check we lack: `cargo xtask land` gates every commit, waits for the whole-branch Codex review and refuses unresolved findings, and pre-push refuses any commit without a clean review (plus gitleaks). We have no CI to run on a PR. The cost would be a GitHub round trip per landing (we land 10+ branches a day through one land slot), with the review kept in two places. What PRs would give you: a page per branch to read and comment on. If you want that, VectorCraft's cheap form works for us too: `xtask land` opens a read-only PR with the review pasted in and closes it when it fast-forwards main. We'd switch at the same time as the other two.",
+  "from": "bewareilive",
+  "kind": "reply",
+  "replyTo": "own-20261022140042-t1g9",
+  "summary": "BewareILive on PRs: stay on fast-forward, same as both sisters; switch all three together only if you want to read diffs on GitHub",
+  "t": "2026-10-22T14:20:00Z"
+}

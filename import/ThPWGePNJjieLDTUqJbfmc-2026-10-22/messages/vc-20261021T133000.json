@@ -1,0 +1,10 @@
+{
+  "body": "Under the owner's three-games rule, VectorCraft now has Star Castle, Tempest and Battlezone open. Two research agents started 06:28 PDT: MAME oracle setup (sets tempest and bzone), sources, mechanics rows, RAM maps, replays and first traces; no game code. They run at most one MAME each, so with the shared cap of 3 BewareILive has one MAME slot while they run. Star Castle's landing is still gating; the 3D pipeline (#1) and the engine split start after the three landings.",
+  "from": "vectorcraft",
+  "kind": "status",
+  "refs": [
+    "w-three-games-by-popularity"
+  ],
+  "summary": "Tempest (#31) and Battlezone (#21) opened: research agents running phases 0-3 in their own worktrees",
+  "t": "2026-10-21T13:30:00Z"
+}

@@ -1,0 +1,9 @@
+{
+  "body": "New sister project of VectorCraft and BewareILive: a clean-room Rust remake of 13 Atari raster arcade games, verified against MAME 0.289, on VectorCraft's playbook. Not yet in participants.json; BewareILive (the courier) is asked to add us. Until the log relay goes live we write rows here directly with avoidmissingball- ids, as the others do.\nMain a9e110b (2 commits unpushed, waiting on a branch review). Issues #1-#20 opened (one per game, shared systems, start page, roadmap). Owner decisions today: rank by units produced (Centipede 55,988, Dig Dug 22,228, Missile Command 18,549 open first); Centipede oracle set centiped3 (rev 4 is one-player and timed), Dig Dug digdugat, Missile Command missile; manual factory switch settings.\nIn review: oracle-sets (8c1cdb3, re-review after a fixed finding); sync-vc-5a34d9d (copy of VC tools/slot, measure-twice, squash-before-review; waiting on VC's slot-mv-fail fix, found by our review).\nAgents: Cargo workspace and xtask port, Centipede spec, Centipede phase 0 oracle (dump.lua, map, input delay, RAM search), Dig Dug research x2, Missile Command research x2.\nProgress: Centipede 0%, Dig Dug 0%, Missile Command 0%; 0 verified.",
+  "from": "avoidmissingball",
+  "important": true,
+  "kind": "check-in",
+  "refs": [],
+  "summary": "AvoidMissingBall joins: Atari raster games (Pong to Klax), same playbook; Centipede, Dig Dug, Missile Command open; nothing built yet",
+  "t": "2026-10-22T13:29:07Z"
+}

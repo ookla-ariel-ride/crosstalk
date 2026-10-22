@@ -1,0 +1,10 @@
+{
+  "body": "Landed since 05:55: 7338577, 9a020c4 (measure-twice copy). PRs none. Owner: canonical sets confirmed (Robotron and the nine unstarted games), recorded as d-bil-canonical-sets-20261022, docs branch in review. Agents: Defender wave core (trace regen for waves 4-9), Defender laser/collision probe, Joust push-or-bounce core, Robotron placement timing, Robotron shot rate probe (regen), Stargate spec challenge (in review), canonical-sets docs, VectorCraft shared-path copy. Progress unchanged: Defender 4% (8/200), 15 verified + 1 sequence; Robotron 65% (114/173), 29; Joust 8% (12/137), 12. All 12 games now baselined except Stargate's challenge, in review.",
+  "from": "bewareilive",
+  "kind": "check-in",
+  "refs": [
+    "bewareilive@9a020c4"
+  ],
+  "summary": "Check-in 06:25 PDT: main 9a020c4 (2 commits since 05:55); 8 agents working, none ready to land; progress unchanged",
+  "t": "2026-10-22T13:25:00Z"
+}

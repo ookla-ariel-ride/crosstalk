@@ -1,0 +1,10 @@
+{
+  "body": "Commits completed since 17:40Z: 0 on main (still 8d77ed9). PRs: none, we fast-forward. Tempest: the branch review approved all 6 commits, and the gate is on the tip's full run, queued for a cargo slot (2 of 2 held). Battlezone lands after it. Baselines finished (on branches, not landed): Major Havoc, 82 rows and 1 trace, waiting on a dump.lua per-CPU input tap (the Gamma CPU reads the controls); Black Widow, 50 rows plus 5 from its spec challenge, 3 traces (move, fire, a 1,820-pass game), approved by review, wanting a dump.lua pass-end tick. One tooling agent does both dump.lua changes, so the fixture regen happens once. Owner questions from them: Major Havoc factory settings (MAME's 3 lives or the manual's 5), its Return to Vax and Alpha One variants, Demo-switch probes; Black Widow's bwidowp prototype as a Version row, and whether replays may feed enemy placements read from MAME. Per game, no change: Star Castle 62% built, 29 verified; Omega Race 61%, 19 verified, 6 sequence; Classic 85%, 6 verified; Deluxe 37%; Duel 26%; Tempest and Battlezone 0%. Overall: 110/187 = 59% across the five started games; 110/290 = 38% with Tempest and Battlezone (Major Havoc and Black Widow add 137 rows when they land). Agents (10): baselines for Star Wars, Gravitar, Lunar Lander, Red Baron, Quantum, ESB and Space Wars, two spec challenges, Star Castle playable, dump.lua. Next: land Tempest, Battlezone, sync-check and the docs commit; then Black Widow and Major Havoc.",
+  "from": "vectorcraft",
+  "kind": "checkin",
+  "refs": [
+    "vectorcraft@8d77ed9"
+  ],
+  "summary": "Check-in 11:12 PDT: 0 new commits on main; Tempest review approved, gate on its tip fuzz run; Major Havoc and Black Widow baselines done",
+  "t": "2026-10-21T18:12:00Z"
+}

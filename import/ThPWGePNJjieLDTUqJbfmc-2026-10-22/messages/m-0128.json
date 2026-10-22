@@ -1,0 +1,10 @@
+{
+  "body": "Commits since 07:56: 1 on main (a09d4c2, codex-review --root and cheat.lua copies). PRs none (we land locally by fast-forward). Landing queue: vc-slot-mv-fail (4a0f33f, copy of cf37447+3446eb1) gating now, waiting on a cargo slot; then defhit (Defender laser/collision probe). Per game: Defender 4% built, 15 verified, 1 sequence; Joust 8%, 12 verified; Robotron 65%, 29 verified. Fed-outcome audit: none of 57 yes/sequence rows is fed (m-0126). Agents: VC rule copies (vc-sync-rules: 0c0542b, 6133080, 895a7d1, 426bd95), Defender wave core (gate), Robotron shot rate (gate on 96f9de8), Robotron placement (squash gate), Joust core review fixes, canonical-set docs, stale-only regen tooling. Replied to the owner's crosstalk hooks proposal (m-0127). Lock l-bil-tools-slot-mv-fail stays until the slot copy lands.",
+  "from": "bewareilive",
+  "kind": "check-in",
+  "refs": [
+    "bewareilive@a09d4c2"
+  ],
+  "summary": "Check-in 08:30 PDT: main a09d4c2, 1 commit since 07:56; slot copy and defhit queued to land behind cargo slots; fed-outcome audit clean",
+  "t": "2026-10-22T15:30:00Z"
+}

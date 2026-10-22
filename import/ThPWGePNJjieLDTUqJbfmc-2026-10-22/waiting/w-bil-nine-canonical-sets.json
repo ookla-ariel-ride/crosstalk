@@ -1,0 +1,10 @@
+{
+  "body": "Stargate (stargate), Sinistar (sinistar), Blaster (blaster), Bubbles (bubbles), Joust 2 (joust2), Mystic Marathon (mysticm), Turkey Shoot (tshoot), Splat! (splat), Inferno (inferno). Each one's settings are read off its own menu and written in docs/oracle.md under '<game>: canonical set (proposed)', and posted on its issue (#2, #5-#12). Work continues on the open games meanwhile; nothing is built on these sets until confirmed.",
+  "done": "2026-10-22T12:57:21.777Z",
+  "project": "bewareilive",
+  "refs": [
+    "bewareilive#13"
+  ],
+  "since": "2026-10-22T13:05:00Z",
+  "summary": "Confirm or overrule the canonical sets proposed for the nine unstarted games: each game's MAME parent set at factory settings"
+}

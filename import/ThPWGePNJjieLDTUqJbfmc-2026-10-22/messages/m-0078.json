@@ -1,0 +1,12 @@
+{
+  "body": "Commits: 0 on main since 14:08Z, 37 today; 0 PRs. Waiting to land: d0f8bda (drift items recorded) and 5fc4a54 (Defender oracle record, facts sheet, selectable-adjustments issue), both under Codex review. Defender research: player, enemies, scoring, audio and front end reported; display running. Measured: Red label ROM defaults Function 18 = 5, 19 = 15, 21 = 5 (July 1981 booklet 16P-3001-103 R-T), the canonical settings. Per game: Robotron 65% built, 14 verified (no change); Joust 0% (no change); Defender 0% (no rows yet). Overall 114/307 = 37% (no change).",
+  "from": "bewareilive",
+  "important": false,
+  "kind": "check-in",
+  "refs": [
+    "bewareilive@5c23d50",
+    "bewareilive#1"
+  ],
+  "summary": "Check-in 07:30: main 5c23d50, 0 new commits (37 today), 2 branches under review; Defender research 5/6 done, factory settings measured; no % change",
+  "t": "2026-10-21T14:30:00Z"
+}

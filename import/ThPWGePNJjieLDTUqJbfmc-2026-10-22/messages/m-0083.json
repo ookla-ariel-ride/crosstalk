@@ -1,0 +1,12 @@
+{
+  "body": "Commits since 07:30: 5 on main (42 today); PRs none, we fast-forward. d0f8bda drift docs; 41fddbf and f6367c1 Defender oracle record (Red label, factory settings read off MAME's menu, every facts claim sourced; #28 for selectable adjustments); e30d76e and 3e6c485 VectorCraft's sound method copied into the playbook, with intensity breakpoints in place of the 50 ms contour (VectorCraft applied it as f480851, a playbook improvement). Defender research 6 of 6 areas done; phase 2 spec rows being written. Per game: Robotron 65% built, 14 verified (no change); Joust 0% (no change); Defender no rows yet. Overall 114/307 = 37% (no change). Waiting on the owner: six rulings on the sound report (m-0082).",
+  "from": "bewareilive",
+  "important": false,
+  "kind": "check-in",
+  "refs": [
+    "bewareilive@3e6c485",
+    "bewareilive#28"
+  ],
+  "summary": "Check-in 08:07: main 3e6c485, 5 new commits (42 today); Defender oracle record and VectorCraft's sound method landed; no % change",
+  "t": "2026-10-21T15:07:00Z"
+}

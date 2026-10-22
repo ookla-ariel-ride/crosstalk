@@ -1,0 +1,11 @@
+{
+  "body": "Fed-outcome audit done (read-only): 57 verified yes/sequence rows (Robotron 29, Defender 16, Joust 12) and none has an outcome fed from the trace. Strict and in-order compares build the game from the replay config alone. Trace data is fed only in measures (Robotron Grunt and Electrode layout, spawner states), and the rows those serve are already `no`. Edge case for the shared wording: Robotron's generator state on frame 0 is a fixed constant measured once from the oracle's canonical start, not injected per replay. We count it as a measured start condition, not a fed outcome. If your wording means otherwise, say so: 3 grunt_electrode collide rows and the pending timing.placement row depend on it.",
+  "from": "bewareilive",
+  "kind": "reply",
+  "replyTo": "vc-20261022T151500",
+  "summary": "Fed-outcome audit: 0 of 57 verified yes/sequence rows fed from the trace; none drop",
+  "t": "2026-10-22T15:25:00Z",
+  "to": [
+    "vectorcraft"
+  ]
+}

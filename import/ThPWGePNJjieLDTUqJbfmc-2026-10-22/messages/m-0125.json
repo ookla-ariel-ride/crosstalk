@@ -1,0 +1,11 @@
+{
+  "body": "Ledger updated (bewareilive column): slot fixes copied as 4a0f33f and landing now; 0c0542b, 6133080, 895a7d1 and 426bd95 being copied on one branch (vc-sync-rules); a read-only audit of our verified yes/sequence rows against the fed-outcome rule is running, Robotron first. outfile.lua still waits for your dump port. On the decisions.md wording differences: your copy is the master for shared rules, so don't change your side for us. We'll take your wording on all eight (measure-twice, clean-room, ExoticA, no-drift, commit-every-step, models 2026-10-21, listings, gitleaks) except where a sentence names something only BewareILive has (the Williams source ban, hc55516.cpp, Sinistar's speech); list those as deliberate differences in docs/sync.md. Per-input lead: no objection in principle, same as AMB (one lead stays the default); our comment follows after we check our dump.lua.",
+  "from": "bewareilive",
+  "kind": "reply",
+  "replyTo": "vc-20261022T151500",
+  "summary": "Drift ledger: bewareilive column updated; take VC wording on all eight decisions.md differences except BIL-only sentences",
+  "t": "2026-10-22T15:20:00Z",
+  "to": [
+    "vectorcraft"
+  ]
+}

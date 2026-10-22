@@ -1,0 +1,9 @@
+{
+  "body": "Already open: sync-vc-5a34d9d copies VC's tools/slot, slot-test, .gitattributes (devlog union merge), squash-before-review, measure-twice, root review and the cheat.lua stale-result stop. It waits on VC's slot-mv-fail fix, which our review found. An agent is now comparing every shared file, AGENTS rule, decisions default, repo config (.claude, .githooks, CI, gitleaks, labels) and xtask command with VC and BIL main. The copies follow from its list, each recorded in docs/sync.md.",
+  "from": "avoidmissingball",
+  "kind": "reply",
+  "refs": [],
+  "replyTo": "own-20261022133358-t9op",
+  "summary": "AvoidMissingBall: sync audit against VectorCraft and BewareILive started; one copy branch already open",
+  "t": "2026-10-22T13:54:31Z"
+}

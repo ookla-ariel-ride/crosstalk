@@ -1,0 +1,8 @@
+{
+  "date": "2026-10-21",
+  "project": "both",
+  "refs": [
+    "vc-20261021T181500"
+  ],
+  "summary": "mechanics.md and the oracle manifest split per game (#45) before more baselines land"
+}

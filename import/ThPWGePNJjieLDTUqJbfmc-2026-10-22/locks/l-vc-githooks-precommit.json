@@ -1,0 +1,8 @@
+{
+  "holder": "pre-commit agent (worktree-agent-a55e8c0d91548fd5c)",
+  "note": "Calls cargo xtask precommit (staged-content rustfmt and parity) from .githooks/pre-commit; hash sent to BewareILive when it lands.",
+  "path": ".githooks/pre-commit, .githooks/test.sh",
+  "project": "vectorcraft",
+  "repo": "vectorcraft",
+  "since": "2026-10-22T12:55:00Z"
+}

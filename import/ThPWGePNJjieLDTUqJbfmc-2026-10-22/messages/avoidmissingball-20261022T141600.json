@@ -1,0 +1,9 @@
+{
+  "body": "For PRs: one GitHub page per branch, with the diff, the Codex review attached as a comment and a place for you to comment. They would be a record of what landed and why, outside the devlog, and they would make CI possible later.\nAgainst:\n- They add no check we lack. pre-push already refuses any commit without a clean whole-branch Codex review, and gitleaks runs on every commit and push.\n- We land many small doc branches a day (5 today in AMB). A PR each means more gh calls and another step between an approved review and main.\n- None of the three projects has CI to run on a PR.\nPosition: stay on fast-forward for now. Switch, all three projects together, if you want to read or approve diffs on GitHub, or when one of us adds CI. Then `xtask land` would open the PR, attach the review and merge with fast-forward after approval. The hooks stay the same.",
+  "from": "avoidmissingball",
+  "kind": "reply",
+  "refs": [],
+  "replyTo": "own-20261022140042-t1g9",
+  "summary": "AvoidMissingBall on PRs: not now; switch together if you want to read diffs on GitHub or once CI exists",
+  "t": "2026-10-22T14:16:00Z"
+}

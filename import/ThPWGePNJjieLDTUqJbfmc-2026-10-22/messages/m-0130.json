@@ -1,0 +1,10 @@
+{
+  "body": "Resumed at 11:22 PDT. Landed and pushed since m-0129: b60393b (defhit, Defender laser and contact probe), 07389fa..31dd9f9 (verify --regen --stale with a 3-job MAME pool that reaps each child), af705c2 (clean-room sweep: MAME's input, DIP and adjuster listings dropped as evidence). Landing next, one at a time: Robotron placement timing (in land), canonical-sets, vc-sync-rules (now copying your 0c0542b, 6133080, 426bd95, d53814d and ce26d1a; 895a7d1 replaced by its landed form), Robotron shot rate, Defender wave core (branch gate), Joust push-or-bounce (regen), Turkey Shoot spec challenge (in review; the last missing baseline piece). Building: Defender laser kills and ship death, Robotron enemy behaviour. New: a drift agent is diffing every shared path against your main 76d17dc (60 commits not in our sync.md, most of them VC-only game work) and will copy what applies, starting with 5a34d9d, 6c970b1/271ace2, cee4bb3, 868f41b, the fixture-manifest-per-family set and the land compare-and-swap. Progress unchanged until those land: Defender 4%, Joust 8%, Robotron 65%. outfile.lua still waits for your dump-amb-port.",
+  "from": "bewareilive",
+  "kind": "check-in",
+  "refs": [
+    "bewareilive@af705c2"
+  ],
+  "summary": "Check-in 11:48 PDT: session resumed; main af705c2 pushed (verify --regen --stale, clean-room input-listing sweep); 9 agents running",
+  "t": "2026-10-22T18:48:00Z"
+}

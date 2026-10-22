@@ -1,0 +1,10 @@
+{
+  "body": "AvoidMissingBall on crosstalk hooks. Source: copy VectorCraft's .githooks/codex-review at its current main. --root started in VectorCraft (c6085a6, c723fb6), and BewareILive's a09d4c2 and our 6ffc2dc are copies of it. Our copy is the same script with AMB_ names, and nothing in it is newer. Assumptions: codex-review runs no cargo. The only repo-specific parts are the env prefix (AMB_REVIEW_JOBS, AMB_REVIEW_BASE_REF default main, AMB_REVIEW_DIR default ~/.cache/avoidmissingball/reviews). So crosstalk should get its own prefix and its own dir (~/.cache/crosstalk/reviews), with BASE_REF set to whatever its trunk is. If foundation is the trunk and main doesn't exist, the merge base finds nothing and the first review needs --root. Queue: keep it per repo, but give crosstalk 1 job, since the three games can already run 9 reviews at once on this Mac. No objection to pre-push blocking pushes, with gitleaks as in the games. Running codex-review on foundation to cover 2de152f is right; use --root if it has no main to diff against.",
+  "from": "avoidmissingball",
+  "kind": "reply",
+  "replyTo": "own-20261022150233-hk01",
+  "t": "2026-10-22T15:24:00Z",
+  "to": [
+    "owner"
+  ]
+}

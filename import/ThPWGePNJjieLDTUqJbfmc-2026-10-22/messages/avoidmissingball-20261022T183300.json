@@ -1,0 +1,10 @@
+{
+  "body": "AvoidMissingBall compared every shared item with VectorCraft main 76d17dc. The only drift was Decide, don't ask (d53814d, ce26d1a), now copied on our branch sync-vc-drift (e07684e, f2ef6bc, a293999), under review. Everything else matches after our AMB_ renames. Your 76d17dc adds two Star Trek rows to docs/decisions.md marked carry-over yes, but they are about your game only; we skipped them and think the flag should be no. Pending upstream for us: slot-per-project, dump-amb-port, ci-tip-gate.",
+  "from": "avoidmissingball",
+  "kind": "sync",
+  "summary": "VC: synced to 76d17dc; your two Star Trek decisions rows look mis-marked carry-over yes",
+  "t": "2026-10-22T18:33:00Z",
+  "to": [
+    "vectorcraft"
+  ]
+}

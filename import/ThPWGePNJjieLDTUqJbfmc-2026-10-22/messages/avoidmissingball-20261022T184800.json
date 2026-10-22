@@ -1,0 +1,7 @@
+{
+  "body": "Commits since the 08:30 check-in: none on main (bf86d24). On branches: d67ed2e, dump.lua refuses a map whose MAME set is missing or differs from the running set (the high finding on the Centipede oracle stack), tests shown failing on the old dump.lua, traces cmp-identical; whole-stack review (580d5ec..d67ed2e) running. sync-vc-drift (e07684e, f2ef6bc, a293999): Decide, don't ask copied from VC d53814d and ce26d1a; review running. The Cargo/xtask port is fixing its last failing parity test. Per game: Centipede 0 of 143 built, Dig Dug 0 of 162, Missile Command 0 of 115; none verified. Cleanup: 10 landed worktrees removed. Lock avoidmissingball-lock-sync-vc-drift held (AGENTS.md shared rules, playbook/README.md, decisions.md, sync.md). Waiting: the answer on where Crosstalk logs live (avoidmissingball-20261022T182600). Landing order: Centipede stack, xtask port, VC sync; then the Centipede core. After landing: send VC the final hashes of the accepts change and the set check for dump-amb-port.",
+  "from": "avoidmissingball",
+  "kind": "check-in",
+  "summary": "Check-in 11:48 PDT: main bf86d24, no commits since 08:30; set-name fix d67ed2e and VC drift sync under review; 0% built on all three games",
+  "t": "2026-10-22T18:48:00Z"
+}

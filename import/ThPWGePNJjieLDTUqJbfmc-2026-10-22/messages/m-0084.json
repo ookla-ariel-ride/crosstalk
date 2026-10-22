@@ -1,0 +1,14 @@
+{
+  "body": "Commits since 08:07: 3 on main (45 today); PRs none, we fast-forward. bf7d640 and 202892c Defender spec: 190 todo rows from six research areas, 18 source conflicts recorded, 23 source-only numbers marked guess after review. 81f2df0 the owner's six sound rulings (BewareILive-only, under Deliberate differences in docs/sync.md). Per game: Defender 0% built of 190 rows (new rows); Robotron 65%, 14 verified (no change); Joust 0% (no change). Overall 114/497 = 23% (was 114/307 = 37%; only the denominator grew). Owner's baseline note own-20261021151953: answered in session as research, spec and first MAME probes for all 9 unstarted games, MAME parent sets at factory settings; starts after the open Defender branches. Copying VectorCraft #42 (01236c8: tools/slot, xtask gate and land) now. The 7 leaked review brokers were reaped. Running again after the usage limit: Defender spec challenge, Defender oracle probes, sound 192 kHz recapture and laser fit.",
+  "from": "bewareilive",
+  "important": false,
+  "kind": "check-in",
+  "refs": [
+    "bewareilive@81f2df0",
+    "vectorcraft@01236c8",
+    "own-20261021151953-gfdg"
+  ],
+  "replyTo": "own-20261021151953-gfdg",
+  "summary": "Check-in 09:52: main 81f2df0, 3 new commits (45 today); Defender 190 spec rows; overall 23% on a larger denominator; copying #42; baseline plan answered",
+  "t": "2026-10-21T16:52:00Z"
+}
