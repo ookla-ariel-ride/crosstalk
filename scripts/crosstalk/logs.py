@@ -3,6 +3,7 @@ import fcntl
 import json
 import os
 import time
+from datetime import datetime, timezone
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Dict, List, Optional, Tuple
@@ -14,6 +15,9 @@ COLLECTIONS = ("messages", "agreements", "waiting", "locks", "lessons",
                "decisions", "progress", "incidents")
 OWNER_COLLECTIONS = COLLECTIONS + ("participants",)
 OPS = ("set", "update")
+KINDS = ("check-in", "checkin", "sync", "reply", "request", "review", "agreement", "alert",
+         "disagreement", "lesson", "owner")
+SKEW_MIN = 2
 
 
 @dataclass
@@ -127,6 +131,48 @@ def _trust_problem(d: dict, owner: str, roster: Roster) -> Optional[str]:
     return None
 
 
+def message_problems(collection: str, op: str, data: dict, roster: Roster,
+                     now: Optional[float] = None) -> Tuple[List[str], List[str]]:
+    """Shape rules for a message an appender writes now: (errors, warnings).
+
+    A new message needs a kind and a one-line summary, and every `to` must be a
+    participant. An unknown kind, or a `t` more than SKEW_MIN minutes from the
+    clock, is only a warning.
+    """
+    errors, warnings = [], []  # type: List[str], List[str]
+    if collection != "messages":
+        return errors, warnings
+    if op == "set":
+        for key in ("kind", "summary"):
+            if not isinstance(data.get(key), str) or not data[key].strip():
+                errors.append("a new message needs a %s" % key)
+    if isinstance(data.get("summary"), str) and "\n" in data["summary"].strip():
+        errors.append("summary must be one line (put the rest in body)")
+    kind = data.get("kind")
+    if isinstance(kind, str) and kind and kind not in KINDS:
+        warnings.append("unknown kind %r (known: %s)" % (kind, ", ".join(KINDS)))
+    if "to" in data:
+        to = data["to"]
+        if not isinstance(to, list) or not all(isinstance(x, str) for x in to):
+            errors.append("to must be a list of participant ids")
+        else:
+            for x in to:
+                if x not in roster.participants:
+                    errors.append("to %r is not a participant" % x)
+    t = data.get("t")
+    if isinstance(t, str):
+        try:
+            when = datetime.strptime(t, "%Y-%m-%dT%H:%M:%SZ").replace(tzinfo=timezone.utc)
+        except ValueError:
+            errors.append("t %r is not UTC ISO 8601 (yyyy-mm-ddThh:mm:ssZ)" % t)
+        else:
+            off = (when.timestamp() - (time.time() if now is None else now)) / 60
+            if abs(off) > SKEW_MIN:
+                warnings.append("t %s is %d min %s the clock; leave t out to use the clock"
+                                % (t, round(abs(off)), "ahead of" if off > 0 else "behind"))
+    return errors, warnings
+
+
 def check_all(root: Path, roster: Roster) -> List[Problem]:
     """Check every log/*.jsonl under root."""
     problems = []  # type: List[Problem]
@@ -144,7 +190,8 @@ def append_line(root: Path, from_: str, op: str, collection: str, id: str, data:
                 roster: Optional[Roster] = None) -> Line:
     """Append one line to log/<from_>.jsonl under an exclusive lock; returns the Line written.
 
-    With a roster, a line that breaks the trust rules is refused before the file is opened.
+    With a roster, a line that breaks the trust rules or the message shape rules is
+    refused before the file is opened.
     """
     if not isinstance(from_, str) or not ID_RE.fullmatch(from_):
         # Checked before any path is built: on a case-insensitive disk "Codex" would
@@ -157,6 +204,9 @@ def append_line(root: Path, from_: str, op: str, collection: str, id: str, data:
                              from_, roster)
         if msg:
             raise ValueError(msg)
+        errors = message_problems(collection, op, data, roster)[0]
+        if errors:
+            raise ValueError("; ".join(errors))
     if t is None:
         t = time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime())
     log_dir = Path(root) / "log"

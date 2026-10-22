@@ -47,10 +47,10 @@ class CliTests(unittest.TestCase):
         with TempRepo() as r:
             c = Cli(r)
             p = c.run("append", "--from", "codex", "--op", "set", "--collection", "messages",
-                      "--id", "codex-0001", "--data", '{"body": "hi"}')
+                      "--id", "codex-0001", "--data", '{"kind": "reply", "summary": "hi"}')
             self.assertEqual((p.returncode, p.stdout.strip()), (0, "1"), p.stderr)
             p = c.run("append", "--from", "codex", "--op", "set", "--collection", "messages",
-                      "--id", "codex-0002", "--data", '{"body": "yo"}')
+                      "--id", "codex-0002", "--data", '{"kind": "reply", "summary": "yo"}')
             self.assertEqual(p.stdout.strip(), "2")
             self.assertEqual(c.run("check").returncode, 0)
 
@@ -85,10 +85,45 @@ class CliTests(unittest.TestCase):
         with TempRepo() as r:
             c = Cli(r)
             f = r.root / "d.json"
-            f.write_text('{"body": "café"}', encoding="utf-8")
+            f.write_text('{"kind": "reply", "summary": "café"}', encoding="utf-8")
             p = c.run("append", "--from", "codex", "--op", "set", "--collection", "messages",
                       "--id", "codex-0001", "--data-file", str(f))
             self.assertEqual((p.returncode, p.stdout.strip()), (0, "1"), p.stderr)
+
+    def test_append_refuses_message_without_kind_or_summary(self):
+        with TempRepo() as r:
+            c = Cli(r)
+            base = ["append", "--from", "codex", "--op", "set", "--collection", "messages",
+                    "--id", "codex-0001", "--data"]
+            for data, word in (('{"summary": "hi"}', "kind"), ('{"kind": "reply"}', "summary"),
+                               ('{"kind": "reply", "summary": " "}', "summary"),
+                               ('{"kind": "reply", "summary": "a\\nb"}', "one line"),
+                               ('{"kind": "reply", "summary": "hi", "to": ["gemini"]}', "gemini"),
+                               ('{"kind": "reply", "summary": "hi", "to": "owner"}', "list"),
+                               ('{"kind": "reply", "summary": "hi", "t": "yesterday"}', "UTC")):
+                p = c.run(*(base + [data]))
+                self.assertEqual(p.returncode, 1, data)
+                self.assertIn(word, p.stderr, data)
+            self.assertFalse((r.root / "log" / "codex.jsonl").exists())
+
+    def test_append_update_needs_no_kind(self):
+        with TempRepo() as r:
+            c = Cli(r)
+            p = c.run("append", "--from", "codex", "--op", "update", "--collection", "messages",
+                      "--id", "codex-0001", "--data", '{"important": true}')
+            self.assertEqual((p.returncode, p.stderr), (0, ""))
+
+    def test_append_warns_unknown_kind_and_clock_skew(self):
+        with TempRepo() as r:
+            c = Cli(r)
+            p = c.run("append", "--from", "codex", "--op", "set", "--collection", "messages",
+                      "--id", "codex-0001", "--data",
+                      '{"kind": "status", "summary": "hi", "t": "2026-01-01T00:00:00Z",'
+                      ' "to": ["owner"]}')
+            self.assertEqual(p.returncode, 0, p.stderr)
+            self.assertIn("warning: unknown kind 'status'", p.stderr)
+            self.assertIn("behind the clock", p.stderr)
+            self.assertEqual(p.stdout.strip(), "1")
 
     def test_pending_prints_paths(self):
         with TempRepo() as r:
@@ -156,7 +191,13 @@ class CliTests(unittest.TestCase):
     def test_import_then_check(self):
         with TempRepo() as r:
             c = Cli(r)
-            snaps = sorted(str(p) for p in (REPO / "import").iterdir() if p.is_dir())
+            # Real snapshots hold every real participant's rows.
+            shutil.copy(str(REPO / "participants.json"), str(r.root / "participants.json"))
+            # One snapshot per page: the newest, as the go-live import uses.
+            newest = {}
+            for d in sorted(p for p in (REPO / "import").iterdir() if p.is_dir()):
+                newest[d.name.split("-")[0]] = str(d)
+            snaps = sorted(newest.values())
             p = c.run("import", *snaps)
             self.assertEqual(p.returncode, 0, p.stderr)
             self.assertTrue(p.stdout.strip())

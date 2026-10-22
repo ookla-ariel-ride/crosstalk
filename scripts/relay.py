@@ -10,7 +10,7 @@ sys.path.insert(0, str(ROOT / "scripts"))
 
 from crosstalk.courier import pending, restore, sent  # noqa: E402
 from crosstalk.importer import import_snapshots  # noqa: E402
-from crosstalk.logs import append_line, check_all  # noqa: E402
+from crosstalk.logs import append_line, check_all, message_problems  # noqa: E402
 from crosstalk.participants import load_roster  # noqa: E402
 from crosstalk.pull import pull  # noqa: E402
 
@@ -61,9 +61,12 @@ def cmd_append(args):
     if not isinstance(data, dict):
         err("bad data: expected a JSON object")
         return 1
+    roster = load_roster(ROOT / "participants.json")
+    for w in message_problems(args.collection, args.op, data, roster)[1]:
+        err("warning: " + w)
     try:
         ln = append_line(ROOT, args.from_, args.op, args.collection, args.id, data,
-                         roster=load_roster(ROOT / "participants.json"))
+                         roster=roster)
     except ValueError as e:
         err(str(e))
         return 1

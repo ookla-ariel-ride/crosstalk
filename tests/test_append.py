@@ -1,9 +1,11 @@
 import multiprocessing
+import time
 import unittest
 
 from helpers import TempRepo
 from append_worker import worker
-from crosstalk.logs import append_line, read_log
+from crosstalk.logs import append_line, message_problems, read_log
+from crosstalk.participants import load_roster
 
 
 class AppendTests(unittest.TestCase):
@@ -77,6 +79,31 @@ class AppendTests(unittest.TestCase):
                 with self.assertRaises(ValueError, msg=repr(bad)):
                     append_line(r.root, bad, "set", "messages", "x-1", {})
                 self.assertFalse((r.root / "log").exists(), repr(bad))
+
+    def test_roster_enforces_message_shape(self):
+        with TempRepo() as r:
+            ro = load_roster(r.write_roster())
+            with self.assertRaises(ValueError):
+                append_line(r.root, "codex", "set", "messages", "codex-1", {"body": "x"}, roster=ro)
+            self.assertFalse((r.root / "log" / "codex.jsonl").exists())
+            append_line(r.root, "codex", "set", "messages", "codex-1",
+                        {"kind": "review", "summary": "ok"}, roster=ro)
+            append_line(r.root, "codex", "set", "lessons", "codex-l", {}, roster=ro)
+
+    def test_skew_measured_both_ways(self):
+        with TempRepo() as r:
+            ro = load_roster(r.write_roster())
+            now = 1792700000.0
+
+            def t(secs):
+                return time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime(secs))
+
+            ok = {"kind": "reply", "summary": "x"}
+            self.assertEqual(message_problems("messages", "set", dict(ok, t=t(now + 90)), ro, now), ([], []))
+            (w,) = message_problems("messages", "set", dict(ok, t=t(now + 300)), ro, now)[1]
+            self.assertIn("5 min ahead of", w)
+            (w,) = message_problems("messages", "set", dict(ok, t=t(now - 300)), ro, now)[1]
+            self.assertIn("5 min behind", w)
 
 if __name__ == "__main__":
     unittest.main()
