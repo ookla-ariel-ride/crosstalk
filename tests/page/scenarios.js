@@ -61,11 +61,12 @@
 
   S.push(async function forColumnUsesName() {
     await put("decisions", { "d-1": { t: T0, by: "owner", summary: "Codex reviews", project: "codex", source: "test" },
-      "d-2": { t: T0, by: "owner", summary: "Shared", project: "both", source: "test" } });
+      "d-2": { t: T0, by: "owner", summary: "Shared", project: "both", source: "test" },
+      "d-3": { t: T0, by: "owner", summary: "Shared too", project: "all", source: "test" } });
     await go("decisions");
     var cells = [].slice.call(document.querySelectorAll("#view tbody tr")).map(function (tr) { return tr.children[2].textContent; }).sort();
     await go("timeline");
-    return res("forColumnUsesName", JSON.stringify(cells) === JSON.stringify(["Both projects", "Codex"]), "For=" + JSON.stringify(cells));
+    return res("forColumnUsesName", JSON.stringify(cells) === JSON.stringify(["All projects", "All projects", "Codex"]), "For=" + JSON.stringify(cells));
   });
 
   S.push(async function ownerColorThemed() {
@@ -193,7 +194,8 @@
     await go("timeline");
     var X = window.__crosstalk;
     if (!X || typeof X.dotState !== "function") return res("dotThresholds", false, "window.__crosstalk.dotState missing");
-    // Both projects checked in just now, so the test participant is the only one that can be late.
+    // Every project checked in just now, so the test participant is the only one that can be late.
+    await addDoc("messages", "ci-amb", { t: ago(2), from: "avoidmissingball", kind: "check-in", summary: "Check-in" });
     await addDoc("messages", "ci-bil", { t: ago(2), from: "bewareilive", kind: "check-in", summary: "Check-in" });
     await addDoc("messages", "ci-vc", { t: ago(2), from: "vectorcraft", kind: "check-in", summary: "Check-in" });
     await addDoc("participants", "dt", { name: "Dot test", kind: "tool", color: "#555555", checkInMin: 30, trust: "approved" });
@@ -231,6 +233,76 @@
     var a = arrow("to-1"), b = arrow("to-2"), n = arrow("to-3");
     var ok = a === "→ BewareILive" && b === "→ BewareILive › verifier, VectorCraft" && n === null;
     return res("toArrow", ok, "one=" + JSON.stringify(a) + " two=" + JSON.stringify(b) + " none=" + JSON.stringify(n));
+  });
+
+  // "checkin" (no hyphen) counts as a check-in, shows as one and is found by the Check-ins chip.
+  S.push(async function checkinSpelling() {
+    await go("timeline");
+    await addDoc("participants", "ck", { name: "Spelling", kind: "tool", color: "#555555", checkInMin: 30, trust: "approved" });
+    await addDoc("messages", "ck-1", { t: ago(3), from: "ck", kind: "checkin", summary: "Old spelling" });
+    var state = window.__crosstalk.dotState("ck", Date.now()), c = card("ck-1"), p = c && c.querySelector(".pill");
+    $("k-check-in").click(); await tick();
+    var listed = !!card("ck-1");
+    $("k-all").click(); await tick();
+    return res("checkinSpelling", state === "ok" && p && p.textContent === "check in" && listed,
+      "dot=" + state + " pill=" + (p && p.textContent) + " inFilter=" + listed);
+  });
+
+  // Lateness reads in minutes under an hour, hours under two days, then days.
+  S.push(async function lateInHours() {
+    var got = [5, 59, 60, 1505, 2880].map(window.__crosstalk.spanText);
+    return res("lateInHours", JSON.stringify(got) === JSON.stringify(["5 min", "59 min", "1 h", "25 h", "2 d"]), JSON.stringify(got));
+  });
+
+  // Each participant's light color in light mode and its colorDark in dark mode, on tags and the heading.
+  S.push(async function themedColors() {
+    await go("timeline");
+    var root = document.documentElement, before = root.getAttribute("data-theme");
+    root.setAttribute("data-theme", "light"); await tick();
+    var light = window.__crosstalk.colorOf("vectorcraft"), h = $("heading").textContent;
+    var tag = $("who-vectorcraft"), lightTag = tag && tag.style.getPropertyValue("--who");
+    root.setAttribute("data-theme", "dark"); await tick();
+    var dark = window.__crosstalk.colorOf("vectorcraft"), darkTag = $("who-vectorcraft") && $("who-vectorcraft").style.getPropertyValue("--who");
+    if (before == null) root.removeAttribute("data-theme"); else root.setAttribute("data-theme", before);
+    await tick();
+    var ok = light === "#1f5f8b" && dark === "#6fb2e2" && lightTag === light && darkTag === dark &&
+      h === "AvoidMissingBall · BewareILive · VectorCraft";
+    return res("themedColors", ok, "light=" + light + "/" + lightTag + " dark=" + dark + "/" + darkTag + " heading=" + JSON.stringify(h));
+  });
+
+  // A game's line has its project's color; two games of one project differ by dash.
+  S.push(async function progressByProject() {
+    await put("progress", {
+      "p1": { t: ago(60), project: "bewareilive", game: "joust", pct: 5 }, "p2": { t: ago(1), project: "bewareilive", game: "joust", pct: 8 },
+      "p3": { t: ago(60), project: "bewareilive", game: "robotron", pct: 60 },
+      "p4": { t: ago(60), project: "vectorcraft", game: "tempest", pct: 1 } });
+    await go("progress");
+    var lines = [].slice.call(document.querySelectorAll("#view .chart path")).map(function (e) { return [e.getAttribute("stroke"), e.getAttribute("stroke-dasharray") || ""]; });
+    var legend = document.querySelectorAll("#view .legend line").length;
+    await go("timeline");
+    var bil = window.__crosstalk.colorOf("bewareilive"), vc = window.__crosstalk.colorOf("vectorcraft");
+    var ok = lines.length === 3 && lines[0][0] === bil && lines[1][0] === bil && lines[0][1] !== lines[1][1] && lines[2][0] === vc && legend === 3;
+    return res("progressByProject", ok, JSON.stringify(lines) + " legend=" + legend);
+  });
+
+  // Older decisions give `date` and no `by`; the table shows the date and an empty By cell, not "?".
+  S.push(async function decisionDateNoBy() {
+    await put("decisions", { "d-old": { date: "2026-10-21", project: "both", summary: "Dated only" } });
+    await go("decisions");
+    var row = document.querySelector("#view tbody tr"), by = row && row.children[1].textContent, when = row && row.children[4].textContent;
+    await go("timeline");
+    return res("decisionDateNoBy", by === "" && /Oct 2[01]/.test(when || ""), "by=" + JSON.stringify(by) + " when=" + JSON.stringify(when));
+  });
+
+  // ready-to-adopt is a known status: it sorts before landed-both and gets the in-progress pill.
+  S.push(async function readyToAdopt() {
+    await put("agreements", { "a-1": { t: T0, summary: "Done", status: "landed-both", builder: "vectorcraft", adopter: "bewareilive" },
+      "a-2": { t: T0, summary: "Ready", status: "ready-to-adopt", builder: "vectorcraft", adopter: "bewareilive" } });
+    await go("agreements");
+    var rows = [].slice.call(document.querySelectorAll("#view tbody tr")).map(function (tr) { return tr.querySelector(".summary").textContent; });
+    var pillEl = document.querySelector("#view .pill.ready-to-adopt"), bg = pillEl && getComputedStyle(pillEl).backgroundColor;
+    await go("timeline");
+    return res("readyToAdopt", rows[0] === "Ready" && bg === rgb("var(--vc-soft)"), "order=" + JSON.stringify(rows) + " bg=" + bg);
   });
 
   // A missing, empty or not-yet-loaded roster must not quarantine everyone.

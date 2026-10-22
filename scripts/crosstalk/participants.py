@@ -1,4 +1,5 @@
 """Load and validate participants.json."""
+import itertools
 import json
 import re
 from dataclasses import dataclass
@@ -8,6 +9,13 @@ from typing import Dict, Optional
 ID_RE = re.compile(r"^[a-z0-9-]+(\.[a-z0-9-]+)*$")
 KINDS = ("project", "agent", "reviewer", "researcher", "tool", "person")
 TRUSTS = ("approved", "quarantined")
+COLOR_RE = re.compile(r"^#[0-9a-fA-F]{6}$")
+# The page's panel backgrounds in light and dark mode. A participant's color must stand out from them.
+PANEL_LIGHT = "#fbfaf8"
+PANEL_DARK = "#1d1c1a"
+MIN_CONTRAST = 3.0
+# Two participants' colors closer than this (CIE76 delta E) read as the same color.
+MIN_DELTA_E = 20.0
 
 
 @dataclass
@@ -16,6 +24,7 @@ class Participant:
     name: str
     kind: str
     color: Optional[str] = None
+    colorDark: Optional[str] = None
     repo: Optional[str] = None
     parent: Optional[str] = None
     checkInMin: Optional[int] = None
@@ -39,6 +48,53 @@ class Roster:
         return None
 
 
+def _linear(c: int) -> float:
+    v = c / 255.0
+    return v / 12.92 if v <= 0.04045 else ((v + 0.055) / 1.055) ** 2.4
+
+
+def _rgb(color: str):
+    return [_linear(int(color[i:i + 2], 16)) for i in (1, 3, 5)]
+
+
+def _luminance(color: str) -> float:
+    r, g, b = _rgb(color)
+    return 0.2126 * r + 0.7152 * g + 0.0722 * b
+
+
+def contrast(a: str, b: str) -> float:
+    """WCAG contrast ratio between two #rrggbb colors."""
+    lo, hi = sorted((_luminance(a), _luminance(b)))
+    return (hi + 0.05) / (lo + 0.05)
+
+
+def _lab(color: str):
+    r, g, b = _rgb(color)
+    x = (0.4124 * r + 0.3576 * g + 0.1805 * b) / 0.95047
+    y = 0.2126 * r + 0.7152 * g + 0.0722 * b
+    z = (0.0193 * r + 0.1192 * g + 0.9505 * b) / 1.08883
+
+    def f(t):
+        return t ** (1.0 / 3) if t > 0.008856 else 7.787 * t + 16.0 / 116
+
+    return 116 * f(y) - 16, 500 * (f(x) - f(y)), 200 * (f(y) - f(z))
+
+
+def delta_e(a: str, b: str) -> float:
+    """CIE76 color difference between two #rrggbb colors."""
+    return sum((p - q) ** 2 for p, q in zip(_lab(a), _lab(b))) ** 0.5
+
+
+def _check_color(pid: str, field: str, value, panel: str) -> str:
+    if not isinstance(value, str) or not COLOR_RE.fullmatch(value):
+        raise ValueError("participant %s: %s must be #rrggbb, got %r" % (pid, field, value))
+    ratio = contrast(value, panel)
+    if ratio < MIN_CONTRAST:
+        raise ValueError("participant %s: %s %s has contrast %.1f against %s, needs %.1f"
+                         % (pid, field, value, ratio, panel, MIN_CONTRAST))
+    return value.lower()
+
+
 def _parse(entry: dict, index: int) -> Participant:
     if not isinstance(entry, dict):
         raise ValueError("participants[%d]: not an object" % index)
@@ -59,7 +115,9 @@ def _parse(entry: dict, index: int) -> Participant:
     check = entry.get("checkInMin")
     if check is not None and (isinstance(check, bool) or not isinstance(check, int) or check <= 0):
         raise ValueError("participant %s: bad checkInMin %r" % (pid, check))
-    return Participant(id=pid, name=entry["name"], kind=kind, color=entry.get("color"),
+    color = _check_color(pid, "color", entry.get("color"), PANEL_LIGHT)
+    color_dark = _check_color(pid, "colorDark", entry.get("colorDark"), PANEL_DARK)
+    return Participant(id=pid, name=entry["name"], kind=kind, color=color, colorDark=color_dark,
                        repo=entry.get("repo"), parent=parent, checkInMin=check, trust=trust)
 
 
@@ -79,6 +137,13 @@ def load_roster(path: Path) -> Roster:
     for p in people.values():
         if p.parent and p.parent not in people:
             raise ValueError("participant %s: parent %s not in roster" % (p.id, p.parent))
+    # Every participant's chats need their own color, in both themes.
+    for a, b in itertools.combinations(people.values(), 2):
+        for field in ("color", "colorDark"):
+            d = delta_e(getattr(a, field), getattr(b, field))
+            if d < MIN_DELTA_E:
+                raise ValueError("participants %s and %s: %s too close (%s, %s; delta E %.0f, needs %.0f)"
+                                 % (a.id, b.id, field, getattr(a, field), getattr(b, field), d, MIN_DELTA_E))
     relay = raw.get("relay", "")
     if relay and relay not in people:
         raise ValueError("relay %s is not a participant" % relay)

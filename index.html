@@ -1,4 +1,4 @@
-<title>BewareILive ⇄ VectorCraft</title>
+<title>Crosstalk</title>
 <meta name="claude:viewport-fit-sides" content="cover">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Chivo:wght@500;800&family=IBM+Plex+Sans:wght@400;500;600&family=IBM+Plex+Mono:wght@400;500&display=swap">
@@ -28,7 +28,7 @@ body { background: var(--bg); color: var(--fg); font: 15px/1.5 var(--body); }
 .wrap { max-width: 1040px; margin: 0 auto; padding-block: 24px 64px;
   padding-left: max(16px, env(safe-area-inset-left, 0px)); padding-right: max(16px, env(safe-area-inset-right, 0px)); }
 h1 { font: 800 clamp(24px, 5vw, 36px)/1.1 var(--display); margin: 0; letter-spacing: -0.01em; text-wrap: balance; }
-h1 .b { color: var(--bil); } h1 .v { color: var(--vc); } h1 .x { color: var(--muted); font-weight: 500; }
+h1 .proj { color: var(--who); } h1 .x { color: var(--muted); font-weight: 500; }
 .sub { color: var(--muted); max-width: 64ch; margin: 6px 0 0; }
 h2 { font: 800 13px var(--display); letter-spacing: .08em; text-transform: uppercase; margin: 0 0 10px; color: var(--muted); }
 button, input, textarea, select { font: inherit; color: inherit; }
@@ -117,13 +117,14 @@ a { color: inherit; }
 .ago { font: 12px var(--mono); color: var(--muted); }
 .meta { display: flex; flex-wrap: wrap; gap: 4px 10px; align-items: baseline; font: 12px var(--mono); color: var(--muted); }
 /* The sender tag: a solid block of the participant's color; --who-ink is white or dark, whichever reads on it. */
+td .who { white-space: nowrap; overflow-wrap: normal; }
 .who { display: inline-block; padding: 0 6px; border-radius: 4px; font: 600 12px/1.6 var(--mono); background: var(--who, var(--muted)); color: var(--who-ink, var(--tag-ink-themed)); overflow-wrap: anywhere; }
 .to { color: var(--muted); }
 .pill { display: inline-block; padding: 1px 7px; border-radius: 4px; font: 500 11px var(--mono); text-transform: uppercase; letter-spacing: .05em; background: var(--rule); color: var(--fg); white-space: nowrap; }
 .pill.agreement, .pill.landed-both, .pill.done { background: var(--ok); color: var(--panel); }
 .pill.alert, .pill.held, .pill.disagreement { background: var(--warn); color: var(--panel); }
 .pill.owner { background: var(--own); color: var(--panel); }
-.pill.building, .pill.landed-builder, .pill.agreed { background: var(--vc-soft); color: var(--fg); }
+.pill.building, .pill.landed-builder, .pill.ready-to-adopt, .pill.agreed { background: var(--vc-soft); color: var(--fg); }
 .pill.dropped { text-decoration: line-through; }
 .summary { font: 600 15px/1.35 var(--body); margin: 6px 0 4px; text-wrap: balance; overflow-wrap: anywhere; }
 .body { white-space: pre-wrap; overflow-wrap: anywhere; margin: 0; font-size: 14px; }
@@ -150,7 +151,7 @@ td.num, td.t { font: 12px var(--mono); font-variant-numeric: tabular-nums; white
 .card .summary { margin-top: 2px; }
 .chart { background: var(--panel); border: 1px solid var(--rule); border-radius: 8px; padding: 12px; overflow-x: auto; }
 .legend { display: flex; flex-wrap: wrap; gap: 6px 14px; font: 12px var(--mono); margin-top: 8px; }
-.legend i { display: inline-block; width: 12px; height: 3px; vertical-align: middle; margin-right: 6px; }
+.legend svg { display: inline-block; vertical-align: middle; margin-right: 6px; }
 .note { color: var(--muted); font-size: 13px; margin-top: 28px; }
 
 @media (max-width: 640px) {
@@ -167,8 +168,8 @@ td.num, td.t { font: 12px var(--mono); font-variant-numeric: tabular-nums; white
 
 <div class="wrap">
   <header>
-    <h1><span class="b">BewareILive</span> <span class="x">⇄</span> <span class="v">VectorCraft</span></h1>
-    <p class="sub">What the two projects' Claude sessions say to each other, what they've agreed, who holds which shared file, and what's waiting on you. Updates live.</p>
+    <h1 id="heading">Crosstalk</h1>
+    <p class="sub">What the projects' Claude sessions say to each other, what they've agreed, who holds which shared file, and what's waiting on you. Updates live.</p>
   </header>
 
   <div class="strip" id="strip">
@@ -199,7 +200,7 @@ td.num, td.t { font: 12px var(--mono); font-variant-numeric: tabular-nums; white
     ["locks", "File claims", "locks"], ["lessons", "Lessons", "lessons"], ["decisions", "Decisions", "decisions"],
     ["progress", "Progress", "progress"], ["incidents", "Incidents", "incidents"]
   ];
-  var STATUSES = ["proposed", "agreed", "building", "landed-builder", "landed-both", "held", "dropped"];
+  var STATUSES = ["proposed", "agreed", "building", "landed-builder", "ready-to-adopt", "landed-both", "held", "dropped"];
   var data = {}; COLS.forEach(function (c) { data[c] = []; });
   var people = Object.create(null), seenBy = {}, tab = "timeline", kindFilter = "all", whoFilter = null, query = "", queryRaw = "", db = null, canWrite = false, loaded = {}, offline = false;
   // subState[c]: undefined while connecting, "ok" once live, "retry" while resubscribing, "dead" when it can't recover.
@@ -235,21 +236,33 @@ td.num, td.t { font: 12px var(--mono); font-variant-numeric: tabular-nums; white
   // Rows are untrusted, so a participant's fields are checked before they reach a URL or a style.
   var HAS = Object.prototype.hasOwnProperty;
   var ID = "[a-z0-9-]+(?:\\.[a-z0-9-]+)*";
+  function okColor(c) { return typeof c === "string" && /^(#[0-9a-f]{3,8}|[a-z]+)$/i.test(c); }
+  // Dark when the host sets data-theme="dark", or when it sets none and the system prefers dark.
+  var DARKQ = window.matchMedia ? window.matchMedia("(prefers-color-scheme: dark)") : null;
+  function isDark() {
+    var t = document.documentElement.getAttribute("data-theme");
+    return t === "dark" || (t !== "light" && !!(DARKQ && DARKQ.matches));
+  }
   function person(id) {
     var k = String(id == null ? "" : id), p = HAS.call(people, k) && people[k] && typeof people[k] === "object" ? people[k] : null;
-    if (!p) return { id: k, name: k, kind: null, color: "var(--muted)", repo: null, parent: null, checkInMin: null, trust: "quarantined" };
+    if (!p) return { id: k, name: k, kind: null, color: "var(--muted)", colorDark: "var(--muted)", repo: null, parent: null, checkInMin: null, trust: "quarantined" };
     var name = typeof p.name === "string" && p.name ? p.name : (p.kind === "agent" ? k.split(".").pop() : k);
-    var color = typeof p.color === "string" && /^(#[0-9a-f]{3,8}|[a-z]+)$/i.test(p.color) ? p.color : "var(--muted)";
+    var color = okColor(p.color) ? p.color : "var(--muted)", colorDark = okColor(p.colorDark) ? p.colorDark : color;
     var repo = typeof p.repo === "string" && /^[\w.-]+\/[\w.-]+$/.test(p.repo) ? p.repo : null;
-    return { id: k, name: name, kind: p.kind || null, color: color, repo: repo, parent: typeof p.parent === "string" ? p.parent : null,
+    return { id: k, name: name, kind: p.kind || null, color: color, colorDark: colorDark, repo: repo, parent: typeof p.parent === "string" ? p.parent : null,
       checkInMin: typeof p.checkInMin === "number" ? p.checkInMin : null, trust: p.trust === "approved" ? "approved" : "quarantined" };
   }
   function displayName(id) {
     var p = person(id);
     return p.kind === "agent" && p.parent && p.parent !== p.id ? person(p.parent).name + " \u203a " + p.name : p.name;
   }
-  // The owner keeps the themed --own color, which has a light and a dark value.
-  function colorOf(id) { return id === "owner" ? "var(--own)" : person(id).color; }
+  // Each participant has a light and a dark color (participants.json: color, colorDark). An owner missing from
+  // the roster keeps the themed --own color.
+  function colorOf(id) {
+    var p = person(id);
+    if (id === "owner" && p.color === "var(--muted)") return "var(--own)";
+    return isDark() ? p.colorDark : p.color;
+  }
   // An agent without a repo of its own uses its parent's.
   function repoFor(id) { var p = person(id); return p.repo || (p.parent ? person(p.parent).repo : null); }
   // Text on a tag of this color: white on a dark color, dark ink on a light one. A theme token's tag uses
@@ -283,7 +296,7 @@ td.num, td.t { font: 12px var(--mono); font-variant-numeric: tabular-nums; white
       if (!id || isNaN(t)) return;
       var r = o[id] || (o[id] = { msg: NaN, check: NaN });
       if (!(r.msg >= t)) r.msg = t;
-      if (m.kind === "check-in" && !(r.check >= t)) r.check = t;
+      if (kindOf(m) === "check-in" && !(r.check >= t)) r.check = t;
     });
     statsFor = data.messages; statsCache = o;
     return o;
@@ -303,11 +316,19 @@ td.num, td.t { font: 12px var(--mono); font-variant-numeric: tabular-nums; white
     var r = msgStats()[p.id], last = r ? r.check : NaN;
     return isNaN(last) ? Infinity : (now - last) / 60000 - p.checkInMin;
   }
+  // A span of minutes for reading: "38 min", "25 h", "3 d".
+  function spanText(min) {
+    var m = Math.max(0, Math.round(min));
+    if (m < 60) return m + " min";
+    var h = Math.floor(m / 60); return h < 48 ? h + " h" : Math.floor(h / 24) + " d";
+  }
   function compactAgo(ms) {
     var m = Math.floor(Math.max(0, ms) / 60000);
     if (m < 1) return "now"; if (m < 60) return m + "m";
     var h = Math.floor(m / 60); return h < 24 ? h + "h" : Math.floor(h / 24) + "d";
   }
+  // "checkin" is an older spelling of "check-in"; both count as a check-in.
+  function kindOf(m) { return m.kind === "checkin" ? "check-in" : m.kind; }
   function pill(k) { return el("span", "pill " + String(k || "").replace(/[^a-z-]/g, ""), String(k || "").replace(/-/g, " ")); }
 
   // A ref names a commit or an issue. "<id>#42" or "<id>@abc1234" name that participant's repo;
@@ -349,7 +370,7 @@ td.num, td.t { font: 12px var(--mono); font-variant-numeric: tabular-nums; white
   }
   // `hold` is the hold. A `status` of "held" from before the flag existed counts too.
   function isHeld(a) { return a.hold === true || a.status === "held"; }
-  function isImportant(m) { return m.important === true || (m.important !== false && (m.kind === "alert" || m.kind === "disagreement" || m.kind === "owner")); }
+  function isImportant(m) { var k = kindOf(m); return m.important === true || (m.important !== false && (k === "alert" || k === "disagreement" || k === "owner")); }
   function byT(a, b) { return (ts(a.t) || 0) - (ts(b.t) || 0); }
 
   /* ---------- status strip ---------- */
@@ -401,7 +422,7 @@ td.num, td.t { font: 12px var(--mono); font-variant-numeric: tabular-nums; white
     if (!late.length) { tile.className = "tile ok"; val.textContent = "all on time"; hint.textContent = due.length + (due.length === 1 ? " participant checks in" : " participants check in"); return; }
     var w = late[0];
     tile.className = "tile " + w.state;
-    val.textContent = displayName(w.p.id) + (isFinite(w.late) ? " " + Math.round(w.late) + " min late" : " hasn't checked in");
+    val.textContent = displayName(w.p.id) + (isFinite(w.late) ? " " + spanText(w.late) + " late" : " hasn't checked in");
     hint.textContent = (late.length > 1 ? (late.length - 1) + " more late \u00b7 " : "") + "due every " + w.p.checkInMin + " min";
   }
 
@@ -464,7 +485,7 @@ td.num, td.t { font: 12px var(--mono); font-variant-numeric: tabular-nums; white
       draft.posting = true; draft.status = "Posting…"; refreshComposer();
       // Each row is a set on the same id, so a retry after a partial failure rewrites rows rather than adding them.
       var writes = [db.collection("messages").doc(id).set({ t: now, from: "owner", kind: "owner", summary: summary, body: text.length > summary.length ? text : "" })];
-      if (draft.kind === "decision") writes.push(db.collection("decisions").doc(id).set({ t: now, by: "owner", summary: summary, body: text, project: "both", source: "Crosstalk page" }));
+      if (draft.kind === "decision") writes.push(db.collection("decisions").doc(id).set({ t: now, by: "owner", summary: summary, body: text, project: "all", source: "Crosstalk page" }));
       if (draft.kind === "waiting") writes.push(db.collection("waiting").doc(id).set({ since: now, project: "owner", summary: summary, body: text, done: null }));
       Promise.all(writes).then(function () {
         draft = { text: "", kind: "owner", id: null, posting: false, status: "Posted." }; refreshComposer();
@@ -496,7 +517,7 @@ td.num, td.t { font: 12px var(--mono); font-variant-numeric: tabular-nums; white
     var meta = el("div", "meta"); meta.appendChild(who(m.from));
     var to = [].concat(m.to == null ? [] : m.to).filter(function (x) { return x != null && x !== ""; }).map(String);
     if (to.length) meta.appendChild(el("span", "to", "\u2192 " + to.map(displayName).join(", ")));
-    if (m.kind) meta.appendChild(pill(m.kind)); if (imp) meta.appendChild(pill("important"));
+    if (m.kind) meta.appendChild(pill(kindOf(m))); if (imp) meta.appendChild(pill("important"));
     if (quarantined) meta.appendChild(quarantinePill());
     if (canWrite && !isReply) {
       var star = el("button", "star", imp ? "\u2605" : "\u2606"); star.type = "button"; star.id = "star-" + m._id;
@@ -641,12 +662,12 @@ td.num, td.t { font: 12px var(--mono); font-variant-numeric: tabular-nums; white
     var top = data.messages;
     var shown = top.filter(function (m) {
       var kids = replies[m._id] || [];
-      var kindOk = kindFilter === "all" || (kindFilter === "important" ? isImportant(m) || kids.some(isImportant) : m.kind === kindFilter || kids.some(function (r) { return r.kind === kindFilter; }));
+      var kindOk = kindFilter === "all" || (kindFilter === "important" ? isImportant(m) || kids.some(isImportant) : kindOf(m) === kindFilter || kids.some(function (r) { return kindOf(r) === kindFilter; }));
       var whoOk = !whoFilter || String(m.from == null ? "" : m.from) === whoFilter;
       return kindOk && whoOk && (matches(m) || kids.some(matches));
     }).sort(byT).reverse();
     if (!shown.length) {
-      log.appendChild(el("div", "empty", loaded.messages ? (data.messages.length ? "No messages match." : "No messages logged yet. Each message between the two sessions shows up here.") : "Loading messages…"));
+      log.appendChild(el("div", "empty", loaded.messages ? (data.messages.length ? "No messages match." : "No messages logged yet. Each message between the sessions shows up here.") : "Loading messages…"));
     }
     var lastDay = null;
     shown.forEach(function (m) {
@@ -753,7 +774,7 @@ td.num, td.t { font: 12px var(--mono); font-variant-numeric: tabular-nums; white
       ["Why", function (r) { return el("span", null, r.note || ""); }],
       ["Since", function (r) { var d = el("div"); d.appendChild(timeEl(r.since, true)); d.appendChild(el("div")).appendChild(agoEl(r.since)); return d; }, "t"],
       ["State", function (r) { return r.released ? pill("released") : pill("held"); }]
-    ], "No shared files are claimed. Before an agent edits a file both projects share, it posts a claim here.");
+    ], "No shared files are claimed. Before an agent edits a file the projects share, it posts a claim here.");
   }
   function renderLessons(view) {
     simpleTable(view, data.lessons.slice().sort(byT).reverse(), [
@@ -764,12 +785,14 @@ td.num, td.t { font: 12px var(--mono); font-variant-numeric: tabular-nums; white
     ], "No lessons recorded yet. Each incident and the rule or tool that now prevents it goes here; the new-project guide's lessons index is built from these.");
   }
   function renderDecisions(view) {
-    simpleTable(view, data.decisions.slice().sort(byT).reverse(), [
+    // Older rows give the day as `date` instead of `t`.
+    function when(r) { return r.t || r.date; }
+    simpleTable(view, data.decisions.slice().sort(function (a, b) { return (ts(when(b)) || 0) - (ts(when(a)) || 0); }), [
       ["Decision", textBlock],
-      ["By", function (r) { return who(r.by === "owner" ? "owner" : r.by); }],
-      ["For", function (r) { return el("span", null, r.project === "both" ? "Both projects" : r.project ? person(r.project).name : ""); }],
+      ["By", function (r) { return r.by ? who(r.by) : null; }],
+      ["For", function (r) { return el("span", null, r.project === "all" || r.project === "both" ? "All projects" : r.project ? person(r.project).name : ""); }],
       ["Where said", function (r) { return el("span", null, r.source || ""); }],
-      ["When", function (r) { return timeEl(r.t, true); }, "t"]
+      ["When", function (r) { return timeEl(when(r), true); }, "t"]
     ], "No decisions recorded yet. Your decisions, with the date and where you made them, go here.");
   }
   function renderIncidents(view) {
@@ -783,14 +806,24 @@ td.num, td.t { font: 12px var(--mono); font-variant-numeric: tabular-nums; white
   }
 
   /* ---------- progress chart ---------- */
-  var SERIES = ["var(--bil)", "var(--vc)", "var(--own)", "var(--ok)", "var(--warn)", "var(--muted)"];
+  // A game's line takes its project's color; a project's games differ by dash pattern.
+  var DASHES = ["", "7 4", "2 3", "10 3 2 3", "4 4 1 4"];
   function renderProgress(view) {
     toolbar(view, false);
     var all = data.progress.filter(function (p) { return !isNaN(ts(p.t)) && typeof p.pct === "number"; });
     var pts = all.filter(matches).sort(byT);
     if (!pts.length) { view.appendChild(el("div", "empty", all.length ? "No games match." : "No progress recorded yet. Each check-in records every open game's percentage built here.")); return; }
     var groups = {}, keys = [];
-    pts.forEach(function (p) { var k = person(p.project).name + ": " + p.game; if (!groups[k]) { groups[k] = []; keys.push(k); } groups[k].push(p); });
+    var gameNo = {}, style = {};
+    pts.forEach(function (p) {
+      var k = person(p.project).name + ": " + p.game;
+      if (!groups[k]) {
+        groups[k] = []; keys.push(k);
+        var n = gameNo[p.project] = (gameNo[p.project] || 0) + 1;
+        style[k] = { col: colorOf(p.project), dash: DASHES[(n - 1) % DASHES.length] };
+      }
+      groups[k].push(p);
+    });
     var W = 900, H = 300, L = 44, R = 16, T = 12, B = 34;
     var t0 = ts(pts[0].t), t1 = ts(pts[pts.length - 1].t); if (t1 === t0) t1 = t0 + 3600000;
     function x(t) { return L + (t - t0) / (t1 - t0) * (W - L - R); }
@@ -809,12 +842,14 @@ td.num, td.t { font: 12px var(--mono); font-variant-numeric: tabular-nums; white
     });
     var legend = el("div", "legend");
     keys.forEach(function (k, i) {
-      var col = SERIES[i % SERIES.length], g = groups[k];
+      var col = style[k].col, dash = style[k].dash, g = groups[k];
       var d = g.map(function (p, j) { return (j ? "L" : "M") + x(ts(p.t)).toFixed(1) + " " + y(p.pct).toFixed(1); }).join(" ");
-      svg.appendChild(s("path", { d: d, fill: "none", stroke: col, "stroke-width": 2.5 }));
+      var line = s("path", { d: d, fill: "none", stroke: col, "stroke-width": 2.5 }); if (dash) line.setAttribute("stroke-dasharray", dash); svg.appendChild(line);
       var last = g[g.length - 1];
       svg.appendChild(s("circle", { cx: x(ts(last.t)), cy: y(last.pct), r: 4, fill: col }));
-      var li = el("span"); var sw = el("i"); sw.style.background = col; li.appendChild(sw); li.appendChild(document.createTextNode(k + " " + last.pct + "%")); legend.appendChild(li);
+      var li = el("span"), sw = s("svg", { width: 24, height: 6, "aria-hidden": "true" }), sl = s("line", { x1: 0, x2: 24, y1: 3, y2: 3, stroke: col, "stroke-width": 2.5 });
+      if (dash) sl.setAttribute("stroke-dasharray", dash);
+      sw.appendChild(sl); li.appendChild(sw); li.appendChild(document.createTextNode(k + " " + last.pct + "%")); legend.appendChild(li);
     });
     var box = el("div", "chart"); box.appendChild(svg); view.appendChild(box); view.appendChild(legend);
   }
@@ -839,7 +874,17 @@ td.num, td.t { font: 12px var(--mono); font-variant-numeric: tabular-nums; white
     ({ timeline: renderTimeline, agreements: renderAgreements, waiting: renderWaiting, locks: renderLocks, lessons: renderLessons, decisions: renderDecisions, progress: renderProgress, incidents: renderIncidents }[tab] || renderTimeline)(view);
     restoreFocus(f);
   }
-  function renderAll() { var f = captureFocus(); renderStrip(); renderTabs(); renderView(false); restoreFocus(f); }
+  // The heading names every project in the roster, each in its color; "Crosstalk" until the roster loads.
+  function renderHeading() {
+    var h = document.getElementById("heading"), ids = Object.keys(people).filter(function (id) { return person(id).kind === "project"; }).sort(byName);
+    h.textContent = "";
+    if (!ids.length) { h.textContent = "Crosstalk"; return; }
+    ids.forEach(function (id, i) {
+      if (i) { h.appendChild(document.createTextNode(" ")); h.appendChild(el("span", "x", "\u00b7")); h.appendChild(document.createTextNode(" ")); }
+      var n = el("span", "proj", person(id).name); n.style.setProperty("--who", colorOf(id)); h.appendChild(n);
+    });
+  }
+  function renderAll() { var f = captureFocus(); renderHeading(); renderStrip(); renderTabs(); renderView(false); restoreFocus(f); }
 
   function readHash() {
     var h = (location.hash || "").replace(/^#/, "");
@@ -861,6 +906,9 @@ td.num, td.t { font: 12px var(--mono); font-variant-numeric: tabular-nums; white
   })();
   readHash();
   window.addEventListener("hashchange", function () { readHash(); renderAll(); });
+  // Participant colors follow the theme, so a theme change redraws everything.
+  if (DARKQ) { if (DARKQ.addEventListener) DARKQ.addEventListener("change", renderAll); else if (DARKQ.addListener) DARKQ.addListener(renderAll); }
+  if (window.MutationObserver) new MutationObserver(renderAll).observe(document.documentElement, { attributes: true, attributeFilter: ["data-theme"] });
   // Crossing 640px opens or folds the roster.
   if (WIDE) { var onWidth = function () { if (tab === "timeline") renderView(true); }; if (WIDE.addEventListener) WIDE.addEventListener("change", onWidth); else if (WIDE.addListener) WIDE.addListener(onWidth); }
   // Who is viewing, from user.me(): "Viewing as Jim (editor)". The name needs the user capability's
@@ -872,7 +920,7 @@ td.num, td.t { font: 12px var(--mono); font-variant-numeric: tabular-nums; white
     return "Viewing as " + (me.isOwner ? "the owner" : me.canEdit ? "an editor" : "a viewer (read only)");
   }
   // Read-only helpers for the page tests.
-  window.__crosstalk = Object.freeze({ dotState: dotState, viewerText: viewerText });
+  window.__crosstalk = Object.freeze({ dotState: dotState, viewerText: viewerText, spanText: spanText, colorOf: colorOf });
   renderAll();
   setInterval(function () {
     document.querySelectorAll(".ago[data-t]").forEach(function (a) { a.textContent = agoText(Number(a.dataset.t)); });

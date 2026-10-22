@@ -32,7 +32,7 @@ def owner_lines(root):
 def roster_with_gemini():
     data = json.loads(json.dumps(SPEC_ROSTER))
     data["participants"].append(
-        {"id": "gemini", "name": "Gemini", "kind": "researcher", "trust": "quarantined"})
+        {"id": "gemini", "name": "Gemini", "kind": "researcher", "color": "#8a5a00", "colorDark": "#d9b25c", "trust": "quarantined"})
     return data
 
 

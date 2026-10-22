@@ -274,7 +274,7 @@ class PendingTests(unittest.TestCase):
         with TempRepo() as r:
             data = json.loads(json.dumps(SPEC_ROSTER))
             data["participants"].append({"id": "gemini", "name": "Gemini",
-                                         "kind": "researcher", "trust": "quarantined"})
+                                         "kind": "researcher", "color": "#8a5a00", "colorDark": "#d9b25c", "trust": "quarantined"})
             r.write_roster(data)
             save_state(r.root, {PAGE: {"participantsHash": roster_hash(r.root)}})
             r.write_log("gemini", [line(1, "gemini", t=T0),
@@ -362,7 +362,7 @@ class RestoreTests(unittest.TestCase):
             data = {k: v for k, v in db.items() if k[0] != "participants"}
             people = {k: v for k, v in db.items() if k[0] == "participants"}
             self.assertEqual(len(data), 215)
-            self.assertEqual(len(people), 4)
+            self.assertEqual(len(people), 5)
             self.assertEqual(data, replay(load_all_lines(r.root)))
 
             exp = r.root / "export"
@@ -379,7 +379,7 @@ class RestoreTests(unittest.TestCase):
                     "\n".join(rows) + "\n", encoding="utf-8")
             res = pull(r.root, exp)
             self.assertEqual((res.owner_lines, res.approvals, res.skipped), (0, [], []))
-            self.assertEqual(len(res.versions), 219)
+            self.assertEqual(len(res.versions), 220)
             self.assertEqual(pending(r.root, r.root / "after"), [])
 
 

@@ -1,3 +1,4 @@
+import json
 import unittest
 
 import helpers
@@ -11,7 +12,7 @@ class RosterTests(unittest.TestCase):
             return load_roster(r.write_roster(data))
 
     def entry(self, **kw):
-        base = {"id": "x", "name": "X", "kind": "project"}
+        base = {"id": "x", "name": "X", "kind": "project", "color": "#8a5a00", "colorDark": "#d9b25c"}
         base.update(kw)
         return dict(helpers.SPEC_ROSTER, relay="", participants=[base])
 
@@ -44,10 +45,45 @@ class RosterTests(unittest.TestCase):
     def test_repo_falls_back_to_parent(self):
         data = dict(helpers.SPEC_ROSTER)
         data["participants"] = list(data["participants"]) + [
-            {"id": "bewareilive.verifier", "name": "Verifier", "kind": "agent", "parent": "bewareilive"}]
+            {"id": "bewareilive.verifier", "name": "Verifier", "kind": "agent", "parent": "bewareilive",
+             "color": "#8a5a00", "colorDark": "#d9b25c"}]
         ro = self.load(data)
         self.assertEqual(ro.repo_for("bewareilive.verifier"), "ookla-ariel-ride/bewareilive")
         self.assertIsNone(ro.repo_for("codex"))
+
+    def test_color_and_dark_color_required(self):
+        for field in ("color", "colorDark"):
+            e = self.entry()
+            del e["participants"][0][field]
+            with self.assertRaises(ValueError) as cm:
+                self.load(e)
+            self.assertIn(field, str(cm.exception))
+
+    def test_bad_color_format_rejected(self):
+        for bad in ("red", "#abc", "#12345g", 7):
+            with self.assertRaises(ValueError):
+                self.load(self.entry(color=bad))
+
+    def test_low_contrast_color_rejected(self):
+        with self.assertRaises(ValueError) as cm:
+            self.load(self.entry(color="#f0f0f0"))
+        self.assertIn("contrast", str(cm.exception))
+        with self.assertRaises(ValueError) as cm:
+            self.load(self.entry(colorDark="#202020"))
+        self.assertIn("colorDark", str(cm.exception))
+
+    def test_duplicate_or_near_colors_rejected(self):
+        for light, dark in (("#b3261e", "#d9b25c"), ("#b5281f", "#d9b25c"), ("#8a5a00", "#ef6a5f")):
+            data = json.loads(json.dumps(helpers.SPEC_ROSTER))
+            data["participants"].append({"id": "x", "name": "X", "kind": "project", "color": light, "colorDark": dark})
+            with self.assertRaises(ValueError) as cm:
+                self.load(data)
+            self.assertIn("too close", str(cm.exception))
+            self.assertIn("bewareilive", str(cm.exception))
+
+    def test_colors_kept_lowercase(self):
+        ro = self.load(self.entry(color="#8A5A00"))
+        self.assertEqual(ro.participants["x"].color, "#8a5a00")
 
 
 if __name__ == "__main__":

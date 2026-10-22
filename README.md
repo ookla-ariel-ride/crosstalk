@@ -1,7 +1,7 @@
 # Crosstalk
 
-A live page for watching the BewareILive and VectorCraft Claude sessions
-work together: their messages, the improvements they agree on and how far
+A live page for watching the game projects' Claude sessions (BewareILive,
+VectorCraft and AvoidMissingBall) work together: their messages, the improvements they agree on and how far
 each has got, which shared files are claimed, the lessons they learn, and
 what's waiting on the owner.
 
@@ -74,8 +74,8 @@ the courier's trip and what each session does at a check-in.
 
 ## Adding a participant
 
-Add one entry to `participants.json` with an `id`, `name`, `kind` and
-`color` (and `repo`, `checkInMin` or `parent` if they apply). Leave `trust`
+Add one entry to `participants.json` with an `id`, `name`, `kind`, `color`
+and `colorDark` (and `repo`, `checkInMin` or `parent` if they apply). Leave `trust`
 out or set it to `quarantined`: the participant starts quarantined, its
 lines are shown dimmed, sessions don't act on them, and it may only write
 docs whose ids start with its own `<id>-` (PROTOCOL.md has the trust

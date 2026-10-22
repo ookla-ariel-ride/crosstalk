@@ -52,7 +52,7 @@ sees the real roster from its first snapshot.
 - `subAgentTag`: an `agent` participant shows as `Parent › name`.
 - `refViaRoster`: `codex@ABC1234` and `codex#12` link through codex's `repo`; plain text without one.
 - `threeWayPositions`: three ids in `positions` give three columns, each with "Go with".
-- `forColumnUsesName`: the decisions "For" column shows the participant's name; `both` shows "Both projects".
+- `forColumnUsesName`: the decisions "For" column shows the participant's name; `both` and `all` show "All projects".
 - `ownerColorThemed`: the owner's tag keeps the themed `--own` color, and its card the `own` class.
 - `composerKindKept`: a snapshot re-render keeps the composer's kind.
 - `noDuplicatePosts`: retrying a half-failed post rewrites the same rows.
@@ -71,6 +71,12 @@ sees the real roster from its first snapshot.
   "not approved", and the Check-ins tile reads "roster not loaded"; re-seeding restores quarantine.
 - `mobileRosterFolds`: wide, the roster is open beside the feed; at 390 wide it folds into a "People"
   disclosure above the feed.
+- `checkinSpelling`: a `checkin` message counts as a check-in, shows as "check in" and is in the Check-ins chip.
+- `lateInHours`: lateness reads `5 min`, `59 min`, `1 h`, `25 h`, `2 d`.
+- `themedColors`: a participant's tag and the heading use `color` in light mode and `colorDark` in dark mode; the heading names every project.
+- `progressByProject`: each game's line takes its project's color, and a project's games differ by dash.
+- `decisionDateNoBy`: a decision with only `date` and no `by` shows its date and an empty By cell.
+- `readyToAdopt`: `ready-to-adopt` sorts before `landed-both` and gets the in-progress pill.
 - `holdRelease`: releasing an old-style `status: "held"` agreement sets `agreed` and `hold: false`.
 - `viewerRole`: the footer reads "Viewing as Test Owner (owner)" for the stub viewer; `__crosstalk.viewerText`
   gives "(editor)", "a viewer (read only)" and "the owner" for an unnamed owner, and nothing without a viewer.
