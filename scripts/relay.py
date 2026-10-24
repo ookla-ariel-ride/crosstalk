@@ -11,7 +11,7 @@ sys.path.insert(0, str(ROOT / "scripts"))
 
 from crosstalk.courier import pending, restore, sent  # noqa: E402
 from crosstalk.exporter import export_page  # noqa: E402
-from crosstalk.importer import import_snapshots  # noqa: E402
+from crosstalk.importer import import_snapshots, merge_snapshots  # noqa: E402
 from crosstalk.logs import append_line, check_all, message_problems  # noqa: E402
 from crosstalk.participants import load_roster  # noqa: E402
 from crosstalk.pull import pull  # noqa: E402
@@ -108,13 +108,20 @@ def cmd_export_page(args):
 
 
 def cmd_import(args):
+    dirs = [Path(d) for d in args.dirs]
     try:
-        counts = import_snapshots(ROOT, [Path(d) for d in args.dirs])
+        if args.merge:
+            res = merge_snapshots(ROOT, dirs)
+            counts, skipped = res["counts"], res["skipped"]
+        else:
+            counts, skipped = import_snapshots(ROOT, dirs), []
     except RuntimeError as e:
         err(str(e))
         return 1
     for pid in sorted(counts):
         print("%s: %d" % (pid, counts[pid]))
+    for name in skipped:
+        err("warning: skipped %s (already in the log)" % name)
     return 0
 
 
@@ -174,6 +181,8 @@ def build_parser():
 
     i = sub.add_parser("import", help="import page snapshots into an empty log")
     i.add_argument("dirs", nargs="+", metavar="DIR")
+    i.add_argument("--merge", action="store_true",
+                   help="merge into a live log: skip the rows it already has")
     i.set_defaults(fn=cmd_import)
 
     x = sub.add_parser("export-page", help="write one self-contained HTML page with the log inlined")
