@@ -1,11 +1,14 @@
 import json
 import os
+import select
 import shutil
 import subprocess
+import sys
 import threading
 import unittest
 import urllib.error
 import urllib.request
+from pathlib import Path
 
 from helpers import SPEC_ROSTER, RunningServer, TempRepo, line
 
@@ -17,6 +20,12 @@ from crosstalk.tokens import token_hash
 
 def request(url, method="GET", body=None, headers=None):
     """(status, decoded JSON body) for one request against the served API."""
+    status, payload, _headers = request_with_headers(url, method, body, headers)
+    return status, payload
+
+
+def request_with_headers(url, method="GET", body=None, headers=None):
+    """(status, decoded JSON body, response headers) for one request."""
     data = None
     if body is not None:
         data = json.dumps(body).encode("utf-8")
@@ -24,10 +33,10 @@ def request(url, method="GET", body=None, headers=None):
     try:
         with urllib.request.urlopen(req, timeout=10) as resp:
             raw = resp.read().decode("utf-8")
-            return resp.status, (json.loads(raw) if raw else None)
+            return resp.status, (json.loads(raw) if raw else None), dict(resp.headers)
     except urllib.error.HTTPError as e:
         raw = e.read().decode("utf-8")
-        return e.code, (json.loads(raw) if raw else None)
+        return e.code, (json.loads(raw) if raw else None), dict(e.headers)
 
 
 class SnapshotTests(unittest.TestCase):
@@ -306,6 +315,247 @@ class AppendTests(unittest.TestCase):
             self.assertNotIn(self.TOKEN, json.dumps(body))
             raw = (r.root / "log" / "codex.jsonl").read_text(encoding="utf-8")
             self.assertNotIn(self.TOKEN, raw)
+
+
+class OwnerTests(unittest.TestCase):
+    """The owner on the page: a PIN or a token, then a session cookie."""
+
+    OWNER_TOKEN = "the-owner-token"
+
+    def server(self, r, **kwargs):
+        kwargs.setdefault("tokens", {"owner": token_hash(self.OWNER_TOKEN)})
+        return RunningServer(r.root, **kwargs)
+
+    def login(self, srv, payload):
+        status, body, headers = request_with_headers(srv.url + "/api/login", "POST", payload)
+        cookie = headers.get("Set-Cookie", "")
+        return status, body, cookie
+
+    def cookie_of(self, cookie):
+        return cookie.split(";")[0]
+
+    def test_login_with_the_startup_pin(self):
+        with TempRepo() as r:
+            r.write_roster()
+            with self.server(r) as srv:
+                self.assertRegex(srv.pin, r"^\d{6}$")
+                status, body, cookie = self.login(srv, {"pin": srv.pin})
+                self.assertEqual(status, 200)
+                self.assertIn("HttpOnly", cookie)
+                self.assertIn("SameSite=Strict", cookie)
+                self.assertNotIn(srv.pin, cookie)
+                status, me = request(srv.url + "/api/me", headers={"Cookie": self.cookie_of(cookie)})
+            self.assertEqual(status, 200)
+            self.assertEqual(me, {"name": "Owner", "isOwner": True, "canEdit": True,
+                                  "viewer": "owner"})
+
+    def test_login_with_the_owner_token(self):
+        with TempRepo() as r:
+            r.write_roster()
+            with self.server(r) as srv:
+                status, body, cookie = self.login(srv, {"token": self.OWNER_TOKEN})
+                self.assertEqual(status, 200)
+                self.assertNotIn(self.OWNER_TOKEN, cookie)
+                status, me = request(srv.url + "/api/me", headers={"Cookie": self.cookie_of(cookie)})
+            self.assertEqual(status, 200)
+            self.assertTrue(me["isOwner"])
+
+    def test_a_wrong_pin_or_token_is_refused(self):
+        with TempRepo() as r:
+            r.write_roster()
+            with self.server(r) as srv:
+                status, body, cookie = self.login(srv, {"pin": "000000"})
+                self.assertEqual(status, 401)
+                self.assertEqual(cookie, "")
+                status, body, cookie = self.login(srv, {"token": "not-the-owner-token"})
+                self.assertEqual(status, 401)
+                self.assertEqual(cookie, "")
+
+    def test_login_without_a_pin_or_token_is_400(self):
+        with TempRepo() as r:
+            r.write_roster()
+            with self.server(r) as srv:
+                status, body, cookie = self.login(srv, {})
+                self.assertEqual(status, 400)
+                self.assertEqual(cookie, "")
+
+    def test_no_pin_means_no_pin_login(self):
+        with TempRepo() as r:
+            r.write_roster()
+            with self.server(r, no_pin=True) as srv:
+                self.assertIsNone(srv.pin)
+                status, body, cookie = self.login(srv, {"pin": "123456"})
+                self.assertEqual(status, 401)
+
+    def test_the_pin_expires(self):
+        with TempRepo() as r:
+            r.write_roster()
+            with self.server(r) as srv:
+                srv.state.pin_expires = 0.0  # the window has passed
+                status, body, cookie = self.login(srv, {"pin": srv.pin})
+                self.assertEqual(status, 401)
+
+    def test_the_pin_is_one_time_only(self):
+        with TempRepo() as r:
+            r.write_roster()
+            with self.server(r) as srv:
+                status, _body, cookie = self.login(srv, {"pin": srv.pin})
+                self.assertEqual(status, 200)
+                status, _body, cookie2 = self.login(srv, {"pin": srv.pin})
+                self.assertEqual(status, 401)
+
+    def test_without_a_cookie_the_viewer_is_read_only(self):
+        with TempRepo() as r:
+            r.write_roster()
+            with self.server(r) as srv:
+                status, me = request(srv.url + "/api/me")
+            self.assertEqual(status, 200)
+            self.assertEqual(me, {"name": None, "isOwner": False, "canEdit": False,
+                                  "viewer": "viewer"})
+
+    def test_a_stale_cookie_is_just_a_viewer(self):
+        with TempRepo() as r:
+            r.write_roster()
+            with self.server(r) as srv:
+                status, me = request(srv.url + "/api/me",
+                                     headers={"Cookie": "crosstalk_session=nope"})
+            self.assertEqual(status, 200)
+            self.assertEqual(me["viewer"], "viewer")
+            self.assertFalse(me["isOwner"])
+
+    def test_the_owner_may_write_as_owner(self):
+        with TempRepo() as r:
+            r.write_roster()
+            with self.server(r) as srv:
+                status, _body, cookie = self.login(srv, {"pin": srv.pin})
+                status, body = request(srv.url + "/api/append", "POST",
+                                       {"from": "owner", "op": "set", "collection": "messages",
+                                        "id": "own-20261024-1200-abcd",
+                                        "data": {"kind": "owner", "summary": "a note"}},
+                                       {"Cookie": self.cookie_of(cookie)})
+                self.assertEqual(status, 201)
+                self.assertEqual(body["from"], "owner")
+                self.assertEqual(body["via"], "page")
+            self.assertTrue((r.root / "log" / "owner.jsonl").is_file())
+
+    def test_a_non_owner_may_not_write_as_owner(self):
+        with TempRepo() as r:
+            r.write_roster()
+            with RunningServer(r.root, tokens={"codex": token_hash("codex-token")}) as srv:
+                status, body = request(srv.url + "/api/append", "POST",
+                                       {"from": "owner", "op": "set", "collection": "messages",
+                                        "id": "own-20261024-1200-abcd",
+                                        "data": {"kind": "owner", "summary": "a note"}},
+                                       {"Authorization": "Bearer codex-token"})
+                self.assertEqual(status, 403)
+                self.assertFalse((r.root / "log" / "owner.jsonl").exists())
+
+    def test_a_viewer_may_not_write(self):
+        with TempRepo() as r:
+            r.write_roster()
+            with self.server(r) as srv:
+                status, body = request(srv.url + "/api/append", "POST",
+                                       {"from": "owner", "op": "set", "collection": "messages",
+                                        "id": "own-20261024-1200-abcd",
+                                        "data": {"kind": "owner", "summary": "a note"}})
+                self.assertEqual(status, 403)
+                self.assertFalse((r.root / "log" / "owner.jsonl").exists())
+
+    def test_the_approve_flow_updates_the_doc_the_roster_and_the_log(self):
+        with TempRepo() as r:
+            roster = json.loads(json.dumps(SPEC_ROSTER))
+            for entry in roster["participants"]:
+                if entry["id"] == "codex":
+                    entry["trust"] = "quarantined"
+            r.write_roster(roster)
+            with self.server(r) as srv:
+                status, _body, cookie = self.login(srv, {"pin": srv.pin})
+                status, body = request(srv.url + "/api/append", "POST",
+                                       {"from": "owner", "op": "set", "collection": "participants",
+                                        "id": "codex", "data": {"trust": "approved"}},
+                                       {"Cookie": self.cookie_of(cookie)})
+                self.assertEqual(status, 201)
+                status, snap = request(srv.url + "/api/snapshot")
+            # The roster of record.
+            on_disk = json.loads((r.root / "participants.json").read_text(encoding="utf-8"))
+            entry = [p for p in on_disk["participants"] if p["id"] == "codex"][0]
+            self.assertEqual(entry["trust"], "approved")
+            # The replayed doc, and the roster the snapshot serves.
+            self.assertEqual(snap["collections"]["participants"]["codex"]["trust"], "approved")
+            self.assertEqual(snap["roster"]["codex"]["trust"], "approved")
+            # The log line.
+            lines = [json.loads(x) for x in
+                     (r.root / "log" / "owner.jsonl").read_text(encoding="utf-8").splitlines() if x.strip()]
+            self.assertEqual(len(lines), 1)
+            self.assertEqual(lines[0]["collection"], "participants")
+            self.assertEqual(lines[0]["id"], "codex")
+            self.assertEqual(lines[0]["data"]["trust"], "approved")
+            self.assertEqual(lines[0]["from"], "owner")
+
+    def test_the_owner_may_write_the_participants_collection(self):
+        with TempRepo() as r:
+            r.write_roster()
+            with self.server(r) as srv:
+                status, _body, cookie = self.login(srv, {"pin": srv.pin})
+                status, body = request(srv.url + "/api/append", "POST",
+                                       {"from": "owner", "op": "update", "collection": "participants",
+                                        "id": "codex", "data": {"trust": "quarantined"}},
+                                       {"Cookie": self.cookie_of(cookie)})
+                self.assertEqual(status, 201)
+            on_disk = json.loads((r.root / "participants.json").read_text(encoding="utf-8"))
+            entry = [p for p in on_disk["participants"] if p["id"] == "codex"][0]
+            self.assertEqual(entry["trust"], "quarantined")
+
+    def test_a_roster_write_of_an_unknown_participant_is_400(self):
+        with TempRepo() as r:
+            r.write_roster()
+            with self.server(r) as srv:
+                status, _body, cookie = self.login(srv, {"pin": srv.pin})
+                status, body = request(srv.url + "/api/append", "POST",
+                                       {"from": "owner", "op": "set", "collection": "participants",
+                                        "id": "nobody", "data": {"trust": "approved"}},
+                                       {"Cookie": self.cookie_of(cookie)})
+                self.assertEqual(status, 400)
+                self.assertIn("nobody", json.dumps(body))
+
+    def test_a_session_is_kept_in_memory_only(self):
+        with TempRepo() as r:
+            r.write_roster()
+            with self.server(r) as srv:
+                status, _body, cookie = self.login(srv, {"pin": srv.pin})
+                self.assertEqual(status, 200)
+            self.assertEqual(sorted(p.name for p in r.root.iterdir()), ["log", "participants.json"])
+
+    def test_the_cookie_is_the_only_credential_the_owner_needs(self):
+        with TempRepo() as r:
+            r.write_roster()
+            with self.server(r) as srv:
+                status, _body, cookie = self.login(srv, {"pin": srv.pin})
+                # The cookie alone carries the owner: no bearer token is sent.
+                status, body = request(srv.url + "/api/append", "POST",
+                                       {"from": "owner", "op": "set", "collection": "messages",
+                                        "id": "own-1", "data": {"kind": "owner", "summary": "hi"}},
+                                       {"Cookie": self.cookie_of(cookie)})
+                self.assertEqual(status, 201)
+
+    def test_the_server_prints_its_startup_pin(self):
+        scripts = str(Path(__file__).resolve().parent.parent / "scripts")
+        with TempRepo() as r:
+            r.write_roster()
+            code = ("import sys; sys.path.insert(0, %r); from crosstalk.serve import serve; "
+                    "serve(%r, port=0)" % (scripts, str(r.root)))
+            proc = subprocess.Popen([sys.executable, "-u", "-c", code], stdout=subprocess.PIPE,
+                                    stderr=subprocess.PIPE, universal_newlines=True)
+            try:
+                ready, _w, _x = select.select([proc.stdout], [], [], 30)
+                self.assertTrue(ready, "the server printed nothing")
+                first = proc.stdout.readline()
+            finally:
+                proc.terminate()
+                proc.wait(timeout=10)
+            self.assertIn("Login PIN:", first)
+            pin = first.split(":")[1].split()[0]
+            self.assertRegex(pin, r"^\d{6}$")
 
 
 if __name__ == "__main__":

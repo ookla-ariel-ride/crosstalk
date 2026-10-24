@@ -1,22 +1,39 @@
 """Serve a replay of the logs over local HTTP.
 
-The server is the page host and the database. Reads are replays of
-`log/` (the source of truth), replayed per request but cached on each
-log file's size and mtime, so a session that appends straight to a file
-is visible on the next request without a restart.
+The server is the page host and the database:
+
+  GET  /                -> index.html, as it sits in the checkout
+  GET  /api/snapshot    -> every collection replayed, plus server_time and commit
+  GET  /api/<collection>-> one collection replayed
+  GET  /api/me          -> the role of the caller (owner, editor, viewer)
+  POST /api/login       -> the startup PIN or the owner token, then a session cookie
+  POST /api/append      -> one line appended, with the same checks `relay.py append` runs
+
+Reads are replays of `log/` (the source of truth), cached on each log
+file's size and mtime, so a session that appends straight to a file is
+visible on the next request without a restart. Writes go through
+`append_line`, so the file lock, the trust rules and the message shape
+rules are the same ones the command line uses. The server alone stamps a
+line's `t`, from its own clock.
 
 Python 3.9, standard library only.
 """
+import hmac
 import json
+import os
+import secrets
 import subprocess
 import sys
+import tempfile
 import threading
 import time
+from http.cookies import CookieError, SimpleCookie
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from typing import Dict, List, Optional, Tuple
 from urllib.parse import urlsplit
 
+from .courier import atomic_write_text
 from .logs import COLLECTIONS, append_line
 from .participants import load_roster
 from .replay import load_all_lines, replay
@@ -28,6 +45,12 @@ KNOWN_COLLECTIONS = tuple(COLLECTIONS) + ("participants",)
 JSON_TYPE = "application/json; charset=utf-8"
 HTML_TYPE = "text/html; charset=utf-8"
 MAX_BODY = 1024 * 1024
+COOKIE_NAME = "crosstalk_session"
+# The startup PIN is good for ten minutes and for one login; a session for twelve hours.
+PIN_TTL = 10 * 60.0
+SESSION_TTL = 12 * 60 * 60.0
+# The fields of a roster entry the owner may write.
+ROSTER_FIELDS = ("name", "kind", "color", "colorDark", "checkInMin", "trust", "repo", "parent")
 
 
 def now_iso() -> str:
@@ -99,6 +122,27 @@ class ReplayCache:
             return docs, entries
 
 
+def roster_problem(raw, directory) -> Optional[str]:
+    """The reason this roster would be invalid, or None when it would load.
+
+    The roster is checked with the same loader the rest of the system uses, so
+    a write that would break participants.json never reaches the disk.
+    """
+    fd, tmp = tempfile.mkstemp(prefix=".participants.", suffix=".json", dir=str(directory))
+    try:
+        with os.fdopen(fd, "w", encoding="utf-8") as f:
+            json.dump(raw, f, ensure_ascii=False)
+        load_roster(Path(tmp))
+    except ValueError as e:
+        return str(e)
+    finally:
+        try:
+            os.unlink(tmp)
+        except OSError:
+            pass
+    return None
+
+
 class TokenStore:
     """The tokens the server accepts: an injected map, or tokens.json in the root."""
 
@@ -131,6 +175,39 @@ class TokenStore:
         return Tokens(self.root / TOKEN_FILE, self._current()).verify(auth_header, pid)
 
 
+class Sessions:
+    """Owner sessions, in memory only: a restart forgets them all."""
+
+    def __init__(self):
+        self._lock = threading.Lock()
+        self._sessions = {}  # type: Dict[str, float]
+
+    def create(self, ttl: float = SESSION_TTL) -> str:
+        """A new opaque session id."""
+        sid = secrets.token_urlsafe(32)
+        with self._lock:
+            self._prune()
+            self._sessions[sid] = time.time() + ttl
+        return sid
+
+    def valid(self, sid: Optional[str]) -> bool:
+        if not sid:
+            return False
+        with self._lock:
+            expires = self._sessions.get(sid)
+            if expires is None:
+                return False
+            if expires < time.time():
+                del self._sessions[sid]
+                return False
+            return True
+
+    def _prune(self) -> None:
+        now = time.time()
+        for sid in [s for s, e in self._sessions.items() if e < now]:
+            del self._sessions[sid]
+
+
 class ServerState:
     """What the handlers share: the served root, the replay cache, the tokens."""
 
@@ -138,6 +215,17 @@ class ServerState:
         self.root = Path(root)
         self.tokens = TokenStore(self.root, tokens)
         self.cache = ReplayCache(self.root)
+        self.sessions = Sessions()
+        self.pin = None  # type: Optional[str]
+        self.pin_expires = 0.0
+        self.pin_used = False
+
+    def make_pin(self) -> str:
+        """The one-time startup PIN: six digits, good for ten minutes."""
+        self.pin = "%06d" % secrets.randbelow(1000000)
+        self.pin_expires = time.time() + PIN_TTL
+        self.pin_used = False
+        return self.pin
 
 
 class CrosstalkHandler(BaseHTTPRequestHandler):
@@ -167,9 +255,9 @@ class CrosstalkHandler(BaseHTTPRequestHandler):
         if self.command != "HEAD":
             self.wfile.write(body)
 
-    def _json(self, status: int, payload) -> None:
+    def _json(self, status: int, payload, headers=None) -> None:
         body = json.dumps(payload, ensure_ascii=False).encode("utf-8")
-        self._send(status, body, JSON_TYPE)
+        self._send(status, body, JSON_TYPE, headers)
 
     def _error(self, status: int, message: str) -> None:
         self._json(status, {"error": message})
@@ -180,6 +268,8 @@ class CrosstalkHandler(BaseHTTPRequestHandler):
         path = urlsplit(self.path).path
         if path == "/api/snapshot":
             self._snapshot()
+        elif path == "/api/me":
+            self._me()
         elif path.startswith("/api/"):
             self._collection(path[len("/api/"):])
         elif path == "/":
@@ -234,6 +324,8 @@ class CrosstalkHandler(BaseHTTPRequestHandler):
         path = urlsplit(self.path).path
         if path == "/api/append":
             self._append()
+        elif path == "/api/login":
+            self._login()
         else:
             self._error(404, "no such endpoint")
 
@@ -257,17 +349,98 @@ class CrosstalkHandler(BaseHTTPRequestHandler):
             self._error(400, "the body is not JSON")
             return None
 
-    def _identity(self):
-        """(role, participant id) of the writer, or None when there is no token."""
+    # -- who is writing ----------------------------------------------------
+
+    def _owner_session(self) -> bool:
+        """True when the request carries a live owner session cookie."""
+        raw = self.headers.get("Cookie")
+        if not raw:
+            return False
+        jar = SimpleCookie()
+        try:
+            jar.load(raw)
+        except CookieError:
+            return False
+        morsel = jar.get(COOKIE_NAME)
+        return bool(morsel) and self.state.sessions.valid(morsel.value)
+
+    def _role(self) -> str:
+        """owner, editor or viewer."""
+        if self._owner_session():
+            return "owner"
         header = self.headers.get("Authorization")
-        if not header:
-            return None
-        result = self.state.tokens.verify(header)
-        if not result.ok:
-            return None
-        if result.pid == "owner":
+        if header and self.state.tokens.verify(header).ok:
+            return "editor"
+        return "viewer"
+
+    def _identity(self):
+        """(role, participant id) of the writer."""
+        role = self._role()
+        if role == "owner":
             return ("owner", "owner")
-        return ("participant", result.pid)
+        if role == "editor":
+            result = self.state.tokens.verify(self.headers.get("Authorization"))
+            return ("participant", result.pid)
+        return ("viewer", None)
+
+    # -- the owner's session ------------------------------------------------
+
+    def _check_pin(self, pin) -> bool:
+        """The startup PIN: right, still valid, and not used yet."""
+        state = self.state
+        if not isinstance(pin, str) or not state.pin or state.pin_used:
+            return False
+        if state.pin_expires < time.time():
+            return False
+        if not hmac.compare_digest(pin, state.pin):
+            return False
+        state.pin_used = True
+        return True
+
+    def _check_owner_token(self, token) -> bool:
+        """The owner's own token: the credential that outlives the PIN."""
+        if not isinstance(token, str):
+            return False
+        return self.state.tokens.verify("Bearer " + token, "owner").ok
+
+    def _login(self):
+        body = self._read_json()
+        if body is None:
+            return
+        if not isinstance(body, dict):
+            self._error(400, "the body must be a JSON object")
+            return
+        pin = body.get("pin")
+        token = body.get("token")
+        if pin is None and token is None:
+            self._error(400, "expected a pin or a token")
+            return
+        ok = self._check_pin(pin) if pin is not None else self._check_owner_token(token)
+        if not ok:
+            self._error(401, "that pin or token is not valid")
+            return
+        sid = self.state.sessions.create()
+        cookie = "%s=%s; Path=/; Max-Age=%d; HttpOnly; SameSite=Strict" % (
+            COOKIE_NAME, sid, int(SESSION_TTL))
+        self._json(200, {"ok": True, "viewer": "owner"}, headers=[("Set-Cookie", cookie)])
+
+    def _me(self):
+        role = self._role()
+        if role == "owner":
+            self._json(200, {"name": "Owner", "isOwner": True, "canEdit": True, "viewer": "owner"})
+        elif role == "editor":
+            self._json(200, {"name": None, "isOwner": False, "canEdit": True, "viewer": "editor"})
+        else:
+            self._json(200, {"name": None, "isOwner": False, "canEdit": False, "viewer": "viewer"})
+
+    # -- writes -------------------------------------------------------------
+
+    def _line(self, status: int, ln) -> None:
+        payload = {"seq": ln.seq, "t": ln.t, "from": ln.from_, "op": ln.op,
+                   "collection": ln.collection, "id": ln.id, "data": ln.data}
+        if ln.via is not None:
+            payload["via"] = ln.via
+        self._json(status, payload)
 
     def _append(self):
         body = self._read_json()
@@ -291,24 +464,34 @@ class CrosstalkHandler(BaseHTTPRequestHandler):
             if via == "import":
                 self._error(400, "via 'import' belongs to the importer, not to the API")
                 return
-        identity = self._identity()
-        if identity is None:
-            self._error(401, "no valid token")
-            return
-        role, pid = identity
+        role, pid = self._identity()
         frm = body.get("from")
         collection = body.get("collection")
+        if role == "viewer":
+            # A viewer may read everything and write nothing; the owner's own
+            # documents and the roster are the owner's alone.
+            if frm == "owner" or collection == "participants":
+                self._error(403, "only the owner may write this")
+            else:
+                self._error(401, "no valid token")
+            return
         if role == "owner":
             if frm != "owner":
                 self._error(403, "the owner writes as 'owner'")
+                return
+            if via is None:
+                via = "page"
+            if collection == "participants":
+                self._append_roster(body.get("id"), data, via)
                 return
         else:
             if frm != pid:
                 self._error(403, "the token belongs to another participant")
                 return
-        if collection == "participants":
-            self._error(403, "the participants collection is the owner's alone")
-            return
+            if collection == "participants":
+                self._error(403, "the participants collection is the owner's alone")
+                return
+        # The same checks `relay.py append` runs.
         try:
             roster = load_roster(self.state.root / "participants.json")
             ln = append_line(self.state.root, frm, body.get("op"), collection, body.get("id"),
@@ -319,21 +502,82 @@ class CrosstalkHandler(BaseHTTPRequestHandler):
         except OSError as e:
             self._error(500, "cannot write the log: %s" % e)
             return
-        payload = {"seq": ln.seq, "t": ln.t, "from": ln.from_, "op": ln.op,
-                   "collection": ln.collection, "id": ln.id, "data": ln.data}
-        if ln.via is not None:
-            payload["via"] = ln.via
-        self._json(201, payload)
+        self._line(201, ln)
+
+    def _append_roster(self, doc_id, data, via):
+        """The owner's write to participants/<pid>: the log line and the roster file."""
+        if not isinstance(doc_id, str) or not doc_id:
+            self._error(400, "the participants collection is keyed by participant id")
+            return
+        path = self.state.root / "participants.json"
+        try:
+            raw = json.loads(path.read_text(encoding="utf-8"))
+        except (OSError, ValueError) as e:
+            self._error(500, "cannot read participants.json: %s" % e)
+            return
+        entries = raw.get("participants") if isinstance(raw, dict) else None
+        if not isinstance(entries, list):
+            self._error(500, "participants.json has no participants list")
+            return
+        index = None
+        for i, entry in enumerate(entries):
+            if isinstance(entry, dict) and entry.get("id") == doc_id:
+                index = i
+                break
+        if index is None:
+            self._error(400, "no participant %r in the roster" % doc_id)
+            return
+        merged = dict(entries[index])
+        unknown = []
+        for key, value in data.items():
+            if key == "id":
+                if value != doc_id:
+                    self._error(400, "the roster id and the doc id differ")
+                    return
+                continue
+            if key not in ROSTER_FIELDS:
+                unknown.append(key)
+                continue
+            merged[key] = value
+        if unknown:
+            self._error(400, "unknown roster field: %s" % ", ".join(sorted(unknown)))
+            return
+        new_raw = dict(raw)
+        new_entries = list(entries)
+        new_entries[index] = merged
+        new_raw["participants"] = new_entries
+        problem = roster_problem(new_raw, path.parent)
+        if problem:
+            self._error(400, problem)
+            return
+        try:
+            roster = load_roster(path)
+            ln = append_line(self.state.root, "owner", "update", "participants", doc_id, merged,
+                             t=None, via=via, roster=roster)
+        except ValueError as e:
+            self._error(400, str(e))
+            return
+        except OSError as e:
+            self._error(500, "cannot write the log: %s" % e)
+            return
+        try:
+            atomic_write_text(path, json.dumps(new_raw, indent=2, ensure_ascii=False) + "\n")
+        except OSError as e:
+            self._error(500, "cannot write participants.json: %s" % e)
+            return
+        self._line(201, ln)
 
 
 class RunningServer:
     """The server in a thread: `with RunningServer(root) as srv: ...`."""
 
-    def __init__(self, root, port: int = 0, host: str = "127.0.0.1", tokens=None):
+    def __init__(self, root, port: int = 0, host: str = "127.0.0.1", tokens=None,
+                 no_pin: bool = False):
         self.root = Path(root)
         self.host = host
         self.port = port
         self.tokens = tokens
+        self.no_pin = no_pin
         self._httpd = None
         self._thread = None
 
@@ -345,9 +589,11 @@ class RunningServer:
         httpd = ThreadingHTTPServer((self.host, self.port), CrosstalkHandler)
         httpd.daemon_threads = True
         httpd.state = ServerState(self.root, self.tokens)  # type: ignore[attr-defined]
+        if not self.no_pin:
+            httpd.state.make_pin()  # type: ignore[attr-defined]
         self._httpd = httpd
         self.port = httpd.server_address[1]
-        self._thread = threading.Thread(target=httpd.serve_forever, kwargs={"poll_interval": 0.2})
+        self._thread = threading.Thread(target=httpd.serve_forever, kwargs={"poll_interval": 0.05})
         self._thread.daemon = True
         self._thread.start()
         return self
@@ -374,10 +620,44 @@ class RunningServer:
     def url(self) -> str:
         return "http://%s:%d" % (self.host, self.port)
 
+    @property
+    def state(self) -> Optional[ServerState]:
+        """The shared state (sessions, the startup PIN); None before the start."""
+        return self._httpd.state if self._httpd is not None else None  # type: ignore[attr-defined]
 
-def start(root, port: int = 0, host: str = "127.0.0.1", tokens=None) -> RunningServer:
+    @property
+    def pin(self) -> Optional[str]:
+        """The one-time startup PIN, when the server made one."""
+        state = self.state
+        return state.pin if state is not None else None
+
+
+def start(root, port: int = 0, host: str = "127.0.0.1", tokens=None,
+          no_pin: bool = False) -> RunningServer:
     """Start a server over `root` and return it (a context manager).
 
     Port 0 asks the OS for an ephemeral port, which the tests use.
     """
-    return RunningServer(root, port=port, host=host, tokens=tokens).start_server()
+    return RunningServer(root, port=port, host=host, tokens=tokens,
+                         no_pin=no_pin).start_server()
+
+
+def serve(root, host: str = "127.0.0.1", port: int = 8484, no_pin: bool = False,
+          tokens=None) -> None:
+    """Run the server in the foreground and print the one-time startup PIN.
+
+    The PIN is how the owner logs in on the page; it is good for one login
+    and ten minutes. `--no-pin` turns it off (the owner token still works).
+    """
+    server = RunningServer(root, port=port, host=host, tokens=tokens, no_pin=no_pin)
+    server.start_server()
+    if server.pin:
+        print("Login PIN: %s  (one login, ten minutes)" % server.pin, flush=True)
+    print("Crosstalk is serving %s on %s" % (root, server.url), flush=True)
+    try:
+        while True:
+            time.sleep(3600)
+    except KeyboardInterrupt:
+        pass
+    finally:
+        server.close()
