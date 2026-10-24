@@ -9,6 +9,7 @@ ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT / "scripts"))
 
 from crosstalk.courier import pending, restore, sent  # noqa: E402
+from crosstalk.exporter import export_page  # noqa: E402
 from crosstalk.importer import import_snapshots  # noqa: E402
 from crosstalk.logs import append_line, check_all, message_problems  # noqa: E402
 from crosstalk.participants import load_roster  # noqa: E402
@@ -71,6 +72,16 @@ def cmd_append(args):
         err(str(e))
         return 1
     print(ln.seq)
+    return 0
+
+
+def cmd_export_page(args):
+    try:
+        info = export_page(ROOT, Path(args.file))
+    except (RuntimeError, OSError, ValueError) as e:
+        err(str(e))
+        return 1
+    print("%s: %d documents (commit %s)" % (info["path"], info["documents"], info["commit"]))
     return 0
 
 
@@ -142,6 +153,10 @@ def build_parser():
     i = sub.add_parser("import", help="import page snapshots into an empty log")
     i.add_argument("dirs", nargs="+", metavar="DIR")
     i.set_defaults(fn=cmd_import)
+
+    x = sub.add_parser("export-page", help="write one self-contained HTML page with the log inlined")
+    x.add_argument("file", metavar="FILE", help="the HTML file to write")
+    x.set_defaults(fn=cmd_export_page)
 
     p = sub.add_parser("pull", help="record the owner's page changes")
     p.add_argument("export_dir", metavar="EXPORT_DIR")
