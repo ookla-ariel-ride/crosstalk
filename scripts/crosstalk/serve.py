@@ -17,15 +17,17 @@ from pathlib import Path
 from typing import Dict, List, Optional, Tuple
 from urllib.parse import urlsplit
 
-from .logs import COLLECTIONS
+from .logs import COLLECTIONS, append_line
 from .participants import load_roster
 from .replay import load_all_lines, replay
+from .tokens import TOKEN_FILE, Result, Tokens
 
 # The collections the page reads. "participants" is the owner's roster.
 KNOWN_COLLECTIONS = tuple(COLLECTIONS) + ("participants",)
 
 JSON_TYPE = "application/json; charset=utf-8"
 HTML_TYPE = "text/html; charset=utf-8"
+MAX_BODY = 1024 * 1024
 
 
 def now_iso() -> str:
@@ -97,12 +99,44 @@ class ReplayCache:
             return docs, entries
 
 
-class ServerState:
-    """What the handlers share: the served root and the replay cache."""
+class TokenStore:
+    """The tokens the server accepts: an injected map, or tokens.json in the root."""
 
     def __init__(self, root, tokens=None):
         self.root = Path(root)
-        self.tokens = tokens
+        self.injected = dict(tokens) if tokens else None
+        self._lock = threading.Lock()
+        self._entries = {}  # type: Dict[str, str]
+        self._stamp = None
+
+    def _key(self):
+        try:
+            st = (self.root / TOKEN_FILE).stat()
+        except OSError:
+            return None
+        return (st.st_size, st.st_mtime_ns)
+
+    def _current(self) -> Dict[str, str]:
+        if self.injected is not None:
+            return self.injected
+        key = self._key()
+        with self._lock:
+            if key != self._stamp:
+                self._entries = Tokens.load(self.root / TOKEN_FILE).entries
+                self._stamp = key
+            return self._entries
+
+    def verify(self, auth_header, pid: Optional[str] = None) -> Result:
+        """Check an Authorization header against the store."""
+        return Tokens(self.root / TOKEN_FILE, self._current()).verify(auth_header, pid)
+
+
+class ServerState:
+    """What the handlers share: the served root, the replay cache, the tokens."""
+
+    def __init__(self, root, tokens=None):
+        self.root = Path(root)
+        self.tokens = TokenStore(self.root, tokens)
         self.cache = ReplayCache(self.root)
 
 
@@ -193,6 +227,103 @@ class CrosstalkHandler(BaseHTTPRequestHandler):
             self._error(404, "no page is served from this checkout")
             return
         self._send(200, body, HTML_TYPE)
+
+    # -- writes ------------------------------------------------------------
+
+    def do_POST(self):
+        path = urlsplit(self.path).path
+        if path == "/api/append":
+            self._append()
+        else:
+            self._error(404, "no such endpoint")
+
+    def _read_json(self):
+        """The parsed body, or None once 400 has been answered."""
+        try:
+            length = int(self.headers.get("Content-Length") or 0)
+        except ValueError:
+            self._error(400, "bad Content-Length")
+            return None
+        if length <= 0:
+            self._error(400, "the body is empty")
+            return None
+        if length > MAX_BODY:
+            self._error(400, "the body is too big")
+            return None
+        raw = self.rfile.read(length)
+        try:
+            return json.loads(raw.decode("utf-8"))
+        except (UnicodeDecodeError, ValueError):
+            self._error(400, "the body is not JSON")
+            return None
+
+    def _identity(self):
+        """(role, participant id) of the writer, or None when there is no token."""
+        header = self.headers.get("Authorization")
+        if not header:
+            return None
+        result = self.state.tokens.verify(header)
+        if not result.ok:
+            return None
+        if result.pid == "owner":
+            return ("owner", "owner")
+        return ("participant", result.pid)
+
+    def _append(self):
+        body = self._read_json()
+        if body is None:
+            return
+        if not isinstance(body, dict):
+            self._error(400, "the body must be a JSON object")
+            return
+        if "t" in body:
+            self._error(400, "the server stamps the line's t; leave it out")
+            return
+        data = body.get("data")
+        if not isinstance(data, dict):
+            self._error(400, "data must be a JSON object")
+            return
+        via = body.get("via")
+        if via is not None:
+            if not isinstance(via, str):
+                self._error(400, "via must be a string")
+                return
+            if via == "import":
+                self._error(400, "via 'import' belongs to the importer, not to the API")
+                return
+        identity = self._identity()
+        if identity is None:
+            self._error(401, "no valid token")
+            return
+        role, pid = identity
+        frm = body.get("from")
+        collection = body.get("collection")
+        if role == "owner":
+            if frm != "owner":
+                self._error(403, "the owner writes as 'owner'")
+                return
+        else:
+            if frm != pid:
+                self._error(403, "the token belongs to another participant")
+                return
+        if collection == "participants":
+            self._error(403, "the participants collection is the owner's alone")
+            return
+        try:
+            roster = load_roster(self.state.root / "participants.json")
+            ln = append_line(self.state.root, frm, body.get("op"), collection, body.get("id"),
+                             data, t=None, via=via, roster=roster)
+        except ValueError as e:
+            self._error(400, str(e))
+            return
+        except OSError as e:
+            self._error(500, "cannot write the log: %s" % e)
+            return
+        payload = {"seq": ln.seq, "t": ln.t, "from": ln.from_, "op": ln.op,
+                   "collection": ln.collection, "id": ln.id, "data": ln.data}
+        if ln.via is not None:
+            payload["via"] = ln.via
+        self._json(201, payload)
 
 
 class RunningServer:

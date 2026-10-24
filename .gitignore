@@ -2,3 +2,4 @@ build/
 .superpowers/
 __pycache__/
 tests/page/out/
+tokens.json

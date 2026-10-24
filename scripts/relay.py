@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Command line for the Crosstalk log: check, append, import, pull, pending, restore, sent."""
+"""Command line for the Crosstalk log: check, append, import, pull, pending, restore, sent, token."""
 import argparse
 import json
 import sys
@@ -13,6 +13,7 @@ from crosstalk.importer import import_snapshots  # noqa: E402
 from crosstalk.logs import append_line, check_all, message_problems  # noqa: E402
 from crosstalk.participants import load_roster  # noqa: E402
 from crosstalk.pull import pull  # noqa: E402
+from crosstalk.tokens import TOKEN_FILE, Tokens, load_tokens  # noqa: E402
 
 
 MISSING_SHOWN = 10
@@ -124,6 +125,26 @@ def cmd_sent(args):
     return 0
 
 
+def cmd_token(args):
+    """Mint an API token for a participant and print it once."""
+    try:
+        roster = load_roster(ROOT / "participants.json")
+    except ValueError as e:
+        err(str(e))
+        return 1
+    if args.pid not in roster.participants:
+        err("unknown participant %r" % args.pid)
+        return 1
+    store = load_tokens(ROOT / TOKEN_FILE) or Tokens(ROOT / TOKEN_FILE)
+    try:
+        token = store.mint(args.pid)
+    except OSError as e:
+        err("cannot write %s: %s" % (TOKEN_FILE, e))
+        return 1
+    print(token)
+    return 0
+
+
 def build_parser():
     ap = argparse.ArgumentParser(prog="relay.py", description=__doc__)
     sub = ap.add_subparsers(dest="cmd", required=True)
@@ -155,6 +176,10 @@ def build_parser():
     s = sub.add_parser("sent", help="record that a batch went through")
     s.add_argument("batch", metavar="BATCH")
     s.set_defaults(fn=cmd_sent)
+
+    t = sub.add_parser("token", help="mint an API token for a participant; prints it once")
+    t.add_argument("pid", metavar="PID")
+    t.set_defaults(fn=cmd_token)
     return ap
 
 
