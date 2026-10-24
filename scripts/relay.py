@@ -4,6 +4,7 @@ import argparse
 import json
 import sys
 from pathlib import Path
+from typing import Dict
 
 ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT / "scripts"))
@@ -14,6 +15,7 @@ from crosstalk.importer import import_snapshots  # noqa: E402
 from crosstalk.logs import append_line, check_all, message_problems  # noqa: E402
 from crosstalk.participants import load_roster  # noqa: E402
 from crosstalk.pull import pull  # noqa: E402
+from crosstalk.replay import load_all_lines, replay  # noqa: E402
 
 
 MISSING_SHOWN = 10
@@ -72,6 +74,26 @@ def cmd_append(args):
         err(str(e))
         return 1
     print(ln.seq)
+    return 0
+
+
+def cmd_read(args):
+    """Print the replay as JSON: the shared memory for any session that speaks JSON."""
+    roster = load_roster(ROOT / "participants.json")
+    problems = check_all(ROOT, roster)
+    fatal = [p for p in problems if p.fatal]
+    if fatal:
+        for p in fatal:
+            err("%s:%d: %s" % (p.file, p.line, p.message))
+        return 1
+    docs = replay(load_all_lines(ROOT, roster))
+    collections = {}  # type: Dict[str, Dict[str, dict]]
+    for (coll, did), fields in sorted(docs.items()):
+        collections.setdefault(coll, {})[did] = fields
+    if args.collection:
+        wanted = set(args.collection)
+        collections = {c: v for c, v in collections.items() if c in wanted}
+    print(json.dumps({"collections": collections}, ensure_ascii=False, sort_keys=True, indent=2))
     return 0
 
 
@@ -157,6 +179,11 @@ def build_parser():
     x = sub.add_parser("export-page", help="write one self-contained HTML page with the log inlined")
     x.add_argument("file", metavar="FILE", help="the HTML file to write")
     x.set_defaults(fn=cmd_export_page)
+
+    rd = sub.add_parser("read", help="print the replay as JSON")
+    rd.add_argument("--collection", action="append", metavar="C",
+                    help="only this collection (may be given more than once)")
+    rd.set_defaults(fn=cmd_read)
 
     p = sub.add_parser("pull", help="record the owner's page changes")
     p.add_argument("export_dir", metavar="EXPORT_DIR")
