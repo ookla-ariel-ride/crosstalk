@@ -6,6 +6,22 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "scripts"))
 
+from crosstalk.serve import RunningServer as _RunningServer  # noqa: E402
+
+
+class RunningServer(_RunningServer):
+    """A Crosstalk server on 127.0.0.1 with an ephemeral port, over a temp repo.
+
+    `with RunningServer(root) as srv:` starts the server and shuts it down
+    (and its thread) on the way out.
+    """
+
+    def __init__(self, root, **kwargs):
+        kwargs.setdefault("port", 0)
+        kwargs.setdefault("host", "127.0.0.1")
+        _RunningServer.__init__(self, root, **kwargs)
+
+
 SPEC_ROSTER = {
     "page": "https://claude.ai/artifact/ThPWGePNJjieLDTUqJbfmc",
     "relay": "bewareilive",
