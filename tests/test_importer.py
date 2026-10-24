@@ -1,11 +1,13 @@
 import json
 import shutil
+import subprocess
+import sys
 import unittest
 from pathlib import Path
 
-from helpers import TempRepo
+from helpers import TempRepo, line
 
-from crosstalk.importer import import_snapshots
+from crosstalk.importer import import_snapshots, merge_snapshots
 from crosstalk.logs import check_all, read_log
 from crosstalk.participants import load_roster
 from crosstalk.replay import load_all_lines, replay
@@ -153,6 +155,157 @@ class ImportTests(unittest.TestCase):
             docs = replay(load_all_lines(r.root))
             self.assertEqual(len(docs), 215)
             self.assertEqual(docs[("agreements", "a-review-broker-cleanup")]["status"], "ready-to-adopt")
+
+
+class MergeTests(unittest.TestCase):
+    """import --merge: the old page's snapshots folded into a live log."""
+
+    def setUp(self):
+        self.r = TempRepo()
+        self.r.__enter__()
+        self.r.write_roster()
+
+    def tearDown(self):
+        self.r.__exit__(None, None, None)
+
+    def test_merge_appends_rows_the_log_does_not_have(self):
+        r = self.r
+        r.write_log("codex", [line(1, "codex", data={"kind": "reply", "summary": "live"})])
+        snap = make_snap(r.root, "s", {
+            ("messages", "m-0001"): {"t": "2026-01-01T00:00:00Z", "summary": "old"},
+        })
+        res = merge_snapshots(r.root, [snap])
+        self.assertEqual(res["skipped"], [])
+        docs = replay(load_all_lines(r.root))
+        self.assertIn(("messages", "m-0001"), docs)
+        self.assertIn(("messages", "codex-0001"), docs)
+        self.assertEqual(docs[("messages", "codex-0001")]["summary"], "live")
+
+    def test_merge_skips_rows_the_log_already_has_and_says_so(self):
+        r = self.r
+        r.write_log("codex", [line(1, "codex", id_="m-0001", data={"summary": "live"})])
+        snap = make_snap(r.root, "s", {
+            ("messages", "m-0001"): {"t": "2026-01-01T00:00:00Z", "summary": "old"},
+            ("messages", "m-0002"): {"t": "2026-01-01T00:00:01Z", "summary": "older"},
+        })
+        res = merge_snapshots(r.root, [snap])
+        self.assertEqual(res["skipped"], ["messages/m-0001"])
+        docs = replay(load_all_lines(r.root))
+        # The log's row wins: the snapshot's older copy is skipped, not merged in.
+        self.assertEqual(docs[("messages", "m-0001")]["summary"], "live")
+        self.assertIn(("messages", "m-0002"), docs)
+
+    def test_merge_writes_the_rows_own_time_and_marks_them_imported(self):
+        r = self.r
+        snap = make_snap(r.root, "s", {
+            ("messages", "m-0001"): {"t": "2026-01-01T00:00:00Z", "summary": "old"},
+        })
+        merge_snapshots(r.root, [snap])
+        lines = load_all_lines(r.root)
+        self.assertEqual(len(lines), 1)
+        self.assertEqual(lines[0].t, "2026-01-01T00:00:00Z")
+        self.assertEqual(lines[0].via, "import")
+        self.assertEqual(lines[0].op, "set")
+
+    def test_older_imported_rows_sort_back_into_history(self):
+        # Review focus 2: a row imported with an older t lands before the newer
+        # live row in the replay, not after it.
+        r = self.r
+        r.write_log("codex", [line(1, "codex", data={"kind": "reply", "summary": "newer"},
+                                   t="2026-10-22T12:00:00Z")])
+        snap = make_snap(r.root, "s", {
+            ("messages", "m-0001"): {"t": "2026-10-20T12:00:00Z", "summary": "older"},
+        })
+        merge_snapshots(r.root, [snap])
+        docs = replay(load_all_lines(r.root))
+        self.assertEqual([k for k in docs if k[0] == "messages"],
+                         [("messages", "m-0001"), ("messages", "codex-0001")])
+
+    def test_duplicate_across_snapshot_dirs_still_raises(self):
+        r = self.r
+        a = make_snap(r.root, "a", {("messages", "m-1"): {}})
+        b = make_snap(r.root, "b", {("messages", "m-1"): {}})
+        with self.assertRaises(RuntimeError):
+            merge_snapshots(r.root, [a, b])
+
+    def test_merge_leaves_the_log_clean(self):
+        r = self.r
+        r.write_log("codex", [line(1, "codex", data={"kind": "reply", "summary": "live"})])
+        snap = make_snap(r.root, "s", {
+            ("messages", "m-0001"): {"t": "2026-01-01T00:00:00Z", "summary": "old"},
+            ("waiting", "w-1"): {"since": "2026-01-01T00:00:00Z", "summary": "w"},
+        })
+        merge_snapshots(r.root, [snap])
+        roster = load_roster(r.root / "participants.json")
+        self.assertEqual(check_all(r.root, roster), [])
+
+    def test_merge_of_the_real_snapshots_into_the_real_log(self):
+        # The cutover shape: the live log plus the old page's exports.
+        r = self.r
+        shutil.copy(str(REPO / "participants.json"), str(r.root / "participants.json"))
+        live = REPO.parent / "crosstalk" / "log"
+        if not live.is_dir():
+            self.skipTest("no live log next to the repo")
+        for name in ("codex.jsonl", "bewareilive.jsonl", "vectorcraft.jsonl", "owner.jsonl"):
+            src = live / name
+            if src.is_file():
+                shutil.copy(str(src), str(r.root / "log" / name))
+        roster = load_roster(r.root / "participants.json")
+        before = replay(load_all_lines(r.root))
+        res = merge_snapshots(r.root, [SNAP_A, SNAP_B])
+        after = replay(load_all_lines(r.root))
+        self.assertGreater(len(after), len(before))
+        self.assertEqual(check_all(r.root, roster), [])
+        # Every skipped row is one the live log already had.
+        have = {"/".join(k) for k in before}
+        self.assertTrue(all(s in have for s in res["skipped"]), res["skipped"])
+
+
+class MergeCliTests(unittest.TestCase):
+    """relay.py import --merge DIR"""
+
+    def setUp(self):
+        self.r = TempRepo()
+        self.r.__enter__()
+        self.r.write_roster()
+        shutil.copytree(str(REPO / "scripts"), str(self.r.root / "scripts"),
+                        ignore=shutil.ignore_patterns("__pycache__"))
+        self.script = str(self.r.root / "scripts" / "relay.py")
+
+    def tearDown(self):
+        self.r.__exit__(None, None, None)
+
+    def run_cli(self, *args):
+        return subprocess.run([sys.executable, self.script] + list(args),
+                              stdout=subprocess.PIPE, stderr=subprocess.PIPE,
+                              universal_newlines=True, cwd="/")
+
+    def test_import_merge_appends_to_a_live_log(self):
+        self.r.write_log("codex", [line(1, "codex", data={"kind": "reply", "summary": "live"})])
+        snap = make_snap(self.r.root, "s", {
+            ("messages", "m-0001"): {"t": "2026-01-01T00:00:00Z", "summary": "old"},
+            ("messages", "codex-0001"): {"t": "2026-01-01T00:00:01Z", "summary": "dup"},
+        })
+        p = self.run_cli("import", "--merge", str(snap))
+        self.assertEqual(p.returncode, 0, p.stderr)
+        self.assertIn("messages/codex-0001", p.stderr)
+        docs = replay(load_all_lines(self.r.root))
+        self.assertIn(("messages", "m-0001"), docs)
+        self.assertEqual(docs[("messages", "codex-0001")]["summary"], "live")
+
+    def test_import_without_merge_still_refuses_a_live_log(self):
+        self.r.write_log("codex", [line(1, "codex", data={"summary": "live"})])
+        snap = make_snap(self.r.root, "s", {("messages", "m-0001"): {}})
+        p = self.run_cli("import", str(snap))
+        self.assertEqual(p.returncode, 1)
+        self.assertIn("already has lines", p.stderr)
+
+    def test_import_merge_reports_duplicate_ids_across_dirs(self):
+        a = make_snap(self.r.root, "a", {("messages", "m-1"): {}})
+        b = make_snap(self.r.root, "b", {("messages", "m-1"): {}})
+        p = self.run_cli("import", "--merge", str(a), str(b))
+        self.assertEqual(p.returncode, 1)
+        self.assertIn("appears in both", p.stderr)
 
 
 if __name__ == "__main__":
