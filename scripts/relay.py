@@ -9,6 +9,7 @@ from typing import Dict
 ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT / "scripts"))
 
+from crosstalk.consults import adopt_agreement, post_consult, post_reply  # noqa: E402
 from crosstalk.courier import pending, restore, sent  # noqa: E402
 from crosstalk.exporter import export_page  # noqa: E402
 from crosstalk.importer import import_snapshots, merge_snapshots  # noqa: E402
@@ -342,6 +343,70 @@ def cmd_incident(args):
     return 0
 
 
+def _flatten(groups):
+    if not groups:
+        return None
+    out = []
+    for g in groups:
+        if isinstance(g, list):
+            out.extend(g)
+        else:
+            out.append(g)
+    return out or None
+
+
+def cmd_reply(args):
+    try:
+        ln = post_reply(
+            ROOT,
+            args.from_,
+            args.to_id,
+            args.summary,
+            body=args.body,
+            refs=_flatten(args.refs),
+            msg_id=args.id,
+        )
+    except ValueError as e:
+        err(str(e))
+        return 1
+    print(ln.id)
+    return 0
+
+
+def cmd_consult(args):
+    try:
+        ln = post_consult(
+            ROOT,
+            args.from_,
+            args.summary,
+            body=args.body,
+            refs=_flatten(args.refs),
+            to=_flatten(args.to),
+            msg_id=args.id,
+        )
+    except ValueError as e:
+        err(str(e))
+        return 1
+    print(ln.id)
+    return 0
+
+
+def cmd_adopt(args):
+    try:
+        res = adopt_agreement(
+            ROOT,
+            args.from_,
+            args.agreement,
+            args.commit,
+            summary=args.summary,
+        )
+    except ValueError as e:
+        err(str(e))
+        return 1
+    print(json.dumps(res, ensure_ascii=False, sort_keys=True))
+    return 0
+
+
 def build_parser():
     ap = argparse.ArgumentParser(prog="relay.py", description=__doc__)
     sub = ap.add_subparsers(dest="cmd", required=True)
@@ -448,6 +513,31 @@ def build_parser():
     inc.add_argument("--fix-ref", dest="fix_refs", action="extend", nargs="+", metavar="REF",
                      help="commit or PR ref for the fix (with --resolve)")
     inc.set_defaults(fn=cmd_incident)
+
+    rp = sub.add_parser("reply", help="reply to a message; prints the new message id")
+    rp.add_argument("--from", dest="from_", required=True)
+    rp.add_argument("--to-id", dest="to_id", required=True)
+    rp.add_argument("--summary", required=True)
+    rp.add_argument("--body")
+    rp.add_argument("--ref", "--refs", dest="refs", action="append", nargs="+")
+    rp.add_argument("--id")
+    rp.set_defaults(fn=cmd_reply)
+
+    cs = sub.add_parser("consult", help="post a peer consultation request; prints the new message id")
+    cs.add_argument("--from", dest="from_", required=True)
+    cs.add_argument("--summary", required=True)
+    cs.add_argument("--body")
+    cs.add_argument("--ref", "--refs", dest="refs", action="append", nargs="+")
+    cs.add_argument("--to", dest="to", action="append", nargs="+")
+    cs.add_argument("--id")
+    cs.set_defaults(fn=cmd_consult)
+
+    ad = sub.add_parser("adopt", help="record adoption of an agreement and post a sync message")
+    ad.add_argument("--from", dest="from_", required=True)
+    ad.add_argument("--agreement", "--agreement-id", dest="agreement", required=True)
+    ad.add_argument("--commit", required=True)
+    ad.add_argument("--summary")
+    ad.set_defaults(fn=cmd_adopt)
 
     sv = sub.add_parser("serve", help="run the page host and API server")
     sv.add_argument("--port", type=int, default=8484,
