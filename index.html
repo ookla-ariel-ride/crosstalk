@@ -1134,9 +1134,10 @@ td.num, td.t { font: 12px var(--mono); font-variant-numeric: tabular-nums; white
       db = fl.db;
       user = fl.user;
     }
-    // me() resolves every field at once; canEdit() is a promise, so it can't be tested for truth directly.
+    // Writer controls are the owner's alone: a bearer-token editor can read everything
+    // but every write 403s, so gate the controls on isOwner, not canEdit.
     var me = user && user.me ? await user.me() : null;
-    canWrite = !!(me && me.canEdit);
+    canWrite = !!(me && me.isOwner);
     document.getElementById("viewer").textContent = viewerText(me);
     // These codes can't recover by resubscribing; anything else (unavailable, unknown codes) gets a few retries.
     var TERMINAL = ["revoked", "not_granted", "capability_disabled", "capability_removed", "invalid_argument", "transform_error"];

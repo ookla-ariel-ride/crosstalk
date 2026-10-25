@@ -19,6 +19,8 @@ function coll(c){ return {
 window.__viewer = { id: "u_test", name: "Test Owner", isOwner: true, canEdit: true, email: null, avatarUrl: "", color: "#888" };
 // Opened with ?viewer=reader, the stub viewer is an unnamed read-only viewer.
 if (/[?&]viewer=reader\b/.test(location.search)) __viewer = { id: "u_reader", name: "", isOwner: false, canEdit: false, email: null, avatarUrl: "", color: "#888" };
+// Opened with ?viewer=editor, the stub viewer is a bearer-token editor (can edit, not the owner).
+if (/[?&]viewer=editor\b/.test(location.search)) __viewer = { id: "u_editor", name: "Test Editor", isOwner: false, canEdit: true, email: null, avatarUrl: "", color: "#888" };
 var db = { collection: coll };
 var user = { canEdit:async function(){return __viewer.canEdit;}, isOwner:async function(){return __viewer.isOwner;}, me:async function(){ return Object.assign({}, __viewer); } };
 window.claude = { use: async function(n){ if(n==="db") return db;
