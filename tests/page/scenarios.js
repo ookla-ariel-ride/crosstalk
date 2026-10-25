@@ -504,7 +504,7 @@
     if (!/[?&]viewer=reader\b/.test(location.search)) return res("readerNoControls", true, "skipped: open index.html?viewer=reader");
     await go("timeline");
     await addDoc("messages", "rd-1", { t: T0, from: "codex", kind: "sync", summary: "Seen by a reader" });
-    var controls = document.querySelectorAll("#composer, .star, .resolve, [id^=approve-], [id^=hold-], [id^=done-], #onboard-open").length;
+    var controls = document.querySelectorAll("#composer, .star, .resolve, .reply-btn, .promote-btn, [id^=approve-], [id^=hold-], [id^=done-], #onboard-open").length;
     var shown = $("viewer").textContent;
     return res("readerNoControls", controls === 0 && shown === "Viewing as a viewer (read only)", "controls=" + controls + " shown=" + JSON.stringify(shown));
   });
@@ -514,7 +514,7 @@
     if (!/[?&]viewer=editor\b/.test(location.search)) return res("editorNoControls", true, "skipped: open index.html?viewer=editor");
     await go("timeline");
     await addDoc("messages", "ed-1", { t: T0, from: "codex", kind: "sync", summary: "Seen by an editor" });
-    var controls = document.querySelectorAll("#composer, .star, .resolve, [id^=approve-], [id^=hold-], [id^=done-], #onboard-open").length;
+    var controls = document.querySelectorAll("#composer, .star, .resolve, .reply-btn, .promote-btn, [id^=approve-], [id^=hold-], [id^=done-], #onboard-open").length;
     var shown = $("viewer").textContent;
     return res("editorNoControls", controls === 0 && shown === "Viewing as Test Editor (editor)", "controls=" + controls + " shown=" + JSON.stringify(shown));
   });
@@ -681,6 +681,87 @@
     await go("timeline");
     return res("waitingQuarantineDimmed", qDim && qPill && aUndim && aNoPill,
       "qDim=" + qDim + " qPill=" + qPill + " aUndim=" + aUndim + " aNoPill=" + aNoPill);
+  });
+
+  S.push(async function ownerInlineReply() {
+    await go("timeline");
+    await addDoc("messages", "m-0001", { t: ago(2), from: "bewareilive", kind: "sync", summary: "Need owner input" });
+    var btn = $("reply-btn-m-0001");
+    if (!btn) return res("ownerInlineReply", false, "no #reply-btn-m-0001");
+    btn.click(); await tick();
+    var banner = $("reply-banner"), bannerText = banner ? banner.textContent : "";
+    var cancelBtn = $("reply-cancel");
+    if (cancelBtn) { cancelBtn.click(); await tick(); }
+    var canceledOk = $("reply-banner") === null;
+    $("reply-btn-m-0001").click(); await tick();
+    var ta = $("note");
+    ta.value = "Owner inline answer";
+    ta.dispatchEvent(new Event("input", { bubbles: true }));
+    $("notePost").click(); await tick(80);
+    var bannerAfter = $("reply-banner");
+    var msgs = Object.keys(__store.messages || {}).map(function (id) { return __store.messages[id]; });
+    var posted = msgs.filter(function (m) { return m && m.summary === "Owner inline answer"; })[0];
+    var toArr = posted && Array.isArray(posted.to) ? posted.to : [];
+    var ok = !!banner && /BewareILive/.test(bannerText) && /Need owner input/.test(bannerText) && !!cancelBtn &&
+      canceledOk && !bannerAfter && !!posted && posted.replyTo === "m-0001" && toArr.indexOf("bewareilive") !== -1;
+    return res("ownerInlineReply", ok, "banner=" + JSON.stringify(bannerText) + " canceledOk=" + canceledOk + " bannerAfter=" + !!bannerAfter + " posted=" + JSON.stringify(posted));
+  });
+
+  S.push(async function ownerPromoteDecision() {
+    await go("timeline");
+    if (!(__store.messages && __store.messages["m-0001"])) {
+      await addDoc("messages", "m-0001", { t: ago(2), from: "bewareilive", kind: "sync", summary: "Need owner input" });
+    }
+    var btn = $("promote-decision-m-0001");
+    if (!btn) return res("ownerPromoteDecision", false, "no #promote-decision-m-0001");
+    btn.click(); await tick(80);
+    var doc = __store.decisions && __store.decisions["d-from-m-0001"];
+    var btnAfter = $("promote-decision-m-0001"), btnText = btnAfter ? btnAfter.textContent : "";
+    await go("decisions");
+    var summaries = [].slice.call(document.querySelectorAll("#view tbody tr .summary")).map(function (s) { return s.textContent; });
+    var inTable = summaries.indexOf("Need owner input") !== -1;
+    await go("timeline");
+    var ok = !!doc && doc.by === "owner" && doc.project === "all" && doc.summary === "Need owner input" && btnText === "Recorded" && inTable;
+    return res("ownerPromoteDecision", ok, "doc=" + JSON.stringify(doc) + " btnText=" + JSON.stringify(btnText) + " inTable=" + inTable);
+  });
+
+  S.push(async function helpPerRecipient() {
+    await go("help");
+    await addDoc("messages", "hreq-multi", { t: ago(1), from: "codex", kind: "request", summary: "Multi-recipient question?", to: ["bewareilive", "vectorcraft"] });
+    var initialListed = helpHas("Multi-recipient question?");
+    await addDoc("messages", "hrep-multi-1", { t: ago(1), from: "bewareilive", kind: "reply", summary: "BIL answer", replyTo: "hreq-multi" });
+    var c = helpCards().filter(function (x) { return x.textContent.indexOf("Multi-recipient question?") !== -1; })[0];
+    var stillListed = !!c;
+    var pendingPill = c && c.querySelector(".pill.pending-to");
+    var waitingText = pendingPill ? pendingPill.textContent : "";
+    var hasReply = !!c && c.textContent.indexOf("BIL answer") !== -1;
+    await addDoc("messages", "hrep-multi-2", { t: ago(1), from: "vectorcraft", kind: "reply", summary: "VC answer", replyTo: "hreq-multi" });
+    var droppedAfterAll = !helpHas("Multi-recipient question?");
+    await go("timeline");
+    var ok = initialListed && stillListed && waitingText === "waiting on VectorCraft" && hasReply && droppedAfterAll;
+    return res("helpPerRecipient", ok, "initial=" + initialListed + " still=" + stillListed + " waiting=" + JSON.stringify(waitingText) + " hasReply=" + hasReply + " dropped=" + droppedAfterAll);
+  });
+
+  S.push(async function ownerDigest() {
+    var KEY = "crosstalk.lastVisit";
+    await go("agreements");
+    var past = Date.now();
+    while (Date.now() <= past) {}
+    try { localStorage.setItem(KEY, String(past)); } catch (e) {}
+    var now = Date.now();
+    var nowIso = new Date(now).toISOString();
+    await addDoc("messages", "dig-m1", { t: nowIso, from: "codex", kind: "sync", summary: "Digest message" });
+    await addDoc("progress", "dig-p1", { t: nowIso, project: "bewareilive", game: "robotron", pct: 65 });
+    while (Date.now() <= now) {}
+    await go("timeline");
+    var badgeGone = $("new-badge") === null;
+    var dig = $("digest"), sum = $("digest-summary"), sumText = sum ? sum.textContent : "";
+    var dismiss = $("digest-dismiss");
+    var visible = !!dig && /1 message \(Codex 1\)/.test(sumText) && /robotron 65%/.test(sumText) && !!dismiss;
+    if (dismiss) { dismiss.click(); await tick(); }
+    var goneAfterDismiss = $("digest") === null;
+    var ok = badgeGone && visible && goneAfterDismiss;
+    return res("ownerDigest", ok, "badgeGone=" + badgeGone + " sum=" + JSON.stringify(sumText) + " goneAfterDismiss=" + goneAfterDismiss);
   });
 
   S.push(async function partlyLive() {
