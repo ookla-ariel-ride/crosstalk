@@ -167,9 +167,14 @@ def message_problems(collection: str, op: str, data: dict, roster: Roster,
             errors.append("t %r is not UTC ISO 8601 (yyyy-mm-ddThh:mm:ssZ)" % t)
         else:
             off = (when.timestamp() - (time.time() if now is None else now)) / 60
-            if abs(off) > SKEW_MIN:
-                warnings.append("t %s is %d min %s the clock; leave t out to use the clock"
-                                % (t, round(abs(off)), "ahead of" if off > 0 else "behind"))
+            if off > SKEW_MIN:
+                # A future t would pin the message at the top of the page and
+                # spoof check-in freshness, so it is refused, not just warned.
+                errors.append("t %s is %d min ahead of the clock; leave t out to use the clock"
+                              % (t, round(off)))
+            elif off < -SKEW_MIN:
+                warnings.append("t %s is %d min behind the clock; leave t out to use the clock"
+                                % (t, round(-off)))
     return errors, warnings
 
 

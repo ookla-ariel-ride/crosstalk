@@ -100,10 +100,19 @@ class AppendTests(unittest.TestCase):
 
             ok = {"kind": "reply", "summary": "x"}
             self.assertEqual(message_problems("messages", "set", dict(ok, t=t(now + 90)), ro, now), ([], []))
-            (w,) = message_problems("messages", "set", dict(ok, t=t(now + 300)), ro, now)[1]
-            self.assertIn("5 min ahead of", w)
+            (e,) = message_problems("messages", "set", dict(ok, t=t(now + 300)), ro, now)[0]
+            self.assertIn("5 min ahead of", e)
             (w,) = message_problems("messages", "set", dict(ok, t=t(now - 300)), ro, now)[1]
             self.assertIn("5 min behind", w)
+
+    def test_a_future_t_is_refused(self):
+        with TempRepo() as r:
+            ro = load_roster(r.write_roster())
+            future = time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime(time.time() + 600))
+            with self.assertRaises(ValueError):
+                append_line(r.root, "codex", "set", "messages", "codex-1",
+                            {"kind": "reply", "summary": "x", "t": future}, roster=ro)
+            self.assertFalse((r.root / "log" / "codex.jsonl").exists())
 
 if __name__ == "__main__":
     unittest.main()
