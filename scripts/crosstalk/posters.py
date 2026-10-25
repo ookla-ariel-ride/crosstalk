@@ -1,12 +1,13 @@
 """Machine posters for file claims, land-sync, and incidents."""
 import re
 import time
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List, Optional, Tuple
 
 from .logs import Line, append_line
 from .participants import Roster, load_roster, repo_problem
-from .replay import load_all_lines, replay
+from .replay import last_line_map, load_all_lines, replay
 
 SLUG_NON_ALNUM_RE = re.compile(r"[^a-z0-9]+")
 SLUG_MAX = 48
@@ -15,6 +16,39 @@ COMMIT_RE = re.compile(r"^[0-9a-fA-F]{7,40}$")
 
 def now_iso() -> str:
     return time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime())
+
+
+def _plus_one_second(ts: str) -> str:
+    try:
+        dt = datetime.strptime(ts, "%Y-%m-%dT%H:%M:%SZ").replace(tzinfo=timezone.utc)
+    except ValueError:
+        s = ts[:-1] + "+00:00" if ts.endswith("Z") else ts
+        try:
+            dt = datetime.fromisoformat(s)
+            if dt.tzinfo is None:
+                dt = dt.replace(tzinfo=timezone.utc)
+        except ValueError:
+            return now_iso()
+    return (dt + timedelta(seconds=1)).strftime("%Y-%m-%dT%H:%M:%SZ")
+
+
+def next_stamp(lines: List[Line], pid: str, target_keys: List[Tuple[str, str]],
+               base_ts: Optional[str] = None) -> str:
+    stamp = base_ts or now_iso()
+    for ln in lines:
+        if ln.from_ == pid and ln.t > stamp:
+            stamp = ln.t
+    last_map = last_line_map(lines)
+    for key in target_keys:
+        last_ln = last_map.get(key)
+        if last_ln is not None:
+            while (stamp, pid) <= (last_ln.t, last_ln.from_):
+                base = stamp if stamp >= last_ln.t else last_ln.t
+                bumped = _plus_one_second(base)
+                if bumped <= base:
+                    break
+                stamp = bumped
+    return stamp
 
 
 def _ensure_roster(root: Path, roster: Optional[Roster]) -> Roster:
@@ -51,7 +85,8 @@ def claim_file(root: Path, pid: str, path: str, repo: Optional[str] = None,
         prob = repo_problem(pid, resolved_repo)
         if prob:
             raise ValueError(prob)
-    ts = now_iso()
+    lines = load_all_lines(root, roster)
+    ts = next_stamp(lines, pid, [("locks", doc_id)], base_ts=now_iso())
     data = {
         "path": path,
         "project": pid,
@@ -76,10 +111,11 @@ def release_file(root: Path, pid: str, path: Optional[str] = None,
     if not lock_id and not path:
         raise ValueError("release requires path or lock_id")
     doc_id = lock_id or ("l-%s-%s" % (pid, slugify_path(path)))
-    docs = replay(load_all_lines(root, roster))
+    lines = load_all_lines(root, roster)
+    docs = replay(lines)
     if ("locks", doc_id) not in docs:
         raise ValueError("no such lock %r" % doc_id)
-    ts = now_iso()
+    ts = next_stamp(lines, pid, [("locks", doc_id)], base_ts=now_iso())
     return append_line(root, pid, "update", "locks", doc_id, {"released": ts},
                        t=ts, roster=roster)
 
@@ -100,8 +136,10 @@ def land_sync(root: Path, pid: str, commit: str, summary: str,
 
     short_sha = commit[:7].lower()
     agr_id = agreement_id or ("a-%s-%s" % (pid, short_sha))
-    docs = replay(load_all_lines(root, roster))
-    ts = now_iso()
+    msg_id = "%s-sync-%s" % (pid, short_sha)
+    lines = load_all_lines(root, roster)
+    docs = replay(lines)
+    ts = next_stamp(lines, pid, [("agreements", agr_id), ("messages", msg_id)], base_ts=now_iso())
 
     existing_agr = docs.get(("agreements", agr_id))
     commits = {}  # type: Dict[str, List[str]]
@@ -173,9 +211,10 @@ def post_incident(root: Path, pid: str, slug: str, summary: Optional[str] = None
     roster = _ensure_roster(root, roster)
     _require_pid(pid, roster)
     doc_id = "i-%s-%s" % (pid, slugify_path(slug))
-    ts = now_iso()
+    lines = load_all_lines(root, roster)
+    ts = next_stamp(lines, pid, [("incidents", doc_id)], base_ts=now_iso())
     if resolve:
-        docs = replay(load_all_lines(root, roster))
+        docs = replay(lines)
         if ("incidents", doc_id) not in docs:
             raise ValueError("no such incident %r" % doc_id)
         data = {"end": ts}  # type: Dict[str, Any]

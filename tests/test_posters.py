@@ -272,6 +272,41 @@ class IncidentTests(unittest.TestCase):
             with self.assertRaises(ValueError):
                 post_incident(r.root, "vectorcraft", "studio-disk", resolve=True, roster=roster)
 
+    def test_same_second_and_clock_skew_monotonic_updates(self):
+        from unittest.mock import patch
+        from crosstalk.consults import adopt_agreement
+
+        with TempRepo() as r:
+            r.write_roster()
+            roster = load_roster(r.root / "participants.json")
+            fixed_ts = "2026-10-25T12:00:00Z"
+            with patch("crosstalk.posters.now_iso", return_value=fixed_ts), \
+                 patch("crosstalk.consults.now_iso", return_value=fixed_ts):
+                land_sync(r.root, "vectorcraft", "1111111", "VC initial sync", roster=roster)
+                land_sync(r.root, "bewareilive", "2222222", "BIL follow-up sync",
+                          agreement_id="a-vectorcraft-1111111", roster=roster)
+                docs = replay(load_all_lines(r.root, roster))
+                agr = docs[("agreements", "a-vectorcraft-1111111")]
+                self.assertEqual(agr["summary"], "BIL follow-up sync")
+                self.assertIn("bewareilive", agr["commits"])
+
+                land_sync(r.root, "vectorcraft", "aaaa111", "VC v1", roster=roster)
+                adopt_agreement(r.root, "bewareilive", "a-vectorcraft-aaaa111", "bbbb222", roster=roster)
+                land_sync(r.root, "vectorcraft", "cccc333", "VC v2 with second commit",
+                          agreement_id="a-vectorcraft-aaaa111", roster=roster)
+                docs2 = replay(load_all_lines(r.root, roster))
+                agr2 = docs2[("agreements", "a-vectorcraft-aaaa111")]
+                self.assertEqual(agr2["status"], "ready-to-adopt")
+                self.assertEqual(agr2["commits"]["vectorcraft"], ["aaaa111", "cccc333"])
+
+            with patch("crosstalk.posters.now_iso", return_value="2026-10-25T12:00:10Z"):
+                inc_ln = post_incident(r.root, "vectorcraft", "ci-hung", summary="CI hung", roster=roster)
+            with patch("crosstalk.posters.now_iso", return_value="2026-10-25T12:00:00Z"):
+                post_incident(r.root, "vectorcraft", "ci-hung", resolve=True, fix="Rebooted", roster=roster)
+            docs3 = replay(load_all_lines(r.root, roster))
+            self.assertIsNotNone(docs3[("incidents", inc_ln.id)]["end"])
+            self.assertEqual(docs3[("incidents", inc_ln.id)].get("fix"), "Rebooted")
+
 
 if __name__ == "__main__":
     unittest.main()

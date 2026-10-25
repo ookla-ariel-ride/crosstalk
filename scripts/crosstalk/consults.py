@@ -7,7 +7,8 @@ from typing import Dict, Iterable, Optional
 
 from .logs import Line, append_line
 from .participants import Roster, load_roster
-from .replay import enrich_messages, last_line_map, load_all_lines, replay
+from .posters import next_stamp
+from .replay import enrich_messages, load_all_lines, replay
 
 COMMIT_RE = re.compile(r"^[0-9a-fA-F]{7,40}$")
 _LAST_DT = None  # type: Optional[datetime]
@@ -156,20 +157,7 @@ def adopt_agreement(
     else:
         new_status = "ready-to-adopt"
 
-    stamp = now_iso()
-    last_ln = last_line_map(lines).get(("agreements", agreement_id))
-    if last_ln is not None:
-        if stamp < last_ln.t:
-            stamp = last_ln.t
-        if stamp == last_ln.t and pid < last_ln.from_:
-            try:
-                dt = datetime.strptime(last_ln.t, "%Y-%m-%dT%H:%M:%SZ").replace(tzinfo=timezone.utc)
-                stamp = (dt + timedelta(seconds=1)).strftime("%Y-%m-%dT%H:%M:%SZ")
-            except ValueError:
-                pass
-    for ln in lines:
-        if ln.from_ == pid and ln.t > stamp:
-            stamp = ln.t
+    stamp = next_stamp(lines, pid, [("agreements", agreement_id)], base_ts=now_iso())
 
     append_line(
         root,
