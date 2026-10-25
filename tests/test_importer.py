@@ -280,7 +280,14 @@ class MergeTests(unittest.TestCase):
         for name in ("codex.jsonl", "bewareilive.jsonl", "vectorcraft.jsonl", "owner.jsonl"):
             src = live / name
             if src.is_file():
-                shutil.copy(str(src), str(r.root / "log" / name))
+                # Only a short prefix of each live file: the real log absorbs the real
+                # snapshots over time (the cutover merged them), so a full copy would
+                # make this test assert that a merge adds nothing. A prefix keeps the
+                # "cutover shape" (real participants, real log lines, real snapshot
+                # dirs) while guaranteeing the snapshots still contribute rows.
+                head = src.read_text(encoding="utf-8").splitlines()[:5]
+                (r.root / "log" / name).write_text("\n".join(head) + "\n",
+                                                   encoding="utf-8")
         roster = load_roster(r.root / "participants.json")
         before = replay(load_all_lines(r.root))
         res = merge_snapshots(r.root, [SNAP_A, SNAP_B])
