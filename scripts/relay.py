@@ -16,7 +16,7 @@ from crosstalk.logs import append_line, check_all, message_problems  # noqa: E40
 from crosstalk.onboard import onboard, regenerate_kit  # noqa: E402
 from crosstalk.participants import load_roster  # noqa: E402
 from crosstalk.pull import pull  # noqa: E402
-from crosstalk.replay import load_all_lines, replay  # noqa: E402
+from crosstalk.replay import enrich_messages, load_all_lines, replay  # noqa: E402
 from crosstalk.serve import serve  # noqa: E402
 from crosstalk.tokens import TOKEN_FILE, Tokens, load_tokens  # noqa: E402
 
@@ -89,7 +89,8 @@ def cmd_read(args):
         for p in fatal:
             err("%s:%d: %s" % (p.file, p.line, p.message))
         return 1
-    docs = replay(load_all_lines(ROOT, roster))
+    lines = load_all_lines(ROOT, roster)
+    docs = enrich_messages(replay(lines), lines)
     collections = {}  # type: Dict[str, Dict[str, dict]]
     for (coll, did), fields in sorted(docs.items()):
         collections.setdefault(coll, {})[did] = fields
