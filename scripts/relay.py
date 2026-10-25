@@ -15,6 +15,7 @@ from crosstalk.importer import import_snapshots, merge_snapshots  # noqa: E402
 from crosstalk.logs import append_line, check_all, message_problems  # noqa: E402
 from crosstalk.onboard import onboard, regenerate_kit  # noqa: E402
 from crosstalk.participants import load_roster  # noqa: E402
+from crosstalk.posters import claim_file, land_sync, post_incident, release_file  # noqa: E402
 from crosstalk.pull import pull  # noqa: E402
 from crosstalk.replay import enrich_messages, load_all_lines, replay  # noqa: E402
 from crosstalk.requests import (  # noqa: E402
@@ -296,6 +297,51 @@ def cmd_kit(args):
     return 0
 
 
+def cmd_claim(args):
+    try:
+        ln = claim_file(ROOT, args.from_, args.path, repo=args.repo,
+                        holder=args.holder, note=args.note)
+    except ValueError as e:
+        err(str(e))
+        return 1
+    print(ln.id)
+    return 0
+
+
+def cmd_release(args):
+    try:
+        ln = release_file(ROOT, args.from_, path=args.path, lock_id=args.lock_id)
+    except ValueError as e:
+        err(str(e))
+        return 1
+    print(ln.id)
+    return 0
+
+
+def cmd_land_sync(args):
+    try:
+        res = land_sync(ROOT, args.from_, args.commit, args.summary,
+                        files=args.files, adopter=args.adopter,
+                        agreement_id=args.agreement_id, body=args.body)
+    except ValueError as e:
+        err(str(e))
+        return 1
+    print(json.dumps(res, ensure_ascii=False, sort_keys=True, indent=2))
+    return 0
+
+
+def cmd_incident(args):
+    try:
+        ln = post_incident(ROOT, args.from_, args.slug, summary=args.summary,
+                           body=args.body, resolve=args.resolve,
+                           fix=args.fix, fix_refs=args.fix_refs)
+    except ValueError as e:
+        err(str(e))
+        return 1
+    print(ln.id)
+    return 0
+
+
 def build_parser():
     ap = argparse.ArgumentParser(prog="relay.py", description=__doc__)
     sub = ap.add_subparsers(dest="cmd", required=True)
@@ -366,6 +412,42 @@ def build_parser():
     k = sub.add_parser("kit", help="regenerate a participant's kit")
     k.add_argument("pid", metavar="PID")
     k.set_defaults(fn=cmd_kit)
+
+    cl = sub.add_parser("claim", help="claim a shared file lock; prints the lock doc id")
+    cl.add_argument("--from", dest="from_", required=True)
+    cl.add_argument("--path", required=True)
+    cl.add_argument("--repo", help="repo override (owner/repo)")
+    cl.add_argument("--holder", help="agent holding the lock")
+    cl.add_argument("--note", help="note describing the claim")
+    cl.set_defaults(fn=cmd_claim)
+
+    rl = sub.add_parser("release", help="release a shared file lock; prints the lock doc id")
+    rl.add_argument("--from", dest="from_", required=True)
+    rl_g = rl.add_mutually_exclusive_group(required=True)
+    rl_g.add_argument("--path", help="path of the locked file")
+    rl_g.add_argument("--id", dest="lock_id", help="lock doc id")
+    rl.set_defaults(fn=cmd_release)
+
+    ls = sub.add_parser("land-sync", help="announce a landed shared commit, update agreement, and release locks")
+    ls.add_argument("--from", dest="from_", required=True)
+    ls.add_argument("--commit", required=True)
+    ls.add_argument("--summary", required=True)
+    ls.add_argument("--files", action="extend", nargs="+", metavar="PATH")
+    ls.add_argument("--adopter", help="adopter participant id (default: all)")
+    ls.add_argument("--agreement-id", dest="agreement_id", help="existing agreement doc id")
+    ls.add_argument("--body", help="optional sync message body")
+    ls.set_defaults(fn=cmd_land_sync)
+
+    inc = sub.add_parser("incident", help="open or resolve a build/host incident; prints the incident doc id")
+    inc.add_argument("--from", dest="from_", required=True)
+    inc.add_argument("--slug", required=True)
+    inc.add_argument("--summary", help="incident summary (required when opening)")
+    inc.add_argument("--body", help="optional incident body")
+    inc.add_argument("--resolve", action="store_true", help="mark the incident resolved")
+    inc.add_argument("--fix", help="how the incident was fixed (with --resolve)")
+    inc.add_argument("--fix-ref", dest="fix_refs", action="extend", nargs="+", metavar="REF",
+                     help="commit or PR ref for the fix (with --resolve)")
+    inc.set_defaults(fn=cmd_incident)
 
     sv = sub.add_parser("serve", help="run the page host and API server")
     sv.add_argument("--port", type=int, default=8484,
