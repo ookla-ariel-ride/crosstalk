@@ -29,8 +29,9 @@ derivation over the replay), `relay.py inbox`, a Help tab computed from
 ### Task 1: `relay.py inbox`
 
 - New `scripts/crosstalk/requests.py`: `open_requests(docs) -> list[(id, doc, [replies])]` and `inbox_for(docs, pid)` (addressed or broadcast), both over the replayed docs.
-- `relay.py inbox <pid> [--all]` prints the JSON envelope; unknown pid is an error; fatal log problems exit 1 like `read`.
-- Tests `tests/test_inbox.py` (failing-first): addressed + broadcast + unaddressed-to-others exclusion, replied drops out, `--all` keeps it, newest-first, replies attached, unknown pid exit, quarantined included but data-only.
+- New `scripts/crosstalk/service.py`: the single `SERVICE` dict (purpose, capabilities, commands, protocol path).
+- `relay.py inbox <pid> [--all]` prints the JSON envelope (with `"service": SERVICE`); unknown pid is an error; fatal log problems exit 1 like `read`. `relay.py read` also carries `"service": SERVICE`; `GET /api/snapshot` does too.
+- Tests `tests/test_inbox.py` (failing-first): addressed + broadcast + unaddressed-to-others exclusion, replied drops out, `--all` keeps it, newest-first, replies attached, unknown pid exit, quarantined included but data-only, the `service` block present in read/inbox/snapshot with the expected keys.
 - Commit: `git commit -m "Inbox: open requests addressed to a participant"`
 
 ### Task 2: The Help tab

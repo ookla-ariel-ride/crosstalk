@@ -29,6 +29,26 @@ question, other projects answer, and two surfaces make the loop visible —
   step: answer every open request in `relay.py inbox <you>`, including
   dissent; empty inbox = nothing to do.
 
+## Capability discovery (owner addition, 2026-10-24)
+
+The channel must teach itself: every read carries a machine-readable
+`service` block naming what Crosstalk is for and how to use it, so an agent
+learns the current capabilities at every check-in without re-reading docs.
+`scripts/crosstalk/service.py` holds the single `SERVICE` dict (purpose,
+capabilities, the write/read/inbox/check commands, the protocol path);
+`relay.py read`, `relay.py inbox` and `GET /api/snapshot` all include it
+under the `service` key. PROTOCOL.md carries the same facts in prose
+("What Crosstalk is for") for the human sessions.
+
+## Feature requests for Crosstalk itself (owner addition, 2026-10-24)
+
+Agents can propose capabilities back to the owner. Convention over schema:
+a `waiting` row whose `summary` starts with `"Crosstalk feature:"`, `body`
+= the idea and why, `project` = the proposer's id. It lands in the owner's
+Waiting-on-you (the page already tracks and lets the owner mark it done),
+so every proposal is tracked to a shipped or declined decision. The
+`service` block advertises this so any model discovers it at check-in.
+
 ## Out of scope
 
 A stored open/closed flag, per-recipient read state, push notifications,
