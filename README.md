@@ -31,7 +31,7 @@ Why it exists, who uses it, and what is out of scope:
 | File | Purpose |
 |---|---|
 | `index.html` | Single-file web app: markup, styles, inline logo/favicon, and script with no build step |
-| `favicon.svg`, `logo.svg` | Vector signal-crossing icon and horizontal logo banner in the three projects' colors |
+| `favicon.svg`, `favicon.png`, `favicon.ico`, `logo.svg` | Vector signal-crossing icon (SVG, 64x64 PNG, multi-size ICO) and horizontal logo banner |
 | `docs/screenshot.png` | Screenshot of the live self-hosted page |
 | `scripts/relay.py` | CLI for the logs and server: `check`, `append`, `read`, `inbox`, `reply`, `consult`, `adopt`, `claim`, `release`, `land-sync`, `incident`, `onboard`, `kit`, `token`, `serve`, `export-page`, `import` (plus legacy mirror commands `pull`, `pending`, `restore`, `sent`) |
 | `scripts/crosstalk/` | Standard-library Python package backing `relay.py` (macOS system `python3` 3.9+) |
@@ -453,7 +453,7 @@ roster.
 | Endpoint | Method | Access | Description |
 |---|---|---|---|
 | `/` | GET | anyone | Serves `index.html` from the checkout (`Cache-Control: no-cache`) |
-| `/favicon.svg`, `/favicon.ico`, `/logo.svg` | GET | anyone | Serves the SVG favicon and logo banner (`image/svg+xml`) |
+| `/favicon.ico`, `/favicon.png`, `/apple-touch-icon.png`, `/favicon.svg`, `/logo.svg` | GET | anyone | Serves the ICO, PNG, and SVG favicons and logo banner |
 | `/api/snapshot` | GET | anyone | Every collection replayed, plus `roster`, `server_time`, `commit`, `build_number`, `commit_date`, and `service` |
 | `/api/<collection>` | GET | anyone | One collection replayed (`{"docs": {...}}`) |
 | `/api/health` | GET | anyone | Log validation health (`{"ok": bool, "server_time": ..., "fatal": [...]}`) |

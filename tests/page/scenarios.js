@@ -916,7 +916,7 @@
   S.push(async function logoAndFaviconPresent() {
     var logo = $("logo"), fav = $("favicon");
     var ok = !!logo && logo.tagName.toLowerCase() === "svg" &&
-      !!fav && /^data:image\/svg\+xml,/.test(fav.getAttribute("href") || "");
+      !!fav && /^data:image\/(svg\+xml|png)[;,]/.test(fav.getAttribute("href") || "");
     return res("logoAndFaviconPresent", ok, "logo=" + !!logo + " fav=" + (fav ? fav.getAttribute("rel") : "none"));
   });
 

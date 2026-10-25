@@ -153,16 +153,24 @@ class SnapshotTests(unittest.TestCase):
     def test_favicon_and_logo_served(self):
         with TempRepo() as r:
             r.write_roster()
-            shutil.copy(str(Path(__file__).resolve().parent.parent / "favicon.svg"),
-                        str(r.root / "favicon.svg"))
-            shutil.copy(str(Path(__file__).resolve().parent.parent / "logo.svg"),
-                        str(r.root / "logo.svg"))
+            root = Path(__file__).resolve().parent.parent
+            for name in ("favicon.svg", "favicon.png", "favicon.ico", "logo.svg"):
+                shutil.copy(str(root / name), str(r.root / name))
             with RunningServer(r.root) as srv:
-                for path in ("/favicon.svg", "/favicon.ico", "/logo.svg"):
+                for path in ("/favicon.svg", "/logo.svg"):
                     with urllib.request.urlopen(srv.url + path, timeout=10) as resp:
                         self.assertEqual(resp.status, 200, path)
                         self.assertIn("image/svg+xml", resp.headers.get("Content-Type", ""), path)
                         self.assertIn("<svg", resp.read().decode("utf-8"), path)
+                with urllib.request.urlopen(srv.url + "/favicon.ico", timeout=10) as resp:
+                    self.assertEqual(resp.status, 200)
+                    self.assertIn("image/x-icon", resp.headers.get("Content-Type", ""))
+                    self.assertTrue(resp.read().startswith(b"\x00\x00\x01\x00"))
+                for path in ("/favicon.png", "/apple-touch-icon.png"):
+                    with urllib.request.urlopen(srv.url + path, timeout=10) as resp:
+                        self.assertEqual(resp.status, 200, path)
+                        self.assertIn("image/png", resp.headers.get("Content-Type", ""), path)
+                        self.assertTrue(resp.read().startswith(b"\x89PNG\r\n\x1a\n"), path)
 
 
 class ReplayCacheTests(unittest.TestCase):

@@ -48,6 +48,8 @@ KNOWN_COLLECTIONS = tuple(COLLECTIONS) + ("participants",)
 JSON_TYPE = "application/json; charset=utf-8"
 HTML_TYPE = "text/html; charset=utf-8"
 SVG_TYPE = "image/svg+xml; charset=utf-8"
+PNG_TYPE = "image/png"
+ICO_TYPE = "image/x-icon"
 MAX_BODY = 1024 * 1024
 # A slow client cannot hold a request thread forever.
 READ_TIMEOUT = 30.0
@@ -447,10 +449,14 @@ class CrosstalkHandler(BaseHTTPRequestHandler):
             self._collection(path[len("/api/"):])
         elif path == "/":
             self._index()
-        elif path in ("/favicon.svg", "/favicon.ico"):
-            self._svg_asset("favicon.svg")
+        elif path == "/favicon.svg":
+            self._static_asset("favicon.svg", SVG_TYPE)
+        elif path == "/favicon.ico":
+            self._static_asset("favicon.ico", ICO_TYPE)
+        elif path in ("/favicon.png", "/apple-touch-icon.png", "/apple-touch-icon-precomposed.png"):
+            self._static_asset("favicon.png", PNG_TYPE)
         elif path == "/logo.svg":
-            self._svg_asset("logo.svg")
+            self._static_asset("logo.svg", SVG_TYPE)
         else:
             self._error(404, "no such endpoint")
 
@@ -516,12 +522,12 @@ class CrosstalkHandler(BaseHTTPRequestHandler):
             return
         self._send(200, body, HTML_TYPE, [("Cache-Control", "no-cache")])
 
-    def _svg_asset(self, filename: str):
+    def _static_asset(self, filename: str, content_type: str):
         for root in (self.state.root, Path(__file__).resolve().parent.parent.parent):
             path = root / filename
             if path.is_file():
                 try:
-                    self._send(200, path.read_bytes(), SVG_TYPE, [("Cache-Control", "no-cache")])
+                    self._send(200, path.read_bytes(), content_type, [("Cache-Control", "no-cache")])
                     return
                 except OSError:
                     break
