@@ -137,6 +137,7 @@ class SnapshotTests(unittest.TestCase):
                 with urllib.request.urlopen(srv.url + "/", timeout=10) as resp:
                     self.assertEqual(resp.status, 200)
                     self.assertIn("crosstalk", resp.read().decode("utf-8"))
+                    self.assertEqual(resp.headers.get("Cache-Control"), "no-cache")
 
 
 class ReplayCacheTests(unittest.TestCase):
