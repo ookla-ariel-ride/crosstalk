@@ -52,19 +52,56 @@ def _addressed(doc: dict, pid: str) -> bool:
     return False
 
 
+def _recipients(doc: dict) -> List[str]:
+    to = doc.get("to")
+    if isinstance(to, str):
+        raw = [to] if to else []
+    elif isinstance(to, list):
+        raw = [x for x in to if isinstance(x, str) and x]
+    else:
+        return []
+    out = []  # type: List[str]
+    seen = set()
+    for pid in raw:
+        if pid not in seen:
+            seen.add(pid)
+            out.append(pid)
+    return out
+
+
+def pending_recipients(doc: dict, replies: List[dict]) -> List[str]:
+    """Recipient pids in `to` (preserving order, deduplicated) that have not replied."""
+    replied = {r.get("from") for r in replies if isinstance(r.get("from"), str)}
+    return [pid for pid in _recipients(doc) if pid not in replied]
+
+
 def _requests(docs: Dict, pid=None, open_only: bool = True) -> List[Tuple[str, dict, List[dict]]]:
     messages = _messages(docs)
-    answered = _answered_ids(messages) if open_only else set()
     replies = _replies_by_request(messages)
     out = []
     for did, doc in messages.items():
         if doc.get("kind") != "request":
             continue
-        if open_only and did in answered:
-            continue
+        doc_replies = replies.get(did, [])
+        recipients = _recipients(doc)
         if pid is not None and not _addressed(doc, pid):
             continue
-        out.append((did, doc, replies.get(did, [])))
+        if open_only:
+            if pid is None:
+                if len(recipients) >= 2:
+                    if not pending_recipients(doc, doc_replies):
+                        continue
+                elif doc_replies:
+                    continue
+            else:
+                if doc.get("from") == pid and pid not in recipients:
+                    continue
+                if len(recipients) == 1:
+                    if doc_replies:
+                        continue
+                elif any(r.get("from") == pid for r in doc_replies):
+                    continue
+        out.append((did, doc, doc_replies))
     out.sort(key=lambda item: _t(item[1]), reverse=True)
     return out
 

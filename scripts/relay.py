@@ -17,7 +17,7 @@ from crosstalk.onboard import onboard, regenerate_kit  # noqa: E402
 from crosstalk.participants import load_roster  # noqa: E402
 from crosstalk.pull import pull  # noqa: E402
 from crosstalk.replay import enrich_messages, load_all_lines, replay  # noqa: E402
-from crosstalk.requests import all_requests_for, inbox_for  # noqa: E402
+from crosstalk.requests import all_requests_for, inbox_for, pending_recipients  # noqa: E402
 from crosstalk.serve import serve  # noqa: E402
 from crosstalk.service import SERVICE  # noqa: E402
 from crosstalk.tokens import TOKEN_FILE, Tokens, load_tokens  # noqa: E402
@@ -132,6 +132,7 @@ def cmd_inbox(args):
             {
                 "request": dict(doc, id=did),
                 "trust": _trust(doc.get("from"), roster),
+                "pending_from": pending_recipients(doc, replies),
                 "replies": [dict(r, trust=_trust(r.get("from"), roster)) for r in replies],
             }
             for (did, doc, replies) in requests

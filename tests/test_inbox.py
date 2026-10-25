@@ -175,6 +175,75 @@ class InboxTests(unittest.TestCase):
             self.assertIn(key, svc)
         self.assertTrue(any("Crosstalk feature:" in c for c in svc["capabilities"]))
 
+    def test_multi_recipient_stays_open_for_unanswered_peer(self):
+        from crosstalk.replay import enrich_messages, load_all_lines, replay
+        from crosstalk.requests import open_requests, pending_recipients
+
+        self.r.write_log("vectorcraft", [
+            req(1, "vectorcraft", "vc-r1", to=["bewareilive", "codex", "bewareilive"]),
+        ])
+        out_before = self.inbox("bewareilive")
+        self.assertEqual(self.ids(out_before), ["vc-r1"])
+        self.assertEqual(out_before["requests"][0]["pending_from"], ["bewareilive", "codex"])
+
+        self.r.write_log("bewareilive", [rep(1, "bewareilive", "bewareilive-r1", "vc-r1")])
+        out_bil = self.inbox("bewareilive")
+        self.assertEqual(out_bil["requests"], [])
+
+        out_bil_all = self.inbox("bewareilive", "--all")
+        self.assertEqual(self.ids(out_bil_all), ["vc-r1"])
+        self.assertEqual(out_bil_all["requests"][0]["pending_from"], ["codex"])
+
+        out_codex = self.inbox("codex")
+        self.assertEqual(self.ids(out_codex), ["vc-r1"])
+        self.assertEqual(out_codex["requests"][0]["pending_from"], ["codex"])
+        self.assertEqual(len(out_codex["requests"][0]["replies"]), 1)
+        self.assertEqual(out_codex["requests"][0]["replies"][0]["from"], "bewareilive")
+
+        lines = load_all_lines(self.r.root)
+        docs = enrich_messages(replay(lines), lines)
+        self.assertEqual([did for (did, _, _) in open_requests(docs)], ["vc-r1"])
+
+        self.r.write_log("codex", [rep(1, "codex", "codex-r1", "vc-r1")])
+        self.assertEqual(self.inbox("codex")["requests"], [])
+        lines2 = load_all_lines(self.r.root)
+        docs2 = enrich_messages(replay(lines2), lines2)
+        self.assertEqual(open_requests(docs2), [])
+        self.assertEqual(pending_recipients({"to": "bewareilive"}, []), ["bewareilive"])
+        self.assertEqual(pending_recipients({}, []), [])
+
+    def test_broadcast_per_recipient_and_excludes_sender(self):
+        from crosstalk.replay import enrich_messages, load_all_lines, replay
+        from crosstalk.requests import open_requests
+
+        self.r.write_log("vectorcraft", [
+            req(1, "vectorcraft", "vc-bcast"),
+            req(2, "vectorcraft", "vc-self", to=["vectorcraft", "bewareilive"]),
+        ])
+        # Sender does not see its own broadcast in open inbox, but sees explicit self-addressed request
+        out_vc = self.inbox("vectorcraft")
+        self.assertEqual(self.ids(out_vc), ["vc-self"])
+        # --all includes sender's own broadcast
+        out_vc_all = self.inbox("vectorcraft", "--all")
+        self.assertEqual(set(self.ids(out_vc_all)), {"vc-bcast", "vc-self"})
+
+        # Other participants see broadcast
+        self.assertIn("vc-bcast", self.ids(self.inbox("bewareilive")))
+        self.assertIn("vc-bcast", self.ids(self.inbox("codex")))
+
+        # bewareilive replies to broadcast: drops from bewareilive's inbox, stays in codex's inbox
+        self.r.write_log("bewareilive", [rep(1, "bewareilive", "bewareilive-r1", "vc-bcast")])
+        self.assertNotIn("vc-bcast", self.ids(self.inbox("bewareilive")))
+        out_codex = self.inbox("codex")
+        self.assertEqual(self.ids(out_codex), ["vc-bcast"])
+        self.assertEqual(out_codex["requests"][0]["pending_from"], [])
+        self.assertEqual(len(out_codex["requests"][0]["replies"]), 1)
+
+        # In global open_requests(docs), broadcast closes after first reply while multi-recipient stays open
+        lines = load_all_lines(self.r.root)
+        docs = enrich_messages(replay(lines), lines)
+        self.assertEqual([did for (did, _, _) in open_requests(docs)], ["vc-self"])
+
 
 if __name__ == "__main__":
     unittest.main()
