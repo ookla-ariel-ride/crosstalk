@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Command line for the Crosstalk log: check, append, import, pull, pending, restore, sent, token."""
+"""Command line for the Crosstalk log: check, append, import, pull, pending, restore, sent, token, serve."""
 import argparse
 import json
 import sys
@@ -16,6 +16,7 @@ from crosstalk.logs import append_line, check_all, message_problems  # noqa: E40
 from crosstalk.participants import load_roster  # noqa: E402
 from crosstalk.pull import pull  # noqa: E402
 from crosstalk.replay import load_all_lines, replay  # noqa: E402
+from crosstalk.serve import serve  # noqa: E402
 from crosstalk.tokens import TOKEN_FILE, Tokens, load_tokens  # noqa: E402
 
 
@@ -165,6 +166,12 @@ def cmd_sent(args):
     return 0
 
 
+def cmd_serve(args):
+    """Run the page host and API server in the foreground until killed."""
+    serve(ROOT, host=args.host, port=args.port, no_pin=args.no_pin)
+    return 0
+
+
 def cmd_token(args):
     """Mint an API token for a participant and print it once."""
     try:
@@ -231,6 +238,15 @@ def build_parser():
     t = sub.add_parser("token", help="mint an API token for a participant; prints it once")
     t.add_argument("pid", metavar="PID")
     t.set_defaults(fn=cmd_token)
+
+    sv = sub.add_parser("serve", help="run the page host and API server")
+    sv.add_argument("--port", type=int, default=8484,
+                    help="port to bind (default 8484; 0 = ephemeral)")
+    sv.add_argument("--host", default="127.0.0.1",
+                    help="address to bind (default 127.0.0.1)")
+    sv.add_argument("--no-pin", action="store_true",
+                    help="do not print a startup login PIN")
+    sv.set_defaults(fn=cmd_serve)
     return ap
 
 

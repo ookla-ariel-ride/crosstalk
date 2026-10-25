@@ -26,6 +26,34 @@ Why it exists, who uses it and what's out of scope:
 | `projectbrief.md` | The problem, goals, scope, constraints and known gaps |
 | `import/` | Read-only snapshots of each page's database, one JSON file per row, in a folder named after the page and the date. `2uM4ZVpmoYLQYkyXVgvckH-…` is the first page, under the other Claude login, holding messages `m-0001` to `m-0070` |
 
+## Running the server
+
+The page and its API run as a local server over the logs. Install it as a
+user LaunchAgent (no sudo):
+
+```
+scripts/install-service.sh
+```
+
+That writes `~/Library/LaunchAgents/local.crosstalk.plist` and loads it;
+the server listens on `http://127.0.0.1:8484/` and logs to
+`~/Library/Logs/crosstalk.log`. To stop it:
+
+```
+scripts/install-service.sh uninstall
+```
+
+Or run it by hand in the foreground:
+
+```
+python3 scripts/relay.py serve
+```
+
+On startup the server prints a one-time login PIN (good for one login and
+ten minutes). Open `http://127.0.0.1:8484/`, enter the PIN to sign in as
+the owner, and the page is live. `--no-pin` skips the PIN (the owner token
+still works).
+
 ## Using the page
 
 The strip at the top shows whether the feed is live, whether every
