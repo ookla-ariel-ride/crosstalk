@@ -1238,20 +1238,48 @@ td.num, td.t { font: 12px var(--mono); font-variant-numeric: tabular-nums; white
       var kindSel = el("select"); kindSel.id = "onboard-kind"; kindSel.setAttribute("aria-label", "Kind");
       ["project", "agent", "reviewer", "researcher", "tool", "person"].forEach(function (k) { var op = el("option", null, k); op.value = k; kindSel.appendChild(op); });
       var repoLab = el("label", null, "Repo (optional)"); repoLab.htmlFor = "onboard-repo";
-      var repoIn = el("input"); repoIn.id = "onboard-repo"; repoIn.placeholder = "owner/repo"; repoIn.setAttribute("aria-label", "Repo (optional)");
-      var submit = el("button", "btn primary", "Add"); submit.type = "submit"; submit.id = "onboard-submit"; submit.disabled = onboardState.posting;
-      var st = el("span", "status-msg", onboardState.status); st.id = "onboard-status"; st.setAttribute("role", "status");
-      form.appendChild(idLab); form.appendChild(idIn);
-      form.appendChild(nameLab); form.appendChild(nameIn);
-      form.appendChild(kindLab); form.appendChild(kindSel);
-      form.appendChild(repoLab); form.appendChild(repoIn);
-      form.appendChild(submit); form.appendChild(st);
+            var repoIn = el("input"); repoIn.id = "onboard-repo"; repoIn.placeholder = "owner/repo"; repoIn.setAttribute("aria-label", "Repo (optional)");
+            var parentRow = el("div"); parentRow.id = "onboard-parent-row";
+            var parentLab = el("label", null, "Parent (agents only)"); parentLab.htmlFor = "onboard-parent";
+            var parentIn = el("input"); parentIn.id = "onboard-parent"; parentIn.placeholder = "parent participant id"; parentIn.setAttribute("aria-label", "Parent (agents only)");
+            parentRow.appendChild(parentLab); parentRow.appendChild(parentIn);
+            var colorLab = el("label", null, "Color (optional)"); colorLab.htmlFor = "onboard-color";
+            var colorIn = el("input"); colorIn.id = "onboard-color"; colorIn.placeholder = "#rrggbb"; colorIn.setAttribute("aria-label", "Color (optional)");
+            var colorDarkLab = el("label", null, "Dark color (optional)"); colorDarkLab.htmlFor = "onboard-colorDark";
+            var colorDarkIn = el("input"); colorDarkIn.id = "onboard-colorDark"; colorDarkIn.placeholder = "#rrggbb"; colorDarkIn.setAttribute("aria-label", "Dark color (optional)");
+            var checkLab = el("label", null, "Check-in (min, optional)"); checkLab.htmlFor = "onboard-checkInMin";
+            var checkIn = el("input"); checkIn.id = "onboard-checkInMin"; checkIn.placeholder = "e.g. 30"; checkIn.setAttribute("aria-label", "Check-in interval (minutes, optional)");
+            var submit = el("button", "btn primary", "Add"); submit.type = "submit"; submit.id = "onboard-submit"; submit.disabled = onboardState.posting;
+            var st = el("span", "status-msg", onboardState.status); st.id = "onboard-status"; st.setAttribute("role", "status");
+            form.appendChild(idLab); form.appendChild(idIn);
+            form.appendChild(nameLab); form.appendChild(nameIn);
+            form.appendChild(kindLab); form.appendChild(kindSel);
+            form.appendChild(repoLab); form.appendChild(repoIn);
+            form.appendChild(parentRow);
+            form.appendChild(colorLab); form.appendChild(colorIn);
+            form.appendChild(colorDarkLab); form.appendChild(colorDarkIn);
+            form.appendChild(checkLab); form.appendChild(checkIn);
+            form.appendChild(submit); form.appendChild(st);
+            function syncParent() { parentRow.style.display = kindSel.value === "agent" ? "" : "none"; }
+            kindSel.addEventListener("change", syncParent);
+            syncParent();
       form.addEventListener("submit", function (e) {
         e.preventDefault();
         if (onboardState.posting) return;
         var fields = { id: idIn.value.trim(), name: nameIn.value.trim(), kind: kindSel.value };
         var repo = repoIn.value.trim();
         if (repo) fields.repo = repo;
+        var parent = parentIn.value.trim();
+        if (parent) fields.parent = parent;
+        var color = colorIn.value.trim();
+        if (color) fields.color = color;
+        var colorDark = colorDarkIn.value.trim();
+        if (colorDark) fields.colorDark = colorDark;
+        var checkInMin = checkIn.value.trim();
+        if (checkInMin !== "") {
+          var n = Number(checkInMin);
+          fields.checkInMin = Number.isInteger(n) ? n : checkInMin;
+        }
         if (!fields.id || !fields.name) { onboardState.status = "Give an id and a name."; renderOnboard(); return; }
         onboardState.posting = true; onboardState.status = "Adding…"; renderOnboard();
         user.onboard(fields).then(function (res) {

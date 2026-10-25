@@ -423,26 +423,39 @@
   });
 
   S.push(async function ownerAddParticipant() {
-      await go("timeline");
-      var open = $("onboard-open");
-      if (!open) return res("ownerAddParticipant", false, "no Add participant button for the owner");
-      open.click(); await tick();
-      var form = $("onboard-form");
-      if (!form) return res("ownerAddParticipant", false, "no form after opening the control");
-      $("onboard-id").value = "smoke-agent";
-      $("onboard-name").value = "Smoke Agent";
-      $("onboard-kind").value = "agent";
-      __onboardResult = { token: "fake-token-123", kit: "kit for fake-token-123" };
-      $("onboard-submit").click(); await tick(80);
-      var kit = $("onboard-kit"), tok = $("onboard-token"), copy = $("onboard-copy");
-      var kitOk = !!kit && kit.readOnly && kit.value === "kit for fake-token-123";
-      var tokOk = !!tok && tok.readOnly && tok.value === "fake-token-123";
-      var tokenFields = document.querySelectorAll("#onboard-token").length;
-      var ok = kitOk && tokOk && !!copy && tokenFields === 1;
-      return res("ownerAddParticipant", ok,
-        "kit=" + (kit && JSON.stringify(kit.value)) + " token=" + (tok && JSON.stringify(tok.value)) +
-        " copy=" + !!copy + " tokenFields=" + tokenFields);
-    });
+        await go("timeline");
+        var open = $("onboard-open");
+        if (!open) return res("ownerAddParticipant", false, "no Add participant button for the owner");
+        open.click(); await tick();
+        var form = $("onboard-form");
+        if (!form) return res("ownerAddParticipant", false, "no form after opening the control");
+        // The form must offer the optional fields: parent (agents), color, colorDark, checkInMin.
+        var parentIn = $("onboard-parent"), colorIn = $("onboard-color"), colorDarkIn = $("onboard-colorDark"), checkIn = $("onboard-checkInMin");
+        if (!parentIn || !colorIn || !colorDarkIn || !checkIn) {
+          return res("ownerAddParticipant", false, "missing optional fields: parent=" + !!parentIn + " color=" + !!colorIn + " colorDark=" + !!colorDarkIn + " checkInMin=" + !!checkIn);
+        }
+        var parentRow = $("onboard-parent-row");
+        var parentHiddenInitially = parentRow && parentRow.style.display === "none";
+        $("onboard-id").value = "smoke-agent";
+        $("onboard-name").value = "Smoke Agent";
+        $("onboard-kind").value = "agent";
+        $("onboard-kind").dispatchEvent(new Event("change", { bubbles: true }));
+        await tick();
+        var parentShown = parentRow && parentRow.style.display !== "none";
+        $("onboard-parent").value = "bewareilive";
+        __onboardResult = { token: "fake-token-123", kit: "kit for fake-token-123" };
+        $("onboard-submit").click(); await tick(80);
+        var kit = $("onboard-kit"), tok = $("onboard-token"), copy = $("onboard-copy");
+        var kitOk = !!kit && kit.readOnly && kit.value === "kit for fake-token-123";
+        var tokOk = !!tok && tok.readOnly && tok.value === "fake-token-123";
+        var tokenFields = document.querySelectorAll("#onboard-token").length;
+        var parentSent = window.__lastOnboardFields && window.__lastOnboardFields.parent === "bewareilive";
+        var ok = kitOk && tokOk && !!copy && tokenFields === 1 && parentHiddenInitially && parentShown && parentSent;
+        return res("ownerAddParticipant", ok,
+          "kit=" + (kit && JSON.stringify(kit.value)) + " token=" + (tok && JSON.stringify(tok.value)) +
+          " copy=" + !!copy + " tokenFields=" + tokenFields + " parentHiddenInitially=" + parentHiddenInitially +
+          " parentShown=" + parentShown + " parentSent=" + parentSent);
+      });
 
     S.push(async function partlyLive() {
     var before = $("liveText").textContent;
