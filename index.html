@@ -205,6 +205,18 @@ td.num, td.t { font: 12px var(--mono); font-variant-numeric: tabular-nums; white
   var people = Object.create(null), seenBy = {}, tab = "timeline", kindFilter = "all", whoFilter = null, query = "", queryRaw = "", db = null, canWrite = false, loaded = {}, offline = false;
   // subState[c]: undefined while connecting, "ok" once live, "retry" while resubscribing, "dead" when it can't recover.
   var subState = {};
+  // The fetch layer's live state: the snapshot's commit/server_time, the health
+  // fatals, and whether the fetch layer is the active data layer.
+  var meta = { commit: null, serverTime: null };
+  var liveFatal = [];
+  var liveTracked = false;
+  var lastServerTime = null;
+  // "Live" means the last poll succeeded and the server clock is within 2 minutes.
+  function liveFresh() {
+    if (!lastServerTime) return false;
+    var t = Date.parse(lastServerTime);
+    return !isNaN(t) && Math.abs(Date.now() - t) < 120000;
+  }
   // The composer's state lives here, not in the DOM, so a snapshot re-render can't reset it. `id` stays the same
   // until a post succeeds, so retrying a half-failed post overwrites the same rows instead of duplicating them.
   var draft = { text: "", kind: "owner", id: null, posting: false, status: "" };
@@ -382,13 +394,23 @@ td.num, td.t { font: 12px var(--mono); font-variant-numeric: tabular-nums; white
     // The feed is live only when every collection is: one stopped subscription leaves its tab stale.
     var stopped = COLS.filter(function (c) { return subState[c] === "retry" || subState[c] === "dead"; });
     function tabName(c) { var t = TABS.filter(function (t) { return t[2] === c; })[0]; return t ? t[1] : "People"; }
-    if (offline) { setLive(false, "Offline"); latest = "sign in to claude.ai to see the log"; }
+    if (offline) {
+      setLive(false, "Offline");
+      latest = liveTracked ? (liveFatal.length ? liveFatal[0] : "the server is unreachable") : "sign in to claude.ai to see the log";
+    }
+    else if (liveTracked && liveFatal.length) {
+      setLive(false, "Offline");
+      latest = liveFatal[0];
+    }
     else if (stopped.length) {
       setLive(false, stopped.length === COLS.length ? "Stopped" : "Partly live");
       var dead = stopped.some(function (c) { return subState[c] === "dead"; });
       latest = "not updating: " + stopped.map(tabName).join(", ") + (dead ? " \u00b7 reload the page" : " \u00b7 reconnecting");
     }
-    else if (COLS.every(function (c) { return subState[c] === "ok"; })) setLive(true, "Live");
+    else if (COLS.every(function (c) { return subState[c] === "ok"; })) {
+      if (liveTracked && !liveFresh()) { setLive(false, "Offline"); latest = "the server clock is stale"; }
+      else setLive(true, "Live");
+    }
     else setLive(false, "Connecting");
     document.getElementById("latest").textContent = latest;
     renderCheckTile();
@@ -896,14 +918,18 @@ td.num, td.t { font: 12px var(--mono); font-variant-numeric: tabular-nums; white
     t.addEventListener("click", go);
     t.addEventListener("keydown", function (e) { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); go(); } });
   });
-  (function renderBuild() {
+  function renderBuild() {
     var p = document.getElementById("build");
-    if (!/^[0-9a-f]{7,40}$/.test(BUILD.commit)) { p.textContent = "Page version: unstamped local copy (publish with scripts/stamp.sh)."; return; }
+    p.textContent = "";
+    var commit = meta.commit || BUILD.commit;
+    var published = meta.serverTime || BUILD.published;
+    if (!/^[0-9a-f]{7,40}$/.test(commit)) { p.textContent = "Page version: unstamped local copy (publish with scripts/stamp.sh)."; return; }
     p.appendChild(document.createTextNode("Page version "));
-    var a = el("a", null, BUILD.commit.slice(0, 7)); a.href = "https://github.com/ookla-ariel-ride/crosstalk/commit/" + BUILD.commit;
+    var a = el("a", null, commit.slice(0, 7)); a.href = "https://github.com/ookla-ariel-ride/crosstalk/commit/" + commit;
     a.target = "_blank"; a.rel = "noopener"; a.title = "This page's code on GitHub"; p.appendChild(a);
-    p.appendChild(document.createTextNode(" · published ")); p.appendChild(timeEl(BUILD.published, true));
-  })();
+    p.appendChild(document.createTextNode(" · published ")); p.appendChild(timeEl(published, true));
+  }
+  renderBuild();
   readHash();
   window.addEventListener("hashchange", function () { readHash(); renderAll(); });
   // Participant colors follow the theme, so a theme change redraws everything.
@@ -934,6 +960,159 @@ td.num, td.t { font: 12px var(--mono); font-variant-numeric: tabular-nums; white
 
   function setLive(on, text) { document.getElementById("live").classList.toggle("on", on); document.getElementById("liveText").textContent = text; }
 
+  // The fetch data layer: the page's own default when no seam and no window.claude
+  // are present (the live server). It polls /api/snapshot every 5 seconds, posts
+  // writes to /api/append, and reads the viewer from /api/me.
+  function fetchLayer() {
+    window.__crosstalkFetchLayer = true;
+    liveTracked = true;
+    var subs = {};  // collection -> {cb, err}
+    var lastSnap = null;  // merged collections
+    var pollTimer = null;
+    var POLL_MS = 5000;
+
+    function snapFor(c) {
+      var rows = (lastSnap && lastSnap[c]) || {};
+      return { docs: Object.keys(rows).map(function (id) {
+        return { id: id, data: function () { return rows[id]; } };
+      }) };
+    }
+
+    function deliver(c) {
+      var s = subs[c];
+      if (s && s.cb) { try { s.cb(snapFor(c)); } catch (e) {} }
+    }
+
+    function deliverAll() { Object.keys(subs).forEach(deliver); }
+
+    function failAll(e) {
+      Object.keys(subs).forEach(function (c) {
+        var s = subs[c];
+        if (s && s.err) { try { s.err(e); } catch (x) {} }
+      });
+    }
+
+    // The roster of record (participants.json) fills the participants collection;
+    // the log's own participant lines win where they say something.
+    function mergeRoster(snap) {
+      var collections = {};
+      Object.keys(snap.collections || {}).forEach(function (c) { collections[c] = snap.collections[c]; });
+      var logged = collections.participants || {};
+      var people = {};
+      Object.keys(snap.roster || {}).forEach(function (pid) {
+        var entry = snap.roster[pid] || {};
+        var doc = {};
+        Object.keys(entry).forEach(function (k) { if (k !== "id") doc[k] = entry[k]; });
+        people[pid] = doc;
+      });
+      Object.keys(logged).forEach(function (id) {
+        var doc = people[id] || {};
+        var fields = logged[id] || {};
+        Object.keys(fields).forEach(function (k) { doc[k] = fields[k]; });
+        people[id] = doc;
+      });
+      collections.participants = people;
+      return collections;
+    }
+
+    function poll() {
+      fetch("/api/snapshot", { credentials: "same-origin" })
+        .then(function (r) { if (!r.ok) throw new Error("snapshot " + r.status); return r.json(); })
+        .then(function (snap) {
+          lastSnap = mergeRoster(snap);
+          lastServerTime = snap.server_time;
+          meta.commit = snap.commit || null;
+          meta.serverTime = snap.server_time || null;
+          offline = false;
+          deliverAll();
+          renderBuild();
+          renderStrip();
+          schedule();
+        })
+        .catch(function (e) {
+          offline = true;
+          failAll(e);
+          renderStrip();
+          schedule();
+        });
+    }
+
+    function pollHealth() {
+      fetch("/api/health", { credentials: "same-origin" })
+        .then(function (r) { return r.ok ? r.json() : { ok: true, fatal: [] }; })
+        .then(function (h) { liveFatal = h.fatal || []; renderStrip(); })
+        .catch(function () {});
+    }
+
+    function schedule() {
+      if (pollTimer) clearTimeout(pollTimer);
+      pollTimer = setTimeout(function () { poll(); pollHealth(); }, POLL_MS);
+    }
+
+    function ensurePolling() {
+      if (pollTimer) return;
+      poll();
+      pollHealth();
+    }
+
+    function coll(c) {
+      var api = {
+        limit: function () { return api; },
+        doc: function (id) { return docRef(c, id); },
+        onSnapshot: function (cb, err) {
+          subs[c] = { cb: cb, err: err };
+          if (lastSnap) { try { cb(snapFor(c)); } catch (e) {} }
+          ensurePolling();
+        }
+      };
+      return api;
+    }
+
+    function docRef(c, id) {
+      return {
+        set: function (data) { return append(c, id, "set", data); },
+        update: function (data) { return append(c, id, "update", data); }
+      };
+    }
+
+    function append(c, id, op, data) {
+      var from = (data && typeof data.from === "string" && data.from) ? data.from : "owner";
+      var clean = {};
+      Object.keys(data || {}).forEach(function (k) {
+        var v = data[k];
+        if (k === "t" && typeof v === "string") v = v.replace(/\.\d{3}Z$/, "Z");
+        clean[k] = v;
+      });
+      var body = { from: from, op: op, collection: c, id: id, data: clean };
+      return fetch("/api/append", {
+        method: "POST",
+        credentials: "same-origin",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(body)
+      }).then(function (r) {
+        return r.json().then(function (j) {
+          if (!r.ok) {
+            var err = new Error(j && j.error ? j.error : ("append failed: " + r.status));
+            err.code = String(r.status);
+            throw err;
+          }
+          return j;
+        });
+      });
+    }
+
+    var user = {
+      me: function () {
+        return fetch("/api/me", { credentials: "same-origin" })
+          .then(function (r) { return r.ok ? r.json() : { name: null, isOwner: false, canEdit: false, viewer: "viewer" }; });
+      },
+      canEdit: function () { return user.me().then(function (m) { return !!m.canEdit; }); },
+      isOwner: function () { return user.me().then(function (m) { return !!m.isOwner; }); }
+    };
+
+    return { db: { collection: coll }, user: user };
+  }
+
   (async function () {
     // The data layer: a seam (window.__crosstalkDataLayer) wins, then the legacy
     // window.claude path. The fetch layer (Task 6) is the default when neither is
@@ -944,11 +1123,16 @@ td.num, td.t { font: 12px var(--mono); font-variant-numeric: tabular-nums; white
       window.__crosstalkLayer = "seam";
       db = layer.db;
       user = layer.user;
-    } else {
+    } else if (window.claude && window.claude.use) {
       window.__crosstalkLayer = "claude";
-      db = window.claude && window.claude.use ? await window.claude.use("db") : null;
+      db = await window.claude.use("db");
       if (!db) { offline = true; renderStrip(); return; }
       user = await window.claude.use("user");
+    } else {
+      window.__crosstalkLayer = "fetch";
+      var fl = fetchLayer();
+      db = fl.db;
+      user = fl.user;
     }
     // me() resolves every field at once; canEdit() is a promise, so it can't be tested for truth directly.
     var me = user && user.me ? await user.me() : null;

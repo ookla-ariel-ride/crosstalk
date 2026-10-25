@@ -23,6 +23,13 @@
     return res("dataLayerSeamUsed", window.__crosstalkLayer === "seam", "layer=" + window.__crosstalkLayer);
   });
 
+  // Under the stub seam the fetch layer must never be constructed, so the harness
+  // never trips a network call.
+  S.push(async function serverLayerUsed() {
+    var ok = window.__crosstalkLayer === "seam" && !window.__crosstalkFetchLayer;
+    return res("serverLayerUsed", ok, "layer=" + window.__crosstalkLayer + " fetchLayer=" + window.__crosstalkFetchLayer);
+  });
+
   S.push(async function unknownSenderNeutral() {
     await go("timeline");
     await addDoc("messages", "gemini-1", { t: T0, from: "gemini", kind: "sync", summary: "From an unlisted sender" });
