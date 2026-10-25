@@ -203,6 +203,7 @@ td.num, td.t { font: 12px var(--mono); font-variant-numeric: tabular-nums; white
       <p class="sub">What the projects' agent sessions say to each other, what they've agreed, who holds which shared file, and what's waiting on you. Updates live.</p>
     </div>
     <div class="who-bar" id="whoBar">
+      <div id="version"></div>
       <div id="viewer"></div>
       <div id="onboard"></div>
       <div id="signin"></div>
@@ -243,7 +244,7 @@ td.num, td.t { font: 12px var(--mono); font-variant-numeric: tabular-nums; white
   var subState = {};
   // The fetch layer's live state: the snapshot's commit/server_time, the health
   // fatals, and whether the fetch layer is the active data layer.
-  var meta = { commit: null, serverTime: null };
+  var meta = { commit: null, buildNumber: null, commitDate: null, serverTime: null };
   var liveFatal = [];
   var liveTracked = false;
   var lastServerTime = null;
@@ -1253,15 +1254,25 @@ td.num, td.t { font: 12px var(--mono); font-variant-numeric: tabular-nums; white
     t.addEventListener("keydown", function (e) { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); go(); } });
   });
   function renderBuild() {
-    var p = document.getElementById("build");
+    var p = document.getElementById("build"), v = document.getElementById("version");
     p.textContent = "";
+    if (v) v.textContent = "";
     var commit = meta.commit || BUILD.commit;
-    var published = meta.serverTime || BUILD.published;
+    var buildNo = meta.buildNumber;
+    var built = meta.commitDate || meta.serverTime || BUILD.published;
     if (!/^[0-9a-f]{7,40}$/.test(commit)) { p.textContent = "Page version: unstamped local copy (publish with scripts/stamp.sh)."; return; }
+    var shortHash = commit.slice(0, 7);
     p.appendChild(document.createTextNode("Page version "));
-    var a = el("a", null, commit.slice(0, 7)); a.href = "https://github.com/ookla-ariel-ride/crosstalk/commit/" + commit;
+    if (typeof buildNo === "number" && isFinite(buildNo)) p.appendChild(document.createTextNode("build #" + buildNo + " · "));
+    var a = el("a", null, shortHash); a.href = "https://github.com/ookla-ariel-ride/crosstalk/commit/" + commit;
     a.target = "_blank"; a.rel = "noopener"; a.title = "This page's code on GitHub"; p.appendChild(a);
-    p.appendChild(document.createTextNode(" · published ")); p.appendChild(timeEl(published, true));
+    p.appendChild(document.createTextNode(" · built ")); p.appendChild(timeEl(built, true));
+    if (v) {
+      if (typeof buildNo === "number" && isFinite(buildNo)) v.appendChild(document.createTextNode("build #" + buildNo + " · "));
+      var va = el("a", null, shortHash); va.href = "https://github.com/ookla-ariel-ride/crosstalk/commit/" + commit;
+      va.target = "_blank"; va.rel = "noopener"; va.title = "Running commit on GitHub"; v.appendChild(va);
+      v.appendChild(document.createTextNode(" · ")); v.appendChild(timeEl(built, true));
+    }
   }
   renderBuild();
   readHash();
@@ -1280,7 +1291,7 @@ td.num, td.t { font: 12px var(--mono); font-variant-numeric: tabular-nums; white
     return "Viewing as " + (me.isOwner ? "the owner" : me.canEdit ? "an editor" : "a viewer (read only)");
   }
   // Read-only helpers for the page tests.
-  window.__crosstalk = Object.freeze({ dotState: dotState, viewerText: viewerText, spanText: spanText, colorOf: colorOf });
+  window.__crosstalk = Object.freeze({ dotState: dotState, viewerText: viewerText, spanText: spanText, colorOf: colorOf, setBuildMeta: function (m) { Object.assign(meta, m || {}); renderBuild(); } });
   // Which data layer is active ("seam" | "fetch" | "none"), and whether the
   // fetch layer was constructed. The page tests read these.
   window.__crosstalkLayer = "none";
@@ -1368,6 +1379,8 @@ td.num, td.t { font: 12px var(--mono); font-variant-numeric: tabular-nums; white
           lastSnap = mergeRoster(snap);
           lastServerTime = snap.server_time;
           meta.commit = snap.commit || null;
+          meta.buildNumber = typeof snap.build_number === "number" ? snap.build_number : null;
+          meta.commitDate = snap.commit_date || null;
           meta.serverTime = snap.server_time || null;
           offline = false;
           deliverAll();

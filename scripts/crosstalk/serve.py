@@ -115,6 +115,54 @@ def _git_commit(root: Path) -> Optional[str]:
     return out.stdout.decode("utf-8", "replace").strip() or None
 
 
+_build_info_cache = {}  # type: Dict[str, Tuple[Optional[tuple], float, dict]]
+
+
+def repo_build_info(root) -> dict:
+    """{"commit": short_hash, "build_number": int_count, "commit_date": iso_utc} for HEAD."""
+    root = Path(root)
+    stamp = _head_stamp(root)
+    if stamp is None:
+        return {"commit": None, "build_number": None, "commit_date": None}
+    now = time.time()
+    with _commit_lock:
+        cached = _build_info_cache.get(str(root))
+        if cached is not None:
+            cstamp, ctime, cvalue = cached
+            if cstamp == stamp and now - ctime < COMMIT_TTL:
+                return dict(cvalue)
+    value = _git_build_info(root)
+    with _commit_lock:
+        _build_info_cache[str(root)] = (stamp, time.time(), dict(value))
+    return value
+
+
+def _git_build_info(root: Path) -> dict:
+    empty = {"commit": None, "build_number": None, "commit_date": None}
+    try:
+        log_out = subprocess.run(
+            ["git", "-C", str(root), "log", "-1", "--format=%h%n%ct", "HEAD"],
+            stdout=subprocess.PIPE, stderr=subprocess.DEVNULL, timeout=10)
+        cnt_out = subprocess.run(
+            ["git", "-C", str(root), "rev-list", "--count", "HEAD"],
+            stdout=subprocess.PIPE, stderr=subprocess.DEVNULL, timeout=10)
+    except (OSError, subprocess.SubprocessError):
+        return empty
+    if log_out.returncode != 0 or cnt_out.returncode != 0:
+        return empty
+    lines = log_out.stdout.decode("utf-8", "replace").strip().splitlines()
+    cnt_str = cnt_out.stdout.decode("utf-8", "replace").strip()
+    if len(lines) < 2 or not lines[0] or not cnt_str.isdigit():
+        return empty
+    try:
+        epoch = int(lines[1].strip())
+        commit_date = time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime(epoch))
+        build_number = int(cnt_str)
+    except (ValueError, OSError, OverflowError):
+        return empty
+    return {"commit": lines[0].strip(), "build_number": build_number, "commit_date": commit_date}
+
+
 class ReplayCache:
     """The replayed documents, recomputed when the log files or the roster change."""
 
@@ -413,8 +461,11 @@ class CrosstalkHandler(BaseHTTPRequestHandler):
         collections = {}  # type: Dict[str, Dict[str, dict]]
         for (collection, doc_id), fields in docs.items():
             collections.setdefault(collection, {})[doc_id] = fields
+        info = repo_build_info(self.state.root)
         self._json(200, {"server_time": now_iso(),
-                         "commit": repo_commit(self.state.root),
+                         "commit": info["commit"],
+                         "build_number": info["build_number"],
+                         "commit_date": info["commit_date"],
                          "roster": entries,
                          "collections": collections,
                          "service": SERVICE})

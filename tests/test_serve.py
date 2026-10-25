@@ -16,7 +16,7 @@ from helpers import SPEC_ROSTER, RunningServer, TempRepo, line
 
 from crosstalk.logs import append_line, check_all
 from crosstalk.participants import load_roster
-from crosstalk.serve import CrosstalkHandler, repo_commit
+from crosstalk.serve import CrosstalkHandler, repo_build_info, repo_commit
 from crosstalk.tokens import token_hash
 
 
@@ -260,6 +260,27 @@ class RepoCommitTests(unittest.TestCase):
             finally:
                 serve_mod.subprocess.run = real_run
             self.assertEqual(first, second)
+
+    @unittest.skipUnless(shutil.which("git"), "git is not installed")
+    def test_snapshot_carries_build_number_and_commit_date(self):
+        with TempRepo() as r:
+            r.write_roster()
+            self.assertEqual(repo_build_info(r.root),
+                             {"commit": None, "build_number": None, "commit_date": None})
+            env = dict(os.environ, GIT_AUTHOR_NAME="t", GIT_AUTHOR_EMAIL="t@example.com",
+                       GIT_COMMITTER_NAME="t", GIT_COMMITTER_EMAIL="t@example.com",
+                       GIT_COMMITTER_DATE="2026-10-25T14:30:00Z",
+                       GIT_AUTHOR_DATE="2026-10-25T14:30:00Z")
+            subprocess.run(["git", "init", "-q", str(r.root)], check=True, env=env)
+            subprocess.run(["git", "commit", "-q", "--allow-empty", "-m", "one"],
+                           cwd=str(r.root), check=True, env=env)
+            subprocess.run(["git", "commit", "-q", "--allow-empty", "-m", "two"],
+                           cwd=str(r.root), check=True, env=env)
+            with RunningServer(r.root) as srv:
+                _, body = request(srv.url + "/api/snapshot")
+            self.assertRegex(body["commit"], r"^[0-9a-f]{7,40}$")
+            self.assertEqual(body["build_number"], 2)
+            self.assertEqual(body["commit_date"], "2026-10-25T14:30:00Z")
 
 
 class AppendTests(unittest.TestCase):

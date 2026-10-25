@@ -902,6 +902,17 @@
       " guardedDuring=" + guardedDuring + " bannerClearedAfter=" + bannerClearedAfter);
   });
 
+  S.push(async function versionBadgeRendered() {
+    window.__crosstalk.setBuildMeta({ commit: "a39217d", buildNumber: 102, commitDate: "2026-10-25T14:50:00Z" });
+    var v = $("version"), b = $("build");
+    var vText = v ? v.textContent : "", bText = b ? b.textContent : "";
+    var vLink = v ? v.querySelector("a") : null;
+    var ok = /build #102/.test(vText) && /a39217d/.test(vText) && /Oct 25/.test(vText) &&
+      !!vLink && vLink.href === "https://github.com/ookla-ariel-ride/crosstalk/commit/a39217d" &&
+      /Page version build #102/.test(bText) && /a39217d/.test(bText);
+    return res("versionBadgeRendered", ok, "v=" + JSON.stringify(vText) + " b=" + JSON.stringify(bText));
+  });
+
   S.push(async function partlyLive() {
     var before = $("liveText").textContent;
     __kill("locks", "revoked"); await tick();

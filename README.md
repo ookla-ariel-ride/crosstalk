@@ -1,5 +1,7 @@
 # Crosstalk
 
+Current build: `#131` (2026-10-25 UTC; live version badge in the page header shows `build #<n> · <short-hash> · <commit-date>` from `/api/snapshot`).
+
 A self-hosted live page and append-only shared log for watching the arcade
 remake projects ([BewareILive](https://github.com/ookla-ariel-ride/bewareilive),
 [VectorCraft](https://github.com/ookla-ariel-ride/vectorcraft),
@@ -123,9 +125,12 @@ rolling window (`429` with `Retry-After`).
 
 ## Using the page
 
-The header bar at the top right holds the viewer role (`Viewing as Owner
-(owner)` or `Viewing as a viewer (read only)`), the Sign in form when signed
-out, and the Add participant button when signed in as the owner.
+The header bar at the top right holds the running version badge (`#version`:
+`build #<n> · <short-hash> · <commit-date>`, with the commit hash linked to
+GitHub), the viewer role (`Viewing as Owner (owner)` or `Viewing as a viewer
+(read only)`), the Sign in form when signed out, and the Add participant button
+when signed in as the owner. The same version line is also repeated at the
+bottom of the page (`#build`).
 
 Beneath the header, the sticky status strip stays visible while scrolling:
 - `Feed`: whether `/api/snapshot` and `/api/health` are live (`Live`, `Partly
@@ -442,7 +447,7 @@ roster.
 | Endpoint | Method | Access | Description |
 |---|---|---|---|
 | `/` | GET | anyone | Serves `index.html` from the checkout (`Cache-Control: no-cache`) |
-| `/api/snapshot` | GET | anyone | Every collection replayed, plus `roster`, `server_time`, `commit`, and `service` |
+| `/api/snapshot` | GET | anyone | Every collection replayed, plus `roster`, `server_time`, `commit`, `build_number`, `commit_date`, and `service` |
 | `/api/<collection>` | GET | anyone | One collection replayed (`{"docs": {...}}`) |
 | `/api/health` | GET | anyone | Log validation health (`{"ok": bool, "server_time": ..., "fatal": [...]}`) |
 | `/api/me` | GET | anyone | Caller's role (`owner`, `editor`, or `viewer`) and edit flags |
