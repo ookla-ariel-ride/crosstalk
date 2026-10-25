@@ -131,6 +131,34 @@ class ClaimReleaseTests(unittest.TestCase):
             self.assertEqual(p.returncode, 1)
             self.assertIn("ghost", p.stderr)
 
+    def test_release_other_participants_lock_fails(self):
+        with TempRepo() as r:
+            c = PosterCli(r)
+            c.run("claim", "--from", "vectorcraft", "--path", "tools/gate")
+            p = c.run("release", "--from", "bewareilive", "--id", "l-vectorcraft-tools-gate")
+            self.assertEqual(p.returncode, 1)
+            self.assertIsNone(c.docs()[("locks", "l-vectorcraft-tools-gate")]["released"])
+
+    def test_quarantined_participant_can_use_posters(self):
+        with TempRepo() as r:
+            roster = json.loads(json.dumps(SPEC_ROSTER))
+            for p in roster["participants"]:
+                if p["id"] == "codex":
+                    p["trust"] = "quarantined"
+            c = PosterCli(r)
+            r.write_roster(roster)
+            self.assertEqual(c.run("claim", "--from", "codex", "--path", "shared.rs").returncode, 0)
+            self.assertEqual(c.run("release", "--from", "codex", "--path", "shared.rs").returncode, 0)
+            self.assertEqual(
+                c.run("land-sync", "--from", "codex", "--commit", "a1b2c3d", "--summary", "Sync").returncode,
+                0,
+            )
+            self.assertEqual(
+                c.run("incident", "--from", "codex", "--slug", "disk", "--summary", "Full").returncode,
+                0,
+            )
+            self.assertEqual(c.run("check").returncode, 0)
+
 
 class LandSyncTests(unittest.TestCase):
     def test_cli_land_sync_creates_agreement_message_and_releases_locks(self):
@@ -183,9 +211,9 @@ class LandSyncTests(unittest.TestCase):
                       "summary": "Initial proposal",
                       "status": "building",
                       "builder": "vectorcraft",
-                      "adopter": "all",
+                      "adopter": "bewareilive",
                       "commits": {"bewareilive": ["0000abc"], "vectorcraft": ["1111def"]},
-                      "hold": True,
+                      "hold": False,
                   }))
             roster = load_roster(r.root / "participants.json")
             res = land_sync(r.root, "vectorcraft", "2222fed", "Updated gate host",
@@ -199,12 +227,49 @@ class LandSyncTests(unittest.TestCase):
             agr = docs[("agreements", "a-shared-gate")]
             self.assertEqual(agr["t"], "2026-10-20T10:00:00Z")
             self.assertEqual(agr["status"], "ready-to-adopt")
-            self.assertEqual(agr["adopter"], "all")
+            self.assertEqual(agr["adopter"], "bewareilive")
+            self.assertEqual(agr["builder"], "vectorcraft")
             self.assertIs(agr["hold"], False)
             self.assertEqual(agr["commits"], {
                 "bewareilive": ["0000abc"],
                 "vectorcraft": ["1111def", "2222fed"],
             })
+
+    def test_land_sync_refuses_held_agreement_and_invalid_adopter(self):
+        with TempRepo() as r:
+            c = PosterCli(r)
+            c.run("append", "--from", "owner", "--op", "set",
+                  "--collection", "agreements", "--id", "a-held-by-owner",
+                  "--data", json.dumps({
+                      "builder": "vectorcraft",
+                      "adopter": "bewareilive",
+                      "status": "agreed",
+                      "hold": True,
+                      "summary": "Held agreement",
+                  }))
+            c.run("append", "--from", "owner", "--op", "set",
+                  "--collection", "agreements", "--id", "a-status-held",
+                  "--data", json.dumps({
+                      "builder": "vectorcraft",
+                      "adopter": "bewareilive",
+                      "status": "held",
+                      "summary": "Status held agreement",
+                  }))
+            p1 = c.run("land-sync", "--from", "bewareilive", "--commit", "1234567",
+                       "--summary", "Bypassing hold", "--agreement-id", "a-held-by-owner")
+            self.assertEqual(p1.returncode, 1)
+            self.assertIn("is on hold", p1.stderr)
+
+            p2 = c.run("land-sync", "--from", "bewareilive", "--commit", "1234567",
+                       "--summary", "Bypassing status hold", "--agreement-id", "a-status-held")
+            self.assertEqual(p2.returncode, 1)
+            self.assertIn("is on hold", p2.stderr)
+            self.assertFalse((r.root / "log" / "bewareilive.jsonl").exists())
+
+            p3 = c.run("land-sync", "--from", "vectorcraft", "--commit", "89abcdef",
+                       "--summary", "Typo adopter", "--adopter", "bewareilve-typo")
+            self.assertEqual(p3.returncode, 1)
+            self.assertFalse((r.root / "log" / "vectorcraft.jsonl").exists())
 
     def test_land_sync_validates_commit_and_summary(self):
         with TempRepo() as r:

@@ -202,6 +202,23 @@ class TrustTests(unittest.TestCase):
             self.assertTrue(problems[0].fatal)
             self.assertIn("only 'owner' may post kind 'owner'", problems[0].message)
 
+    def test_quarantined_collection_prefixed_own_ids_allowed(self):
+        with TempRepo() as r:
+            r.write_log("gemini", [
+                line(1, "gemini", collection="locks", id_="l-gemini-shared-rs",
+                     data={"project": "gemini", "path": "shared.rs", "since": "2026-10-25T10:00:00Z", "released": None}),
+                line(2, "gemini", collection="agreements", id_="a-gemini-1234567",
+                     data={"builder": "gemini", "adopter": "all", "status": "ready-to-adopt", "summary": "Sync"}),
+                line(3, "gemini", collection="incidents", id_="i-gemini-disk",
+                     data={"project": "gemini", "start": "2026-10-25T10:00:00Z", "end": None, "summary": "Disk"}),
+                line(4, "gemini", collection="progress", id_="p-gemini-1",
+                     data={"project": "gemini", "summary": "Progress"}),
+                line(5, "gemini", collection="locks", id_="l-codex-shared-rs",
+                     data={"project": "codex", "path": "shared.rs", "since": "2026-10-25T10:00:00Z", "released": None}),
+            ])
+            ps = self.check(r)
+            self.assertEqual([(p.line, p.fatal) for p in ps], [(5, True)])
+
 
 if __name__ == "__main__":
     unittest.main()

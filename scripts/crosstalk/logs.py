@@ -121,11 +121,17 @@ def _validate(raw: str, owner: str, expected: int, _prior: List[Line],
                 id=d["id"], data=d["data"], via=via)
 
 
+def _owns_id(doc_id: str, owner: str) -> bool:
+    return doc_id.startswith(owner + "-") or any(
+        doc_id.startswith(p + owner + "-") for p in ("l-", "a-", "i-", "p-")
+    )
+
+
 def _trust_problem(d: dict, owner: str, roster: Roster) -> Optional[str]:
     """Ruling R9. Only an approved participant may write ids outside its own prefix,
     and a message's data.from must be its writer (imported lines excepted)."""
     p = roster.participants.get(owner)
-    if (p is None or p.trust != "approved") and not d["id"].startswith(owner + "-"):
+    if (p is None or p.trust != "approved") and not _owns_id(d["id"], owner):
         return ("%s participant %r may only write ids starting with %r, not %r"
                 % ("unknown" if p is None else p.trust, owner, owner + "-", d["id"]))
     if d["collection"] == "messages" and "from" in d["data"] \

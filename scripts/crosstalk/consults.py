@@ -33,6 +33,21 @@ def _ensure_roster(root: Path, roster: Optional[Roster]) -> Roster:
     return load_roster(Path(root) / "participants.json")
 
 
+def _require_pid(pid: str, roster: Roster) -> None:
+    if not isinstance(pid, str) or pid not in roster.participants:
+        raise ValueError("unknown participant %r" % (pid,))
+
+
+def _validate_msg_id(msg_id: Optional[str], pid: str, docs: Dict) -> Optional[str]:
+    if msg_id is None:
+        return None
+    if not isinstance(msg_id, str) or not msg_id.startswith(pid + "-"):
+        raise ValueError("message id %r must start with %r" % (msg_id, pid + "-"))
+    if ("messages", msg_id) in docs:
+        raise ValueError("message %r already exists" % msg_id)
+    return msg_id
+
+
 def post_reply(
     root: Path,
     pid: str,
@@ -46,13 +61,14 @@ def post_reply(
     """Reply to an existing message `to_id`, auto-populating `replyTo` and `to`."""
     root = Path(root)
     roster = _ensure_roster(root, roster)
+    _require_pid(pid, roster)
     lines = load_all_lines(root, roster)
     docs = enrich_messages(replay(lines), lines)
     target_doc = docs.get(("messages", to_id))
     if target_doc is None:
         raise ValueError("no such message %r" % to_id)
+    mid = _validate_msg_id(msg_id, pid, docs) or ("%s-%s" % (pid, microsecond_utc_stamp()))
     target_from = target_doc.get("from")
-    mid = msg_id or ("%s-%s" % (pid, microsecond_utc_stamp()))
     data = {
         "from": pid,
         "kind": "reply",
@@ -81,7 +97,10 @@ def post_consult(
     """Post a `kind: request` peer consultation message."""
     root = Path(root)
     roster = _ensure_roster(root, roster)
-    mid = msg_id or ("%s-%s" % (pid, microsecond_utc_stamp()))
+    _require_pid(pid, roster)
+    lines = load_all_lines(root, roster)
+    docs = replay(lines)
+    mid = _validate_msg_id(msg_id, pid, docs) or ("%s-%s" % (pid, microsecond_utc_stamp()))
     data = {
         "from": pid,
         "kind": "request",

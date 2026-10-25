@@ -274,6 +274,43 @@ class ConsultsUnitTests(unittest.TestCase):
                 )
         self.assertFalse((self.r.root / "log" / "bewareilive.jsonl").exists())
 
+    def test_consult_and_reply_reject_unknown_pid_and_bad_or_existing_msg_id(self):
+        from crosstalk.consults import adopt_agreement, post_consult, post_reply
+
+        self.r.write_log("vectorcraft", [
+            line(1, "vectorcraft", id_="vc-r1",
+                 data={"from": "vectorcraft", "kind": "request", "summary": "Help?"}),
+            line(2, "vectorcraft", collection="agreements", id_="a-1",
+                 data={"builder": "vectorcraft", "adopter": "bewareilive",
+                       "status": "ready-to-adopt", "summary": "Agr"}),
+        ])
+        self.r.write_log("owner", [
+            line(1, "owner", id_="own-1",
+                 data={"from": "owner", "kind": "owner", "summary": "Real owner instruction"})
+        ])
+
+        with self.assertRaises(ValueError):
+            post_consult(self.r.root, "ghost", "Ghost consult", roster=self.roster)
+        with self.assertRaises(ValueError):
+            post_reply(self.r.root, "ghost", "vc-r1", "Ghost reply", roster=self.roster)
+        with self.assertRaises(ValueError):
+            adopt_agreement(self.r.root, "ghost", "a-1", "1234567", roster=self.roster)
+        self.assertFalse((self.r.root / "log" / "ghost.jsonl").exists())
+
+        # Cannot use non-prefixed msg_id or overwrite another message
+        with self.assertRaises(ValueError):
+            post_consult(self.r.root, "bewareilive", "Spoof", msg_id="own-1", roster=self.roster)
+        with self.assertRaises(ValueError):
+            post_reply(self.r.root, "bewareilive", "vc-r1", "Spoof", msg_id="own-1", roster=self.roster)
+
+        # Cannot overwrite own existing message id either
+        ln = post_consult(self.r.root, "bewareilive", "First", msg_id="bewareilive-custom1", roster=self.roster)
+        self.assertEqual(ln.id, "bewareilive-custom1")
+        with self.assertRaises(ValueError):
+            post_consult(self.r.root, "bewareilive", "Second", msg_id="bewareilive-custom1", roster=self.roster)
+        with self.assertRaises(ValueError):
+            post_reply(self.r.root, "bewareilive", "vc-r1", "Reply dup", msg_id="bewareilive-custom1", roster=self.roster)
+
 
 class ConsultsCliTests(unittest.TestCase):
     def setUp(self):

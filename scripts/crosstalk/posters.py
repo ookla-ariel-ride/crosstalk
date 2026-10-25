@@ -113,8 +113,11 @@ def release_file(root: Path, pid: str, path: Optional[str] = None,
     doc_id = lock_id or ("l-%s-%s" % (pid, slugify_path(path)))
     lines = load_all_lines(root, roster)
     docs = replay(lines)
-    if ("locks", doc_id) not in docs:
+    lock_doc = docs.get(("locks", doc_id))
+    if lock_doc is None:
         raise ValueError("no such lock %r" % doc_id)
+    if lock_doc.get("project") != pid:
+        raise ValueError("lock %r belongs to %r, not %r" % (doc_id, lock_doc.get("project"), pid))
     ts = next_stamp(lines, pid, [("locks", doc_id)], base_ts=now_iso())
     return append_line(root, pid, "update", "locks", doc_id, {"released": ts},
                        t=ts, roster=roster)
@@ -133,6 +136,15 @@ def land_sync(root: Path, pid: str, commit: str, summary: str,
     if not isinstance(summary, str) or "\n" in summary or "\r" in summary or not summary.strip():
         raise ValueError("summary must be a non-empty single-line string")
     summary = summary.strip()
+    if adopter is not None:
+        if isinstance(adopter, str):
+            if adopter not in ("all", "both") and adopter not in roster.participants:
+                raise ValueError("unknown adopter %r" % (adopter,))
+        elif isinstance(adopter, list):
+            if not adopter or not all(isinstance(x, str) and x in roster.participants for x in adopter):
+                raise ValueError("invalid adopter %r" % (adopter,))
+        else:
+            raise ValueError("invalid adopter %r" % (adopter,))
     file_slugs = [(f, "l-%s-%s" % (pid, slugify_path(f))) for f in (files or [])]
 
     short_sha = commit[:7].lower()
@@ -140,6 +152,11 @@ def land_sync(root: Path, pid: str, commit: str, summary: str,
     msg_id = "%s-sync-%s" % (pid, short_sha)
     lines = load_all_lines(root, roster)
     docs = replay(lines)
+
+    existing_agr = docs.get(("agreements", agr_id))
+    if existing_agr is not None:
+        if existing_agr.get("hold") is True or existing_agr.get("status") == "held":
+            raise ValueError("agreement %r is on hold" % agr_id)
 
     locks_to_release = []  # type: List[str]
     if file_slugs:
@@ -159,7 +176,6 @@ def land_sync(root: Path, pid: str, commit: str, summary: str,
     ]
     ts = next_stamp(lines, pid, target_keys, base_ts=now_iso())
 
-    existing_agr = docs.get(("agreements", agr_id))
     commits = {}  # type: Dict[str, List[str]]
     if existing_agr and isinstance(existing_agr.get("commits"), dict):
         for k, v in existing_agr["commits"].items():
@@ -171,10 +187,22 @@ def land_sync(root: Path, pid: str, commit: str, summary: str,
     if commit not in pid_commits:
         pid_commits.append(commit)
 
+    resolved_adopter = adopter
+    if resolved_adopter is None:
+        if existing_agr and existing_agr.get("adopter"):
+            resolved_adopter = existing_agr["adopter"]
+        else:
+            resolved_adopter = "all"
+    resolved_builder = (
+        existing_agr["builder"]
+        if (existing_agr and isinstance(existing_agr.get("builder"), str) and existing_agr.get("builder"))
+        else pid
+    )
+
     agr_data = {
         "status": "ready-to-adopt",
-        "builder": pid,
-        "adopter": adopter or "all",
+        "builder": resolved_builder,
+        "adopter": resolved_adopter,
         "summary": summary,
         "updated": ts,
         "hold": False,
