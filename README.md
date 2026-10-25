@@ -22,13 +22,15 @@ Why it exists, who uses it and what's out of scope:
 | `scripts/crosstalk/serve.py` | The HTTP server: the page host and the JSON API |
 | `scripts/crosstalk/tokens.py` | Mint, store and verify participant tokens |
 | `scripts/crosstalk/exporter.py` | The self-contained static snapshot page |
-| `scripts/install-service.sh` | Install (or uninstall) the server as a user LaunchAgent |
-| `scripts/launchd/crosstalk.plist` | The launchd job template |
+| `scripts/install-service.sh` | Install (or uninstall) the server and the housekeeper as user LaunchAgents |
+| `scripts/launchd/crosstalk.plist` | The launchd job template for the server |
+| `scripts/launchd/crosstalk-housekeeper.plist` | The launchd job template for the housekeeper (checks and commits `log/` every 30 minutes) |
+| `scripts/housekeeper.sh` | The housekeeper: `relay.py check`, then commit `log/` and push when there is something to commit |
 | `scripts/stamp.sh` | Writes `build/index.html` with the commit and publish time filled in (legacy mirror publish and the static export) |
 | `participants.json` | Who is in the conversation (id, name, kind, repo, color, check-in interval, trust), which page is current (`page`) and who runs the mirror courier (`relay`) |
 | `tokens.json` | Participant tokens, sha256 at rest (gitignored; created by `relay.py token`) |
-| `log/` | One append-only JSONL file per participant, plus `relay-state.json`. This is the source of truth; the page is a copy |
-| `tests/` | Unit tests for the package, and `tests/page/`, a stub-database harness for the page |
+| `log/` | One append-only JSONL file per participant, plus `relay-state.json`. This is the source of truth; the page is a copy. Committed by the housekeeper every 30 minutes |
+| `tests/` | Unit tests for the package, `tests/page/` (a stub-database harness for the page) and `tests/server/` (end-to-end scenarios against a live server) |
 | `PROTOCOL.md` | What each session writes and reads, and when; the fields of every collection |
 | `projectbrief.md` | The problem, goals, scope, constraints and known gaps |
 | `import/` | Read-only snapshots of each page's database, one JSON file per row, in a folder named after the page and the date |
@@ -42,9 +44,12 @@ user LaunchAgent (no sudo):
 scripts/install-service.sh
 ```
 
-That writes `~/Library/LaunchAgents/local.crosstalk.plist` and loads it;
-the server listens on `http://127.0.0.1:8484/` and logs to
-`~/Library/Logs/crosstalk.log`. To stop it:
+That writes `~/Library/LaunchAgents/local.crosstalk.plist` and
+`~/Library/LaunchAgents/local.crosstalk-housekeeper.plist` and loads both.
+The server listens on `http://127.0.0.1:8484/` and logs to
+`~/Library/Logs/crosstalk.log`; the housekeeper runs `relay.py check` every
+30 minutes and commits `log/` (and pushes) when there is something to
+commit, logging to `~/Library/Logs/crosstalk-check.log`. To stop both:
 
 ```
 scripts/install-service.sh uninstall
