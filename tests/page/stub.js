@@ -21,8 +21,17 @@ window.__viewer = { id: "u_test", name: "Test Owner", isOwner: true, canEdit: tr
 if (/[?&]viewer=reader\b/.test(location.search)) __viewer = { id: "u_reader", name: "", isOwner: false, canEdit: false, email: null, avatarUrl: "", color: "#888" };
 // Opened with ?viewer=editor, the stub viewer is a bearer-token editor (can edit, not the owner).
 if (/[?&]viewer=editor\b/.test(location.search)) __viewer = { id: "u_editor", name: "Test Editor", isOwner: false, canEdit: true, email: null, avatarUrl: "", color: "#888" };
+// The fake /api/login: "123456" signs the stub viewer in as the owner; anything else is a 401.
+window.__pin = "123456";
 var db = { collection: coll };
-var user = { canEdit:async function(){return __viewer.canEdit;}, isOwner:async function(){return __viewer.isOwner;}, me:async function(){ return Object.assign({}, __viewer); } };
+var user = { canEdit:async function(){return __viewer.canEdit;}, isOwner:async function(){return __viewer.isOwner;}, me:async function(){ return Object.assign({}, __viewer); },
+  login: async function(pinOrToken) {
+    if (String(pinOrToken) === __pin) {
+      __viewer = { id: "u_test", name: "Test Owner", isOwner: true, canEdit: true, email: null, avatarUrl: "", color: "#888" };
+      return { ok: true, viewer: "owner" };
+    }
+    var err = new Error("that pin or token is not valid"); err.code = "401"; throw err;
+  } };
 window.claude = { use: async function(n){ if(n==="db") return db;
   if(n==="user") return user;
   return null; } };

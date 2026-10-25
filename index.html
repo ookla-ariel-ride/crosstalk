@@ -153,6 +153,9 @@ td.num, td.t { font: 12px var(--mono); font-variant-numeric: tabular-nums; white
 .legend { display: flex; flex-wrap: wrap; gap: 6px 14px; font: 12px var(--mono); margin-top: 8px; }
 .legend svg { display: inline-block; vertical-align: middle; margin-right: 6px; }
 .note { color: var(--muted); font-size: 13px; margin-top: 28px; }
+.signin { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; margin-top: 8px; }
+.signin label { font: 500 12px var(--mono); color: var(--muted); }
+.signin input { padding: 6px 10px; border: 1px solid var(--rule); border-radius: 6px; background: var(--panel); min-width: 0; }
 
 @media (max-width: 640px) {
   /* The roster folds into a "People" disclosure above the feed. */
@@ -186,6 +189,7 @@ td.num, td.t { font: 12px var(--mono); font-variant-numeric: tabular-nums; white
   <p class="note">Every participant logs each message here as it sends or receives it. Times are Pacific. Notes you post here are read by every session at its next check-in. A file claim is a notice between the sessions, not a permission.</p>
   <p class="note" id="build"></p>
   <p class="note" id="viewer"></p>
+  <div class="note" id="signin"></div>
 </div>
 
 <script>
@@ -1107,7 +1111,27 @@ td.num, td.t { font: 12px var(--mono); font-variant-numeric: tabular-nums; white
           .then(function (r) { return r.ok ? r.json() : { name: null, isOwner: false, canEdit: false, viewer: "viewer" }; });
       },
       canEdit: function () { return user.me().then(function (m) { return !!m.canEdit; }); },
-      isOwner: function () { return user.me().then(function (m) { return !!m.isOwner; }); }
+      isOwner: function () { return user.me().then(function (m) { return !!m.isOwner; }); },
+      // The startup PIN is six digits; anything else is treated as the owner token.
+      login: function (pinOrToken) {
+        var v = String(pinOrToken == null ? "" : pinOrToken).trim();
+        var body = /^\d{6}$/.test(v) ? { pin: v } : { token: v };
+        return fetch("/api/login", {
+          method: "POST",
+          credentials: "same-origin",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(body)
+        }).then(function (r) {
+          return r.json().then(function (j) {
+            if (!r.ok) {
+              var err = new Error(j && j.error ? j.error : ("login failed: " + r.status));
+              err.code = String(r.status);
+              throw err;
+            }
+            return j;
+          });
+        });
+      }
     };
 
     return { db: { collection: coll }, user: user };
@@ -1139,6 +1163,39 @@ td.num, td.t { font: 12px var(--mono); font-variant-numeric: tabular-nums; white
     var me = user && user.me ? await user.me() : null;
     canWrite = !!(me && me.isOwner);
     document.getElementById("viewer").textContent = viewerText(me);
+    // The owner sign-in: shown to a read-only viewer when the layer can log in (the
+    // fetch layer and the stub seam). A wrong PIN/token shows the server's error inline.
+    function renderSignIn() {
+      var box = document.getElementById("signin");
+      if (!box) return;
+      box.textContent = "";
+      if (!me || me.canEdit || !user || typeof user.login !== "function") return;
+      var form = el("form", "signin"); form.id = "signin-form";
+      var lab = el("label", null, "Owner sign-in"); lab.htmlFor = "signin-pin";
+      var input = el("input"); input.type = "password"; input.id = "signin-pin";
+      input.placeholder = "Startup PIN or owner token"; input.setAttribute("aria-label", "Startup PIN or owner token");
+      var btn = el("button", "btn", "Sign in"); btn.type = "submit"; btn.id = "signin-submit";
+      var st = el("span", "status-msg", ""); st.id = "signin-status"; st.setAttribute("role", "status");
+      form.appendChild(lab); form.appendChild(input); form.appendChild(btn); form.appendChild(st);
+      form.addEventListener("submit", function (e) {
+        e.preventDefault();
+        var v = input.value.trim();
+        if (!v) { st.textContent = "Enter the PIN or token."; return; }
+        input.disabled = true; btn.disabled = true; st.textContent = "Signing in…";
+        user.login(v).then(function () { return user.me(); }).then(function (m) {
+          me = m;
+          canWrite = !!(m && m.isOwner);
+          document.getElementById("viewer").textContent = viewerText(m);
+          renderSignIn();
+          renderAll();
+        }).catch(function (err) {
+          input.disabled = false; btn.disabled = false;
+          st.textContent = "Not signed in: " + (err && err.message ? err.message : "try again") + ".";
+        });
+      });
+      box.appendChild(form);
+    }
+    renderSignIn();
     // These codes can't recover by resubscribing; anything else (unavailable, unknown codes) gets a few retries.
     var TERMINAL = ["revoked", "not_granted", "capability_disabled", "capability_removed", "invalid_argument", "transform_error"];
     function subscribe(c, attempt) {

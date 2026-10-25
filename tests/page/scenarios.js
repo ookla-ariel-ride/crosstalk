@@ -402,6 +402,26 @@
     return res("editorNoControls", controls === 0 && shown === "Viewing as Test Editor (editor)", "controls=" + controls + " shown=" + JSON.stringify(shown));
   });
 
+  S.push(async function ownerSignIn() {
+    // Only meaningful on index.html?viewer=reader; elsewhere it reports a skip.
+    if (!/[?&]viewer=reader\b/.test(location.search)) return res("ownerSignIn", true, "skipped: open index.html?viewer=reader");
+    var form = $("signin-form");
+    if (!form) return res("ownerSignIn", false, "no owner sign-in form for a reader");
+    var input = $("signin-pin");
+    input.value = "000000";
+    $("signin-submit").click(); await tick(80);
+    var err = $("signin-status").textContent;
+    var stillThere = !!$("signin-form");
+    input = $("signin-pin");
+    input.value = "123456";
+    $("signin-submit").click(); await tick(80);
+    var gone = !$("signin-form");
+    var shown = $("viewer").textContent;
+    var composer = !!$("composer");
+    return res("ownerSignIn", /not valid/i.test(err) && stillThere && gone && shown === "Viewing as Test Owner (owner)" && composer,
+      "err=" + JSON.stringify(err) + " stillThere=" + stillThere + " gone=" + gone + " shown=" + JSON.stringify(shown) + " composer=" + composer);
+  });
+
   S.push(async function partlyLive() {
     var before = $("liveText").textContent;
     __kill("locks", "revoked"); await tick();
