@@ -175,6 +175,265 @@ class InboxTests(unittest.TestCase):
             self.assertIn(key, svc)
         self.assertTrue(any("Crosstalk feature:" in c for c in svc["capabilities"]))
 
+    def test_multi_recipient_stays_open_for_unanswered_peer(self):
+        from crosstalk.replay import enrich_messages, load_all_lines, replay
+        from crosstalk.requests import open_requests, pending_recipients
+
+        self.r.write_log("vectorcraft", [
+            req(1, "vectorcraft", "vc-r1", to=["bewareilive", "codex", "bewareilive"]),
+        ])
+        out_before = self.inbox("bewareilive")
+        self.assertEqual(self.ids(out_before), ["vc-r1"])
+        self.assertEqual(out_before["requests"][0]["pending_from"], ["bewareilive", "codex"])
+
+        self.r.write_log("bewareilive", [rep(1, "bewareilive", "bewareilive-r1", "vc-r1")])
+        out_bil = self.inbox("bewareilive")
+        self.assertEqual(out_bil["requests"], [])
+
+        out_bil_all = self.inbox("bewareilive", "--all")
+        self.assertEqual(self.ids(out_bil_all), ["vc-r1"])
+        self.assertEqual(out_bil_all["requests"][0]["pending_from"], ["codex"])
+
+        out_codex = self.inbox("codex")
+        self.assertEqual(self.ids(out_codex), ["vc-r1"])
+        self.assertEqual(out_codex["requests"][0]["pending_from"], ["codex"])
+        self.assertEqual(len(out_codex["requests"][0]["replies"]), 1)
+        self.assertEqual(out_codex["requests"][0]["replies"][0]["from"], "bewareilive")
+
+        lines = load_all_lines(self.r.root)
+        docs = enrich_messages(replay(lines), lines)
+        self.assertEqual([did for (did, _, _) in open_requests(docs)], ["vc-r1"])
+
+        self.r.write_log("codex", [rep(1, "codex", "codex-r1", "vc-r1")])
+        self.assertEqual(self.inbox("codex")["requests"], [])
+        lines2 = load_all_lines(self.r.root)
+        docs2 = enrich_messages(replay(lines2), lines2)
+        self.assertEqual(open_requests(docs2), [])
+        self.assertEqual(pending_recipients({"to": "bewareilive"}, []), ["bewareilive"])
+        self.assertEqual(pending_recipients({}, []), [])
+
+    def test_broadcast_per_recipient_and_excludes_sender(self):
+        from crosstalk.replay import enrich_messages, load_all_lines, replay
+        from crosstalk.requests import open_requests
+
+        self.r.write_log("vectorcraft", [
+            req(1, "vectorcraft", "vc-bcast"),
+            req(2, "vectorcraft", "vc-self", to=["vectorcraft", "bewareilive"]),
+        ])
+        # Sender does not see its own broadcast in open inbox, but sees explicit self-addressed request
+        out_vc = self.inbox("vectorcraft")
+        self.assertEqual(self.ids(out_vc), ["vc-self"])
+        # --all includes sender's own broadcast
+        out_vc_all = self.inbox("vectorcraft", "--all")
+        self.assertEqual(set(self.ids(out_vc_all)), {"vc-bcast", "vc-self"})
+
+        # Other participants see broadcast
+        self.assertIn("vc-bcast", self.ids(self.inbox("bewareilive")))
+        self.assertIn("vc-bcast", self.ids(self.inbox("codex")))
+
+        # bewareilive replies to broadcast: drops from bewareilive's inbox, stays in codex's inbox
+        self.r.write_log("bewareilive", [rep(1, "bewareilive", "bewareilive-r1", "vc-bcast")])
+        self.assertNotIn("vc-bcast", self.ids(self.inbox("bewareilive")))
+        out_codex = self.inbox("codex")
+        self.assertEqual(self.ids(out_codex), ["vc-bcast"])
+        self.assertEqual(out_codex["requests"][0]["pending_from"], [])
+        self.assertEqual(len(out_codex["requests"][0]["replies"]), 1)
+
+        # In global open_requests(docs), broadcast closes after first reply while multi-recipient stays open
+        lines = load_all_lines(self.r.root)
+        docs = enrich_messages(replay(lines), lines)
+        self.assertEqual([did for (did, _, _) in open_requests(docs)], ["vc-self"])
+
+    def test_owner_messages_unanswered_and_replied(self):
+        self.r.write_log("owner", [
+            line(1, "owner", id_="own-bcast",
+                 data={"from": "owner", "kind": "owner", "summary": "all hands"},
+                 t="2026-10-21T18:00:00Z"),
+            line(2, "owner", id_="own-codex",
+                 data={"from": "owner", "kind": "owner", "summary": "for codex", "to": ["codex"]},
+                 t="2026-10-21T19:00:00Z"),
+            line(3, "owner", id_="own-bil",
+                 data={"from": "owner", "kind": "owner", "summary": "for bil", "to": ["bewareilive"]},
+                 t="2026-10-21T20:00:00Z"),
+        ])
+        out = self.inbox("bewareilive")
+        self.assertEqual([m["message"]["id"] for m in out["owner_messages"]], ["own-bil", "own-bcast"])
+        self.assertEqual(self.inbox("owner")["owner_messages"], [])
+
+        # Another participant replying to broadcast owner message does not close it for bewareilive
+        self.r.write_log("codex", [rep(1, "codex", "codex-r1", "own-bcast", t="2026-10-21T20:30:00Z")])
+        out2 = self.inbox("bewareilive")
+        self.assertEqual([m["message"]["id"] for m in out2["owner_messages"]], ["own-bil", "own-bcast"])
+        bcast_entry = [m for m in out2["owner_messages"] if m["message"]["id"] == "own-bcast"][0]
+        self.assertEqual(len(bcast_entry["replies"]), 1)
+        self.assertEqual(bcast_entry["replies"][0]["trust"], "approved")
+
+        # Once bewareilive replies to own-bil, own-bil drops out for bewareilive
+        self.r.write_log("bewareilive", [rep(1, "bewareilive", "bewareilive-r1", "own-bil")])
+        out3 = self.inbox("bewareilive")
+        self.assertEqual([m["message"]["id"] for m in out3["owner_messages"]], ["own-bcast"])
+
+    def test_owner_messages_rejects_spoofed_kind_and_owner_replies(self):
+        from crosstalk.requests import unanswered_owner_messages
+
+        docs = {
+            ("messages", "codex-spoof"): {
+                "from": "codex",
+                "kind": "owner",
+                "summary": "spoofed owner directive",
+                "to": ["bewareilive"],
+                "t": "2026-10-21T20:00:00Z",
+            },
+            ("messages", "own-top"): {
+                "from": "owner",
+                "kind": "owner",
+                "summary": "real owner directive",
+                "to": ["bewareilive"],
+                "t": "2026-10-21T19:00:00Z",
+            },
+            ("messages", "own-reply"): {
+                "from": "owner",
+                "kind": "owner",
+                "summary": "owner reply",
+                "replyTo": "vc-r1",
+                "to": ["bewareilive"],
+                "t": "2026-10-21T21:00:00Z",
+            },
+        }
+        res = unanswered_owner_messages(docs, "bewareilive")
+        self.assertEqual([did for (did, _, _) in res], ["own-top"])
+
+    def test_agreements_to_adopt(self):
+        self.r.write_log("vectorcraft", [
+            line(1, "vectorcraft", collection="agreements", id_="a-ready",
+                 data={"builder": "vectorcraft", "adopter": "bewareilive",
+                       "status": "ready-to-adopt",
+                       "commits": {"vectorcraft": ["111"], "bewareilive": []},
+                       "updated": "2026-10-21T20:00:00Z"}),
+            line(2, "vectorcraft", collection="agreements", id_="a-both",
+                 data={"builder": "vectorcraft", "adopter": "both",
+                       "status": "landed-builder",
+                       "commits": {"vectorcraft": ["222"]},
+                       "t": "2026-10-21T19:00:00Z"}),
+            line(3, "vectorcraft", collection="agreements", id_="a-all",
+                 data={"builder": "vectorcraft", "adopter": "all",
+                       "status": "landed-builder",
+                       "t": "2026-10-21T18:00:00Z"}),
+            line(4, "vectorcraft", collection="agreements", id_="a-held-flag",
+                 data={"builder": "vectorcraft", "adopter": "bewareilive",
+                       "status": "ready-to-adopt", "hold": True,
+                       "updated": "2026-10-21T21:00:00Z"}),
+            line(5, "vectorcraft", collection="agreements", id_="a-held-status",
+                 data={"builder": "vectorcraft", "adopter": "bewareilive",
+                       "status": "held", "updated": "2026-10-21T21:00:00Z"}),
+            line(6, "vectorcraft", collection="agreements", id_="a-agreed",
+                 data={"builder": "vectorcraft", "adopter": "bewareilive",
+                       "status": "agreed", "updated": "2026-10-21T21:00:00Z"}),
+            line(7, "vectorcraft", collection="agreements", id_="a-done",
+                 data={"builder": "vectorcraft", "adopter": "bewareilive",
+                       "status": "ready-to-adopt",
+                       "commits": {"bewareilive": ["abc1234"]},
+                       "updated": "2026-10-21T21:00:00Z"}),
+            line(8, "vectorcraft", collection="agreements", id_="a-codex",
+                 data={"builder": "vectorcraft", "adopter": "codex",
+                       "status": "ready-to-adopt",
+                       "updated": "2026-10-21T21:00:00Z"}),
+        ])
+        out_bil = self.inbox("bewareilive")
+        self.assertEqual([a["id"] for a in out_bil["agreements_to_adopt"]],
+                         ["a-ready", "a-both", "a-all"])
+        # Builder does not adopt its own 'both'/'all' agreements
+        out_vc = self.inbox("vectorcraft")
+        self.assertEqual(out_vc["agreements_to_adopt"], [])
+        # Reviewer only adopts agreements explicitly naming it, not 'both'/'all' project agreements
+        out_codex = self.inbox("codex")
+        self.assertEqual([a["id"] for a in out_codex["agreements_to_adopt"]],
+                         ["a-codex"])
+        self.assertEqual(self.inbox("owner")["agreements_to_adopt"], [])
+
+    def test_quarantined_or_third_party_reply_does_not_censor_request(self):
+        roster = json.loads(json.dumps(SPEC_ROSTER))
+        for p in roster["participants"]:
+            if p["id"] == "codex":
+                p["trust"] = "quarantined"
+        self.r.write_roster(roster)
+        self.r.write_log("vectorcraft", [
+            req(1, "vectorcraft", "vc-req-1", to=["bewareilive"]),
+        ])
+        self.r.write_log("codex", [
+            rep(1, "codex", "codex-hijack", "vc-req-1"),
+        ])
+        out_open = self.inbox("bewareilive")
+        self.assertEqual(self.ids(out_open), ["vc-req-1"])
+        self.assertEqual(out_open["requests"][0]["pending_from"], ["bewareilive"])
+        out_all = self.inbox("bewareilive", "--all")
+        self.assertEqual(out_all["requests"][0]["pending_from"], ["bewareilive"])
+        self.assertEqual(out_all["requests"][0]["replies"][0]["trust"], "quarantined")
+
+        # Even if codex is approved, a third-party reply to a 1-recipient request for bewareilive
+        # does not remove it from bewareilive's open inbox
+        self.r.write_roster(SPEC_ROSTER)
+        out_open2 = self.inbox("bewareilive")
+        self.assertEqual(self.ids(out_open2), ["vc-req-1"])
+        self.assertEqual(out_open2["requests"][0]["pending_from"], ["bewareilive"])
+
+        # Owner reply does close the 1-recipient request
+        self.r.write_log("owner", [
+            rep(1, "owner", "own-close", "vc-req-1"),
+        ])
+        self.assertEqual(self.inbox("bewareilive")["requests"], [])
+
+    def test_stale_locks_extreme_timezone_does_not_overflow(self):
+        self.r.write_log("bewareilive", [
+            line(1, "bewareilive", collection="locks", id_="l-bewareilive-extreme",
+                 data={
+                     "project": "bewareilive",
+                     "path": "a.rs",
+                     "since": "0001-01-01T00:00:00+01:00",
+                     "released": None,
+                 })
+        ])
+        out = self.inbox("bewareilive")
+        self.assertEqual(out["stale_locks"], [])
+
+    def test_stale_locks(self):
+        from crosstalk.replay import enrich_messages, load_all_lines, replay
+        from crosstalk.requests import stale_locks_for
+
+        self.r.write_log("bewareilive", [
+            line(1, "bewareilive", collection="locks", id_="l-old-2",
+                 data={"project": "bewareilive", "path": "b.rs",
+                       "since": "2026-10-21T12:00:00Z"}),
+            line(2, "bewareilive", collection="locks", id_="l-old-1",
+                 data={"project": "bewareilive", "path": "a.rs",
+                       "since": "2026-10-21T10:00:00Z", "released": None}),
+            line(3, "bewareilive", collection="locks", id_="l-fresh",
+                 data={"project": "bewareilive", "path": "c.rs",
+                       "since": "2099-01-01T00:00:00Z", "released": None}),
+            line(4, "bewareilive", collection="locks", id_="l-released",
+                 data={"project": "bewareilive", "path": "d.rs",
+                       "since": "2026-10-21T08:00:00Z", "released": "2026-10-21T09:00:00Z"}),
+        ])
+        self.r.write_log("vectorcraft", [
+            line(1, "vectorcraft", collection="locks", id_="l-vc",
+                 data={"project": "vectorcraft", "path": "v.rs",
+                       "since": "2026-10-21T08:00:00Z", "released": None}),
+        ])
+        out = self.inbox("bewareilive")
+        self.assertEqual([lk["id"] for lk in out["stale_locks"]], ["l-old-1", "l-old-2"])
+
+        lines = load_all_lines(self.r.root)
+        docs = enrich_messages(replay(lines), lines)
+        # At 15:00Z: l-old-1 (10:00Z, 5h) is stale; l-old-2 (12:00Z, 3h) is not
+        self.assertEqual([lk["id"] for lk in stale_locks_for(docs, "bewareilive", now_iso="2026-10-21T15:00:00Z")],
+                         ["l-old-1"])
+        # At 16:00:00Z: l-old-2 is exactly 4h old (not > 4h)
+        self.assertEqual([lk["id"] for lk in stale_locks_for(docs, "bewareilive", now_iso="2026-10-21T16:00:00Z")],
+                         ["l-old-1"])
+        # At 16:00:01Z: both are > 4h old, sorted oldest since first
+        self.assertEqual([lk["id"] for lk in stale_locks_for(docs, "bewareilive", now_iso="2026-10-21T16:00:01Z")],
+                         ["l-old-1", "l-old-2"])
+
 
 if __name__ == "__main__":
     unittest.main()

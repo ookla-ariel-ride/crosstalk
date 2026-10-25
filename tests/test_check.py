@@ -172,5 +172,66 @@ class TrustTests(unittest.TestCase):
             lines, problems = read_log(path, roster)
             self.assertEqual((len(lines), len(problems)), (0, 1))
 
+    def test_non_owner_cannot_post_kind_owner(self):
+        from crosstalk.logs import append_line, message_problems
+
+        with TempRepo() as r:
+            roster = load_roster(r.write_roster(roster_with_gemini()))
+            errs, _ = message_problems(
+                "messages", "set",
+                {"from": "codex", "kind": "owner", "summary": "spoof"},
+                roster,
+            )
+            self.assertIn("only 'owner' may post kind 'owner'", errs)
+
+            with self.assertRaises(ValueError) as ctx:
+                append_line(
+                    r.root, "codex", "set", "messages", "codex-1",
+                    {"from": "codex", "kind": "owner", "summary": "spoof"},
+                    roster=roster,
+                )
+            self.assertIn("only 'owner' may post kind 'owner'", str(ctx.exception))
+
+            path = r.write_log("codex", [
+                line(1, "codex", id_="codex-1",
+                     data={"from": "codex", "kind": "owner", "summary": "spoof"})
+            ])
+            lines, problems = read_log(path)
+            self.assertEqual(lines, [])
+            self.assertEqual(len(problems), 1)
+            self.assertTrue(problems[0].fatal)
+            self.assertIn("only 'owner' may post kind 'owner'", problems[0].message)
+
+    def test_quarantined_collection_prefixed_own_ids_allowed(self):
+        with TempRepo() as r:
+            r.write_log("gemini", [
+                line(1, "gemini", collection="locks", id_="l-gemini-shared-rs",
+                     data={"project": "gemini", "path": "shared.rs", "since": "2026-10-25T10:00:00Z", "released": None}),
+                line(2, "gemini", collection="agreements", id_="a-gemini-1234567",
+                     data={"builder": "gemini", "adopter": "all", "status": "ready-to-adopt", "summary": "Sync"}),
+                line(3, "gemini", collection="incidents", id_="i-gemini-disk",
+                     data={"project": "gemini", "start": "2026-10-25T10:00:00Z", "end": None, "summary": "Disk"}),
+                line(4, "gemini", collection="progress", id_="p-gemini-1",
+                     data={"project": "gemini", "summary": "Progress"}),
+                line(5, "gemini", collection="locks", id_="l-codex-shared-rs",
+                     data={"project": "codex", "path": "shared.rs", "since": "2026-10-25T10:00:00Z", "released": None}),
+            ])
+            ps = self.check(r)
+            self.assertEqual([(p.line, p.fatal) for p in ps], [(5, True)])
+
+    def test_message_problems_rejects_trailing_newline_and_cr_in_summary(self):
+        from crosstalk.logs import message_problems
+
+        with TempRepo() as r:
+            roster = load_roster(r.write_roster(roster_with_gemini()))
+            for bad in ("Trailing\n", "\nLeading", "Carriage\rreturn"):
+                errs, _ = message_problems(
+                    "messages", "set",
+                    {"from": "codex", "kind": "sync", "summary": bad},
+                    roster,
+                )
+                self.assertIn("summary must be one line (put the rest in body)", errs)
+
+
 if __name__ == "__main__":
     unittest.main()

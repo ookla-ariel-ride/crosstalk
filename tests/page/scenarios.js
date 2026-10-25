@@ -504,7 +504,7 @@
     if (!/[?&]viewer=reader\b/.test(location.search)) return res("readerNoControls", true, "skipped: open index.html?viewer=reader");
     await go("timeline");
     await addDoc("messages", "rd-1", { t: T0, from: "codex", kind: "sync", summary: "Seen by a reader" });
-    var controls = document.querySelectorAll("#composer, .star, .resolve, [id^=approve-], [id^=hold-], [id^=done-], #onboard-open").length;
+    var controls = document.querySelectorAll("#composer, .star, .resolve, .reply-btn, .promote-btn, [id^=approve-], [id^=hold-], [id^=done-], #onboard-open").length;
     var shown = $("viewer").textContent;
     return res("readerNoControls", controls === 0 && shown === "Viewing as a viewer (read only)", "controls=" + controls + " shown=" + JSON.stringify(shown));
   });
@@ -514,7 +514,7 @@
     if (!/[?&]viewer=editor\b/.test(location.search)) return res("editorNoControls", true, "skipped: open index.html?viewer=editor");
     await go("timeline");
     await addDoc("messages", "ed-1", { t: T0, from: "codex", kind: "sync", summary: "Seen by an editor" });
-    var controls = document.querySelectorAll("#composer, .star, .resolve, [id^=approve-], [id^=hold-], [id^=done-], #onboard-open").length;
+    var controls = document.querySelectorAll("#composer, .star, .resolve, .reply-btn, .promote-btn, [id^=approve-], [id^=hold-], [id^=done-], #onboard-open").length;
     var shown = $("viewer").textContent;
     return res("editorNoControls", controls === 0 && shown === "Viewing as Test Editor (editor)", "controls=" + controls + " shown=" + JSON.stringify(shown));
   });
@@ -681,6 +681,225 @@
     await go("timeline");
     return res("waitingQuarantineDimmed", qDim && qPill && aUndim && aNoPill,
       "qDim=" + qDim + " qPill=" + qPill + " aUndim=" + aUndim + " aNoPill=" + aNoPill);
+  });
+
+  S.push(async function ownerInlineReply() {
+    await go("timeline");
+    await addDoc("messages", "m-0001", { t: ago(2), from: "bewareilive", kind: "sync", summary: "Need owner input" });
+    var btn = $("reply-btn-m-0001");
+    if (!btn) return res("ownerInlineReply", false, "no #reply-btn-m-0001");
+    btn.click(); await tick();
+    var banner = $("reply-banner"), bannerText = banner ? banner.textContent : "";
+    var cancelBtn = $("reply-cancel");
+    if (cancelBtn) { cancelBtn.click(); await tick(); }
+    var canceledOk = $("reply-banner") === null;
+    $("reply-btn-m-0001").click(); await tick();
+    var ta = $("note");
+    ta.value = "Owner inline answer";
+    ta.dispatchEvent(new Event("input", { bubbles: true }));
+    $("notePost").click(); await tick(80);
+    var bannerAfter = $("reply-banner");
+    var msgs = Object.keys(__store.messages || {}).map(function (id) { return __store.messages[id]; });
+    var posted = msgs.filter(function (m) { return m && m.summary === "Owner inline answer"; })[0];
+    var toArr = posted && Array.isArray(posted.to) ? posted.to : [];
+    var ok = !!banner && /BewareILive/.test(bannerText) && /Need owner input/.test(bannerText) && !!cancelBtn &&
+      canceledOk && !bannerAfter && !!posted && posted.replyTo === "m-0001" && toArr.indexOf("bewareilive") !== -1;
+    return res("ownerInlineReply", ok, "banner=" + JSON.stringify(bannerText) + " canceledOk=" + canceledOk + " bannerAfter=" + !!bannerAfter + " posted=" + JSON.stringify(posted));
+  });
+
+  S.push(async function ownerPromoteDecision() {
+    await go("timeline");
+    if (!(__store.messages && __store.messages["m-0001"])) {
+      await addDoc("messages", "m-0001", { t: ago(2), from: "bewareilive", kind: "sync", summary: "Need owner input" });
+    }
+    var btn = $("promote-decision-m-0001");
+    if (!btn) return res("ownerPromoteDecision", false, "no #promote-decision-m-0001");
+    btn.click(); await tick(80);
+    var doc = __store.decisions && __store.decisions["d-from-m-0001"];
+    var btnAfter = $("promote-decision-m-0001"), btnText = btnAfter ? btnAfter.textContent : "";
+    await go("decisions");
+    var summaries = [].slice.call(document.querySelectorAll("#view tbody tr .summary")).map(function (s) { return s.textContent; });
+    var inTable = summaries.indexOf("Need owner input") !== -1;
+    await go("timeline");
+    var ok = !!doc && doc.by === "owner" && doc.project === "all" && doc.summary === "Need owner input" && btnText === "Recorded" && inTable;
+    return res("ownerPromoteDecision", ok, "doc=" + JSON.stringify(doc) + " btnText=" + JSON.stringify(btnText) + " inTable=" + inTable);
+  });
+
+  S.push(async function helpPerRecipient() {
+    await go("help");
+    await addDoc("messages", "hreq-multi", { t: ago(1), from: "codex", kind: "request", summary: "Multi-recipient question?", to: ["bewareilive", "vectorcraft"] });
+    var initialListed = helpHas("Multi-recipient question?");
+    await addDoc("messages", "hrep-multi-1", { t: ago(1), from: "bewareilive", kind: "reply", summary: "BIL answer", replyTo: "hreq-multi" });
+    var c = helpCards().filter(function (x) { return x.textContent.indexOf("Multi-recipient question?") !== -1; })[0];
+    var stillListed = !!c;
+    var pendingPill = c && c.querySelector(".pill.pending-to");
+    var waitingText = pendingPill ? pendingPill.textContent : "";
+    var hasReply = !!c && c.textContent.indexOf("BIL answer") !== -1;
+    await addDoc("messages", "hrep-multi-2", { t: ago(1), from: "vectorcraft", kind: "reply", summary: "VC answer", replyTo: "hreq-multi" });
+    var droppedAfterAll = !helpHas("Multi-recipient question?");
+    await go("timeline");
+    var ok = initialListed && stillListed && waitingText === "waiting on VectorCraft" && hasReply && droppedAfterAll;
+    return res("helpPerRecipient", ok, "initial=" + initialListed + " still=" + stillListed + " waiting=" + JSON.stringify(waitingText) + " hasReply=" + hasReply + " dropped=" + droppedAfterAll);
+  });
+
+  S.push(async function ownerDigest() {
+    var KEY = "crosstalk.lastVisit";
+    await go("agreements");
+    var past = Date.now();
+    while (Date.now() <= past) {}
+    try { localStorage.setItem(KEY, String(past)); } catch (e) {}
+    var now = Date.now();
+    var nowIso = new Date(now).toISOString();
+    await addDoc("messages", "dig-m1", { t: nowIso, from: "codex", kind: "sync", summary: "Digest message" });
+    await addDoc("progress", "dig-p1", { t: nowIso, project: "bewareilive", game: "robotron", pct: 65 });
+    while (Date.now() <= now) {}
+    await go("timeline");
+    var badgeGone = $("new-badge") === null;
+    var dig = $("digest"), sum = $("digest-summary"), sumText = sum ? sum.textContent : "";
+    var dismiss = $("digest-dismiss");
+    var visible = !!dig && /1 message \(Codex 1\)/.test(sumText) && /robotron 65%/.test(sumText) && !!dismiss;
+    if (dismiss) { dismiss.click(); await tick(); }
+    var goneAfterDismiss = $("digest") === null;
+    var ok = badgeGone && visible && goneAfterDismiss;
+    return res("ownerDigest", ok, "badgeGone=" + badgeGone + " sum=" + JSON.stringify(sumText) + " goneAfterDismiss=" + goneAfterDismiss);
+  });
+
+  S.push(async function ownerReplyUnlistedAndSelf() {
+    await go("timeline");
+    await addDoc("messages", "m-unlisted", { t: ago(2), from: "rogue-sender", kind: "sync", summary: "Unlisted message" });
+    await addDoc("messages", "m-self", { t: ago(1), from: "owner", kind: "owner", summary: "Owner message" });
+    $("reply-btn-m-unlisted").click(); await tick();
+    var ta = $("note"); ta.value = "Reply to unlisted"; ta.dispatchEvent(new Event("input", { bubbles: true }));
+    $("notePost").click(); await tick(80);
+    var msgs = Object.keys(__store.messages || {}).map(function (id) { return __store.messages[id]; });
+    var rUnlisted = msgs.filter(function (m) { return m && m.summary === "Reply to unlisted"; })[0];
+    var unlistedNoTo = !!rUnlisted && rUnlisted.replyTo === "m-unlisted" && rUnlisted.to === undefined;
+
+    $("reply-btn-m-self").click(); await tick();
+    ta = $("note"); ta.value = "Reply to self"; ta.dispatchEvent(new Event("input", { bubbles: true }));
+    $("notePost").click(); await tick(80);
+    msgs = Object.keys(__store.messages || {}).map(function (id) { return __store.messages[id]; });
+    var rSelf = msgs.filter(function (m) { return m && m.summary === "Reply to self"; })[0];
+    var selfNoTo = !!rSelf && rSelf.replyTo === "m-self" && rSelf.to === undefined;
+
+    var decBefore = Object.keys(__store.decisions || {}).length;
+    var k = $("noteKind"); k.value = "decision"; k.dispatchEvent(new Event("change", { bubbles: true }));
+    ta = $("note"); ta.value = "Should not orphan decision"; ta.dispatchEvent(new Event("input", { bubbles: true }));
+    __fail.messages = true;
+    $("notePost").click(); await tick(80);
+    var decAfterFail = Object.keys(__store.decisions || {}).length;
+    __fail.messages = false;
+    k = $("noteKind"); k.value = "owner"; k.dispatchEvent(new Event("change", { bubbles: true }));
+    ta = $("note"); ta.value = ""; ta.dispatchEvent(new Event("input", { bubbles: true }));
+    var noOrphan = decAfterFail === decBefore;
+    var ok = unlistedNoTo && selfNoTo && noOrphan;
+    return res("ownerReplyUnlistedAndSelf", ok,
+      "unlistedNoTo=" + unlistedNoTo + " selfNoTo=" + selfNoTo + " noOrphan=" + noOrphan + " (" + decBefore + "->" + decAfterFail + ")");
+  });
+
+  S.push(async function helpDeduplicatesRecipients() {
+    await go("timeline");
+    await addDoc("participants", "qreplybot", { name: "Q Reply Bot", kind: "tool", color: "#555555" });
+    await addDoc("messages", "hreq-dup", { t: ago(2), from: "codex", kind: "request", summary: "Dup recipient request?", to: ["bewareilive", "bewareilive"] });
+    var tc = card("hreq-dup"), timelineTo = tc && tc.querySelector(".to") ? tc.querySelector(".to").textContent : null;
+    await go("help");
+    var hc = helpCards().filter(function (x) { return x.textContent.indexOf("Dup recipient request?") !== -1; })[0];
+    var helpTo = hc && hc.querySelector(".to") ? hc.querySelector(".to").textContent : null;
+    await addDoc("messages", "hrep-dup-q", { t: ago(1), from: "qreplybot", kind: "reply", summary: "Quarantined reply", replyTo: "hreq-dup" });
+    var stillOpenAfterQuarantined = helpHas("Dup recipient request?");
+    await addDoc("messages", "hrep-dup-ok", { t: ago(1), from: "vectorcraft", kind: "reply", summary: "Approved reply", replyTo: "hreq-dup" });
+    var closedAfterApproved = !helpHas("Dup recipient request?");
+    await go("timeline");
+    var ok = timelineTo === "\u2192 BewareILive" && helpTo === "to BewareILive" && stillOpenAfterQuarantined && closedAfterApproved;
+    return res("helpDeduplicatesRecipients", ok,
+      "timelineTo=" + JSON.stringify(timelineTo) + " helpTo=" + JSON.stringify(helpTo) +
+      " stillOpenAfterQuarantined=" + stillOpenAfterQuarantined + " closedAfterApproved=" + closedAfterApproved);
+  });
+
+  S.push(async function promoteDecisionIdempotentAcrossRender() {
+    await go("timeline");
+    await addDoc("messages", "own-dec-1", { t: ago(2), from: "owner", kind: "owner", summary: "Composer decision row" });
+    await addDoc("decisions", "own-dec-1", { t: ago(2), by: "owner", project: "all", summary: "Composer decision row", source: "Crosstalk page" });
+    var b1 = $("promote-decision-own-dec-1");
+    var composerRecognized = !!b1 && b1.disabled && b1.textContent === "Recorded";
+
+    await addDoc("messages", "m-inflight-dec", { t: ago(1), from: "bewareilive", kind: "sync", summary: "Promote me" });
+    __delay = 80;
+    var b2 = $("promote-decision-m-inflight-dec");
+    if (b2) b2.click();
+    __emit("messages");
+    var b2During = $("promote-decision-m-inflight-dec");
+    var keptAcrossRender = !!b2During && b2During.disabled && b2During.textContent === "Recorded";
+    await tick(120);
+    __delay = 0;
+    var b2After = $("promote-decision-m-inflight-dec");
+    var recordedAfter = !!b2After && b2After.disabled && b2After.textContent === "Recorded";
+    var ok = composerRecognized && keptAcrossRender && recordedAfter;
+    return res("promoteDecisionIdempotentAcrossRender", ok,
+      "composerRecognized=" + composerRecognized + " keptAcrossRender=" + keptAcrossRender + " recordedAfter=" + recordedAfter);
+  });
+
+  S.push(async function ownerDigestMalformedRows() {
+    var KEY = "crosstalk.lastVisit";
+    await go("agreements");
+    var past = Date.now();
+    while (Date.now() <= past) {}
+    try { localStorage.setItem(KEY, String(past)); } catch (e) {}
+    var t1 = Date.now();
+    var t1Iso = new Date(t1).toISOString();
+    await addDoc("messages", "dig-anon", { t: t1Iso, from: "", kind: "sync", summary: "Blank sender" });
+    await addDoc("progress", "dig-nan", { t: t1Iso, project: "bewareilive", game: "joust", pct: NaN });
+    await addDoc("progress", "dig-inf", { t: t1Iso, project: "bewareilive", game: "tempest", pct: Infinity });
+    await addDoc("progress", "dig-good", { t: t1Iso, project: "bewareilive", game: "robotron", pct: 70 });
+    while (Date.now() <= t1) {}
+    await go("timeline");
+    var sum1 = $("digest-summary") ? $("digest-summary").textContent : "";
+    var anonOk = /\(\? 1\)/.test(sum1);
+    var finiteOk = /robotron 70%/.test(sum1) && !/NaN|Infinity/.test(sum1);
+
+    var t2 = Date.now() + 10;
+    var t2Iso = new Date(t2).toISOString();
+    await addDoc("progress", "dig-nogame", { t: t2Iso, project: "bewareilive", game: "", pct: 80 });
+    await addDoc("progress", "dig-nan2", { t: t2Iso, project: "bewareilive", game: "joust", pct: NaN });
+    await go("timeline");
+    var sum2 = $("digest-summary") ? $("digest-summary").textContent : "";
+    var notWiped = /robotron 70%/.test(sum2);
+
+    delete __store.messages["dig-anon"];
+    delete __store.progress["dig-nan"];
+    delete __store.progress["dig-inf"];
+    delete __store.progress["dig-nogame"];
+    delete __store.progress["dig-nan2"];
+    __emit("messages"); __emit("progress"); await tick();
+    if ($("digest-dismiss")) { $("digest-dismiss").click(); await tick(); }
+    var ok = anonOk && finiteOk && notWiped;
+    return res("ownerDigestMalformedRows", ok,
+      "sum1=" + JSON.stringify(sum1) + " sum2=" + JSON.stringify(sum2) + " anonOk=" + anonOk + " finiteOk=" + finiteOk + " notWiped=" + notWiped);
+  });
+
+  S.push(async function replyLockedWhilePosting() {
+    await go("timeline");
+    await addDoc("messages", "m-lock-1", { t: ago(2), from: "bewareilive", kind: "sync", summary: "First target" });
+    await addDoc("messages", "m-lock-2", { t: ago(1), from: "vectorcraft", kind: "sync", summary: "Second target" });
+    $("reply-btn-m-lock-1").click(); await tick();
+    var ta = $("note"); ta.value = "Slow reply post"; ta.dispatchEvent(new Event("input", { bubbles: true }));
+    __delay = 80;
+    $("notePost").click();
+    __emit("messages");
+    var rc = $("reply-cancel"), rb2 = $("reply-btn-m-lock-2");
+    var cancelDisabled = !!rc && rc.disabled;
+    var replyBtnDisabled = !!rb2 && rb2.disabled;
+    if (rc) rc.click();
+    if (rb2) rb2.click();
+    var bannerDuring = $("reply-banner") ? $("reply-banner").textContent : "";
+    var guardedDuring = /First target/.test(bannerDuring);
+    await tick(120);
+    __delay = 0;
+    var bannerClearedAfter = $("reply-banner") === null;
+    var ok = cancelDisabled && replyBtnDisabled && guardedDuring && bannerClearedAfter;
+    return res("replyLockedWhilePosting", ok,
+      "cancelDisabled=" + cancelDisabled + " replyBtnDisabled=" + replyBtnDisabled +
+      " guardedDuring=" + guardedDuring + " bannerClearedAfter=" + bannerClearedAfter);
   });
 
   S.push(async function partlyLive() {

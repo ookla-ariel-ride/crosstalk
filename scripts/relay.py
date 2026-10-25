@@ -9,15 +9,24 @@ from typing import Dict
 ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT / "scripts"))
 
+from crosstalk.consults import adopt_agreement, post_consult, post_reply  # noqa: E402
 from crosstalk.courier import pending, restore, sent  # noqa: E402
 from crosstalk.exporter import export_page  # noqa: E402
 from crosstalk.importer import import_snapshots, merge_snapshots  # noqa: E402
 from crosstalk.logs import append_line, check_all, message_problems  # noqa: E402
 from crosstalk.onboard import onboard, regenerate_kit  # noqa: E402
 from crosstalk.participants import load_roster  # noqa: E402
+from crosstalk.posters import claim_file, land_sync, post_incident, release_file  # noqa: E402
 from crosstalk.pull import pull  # noqa: E402
 from crosstalk.replay import enrich_messages, load_all_lines, replay  # noqa: E402
-from crosstalk.requests import all_requests_for, inbox_for  # noqa: E402
+from crosstalk.requests import (  # noqa: E402
+    agreements_to_adopt_for,
+    all_requests_for,
+    inbox_for,
+    pending_recipients,
+    stale_locks_for,
+    unanswered_owner_messages,
+)
 from crosstalk.serve import serve  # noqa: E402
 from crosstalk.service import SERVICE  # noqa: E402
 from crosstalk.tokens import TOKEN_FILE, Tokens, load_tokens  # noqa: E402
@@ -124,7 +133,12 @@ def cmd_inbox(args):
         return 1
     lines = load_all_lines(ROOT, roster)
     docs = enrich_messages(replay(lines), lines)
-    requests = all_requests_for(docs, args.pid) if args.all else inbox_for(docs, args.pid)
+    requests = (
+        all_requests_for(docs, args.pid, roster=roster)
+        if args.all
+        else inbox_for(docs, args.pid, roster=roster)
+    )
+    owner_msgs = unanswered_owner_messages(docs, args.pid)
     out = {
         "pid": args.pid,
         "roster": {pid: {"trust": p.trust} for pid, p in roster.participants.items()},
@@ -132,10 +146,20 @@ def cmd_inbox(args):
             {
                 "request": dict(doc, id=did),
                 "trust": _trust(doc.get("from"), roster),
+                "pending_from": pending_recipients(doc, replies, roster=roster),
                 "replies": [dict(r, trust=_trust(r.get("from"), roster)) for r in replies],
             }
             for (did, doc, replies) in requests
         ],
+        "owner_messages": [
+            {
+                "message": dict(doc, id=did),
+                "replies": [dict(r, trust=_trust(r.get("from"), roster)) for r in replies],
+            }
+            for (did, doc, replies) in owner_msgs
+        ],
+        "agreements_to_adopt": agreements_to_adopt_for(docs, args.pid, roster=roster),
+        "stale_locks": stale_locks_for(docs, args.pid, now_iso=getattr(args, "now", None)),
         "service": SERVICE,
     }
     print(json.dumps(out, ensure_ascii=False, sort_keys=True, indent=2))
@@ -278,6 +302,115 @@ def cmd_kit(args):
     return 0
 
 
+def cmd_claim(args):
+    try:
+        ln = claim_file(ROOT, args.from_, args.path, repo=args.repo,
+                        holder=args.holder, note=args.note)
+    except ValueError as e:
+        err(str(e))
+        return 1
+    print(ln.id)
+    return 0
+
+
+def cmd_release(args):
+    try:
+        ln = release_file(ROOT, args.from_, path=args.path, lock_id=args.lock_id)
+    except ValueError as e:
+        err(str(e))
+        return 1
+    print(ln.id)
+    return 0
+
+
+def cmd_land_sync(args):
+    try:
+        res = land_sync(ROOT, args.from_, args.commit, args.summary,
+                        files=args.files, adopter=args.adopter,
+                        agreement_id=args.agreement_id, body=args.body)
+    except ValueError as e:
+        err(str(e))
+        return 1
+    print(json.dumps(res, ensure_ascii=False, sort_keys=True, indent=2))
+    return 0
+
+
+def cmd_incident(args):
+    try:
+        ln = post_incident(ROOT, args.from_, args.slug, summary=args.summary,
+                           body=args.body, resolve=args.resolve,
+                           fix=args.fix, fix_refs=args.fix_refs)
+    except ValueError as e:
+        err(str(e))
+        return 1
+    print(ln.id)
+    return 0
+
+
+def _flatten(groups):
+    if not groups:
+        return None
+    out = []
+    for g in groups:
+        if isinstance(g, list):
+            out.extend(g)
+        else:
+            out.append(g)
+    return out or None
+
+
+def cmd_reply(args):
+    try:
+        ln = post_reply(
+            ROOT,
+            args.from_,
+            args.to_id,
+            args.summary,
+            body=args.body,
+            refs=_flatten(args.refs),
+            msg_id=args.id,
+        )
+    except ValueError as e:
+        err(str(e))
+        return 1
+    print(ln.id)
+    return 0
+
+
+def cmd_consult(args):
+    try:
+        ln = post_consult(
+            ROOT,
+            args.from_,
+            args.summary,
+            body=args.body,
+            refs=_flatten(args.refs),
+            to=_flatten(args.to),
+            msg_id=args.id,
+        )
+    except ValueError as e:
+        err(str(e))
+        return 1
+    print(ln.id)
+    return 0
+
+
+def cmd_adopt(args):
+    try:
+        res = adopt_agreement(
+            ROOT,
+            args.from_,
+            args.agreement,
+            args.commit,
+            summary=args.summary,
+        )
+    except ValueError as e:
+        err(str(e))
+        return 1
+    print(json.dumps(res, ensure_ascii=False, sort_keys=True))
+    return 0
+
+
 def build_parser():
     ap = argparse.ArgumentParser(prog="relay.py", description=__doc__)
     sub = ap.add_subparsers(dest="cmd", required=True)
@@ -348,6 +481,67 @@ def build_parser():
     k = sub.add_parser("kit", help="regenerate a participant's kit")
     k.add_argument("pid", metavar="PID")
     k.set_defaults(fn=cmd_kit)
+
+    cl = sub.add_parser("claim", help="claim a shared file lock; prints the lock doc id")
+    cl.add_argument("--from", dest="from_", required=True)
+    cl.add_argument("--path", required=True)
+    cl.add_argument("--repo", help="repo override (owner/repo)")
+    cl.add_argument("--holder", help="agent holding the lock")
+    cl.add_argument("--note", help="note describing the claim")
+    cl.set_defaults(fn=cmd_claim)
+
+    rl = sub.add_parser("release", help="release a shared file lock; prints the lock doc id")
+    rl.add_argument("--from", dest="from_", required=True)
+    rl_g = rl.add_mutually_exclusive_group(required=True)
+    rl_g.add_argument("--path", help="path of the locked file")
+    rl_g.add_argument("--id", dest="lock_id", help="lock doc id")
+    rl.set_defaults(fn=cmd_release)
+
+    ls = sub.add_parser("land-sync", help="announce a landed shared commit, update agreement, and release locks")
+    ls.add_argument("--from", dest="from_", required=True)
+    ls.add_argument("--commit", required=True)
+    ls.add_argument("--summary", required=True)
+    ls.add_argument("--files", action="extend", nargs="+", metavar="PATH")
+    ls.add_argument("--adopter", help="adopter participant id (default: all)")
+    ls.add_argument("--agreement-id", dest="agreement_id", help="existing agreement doc id")
+    ls.add_argument("--body", help="optional sync message body")
+    ls.set_defaults(fn=cmd_land_sync)
+
+    inc = sub.add_parser("incident", help="open or resolve a build/host incident; prints the incident doc id")
+    inc.add_argument("--from", dest="from_", required=True)
+    inc.add_argument("--slug", required=True)
+    inc.add_argument("--summary", help="incident summary (required when opening)")
+    inc.add_argument("--body", help="optional incident body")
+    inc.add_argument("--resolve", action="store_true", help="mark the incident resolved")
+    inc.add_argument("--fix", help="how the incident was fixed (with --resolve)")
+    inc.add_argument("--fix-ref", dest="fix_refs", action="extend", nargs="+", metavar="REF",
+                     help="commit or PR ref for the fix (with --resolve)")
+    inc.set_defaults(fn=cmd_incident)
+
+    rp = sub.add_parser("reply", help="reply to a message; prints the new message id")
+    rp.add_argument("--from", dest="from_", required=True)
+    rp.add_argument("--to-id", dest="to_id", required=True)
+    rp.add_argument("--summary", required=True)
+    rp.add_argument("--body")
+    rp.add_argument("--ref", "--refs", dest="refs", action="append", nargs="+")
+    rp.add_argument("--id")
+    rp.set_defaults(fn=cmd_reply)
+
+    cs = sub.add_parser("consult", help="post a peer consultation request; prints the new message id")
+    cs.add_argument("--from", dest="from_", required=True)
+    cs.add_argument("--summary", required=True)
+    cs.add_argument("--body")
+    cs.add_argument("--ref", "--refs", dest="refs", action="append", nargs="+")
+    cs.add_argument("--to", dest="to", action="append", nargs="+")
+    cs.add_argument("--id")
+    cs.set_defaults(fn=cmd_consult)
+
+    ad = sub.add_parser("adopt", help="record adoption of an agreement and post a sync message")
+    ad.add_argument("--from", dest="from_", required=True)
+    ad.add_argument("--agreement", "--agreement-id", dest="agreement", required=True)
+    ad.add_argument("--commit", required=True)
+    ad.add_argument("--summary")
+    ad.set_defaults(fn=cmd_adopt)
 
     sv = sub.add_parser("serve", help="run the page host and API server")
     sv.add_argument("--port", type=int, default=8484,

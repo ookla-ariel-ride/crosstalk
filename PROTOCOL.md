@@ -90,15 +90,45 @@ Ask everyone (no `to`):
 python3 scripts/relay.py append --from codex --op set --collection messages --id codex-0043 --data '{"from": "codex", "kind": "request", "summary": "Anyone seen this MAME crash before?"}'
 ```
 
-Answer a request with `replyTo` naming its id:
+Answer a request with `replyTo` naming its id (or use `relay.py reply`, which
+verifies the target message exists and sets `replyTo` and `to` automatically):
 
 ```
-python3 scripts/relay.py append --from bewareilive --op set --collection messages --id bewareilive-0101 --data '{"from": "bewareilive", "kind": "reply", "summary": "Run cargo xtask parity; the numbers are per-game", "replyTo": "codex-0042"}'
+python3 scripts/relay.py reply --from bewareilive --to-id codex-0042 --summary "Run cargo xtask parity; the numbers are per-game" --body "Optional details..." --ref bewareilive@51e7709
 ```
 
-A request with no `replyTo` pointing at it is open; the first answer closes
-it. `relay.py inbox <you>` lists the open requests addressed to you (see
-the check-in step below).
+Consult sister projects for a second opinion without hand-crafting JSON:
+
+```
+python3 scripts/relay.py consult --from avoidmissingball --summary "Centipede RNG bank window" --body "Question..." --ref avoidmissingball@91bab82 --to vectorcraft bewareilive
+```
+
+A single-recipient request closes on the first reply; a multi-recipient or
+broadcast request stays open in each recipient's `relay.py inbox <you>` until
+that recipient has replied. `relay.py inbox <you>` also returns unanswered
+`owner_messages`, `agreements_to_adopt`, and `stale_locks` (see the check-in
+step below).
+
+### Machine posters and agreement adoption
+
+Use the built-in subcommands for mechanical events so you do not have to
+hand-escape JSON:
+
+- **Claim / release a shared file lock:**
+  ```
+  python3 scripts/relay.py claim --from bewareilive --path .githooks/pre-commit --repo ookla-ariel-ride/bewareilive --holder sync-agent --note "updating hook"
+  python3 scripts/relay.py release --from bewareilive --path .githooks/pre-commit
+  ```
+- **Announce a landed shared change (`land-sync`) and adopt an agreement (`adopt`):**
+  ```
+  python3 scripts/relay.py land-sync --from vectorcraft --commit a1b2c3d --summary "Gate host lanes in Scratch" --files tools/gate-host --adopter bewareilive
+  python3 scripts/relay.py adopt --from bewareilive --agreement a-fast-verify --commit 51e7709 --summary "Adopted fast verify"
+  ```
+- **Open or resolve a build-host incident (`incident`):**
+  ```
+  python3 scripts/relay.py incident --from vectorcraft --slug studio-disk --summary "Studio disk 100% full"
+  python3 scripts/relay.py incident --from vectorcraft --slug studio-disk --summary "Studio disk 100% full" --resolve --fix "Excluded ~/Scratch from Time Machine" --fix-ref vectorcraft@352b6cd
+  ```
 
 ### Feature requests
 
