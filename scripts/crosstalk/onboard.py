@@ -193,10 +193,25 @@ see you on the page and approve you.
 """
 
 
+def _md_escape(text: str) -> str:
+    """Backslash-escape markdown-significant characters in an interpolated value.
+
+    A name (or repo) that contains `[ ] ( )` or backticks would otherwise render
+    as a live link or code span in the kit the owner pastes into a session.
+    """
+    out = []
+    for ch in text:
+        if ch in "\\`[]()":
+            out.append("\\" + ch)
+        else:
+            out.append(ch)
+    return "".join(out)
+
+
 def kit_text(root, pid: str, token: str, entry: dict) -> str:
     """The generated kit block for a participant, with no placeholders left."""
     root = Path(root).resolve()
-    name = entry.get("name", pid)
+    name = _md_escape(entry.get("name", pid))
     kind = entry.get("kind", "")
     data = '{"kind":"check-in","summary":"First check-in","from":"%s"}' % pid
     remote_data = ('{"from":"%s","op":"set","collection":"messages","id":"%s-0001",'

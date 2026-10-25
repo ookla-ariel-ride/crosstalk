@@ -208,6 +208,23 @@ class OnboardTests(unittest.TestCase):
             self.assertIn("agent", text)
             self.assertIn("sekret-token", text)
 
+    def test_kit_text_escapes_markdown_in_name(self):
+        # A name like "[x](http://…)" would render as a live markdown link in
+        # the kit the owner pastes; it must be backslash-escaped instead.
+        with TempRepo() as r:
+            r.write_roster()
+            entry = kit_entry(name="[x](http://evil.example)")
+            text = kit_text(r.root, "smoke-agent", "sekret-token", entry)
+            self.assertNotIn("](http", text)
+            self.assertIn("\\[x\\]\\(", text)
+
+    def test_kit_text_escapes_backticks_in_name(self):
+        with TempRepo() as r:
+            r.write_roster()
+            entry = kit_entry(name="`code`")
+            text = kit_text(r.root, "smoke-agent", "sekret-token", entry)
+            self.assertIn("\\`code\\`", text)
+
     def test_kit_text_from_in_both_examples(self):
         with TempRepo() as r:
             r.write_roster()
