@@ -528,6 +528,9 @@ class CrosstalkHandler(BaseHTTPRequestHandler):
             if via is None:
                 via = "page"
             if collection == "participants":
+                if body.get("op") != "update":
+                    self._error(400, "participants rows can only be updated")
+                    return
                 self._append_roster(body.get("id"), data, via)
                 return
         else:

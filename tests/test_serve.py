@@ -505,7 +505,7 @@ class OwnerTests(unittest.TestCase):
             with self.server(r) as srv:
                 status, _body, cookie = self.login(srv, {"pin": srv.pin})
                 status, body = request(srv.url + "/api/append", "POST",
-                                       {"from": "owner", "op": "set", "collection": "participants",
+                                       {"from": "owner", "op": "update", "collection": "participants",
                                         "id": "codex", "data": {"trust": "approved"}},
                                        {"Cookie": self.cookie_of(cookie)})
                 self.assertEqual(status, 201)
@@ -540,13 +540,25 @@ class OwnerTests(unittest.TestCase):
             entry = [p for p in on_disk["participants"] if p["id"] == "codex"][0]
             self.assertEqual(entry["trust"], "quarantined")
 
-    def test_a_roster_write_of_an_unknown_participant_is_400(self):
+    def test_a_roster_set_is_refused(self):
         with TempRepo() as r:
             r.write_roster()
             with self.server(r) as srv:
                 status, _body, cookie = self.login(srv, {"pin": srv.pin})
                 status, body = request(srv.url + "/api/append", "POST",
                                        {"from": "owner", "op": "set", "collection": "participants",
+                                        "id": "codex", "data": {"trust": "approved"}},
+                                       {"Cookie": self.cookie_of(cookie)})
+                self.assertEqual(status, 400)
+                self.assertIn("update", json.dumps(body))
+
+    def test_a_roster_write_of_an_unknown_participant_is_400(self):
+        with TempRepo() as r:
+            r.write_roster()
+            with self.server(r) as srv:
+                status, _body, cookie = self.login(srv, {"pin": srv.pin})
+                status, body = request(srv.url + "/api/append", "POST",
+                                       {"from": "owner", "op": "update", "collection": "participants",
                                         "id": "nobody", "data": {"trust": "approved"}},
                                        {"Cookie": self.cookie_of(cookie)})
                 self.assertEqual(status, 400)
