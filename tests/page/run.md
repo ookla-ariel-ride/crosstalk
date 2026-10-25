@@ -80,6 +80,10 @@ sees the real roster from its first snapshot.
 - `holdRelease`: releasing an old-style `status: "held"` agreement sets `agreed` and `hold: false`.
 - `viewerRole`: the footer reads "Viewing as Test Owner (owner)" for the stub viewer; `__crosstalk.viewerText`
   gives "(editor)", "a viewer (read only)" and "the owner" for an unnamed owner, and nothing without a viewer.
+- `ownerAddParticipant`: the owner sees an "Add participant" button; opening it shows a form (id, name, kind,
+  optional repo); submitting via the stub fake shows the kit in a readonly textarea with a copy button and the
+  token once in a readonly field. A reader or editor never sees the button (covered by `readerNoControls` and
+  `editorNoControls`).
 - `readerNoControls`: at `?viewer=reader`, no composer, star, resolve, Approve, Hold or Mark done
   control is shown, and the footer reads "Viewing as a viewer (read only)".
 - `partlyLive`: one stopped collection shows "Partly live" and names its tab.

@@ -155,6 +155,11 @@ td.num, td.t { font: 12px var(--mono); font-variant-numeric: tabular-nums; white
 .signin { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; margin-top: 8px; }
 .signin label { font: 500 12px var(--mono); color: var(--muted); }
 .signin input { padding: 6px 10px; border: 1px solid var(--rule); border-radius: 6px; background: var(--panel); min-width: 0; }
+.onboard { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; margin-top: 8px; }
+.onboard label { font: 500 12px var(--mono); color: var(--muted); }
+.onboard input, .onboard select { padding: 6px 10px; border: 1px solid var(--rule); border-radius: 6px; background: var(--panel); min-width: 0; }
+.onboard .kit { width: 100%; box-sizing: border-box; min-height: 140px; padding: 8px; border: 1px solid var(--rule); border-radius: 6px; background: var(--panel); font: 12px/1.4 var(--mono); resize: vertical; }
+.onboard .token { flex: 1 1 220px; min-width: 0; padding: 6px 10px; border: 1px solid var(--rule); border-radius: 6px; background: var(--panel); font: 12px var(--mono); }
 
 @media (max-width: 640px) {
   /* The roster folds into a "People" disclosure above the feed. */
@@ -184,6 +189,7 @@ td.num, td.t { font: 12px var(--mono); font-variant-numeric: tabular-nums; white
 
   <nav class="tabs" role="tablist" id="tabs"></nav>
   <div class="note" id="signin"></div>
+  <div class="note" id="onboard"></div>
   <main id="view"></main>
 
   <p class="note">Every participant logs each message here as it sends or receives it. Times are Pacific. Notes you post here are read by every session at its next check-in. A file claim is a notice between the sessions, not a permission.</p>
@@ -223,6 +229,8 @@ td.num, td.t { font: 12px var(--mono); font-variant-numeric: tabular-nums; white
   // The composer's state lives here, not in the DOM, so a snapshot re-render can't reset it. `id` stays the same
   // until a post succeeds, so retrying a half-failed post overwrites the same rows instead of duplicating them.
   var draft = { text: "", kind: "owner", id: null, posting: false, status: "" };
+  // The Add-participant control: open, posting, status, and the last result (kit + token).
+  var onboardState = { open: false, posting: false, status: "", result: null };
   // The roster is a <details>: always open on wide screens, folded into "People" below 640px until opened.
   var WIDE = window.matchMedia ? window.matchMedia("(min-width: 641px)") : null, rosterOpen = false;
   // A failed Approve keeps its message here, by participant id, so a re-render doesn't drop it.
@@ -1130,6 +1138,24 @@ td.num, td.t { font: 12px var(--mono); font-variant-numeric: tabular-nums; white
             return j;
           });
         });
+      },
+      // Add a participant: the owner session's POST /api/onboard.
+      onboard: function (fields) {
+        return fetch("/api/onboard", {
+          method: "POST",
+          credentials: "same-origin",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(fields)
+        }).then(function (r) {
+          return r.json().then(function (j) {
+            if (!r.ok) {
+              var err = new Error(j && j.error ? j.error : ("onboard failed: " + r.status));
+              err.code = String(r.status);
+              throw err;
+            }
+            return j;
+          });
+        });
       }
     };
 
@@ -1181,6 +1207,7 @@ td.num, td.t { font: 12px var(--mono); font-variant-numeric: tabular-nums; white
           canWrite = !!(m && m.isOwner);
           document.getElementById("viewer").textContent = viewerText(m);
           renderSignIn();
+          renderOnboard();
           renderAll();
         }).catch(function (err) {
           input.disabled = false; btn.disabled = false;
@@ -1189,7 +1216,70 @@ td.num, td.t { font: 12px var(--mono); font-variant-numeric: tabular-nums; white
       });
       box.appendChild(form);
     }
+    // The owner-only Add-participant control: a button that opens a small form
+    // (id, name, kind, optional repo), posts to /api/onboard, then shows the
+    // kit in a copy box and the token once. A non-owner never sees the button.
+    function renderOnboard() {
+      var box = document.getElementById("onboard");
+      if (!box) return;
+      box.textContent = "";
+      if (!me || !me.isOwner || !user || typeof user.onboard !== "function") return;
+      var openBtn = el("button", "btn", onboardState.open ? "Close" : "Add participant");
+      openBtn.type = "button"; openBtn.id = "onboard-open";
+      openBtn.addEventListener("click", function () { onboardState.open = !onboardState.open; renderOnboard(); });
+      box.appendChild(openBtn);
+      if (!onboardState.open) return;
+      var form = el("form", "signin"); form.id = "onboard-form";
+      var idLab = el("label", null, "Id"); idLab.htmlFor = "onboard-id";
+      var idIn = el("input"); idIn.id = "onboard-id"; idIn.placeholder = "e.g. smoke-agent"; idIn.setAttribute("aria-label", "Participant id");
+      var nameLab = el("label", null, "Name"); nameLab.htmlFor = "onboard-name";
+      var nameIn = el("input"); nameIn.id = "onboard-name"; nameIn.placeholder = "Display name"; nameIn.setAttribute("aria-label", "Participant name");
+      var kindLab = el("label", null, "Kind"); kindLab.htmlFor = "onboard-kind";
+      var kindSel = el("select"); kindSel.id = "onboard-kind"; kindSel.setAttribute("aria-label", "Kind");
+      ["project", "agent", "reviewer", "researcher", "tool", "person"].forEach(function (k) { var op = el("option", null, k); op.value = k; kindSel.appendChild(op); });
+      var repoLab = el("label", null, "Repo (optional)"); repoLab.htmlFor = "onboard-repo";
+      var repoIn = el("input"); repoIn.id = "onboard-repo"; repoIn.placeholder = "owner/repo"; repoIn.setAttribute("aria-label", "Repo (optional)");
+      var submit = el("button", "btn primary", "Add"); submit.type = "submit"; submit.id = "onboard-submit"; submit.disabled = onboardState.posting;
+      var st = el("span", "status-msg", onboardState.status); st.id = "onboard-status"; st.setAttribute("role", "status");
+      form.appendChild(idLab); form.appendChild(idIn);
+      form.appendChild(nameLab); form.appendChild(nameIn);
+      form.appendChild(kindLab); form.appendChild(kindSel);
+      form.appendChild(repoLab); form.appendChild(repoIn);
+      form.appendChild(submit); form.appendChild(st);
+      form.addEventListener("submit", function (e) {
+        e.preventDefault();
+        if (onboardState.posting) return;
+        var fields = { id: idIn.value.trim(), name: nameIn.value.trim(), kind: kindSel.value };
+        var repo = repoIn.value.trim();
+        if (repo) fields.repo = repo;
+        if (!fields.id || !fields.name) { onboardState.status = "Give an id and a name."; renderOnboard(); return; }
+        onboardState.posting = true; onboardState.status = "Adding…"; renderOnboard();
+        user.onboard(fields).then(function (res) {
+          onboardState.posting = false;
+          onboardState.status = "Added " + fields.id + ".";
+          onboardState.result = res;
+          renderOnboard();
+        }).catch(function (err) {
+          onboardState.posting = false;
+          onboardState.status = "Not added: " + (err && err.message ? err.message : "try again") + ".";
+          renderOnboard();
+        });
+      });
+      box.appendChild(form);
+      if (onboardState.result) {
+        var res = onboardState.result;
+        var kitLab = el("label", null, "Kit"); kitLab.htmlFor = "onboard-kit";
+        var kitTa = el("textarea", "kit"); kitTa.id = "onboard-kit"; kitTa.readOnly = true; kitTa.value = res.kit; kitTa.setAttribute("aria-label", "Kit");
+        var copyBtn = el("button", "btn", "Copy kit"); copyBtn.type = "button"; copyBtn.id = "onboard-copy";
+        copyBtn.addEventListener("click", function () { kitTa.select(); try { document.execCommand("copy"); } catch (e) {} copyBtn.textContent = "Copied"; });
+        var tokLab = el("label", null, "Token (shown once)"); tokLab.htmlFor = "onboard-token";
+        var tokIn = el("input", "token"); tokIn.id = "onboard-token"; tokIn.readOnly = true; tokIn.value = res.token; tokIn.setAttribute("aria-label", "Token");
+        box.appendChild(kitLab); box.appendChild(kitTa); box.appendChild(copyBtn);
+        box.appendChild(tokLab); box.appendChild(tokIn);
+      }
+    }
     renderSignIn();
+    renderOnboard();
     // These codes can't recover by resubscribing; anything else (unavailable, unknown codes) gets a few retries.
     var TERMINAL = ["revoked", "not_granted", "capability_disabled", "capability_removed", "invalid_argument", "transform_error"];
     function subscribe(c, attempt) {

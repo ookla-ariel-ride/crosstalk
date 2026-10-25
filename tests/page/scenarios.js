@@ -387,7 +387,7 @@
     if (!/[?&]viewer=reader\b/.test(location.search)) return res("readerNoControls", true, "skipped: open index.html?viewer=reader");
     await go("timeline");
     await addDoc("messages", "rd-1", { t: T0, from: "codex", kind: "sync", summary: "Seen by a reader" });
-    var controls = document.querySelectorAll("#composer, .star, .resolve, [id^=approve-], [id^=hold-], [id^=done-]").length;
+    var controls = document.querySelectorAll("#composer, .star, .resolve, [id^=approve-], [id^=hold-], [id^=done-], #onboard-open").length;
     var shown = $("viewer").textContent;
     return res("readerNoControls", controls === 0 && shown === "Viewing as a viewer (read only)", "controls=" + controls + " shown=" + JSON.stringify(shown));
   });
@@ -397,7 +397,7 @@
     if (!/[?&]viewer=editor\b/.test(location.search)) return res("editorNoControls", true, "skipped: open index.html?viewer=editor");
     await go("timeline");
     await addDoc("messages", "ed-1", { t: T0, from: "codex", kind: "sync", summary: "Seen by an editor" });
-    var controls = document.querySelectorAll("#composer, .star, .resolve, [id^=approve-], [id^=hold-], [id^=done-]").length;
+    var controls = document.querySelectorAll("#composer, .star, .resolve, [id^=approve-], [id^=hold-], [id^=done-], #onboard-open").length;
     var shown = $("viewer").textContent;
     return res("editorNoControls", controls === 0 && shown === "Viewing as Test Editor (editor)", "controls=" + controls + " shown=" + JSON.stringify(shown));
   });
@@ -422,7 +422,29 @@
       "err=" + JSON.stringify(err) + " stillThere=" + stillThere + " gone=" + gone + " shown=" + JSON.stringify(shown) + " composer=" + composer);
   });
 
-  S.push(async function partlyLive() {
+  S.push(async function ownerAddParticipant() {
+      await go("timeline");
+      var open = $("onboard-open");
+      if (!open) return res("ownerAddParticipant", false, "no Add participant button for the owner");
+      open.click(); await tick();
+      var form = $("onboard-form");
+      if (!form) return res("ownerAddParticipant", false, "no form after opening the control");
+      $("onboard-id").value = "smoke-agent";
+      $("onboard-name").value = "Smoke Agent";
+      $("onboard-kind").value = "agent";
+      __onboardResult = { token: "fake-token-123", kit: "kit for fake-token-123" };
+      $("onboard-submit").click(); await tick(80);
+      var kit = $("onboard-kit"), tok = $("onboard-token"), copy = $("onboard-copy");
+      var kitOk = !!kit && kit.readOnly && kit.value === "kit for fake-token-123";
+      var tokOk = !!tok && tok.readOnly && tok.value === "fake-token-123";
+      var tokenFields = document.querySelectorAll("#onboard-token").length;
+      var ok = kitOk && tokOk && !!copy && tokenFields === 1;
+      return res("ownerAddParticipant", ok,
+        "kit=" + (kit && JSON.stringify(kit.value)) + " token=" + (tok && JSON.stringify(tok.value)) +
+        " copy=" + !!copy + " tokenFields=" + tokenFields);
+    });
+
+    S.push(async function partlyLive() {
     var before = $("liveText").textContent;
     __kill("locks", "revoked"); await tick();
     var after = $("liveText").textContent, latest = $("latest").textContent;
