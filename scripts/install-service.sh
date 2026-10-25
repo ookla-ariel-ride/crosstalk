@@ -17,9 +17,7 @@ cmd="${1:-install}"
 case "$cmd" in
   install)
     mkdir -p "$(dirname "$PLIST_DEST")" "$LOG_DIR"
-    sed -e "s|__REPO__|$REPO_ROOT|g" \
-        -e "s|__HOME__|$HOME|g" \
-        "$PLIST_TEMPLATE" > "$PLIST_DEST"
+    python3 "$SCRIPT_DIR/launchd/render_plist.py" "$PLIST_TEMPLATE" "$PLIST_DEST" "$REPO_ROOT" "$HOME"
     # Boot out any stale instance first (ignore failure when none is loaded),
     # then load the fresh plist.
     launchctl bootout "gui/$UID_NUM/$LABEL" 2>/dev/null || true
