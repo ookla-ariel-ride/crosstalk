@@ -923,7 +923,11 @@ td.num, td.t { font: 12px var(--mono); font-variant-numeric: tabular-nums; white
     if (!open.length) cards.appendChild(el("div", "empty", "Nothing is waiting on you."));
     open.forEach(function (w) {
       var c = el("div", "card");
-      var meta = el("div", "meta"); meta.appendChild(who(w.project)); meta.appendChild(el("span", null, "waiting since")); meta.appendChild(timeEl(w.since, true)); meta.appendChild(agoEl(w.since)); c.appendChild(meta);
+      var quarantined = isQuarantined(w.project);
+      if (quarantined) c.classList.add("quarantined");
+      var meta = el("div", "meta"); meta.appendChild(who(w.project)); meta.appendChild(el("span", null, "waiting since")); meta.appendChild(timeEl(w.since, true)); meta.appendChild(agoEl(w.since));
+      if (quarantined) meta.appendChild(quarantinePill());
+      c.appendChild(meta);
       c.appendChild(el("div", "summary", w.summary || "")); add(c, bodyEl(w.body)); add(c, refsEl(w.refs, w.project));
       if (canWrite) {
         var b = el("button", "btn", "Mark done"); b.type = "button"; b.id = "done-" + w._id;

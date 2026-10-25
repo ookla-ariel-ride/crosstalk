@@ -661,6 +661,28 @@
     return res("helpFilter", onlyBil, "froms=" + JSON.stringify(froms));
   });
 
+  // A waiting row from a quarantined project is dimmed with a "not approved" pill;
+  // an approved project's row stays undimmed.
+  S.push(async function waitingQuarantineDimmed() {
+    await go("waiting");
+    await addDoc("participants", "wqbot", { name: "WQ bot", kind: "tool", color: "#555555" });
+    await addDoc("waiting", "wq-1", { since: ago(1), project: "wqbot", summary: "From a quarantined project", done: null });
+    await addDoc("waiting", "wq-2", { since: ago(1), project: "bewareilive", summary: "From an approved project", done: null });
+    function wcard(summary) {
+      return [].slice.call(document.querySelectorAll("#view .card")).filter(function (c) {
+        return c.textContent.indexOf(summary) !== -1;
+      })[0];
+    }
+    var q = wcard("From a quarantined project"), a = wcard("From an approved project");
+    var qDim = !!q && q.classList.contains("quarantined") && getComputedStyle(q).opacity === "0.55";
+    var qPill = !!q && [].slice.call(q.querySelectorAll(".pill")).some(function (p) { return /not approved/i.test(p.textContent); });
+    var aUndim = !!a && !a.classList.contains("quarantined") && getComputedStyle(a).opacity === "1";
+    var aNoPill = !!a && ![].slice.call(a.querySelectorAll(".pill")).some(function (p) { return /not approved/i.test(p.textContent); });
+    await go("timeline");
+    return res("waitingQuarantineDimmed", qDim && qPill && aUndim && aNoPill,
+      "qDim=" + qDim + " qPill=" + qPill + " aUndim=" + aUndim + " aNoPill=" + aNoPill);
+  });
+
   S.push(async function partlyLive() {
     var before = $("liveText").textContent;
     __kill("locks", "revoked"); await tick();
