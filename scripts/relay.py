@@ -15,7 +15,7 @@ from crosstalk.importer import import_snapshots, merge_snapshots  # noqa: E402
 from crosstalk.logs import append_line, check_all, message_problems  # noqa: E402
 from crosstalk.onboard import onboard, regenerate_kit  # noqa: E402
 from crosstalk.participants import load_roster  # noqa: E402
-from crosstalk.posters import claim_file, land_sync, release_file  # noqa: E402
+from crosstalk.posters import claim_file, land_sync, post_incident, release_file  # noqa: E402
 from crosstalk.pull import pull  # noqa: E402
 from crosstalk.replay import enrich_messages, load_all_lines, replay  # noqa: E402
 from crosstalk.requests import all_requests_for, inbox_for  # noqa: E402
@@ -312,6 +312,18 @@ def cmd_land_sync(args):
     return 0
 
 
+def cmd_incident(args):
+    try:
+        ln = post_incident(ROOT, args.from_, args.slug, summary=args.summary,
+                           body=args.body, resolve=args.resolve,
+                           fix=args.fix, fix_refs=args.fix_refs)
+    except ValueError as e:
+        err(str(e))
+        return 1
+    print(ln.id)
+    return 0
+
+
 def build_parser():
     ap = argparse.ArgumentParser(prog="relay.py", description=__doc__)
     sub = ap.add_subparsers(dest="cmd", required=True)
@@ -407,6 +419,17 @@ def build_parser():
     ls.add_argument("--agreement-id", dest="agreement_id", help="existing agreement doc id")
     ls.add_argument("--body", help="optional sync message body")
     ls.set_defaults(fn=cmd_land_sync)
+
+    inc = sub.add_parser("incident", help="open or resolve a build/host incident; prints the incident doc id")
+    inc.add_argument("--from", dest="from_", required=True)
+    inc.add_argument("--slug", required=True)
+    inc.add_argument("--summary", help="incident summary (required when opening)")
+    inc.add_argument("--body", help="optional incident body")
+    inc.add_argument("--resolve", action="store_true", help="mark the incident resolved")
+    inc.add_argument("--fix", help="how the incident was fixed (with --resolve)")
+    inc.add_argument("--fix-ref", dest="fix_refs", action="extend", nargs="+", metavar="REF",
+                     help="commit or PR ref for the fix (with --resolve)")
+    inc.set_defaults(fn=cmd_incident)
 
     sv = sub.add_parser("serve", help="run the page host and API server")
     sv.add_argument("--port", type=int, default=8484,

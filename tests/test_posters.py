@@ -12,6 +12,7 @@ from crosstalk.participants import load_roster
 from crosstalk.posters import (
     claim_file,
     land_sync,
+    post_incident,
     release_file,
     slugify_path,
 )
@@ -216,6 +217,60 @@ class LandSyncTests(unittest.TestCase):
                 p = c.run("land-sync", "--from", "vectorcraft", "--commit", "a1b2c3d",
                           "--summary", bad_sum)
                 self.assertEqual(p.returncode, 1, bad_sum)
+
+
+class IncidentTests(unittest.TestCase):
+    def test_cli_incident_open_and_resolve(self):
+        with TempRepo() as r:
+            c = PosterCli(r)
+            p = c.run("incident", "--from", "vectorcraft", "--slug", "studio-disk",
+                      "--summary", "Studio disk 100% full", "--body", "Scratch grew to 80GB")
+            self.assertEqual(p.returncode, 0, p.stderr)
+            inc_id = p.stdout.strip()
+            self.assertEqual(inc_id, "i-vectorcraft-studio-disk")
+
+            docs = c.docs()
+            inc = docs[("incidents", inc_id)]
+            self.assertEqual(inc["project"], "vectorcraft")
+            self.assertEqual(inc["summary"], "Studio disk 100% full")
+            self.assertEqual(inc["body"], "Scratch grew to 80GB")
+            self.assertTrue(inc["start"].endswith("Z"))
+            self.assertIsNone(inc["end"])
+
+            p2 = c.run("incident", "--from", "vectorcraft", "--slug", "studio-disk",
+                       "--resolve", "--fix", "Excluded ~/Scratch from Time Machine",
+                       "--fix-ref", "vectorcraft@352b6cd")
+            self.assertEqual(p2.returncode, 0, p2.stderr)
+            self.assertEqual(p2.stdout.strip(), inc_id)
+
+            docs2 = c.docs()
+            inc2 = docs2[("incidents", inc_id)]
+            self.assertEqual(inc2["summary"], "Studio disk 100% full")
+            self.assertIsNotNone(inc2["end"])
+            self.assertTrue(inc2["end"].endswith("Z"))
+            self.assertEqual(inc2["fix"], "Excluded ~/Scratch from Time Machine")
+            self.assertEqual(inc2["fixRefs"], ["vectorcraft@352b6cd"])
+            self.assertEqual(c.run("check").returncode, 0)
+
+    def test_incident_validation_errors(self):
+        with TempRepo() as r:
+            c = PosterCli(r)
+            # Opening without summary fails
+            p1 = c.run("incident", "--from", "vectorcraft", "--slug", "studio-disk")
+            self.assertEqual(p1.returncode, 1)
+            self.assertIn("summary", p1.stderr)
+
+            # Resolving non-existent incident fails
+            p2 = c.run("incident", "--from", "vectorcraft", "--slug", "studio-disk", "--resolve")
+            self.assertEqual(p2.returncode, 1)
+            self.assertIn("no such incident", p2.stderr)
+
+            # Direct function call checks
+            roster = load_roster(r.root / "participants.json")
+            with self.assertRaises(ValueError):
+                post_incident(r.root, "vectorcraft", "studio-disk", summary="  ", roster=roster)
+            with self.assertRaises(ValueError):
+                post_incident(r.root, "vectorcraft", "studio-disk", resolve=True, roster=roster)
 
 
 if __name__ == "__main__":

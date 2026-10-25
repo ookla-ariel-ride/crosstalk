@@ -2,7 +2,7 @@
 import re
 import time
 from pathlib import Path
-from typing import Dict, List, Optional
+from typing import Any, Dict, List, Optional
 
 from .logs import Line, append_line
 from .participants import Roster, load_roster, repo_problem
@@ -163,3 +163,36 @@ def land_sync(root: Path, pid: str, commit: str, summary: str,
         "agreement_id": agr_id,
         "released_locks": released_locks,
     }
+
+
+def post_incident(root: Path, pid: str, slug: str, summary: Optional[str] = None,
+                  body: Optional[str] = None, resolve: bool = False,
+                  fix: Optional[str] = None, fix_refs: Optional[List[str]] = None,
+                  roster: Optional[Roster] = None) -> Line:
+    root = Path(root)
+    roster = _ensure_roster(root, roster)
+    _require_pid(pid, roster)
+    doc_id = "i-%s-%s" % (pid, slugify_path(slug))
+    ts = now_iso()
+    if resolve:
+        docs = replay(load_all_lines(root, roster))
+        if ("incidents", doc_id) not in docs:
+            raise ValueError("no such incident %r" % doc_id)
+        data = {"end": ts}  # type: Dict[str, Any]
+        if fix:
+            data["fix"] = fix
+        if fix_refs:
+            data["fixRefs"] = list(fix_refs)
+        return append_line(root, pid, "update", "incidents", doc_id, data, t=ts, roster=roster)
+
+    if not isinstance(summary, str) or not summary.strip():
+        raise ValueError("incident requires a non-empty summary")
+    data = {
+        "project": pid,
+        "start": ts,
+        "end": None,
+        "summary": summary.strip(),
+    }
+    if body:
+        data["body"] = body
+    return append_line(root, pid, "set", "incidents", doc_id, data, t=ts, roster=roster)
