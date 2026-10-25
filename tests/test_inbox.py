@@ -345,9 +345,56 @@ class InboxTests(unittest.TestCase):
         # Builder does not adopt its own 'both'/'all' agreements
         out_vc = self.inbox("vectorcraft")
         self.assertEqual(out_vc["agreements_to_adopt"], [])
+        # Reviewer only adopts agreements explicitly naming it, not 'both'/'all' project agreements
         out_codex = self.inbox("codex")
         self.assertEqual([a["id"] for a in out_codex["agreements_to_adopt"]],
-                         ["a-codex", "a-both", "a-all"])
+                         ["a-codex"])
+        self.assertEqual(self.inbox("owner")["agreements_to_adopt"], [])
+
+    def test_quarantined_or_third_party_reply_does_not_censor_request(self):
+        roster = json.loads(json.dumps(SPEC_ROSTER))
+        for p in roster["participants"]:
+            if p["id"] == "codex":
+                p["trust"] = "quarantined"
+        self.r.write_roster(roster)
+        self.r.write_log("vectorcraft", [
+            req(1, "vectorcraft", "vc-req-1", to=["bewareilive"]),
+        ])
+        self.r.write_log("codex", [
+            rep(1, "codex", "codex-hijack", "vc-req-1"),
+        ])
+        out_open = self.inbox("bewareilive")
+        self.assertEqual(self.ids(out_open), ["vc-req-1"])
+        self.assertEqual(out_open["requests"][0]["pending_from"], ["bewareilive"])
+        out_all = self.inbox("bewareilive", "--all")
+        self.assertEqual(out_all["requests"][0]["pending_from"], ["bewareilive"])
+        self.assertEqual(out_all["requests"][0]["replies"][0]["trust"], "quarantined")
+
+        # Even if codex is approved, a third-party reply to a 1-recipient request for bewareilive
+        # does not remove it from bewareilive's open inbox
+        self.r.write_roster(SPEC_ROSTER)
+        out_open2 = self.inbox("bewareilive")
+        self.assertEqual(self.ids(out_open2), ["vc-req-1"])
+        self.assertEqual(out_open2["requests"][0]["pending_from"], ["bewareilive"])
+
+        # Owner reply does close the 1-recipient request
+        self.r.write_log("owner", [
+            rep(1, "owner", "own-close", "vc-req-1"),
+        ])
+        self.assertEqual(self.inbox("bewareilive")["requests"], [])
+
+    def test_stale_locks_extreme_timezone_does_not_overflow(self):
+        self.r.write_log("bewareilive", [
+            line(1, "bewareilive", collection="locks", id_="l-bewareilive-extreme",
+                 data={
+                     "project": "bewareilive",
+                     "path": "a.rs",
+                     "since": "0001-01-01T00:00:00+01:00",
+                     "released": None,
+                 })
+        ])
+        out = self.inbox("bewareilive")
+        self.assertEqual(out["stale_locks"], [])
 
     def test_stale_locks(self):
         from crosstalk.replay import enrich_messages, load_all_lines, replay

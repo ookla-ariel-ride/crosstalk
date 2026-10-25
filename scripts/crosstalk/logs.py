@@ -160,7 +160,7 @@ def message_problems(collection: str, op: str, data: dict, roster: Roster,
                 errors.append("a new message needs a %s" % key)
         if not isinstance(data.get("from"), str) or not data["from"].strip():
             errors.append("a new message needs a from (your participant id)")
-    if isinstance(data.get("summary"), str) and "\n" in data["summary"].strip():
+    if isinstance(data.get("summary"), str) and ("\n" in data["summary"] or "\r" in data["summary"]):
         errors.append("summary must be one line (put the rest in body)")
     kind = data.get("kind")
     if isinstance(kind, str) and kind and kind not in KINDS:

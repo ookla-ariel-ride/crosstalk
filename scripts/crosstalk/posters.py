@@ -259,8 +259,8 @@ def post_incident(root: Path, pid: str, slug: str, summary: Optional[str] = None
             data["fixRefs"] = list(fix_refs)
         return append_line(root, pid, "update", "incidents", doc_id, data, t=ts, roster=roster)
 
-    if not isinstance(summary, str) or not summary.strip():
-        raise ValueError("incident requires a non-empty summary")
+    if not isinstance(summary, str) or "\n" in summary or "\r" in summary or not summary.strip():
+        raise ValueError("incident requires a non-empty single-line summary")
     data = {
         "project": pid,
         "start": ts,

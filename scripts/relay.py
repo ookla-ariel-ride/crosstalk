@@ -133,7 +133,11 @@ def cmd_inbox(args):
         return 1
     lines = load_all_lines(ROOT, roster)
     docs = enrich_messages(replay(lines), lines)
-    requests = all_requests_for(docs, args.pid) if args.all else inbox_for(docs, args.pid)
+    requests = (
+        all_requests_for(docs, args.pid, roster=roster)
+        if args.all
+        else inbox_for(docs, args.pid, roster=roster)
+    )
     owner_msgs = unanswered_owner_messages(docs, args.pid)
     out = {
         "pid": args.pid,
@@ -142,7 +146,7 @@ def cmd_inbox(args):
             {
                 "request": dict(doc, id=did),
                 "trust": _trust(doc.get("from"), roster),
-                "pending_from": pending_recipients(doc, replies),
+                "pending_from": pending_recipients(doc, replies, roster=roster),
                 "replies": [dict(r, trust=_trust(r.get("from"), roster)) for r in replies],
             }
             for (did, doc, replies) in requests
@@ -154,7 +158,7 @@ def cmd_inbox(args):
             }
             for (did, doc, replies) in owner_msgs
         ],
-        "agreements_to_adopt": agreements_to_adopt_for(docs, args.pid),
+        "agreements_to_adopt": agreements_to_adopt_for(docs, args.pid, roster=roster),
         "stale_locks": stale_locks_for(docs, args.pid, now_iso=getattr(args, "now", None)),
         "service": SERVICE,
     }

@@ -337,8 +337,9 @@ class IncidentTests(unittest.TestCase):
 
             # Direct function call checks
             roster = load_roster(r.root / "participants.json")
-            with self.assertRaises(ValueError):
-                post_incident(r.root, "vectorcraft", "studio-disk", summary="  ", roster=roster)
+            for bad_sum in ("  ", "Line 1\nLine 2", "Trailing\n", "Line 1\rLine 2"):
+                with self.assertRaises(ValueError):
+                    post_incident(r.root, "vectorcraft", "studio-disk", summary=bad_sum, roster=roster)
             with self.assertRaises(ValueError):
                 post_incident(r.root, "vectorcraft", "studio-disk", resolve=True, roster=roster)
 

@@ -48,6 +48,20 @@ def _validate_msg_id(msg_id: Optional[str], pid: str, docs: Dict) -> Optional[st
     return msg_id
 
 
+def _clean_summary(summary: str) -> str:
+    if not isinstance(summary, str) or "\n" in summary or "\r" in summary or not summary.strip():
+        raise ValueError("summary must be a non-empty single-line string")
+    return summary.strip()
+
+
+def _str_list(items: Optional[Iterable[str]]) -> list:
+    if items is None:
+        return []
+    if isinstance(items, str):
+        return [items] if items else []
+    return list(items)
+
+
 def post_reply(
     root: Path,
     pid: str,
@@ -62,6 +76,7 @@ def post_reply(
     root = Path(root)
     roster = _ensure_roster(root, roster)
     _require_pid(pid, roster)
+    summary = _clean_summary(summary)
     lines = load_all_lines(root, roster)
     docs = enrich_messages(replay(lines), lines)
     target_doc = docs.get(("messages", to_id))
@@ -79,8 +94,9 @@ def post_reply(
         data["to"] = [target_from]
     if body is not None:
         data["body"] = body
-    if refs:
-        data["refs"] = list(refs)
+    refs_list = _str_list(refs)
+    if refs_list:
+        data["refs"] = refs_list
     return append_line(root, pid, "set", "messages", mid, data, roster=roster)
 
 
@@ -98,6 +114,7 @@ def post_consult(
     root = Path(root)
     roster = _ensure_roster(root, roster)
     _require_pid(pid, roster)
+    summary = _clean_summary(summary)
     lines = load_all_lines(root, roster)
     docs = replay(lines)
     mid = _validate_msg_id(msg_id, pid, docs) or ("%s-%s" % (pid, microsecond_utc_stamp()))
@@ -108,10 +125,12 @@ def post_consult(
     }  # type: Dict[str, object]
     if body is not None:
         data["body"] = body
-    if refs:
-        data["refs"] = list(refs)
-    if to:
-        data["to"] = list(to)
+    refs_list = _str_list(refs)
+    if refs_list:
+        data["refs"] = refs_list
+    to_list = _str_list(to)
+    if to_list:
+        data["to"] = to_list
     return append_line(root, pid, "set", "messages", mid, data, roster=roster)
 
 
@@ -166,8 +185,6 @@ def adopt_agreement(
             if p.kind == "project" and p.trust == "approved" and p.id != builder
         ]
         if other_projects and all(bool(commits.get(p_id)) for p_id in other_projects):
-            new_status = "landed-both"
-        elif len(other_projects) <= 1 and commits.get(pid):
             new_status = "landed-both"
         else:
             new_status = "ready-to-adopt"

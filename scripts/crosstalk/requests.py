@@ -71,13 +71,47 @@ def _recipients(doc: dict) -> List[str]:
     return out
 
 
-def pending_recipients(doc: dict, replies: List[dict]) -> List[str]:
+def _is_approved(pid, roster) -> bool:
+    if roster is None:
+        return True
+    if not isinstance(pid, str) or not pid:
+        return False
+    participants = getattr(roster, "participants", roster)
+    if isinstance(participants, dict):
+        p = participants.get(pid)
+        if p is None:
+            return False
+        trust = p.get("trust") if isinstance(p, dict) else getattr(p, "trust", None)
+        return trust == "approved"
+    return False
+
+
+def _is_approved_project(pid: str, roster) -> bool:
+    if roster is None:
+        return True
+    participants = getattr(roster, "participants", roster)
+    if isinstance(participants, dict):
+        p = participants.get(pid)
+        if p is None:
+            return False
+        kind = p.get("kind") if isinstance(p, dict) else getattr(p, "kind", None)
+        trust = p.get("trust") if isinstance(p, dict) else getattr(p, "trust", None)
+        return kind == "project" and trust == "approved"
+    return False
+
+
+def pending_recipients(doc: dict, replies: List[dict], roster=None) -> List[str]:
     """Recipient pids in `to` (preserving order, deduplicated) that have not replied."""
-    replied = {r.get("from") for r in replies if isinstance(r.get("from"), str)}
+    replied = {
+        r.get("from")
+        for r in replies
+        if isinstance(r.get("from"), str) and _is_approved(r.get("from"), roster)
+    }
     return [pid for pid in _recipients(doc) if pid not in replied]
 
 
-def _requests(docs: Dict, pid=None, open_only: bool = True) -> List[Tuple[str, dict, List[dict]]]:
+def _requests(docs: Dict, pid=None, open_only: bool = True,
+              roster=None) -> List[Tuple[str, dict, List[dict]]]:
     messages = _messages(docs)
     replies = _replies_by_request(messages)
     out = []
@@ -89,43 +123,56 @@ def _requests(docs: Dict, pid=None, open_only: bool = True) -> List[Tuple[str, d
         if pid is not None and not _addressed(doc, pid):
             continue
         if open_only:
+            trusted_replies = [
+                r for r in doc_replies if _is_approved(r.get("from"), roster)
+            ]
             if pid is None:
                 if len(recipients) >= 2:
-                    if not pending_recipients(doc, doc_replies):
+                    if not pending_recipients(doc, doc_replies, roster=roster):
                         continue
-                elif doc_replies:
+                elif len(recipients) == 1:
+                    if any(r.get("from") in (recipients[0], "owner") for r in trusted_replies):
+                        continue
+                elif trusted_replies:
                     continue
             else:
                 if doc.get("from") == pid and pid not in recipients:
                     continue
                 if len(recipients) == 1:
-                    if doc_replies:
+                    if any(
+                        r.get("from") == pid
+                        or (_is_approved(r.get("from"), roster) and r.get("from") in (recipients[0], "owner"))
+                        for r in doc_replies
+                    ):
                         continue
-                elif any(r.get("from") == pid for r in doc_replies):
+                elif any(
+                    r.get("from") == pid and _is_approved(r.get("from"), roster)
+                    for r in doc_replies
+                ):
                     continue
         out.append((did, doc, doc_replies))
     out.sort(key=lambda item: _t(item[1]), reverse=True)
     return out
 
 
-def open_requests(docs: Dict) -> List[Tuple[str, dict, List[dict]]]:
+def open_requests(docs: Dict, roster=None) -> List[Tuple[str, dict, List[dict]]]:
     """Open requests over the replayed docs, newest first.
 
     Returns a list of (id, doc, [reply docs]) for every messages doc with
     kind == "request" that no messages doc's replyTo points at, newest first
     by the enriched t (the same rule the page uses).
     """
-    return _requests(docs)
+    return _requests(docs, roster=roster)
 
 
-def inbox_for(docs: Dict, pid: str) -> List[Tuple[str, dict, List[dict]]]:
+def inbox_for(docs: Dict, pid: str, roster=None) -> List[Tuple[str, dict, List[dict]]]:
     """The open requests addressed to pid (to contains pid, or to absent), newest first."""
-    return _requests(docs, pid=pid)
+    return _requests(docs, pid=pid, roster=roster)
 
 
-def all_requests_for(docs: Dict, pid: str) -> List[Tuple[str, dict, List[dict]]]:
+def all_requests_for(docs: Dict, pid: str, roster=None) -> List[Tuple[str, dict, List[dict]]]:
     """Every request addressed to pid (to contains pid, or to absent), newest first, answered included."""
-    return _requests(docs, pid=pid, open_only=False)
+    return _requests(docs, pid=pid, open_only=False, roster=roster)
 
 
 def unanswered_owner_messages(docs: Dict, pid: str) -> List[Tuple[str, dict, List[dict]]]:
@@ -156,7 +203,7 @@ def _agreement_time(doc: dict) -> str:
     return t if isinstance(t, str) else ""
 
 
-def agreements_to_adopt_for(docs: Dict, pid: str) -> List[dict]:
+def agreements_to_adopt_for(docs: Dict, pid: str, roster=None) -> List[dict]:
     """Unheld agreements ready for pid to adopt with no commits from pid yet, newest first."""
     out = []  # type: List[dict]
     for (coll, did), doc in docs.items():
@@ -170,7 +217,11 @@ def agreements_to_adopt_for(docs: Dict, pid: str) -> List[dict]:
         is_adopter = (
             adopter == pid
             or (isinstance(adopter, list) and pid in adopter)
-            or (adopter in (None, "", "all", "both") and doc.get("builder") != pid)
+            or (
+                adopter in (None, "", "all", "both")
+                and doc.get("builder") != pid
+                and _is_approved_project(pid, roster)
+            )
         )
         if not is_adopter:
             continue
@@ -197,7 +248,10 @@ def _parse_iso(ts) -> Optional[float]:
             return None
     if dt.tzinfo is None:
         dt = dt.replace(tzinfo=timezone.utc)
-    return dt.timestamp()
+    try:
+        return dt.astimezone(timezone.utc).timestamp()
+    except (OverflowError, OSError, ValueError):
+        return None
 
 
 def stale_locks_for(docs: Dict, pid: str, now_iso: Optional[str] = None,

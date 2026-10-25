@@ -311,6 +311,64 @@ class ConsultsUnitTests(unittest.TestCase):
         with self.assertRaises(ValueError):
             post_reply(self.r.root, "bewareilive", "vc-r1", "Reply dup", msg_id="bewareilive-custom1", roster=self.roster)
 
+    def test_adopt_agreement_builder_or_reviewer_does_not_prematurely_land_both(self):
+        from crosstalk.consults import adopt_agreement
+
+        self.r.write_roster(SPEC_ROSTER)
+        roster = load_roster(self.r.root / "participants.json")
+        self.r.write_log("vectorcraft", [
+            line(1, "vectorcraft", collection="agreements", id_="a-all-proj",
+                 data={
+                     "builder": "vectorcraft",
+                     "adopter": "all",
+                     "status": "ready-to-adopt",
+                     "commits": {"vectorcraft": ["1111111"]},
+                     "summary": "Shared agreement",
+                 })
+        ])
+        res_builder = adopt_agreement(self.r.root, "vectorcraft", "a-all-proj", "2222222", roster=roster)
+        self.assertEqual(res_builder["status"], "ready-to-adopt")
+        res_reviewer = adopt_agreement(self.r.root, "codex", "a-all-proj", "3333333", roster=roster)
+        self.assertEqual(res_reviewer["status"], "ready-to-adopt")
+        res_adopter = adopt_agreement(self.r.root, "bewareilive", "a-all-proj", "4444444", roster=roster)
+        self.assertEqual(res_adopter["status"], "landed-both")
+
+    def test_consult_and_reply_reject_trailing_newline_and_wrap_bare_str_refs_to(self):
+        from crosstalk.consults import post_consult, post_reply
+
+        for bad in ("Trailing newline\n", "Leading\nnewline", "Carriage\rreturn", "   "):
+            with self.assertRaises(ValueError):
+                post_consult(self.r.root, "bewareilive", bad, roster=self.roster)
+
+        ln = post_consult(
+            self.r.root,
+            "bewareilive",
+            "  Clean summary  ",
+            refs="bewareilive@51e7709",
+            to="vectorcraft",
+            roster=self.roster,
+        )
+        doc = self.docs()[("messages", ln.id)]
+        self.assertEqual(doc["summary"], "Clean summary")
+        self.assertEqual(doc["refs"], ["bewareilive@51e7709"])
+        self.assertEqual(doc["to"], ["vectorcraft"])
+
+        for bad in ("Trailing newline\n", "Carriage\rreturn", ""):
+            with self.assertRaises(ValueError):
+                post_reply(self.r.root, "vectorcraft", ln.id, bad, roster=self.roster)
+
+        rep_ln = post_reply(
+            self.r.root,
+            "vectorcraft",
+            ln.id,
+            "  Ack reply  ",
+            refs="vectorcraft@a1b2c3d",
+            roster=self.roster,
+        )
+        rep_doc = self.docs()[("messages", rep_ln.id)]
+        self.assertEqual(rep_doc["summary"], "Ack reply")
+        self.assertEqual(rep_doc["refs"], ["vectorcraft@a1b2c3d"])
+
 
 class ConsultsCliTests(unittest.TestCase):
     def setUp(self):

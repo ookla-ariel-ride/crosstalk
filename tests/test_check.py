@@ -219,6 +219,19 @@ class TrustTests(unittest.TestCase):
             ps = self.check(r)
             self.assertEqual([(p.line, p.fatal) for p in ps], [(5, True)])
 
+    def test_message_problems_rejects_trailing_newline_and_cr_in_summary(self):
+        from crosstalk.logs import message_problems
+
+        with TempRepo() as r:
+            roster = load_roster(r.write_roster(roster_with_gemini()))
+            for bad in ("Trailing\n", "\nLeading", "Carriage\rreturn"):
+                errs, _ = message_problems(
+                    "messages", "set",
+                    {"from": "codex", "kind": "sync", "summary": bad},
+                    roster,
+                )
+                self.assertIn("summary must be one line (put the rest in body)", errs)
+
 
 if __name__ == "__main__":
     unittest.main()
