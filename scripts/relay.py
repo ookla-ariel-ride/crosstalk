@@ -15,7 +15,7 @@ from crosstalk.importer import import_snapshots, merge_snapshots  # noqa: E402
 from crosstalk.logs import append_line, check_all, message_problems  # noqa: E402
 from crosstalk.onboard import onboard, regenerate_kit  # noqa: E402
 from crosstalk.participants import load_roster  # noqa: E402
-from crosstalk.posters import claim_file, release_file  # noqa: E402
+from crosstalk.posters import claim_file, land_sync, release_file  # noqa: E402
 from crosstalk.pull import pull  # noqa: E402
 from crosstalk.replay import enrich_messages, load_all_lines, replay  # noqa: E402
 from crosstalk.requests import all_requests_for, inbox_for  # noqa: E402
@@ -300,6 +300,18 @@ def cmd_release(args):
     return 0
 
 
+def cmd_land_sync(args):
+    try:
+        res = land_sync(ROOT, args.from_, args.commit, args.summary,
+                        files=args.files, adopter=args.adopter,
+                        agreement_id=args.agreement_id, body=args.body)
+    except ValueError as e:
+        err(str(e))
+        return 1
+    print(json.dumps(res, ensure_ascii=False, sort_keys=True, indent=2))
+    return 0
+
+
 def build_parser():
     ap = argparse.ArgumentParser(prog="relay.py", description=__doc__)
     sub = ap.add_subparsers(dest="cmd", required=True)
@@ -385,6 +397,16 @@ def build_parser():
     rl_g.add_argument("--path", help="path of the locked file")
     rl_g.add_argument("--id", dest="lock_id", help="lock doc id")
     rl.set_defaults(fn=cmd_release)
+
+    ls = sub.add_parser("land-sync", help="announce a landed shared commit, update agreement, and release locks")
+    ls.add_argument("--from", dest="from_", required=True)
+    ls.add_argument("--commit", required=True)
+    ls.add_argument("--summary", required=True)
+    ls.add_argument("--files", action="extend", nargs="+", metavar="PATH")
+    ls.add_argument("--adopter", help="adopter participant id (default: all)")
+    ls.add_argument("--agreement-id", dest="agreement_id", help="existing agreement doc id")
+    ls.add_argument("--body", help="optional sync message body")
+    ls.set_defaults(fn=cmd_land_sync)
 
     sv = sub.add_parser("serve", help="run the page host and API server")
     sv.add_argument("--port", type=int, default=8484,

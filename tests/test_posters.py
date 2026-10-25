@@ -11,6 +11,7 @@ from helpers import SPEC_ROSTER, TempRepo
 from crosstalk.participants import load_roster
 from crosstalk.posters import (
     claim_file,
+    land_sync,
     release_file,
     slugify_path,
 )
@@ -128,6 +129,93 @@ class ClaimReleaseTests(unittest.TestCase):
             p = c.run("claim", "--from", "ghost", "--path", "tools/gate-host")
             self.assertEqual(p.returncode, 1)
             self.assertIn("ghost", p.stderr)
+
+
+class LandSyncTests(unittest.TestCase):
+    def test_cli_land_sync_creates_agreement_message_and_releases_locks(self):
+        with TempRepo() as r:
+            c = PosterCli(r)
+            c.run("claim", "--from", "vectorcraft", "--path", "tools/gate-host")
+            c.run("claim", "--from", "vectorcraft", "--path", "tools/other")
+            c.run("claim", "--from", "bewareilive", "--path", "tools/gate-host")
+
+            p = c.run("land-sync", "--from", "vectorcraft", "--commit", "a1b2c3d",
+                      "--summary", "Gate host lanes in Scratch",
+                      "--files", "tools/gate-host", "--adopter", "bewareilive",
+                      "--body", "Details on gate-host")
+            self.assertEqual(p.returncode, 0, p.stderr)
+            out = json.loads(p.stdout)
+            self.assertEqual(out["message_id"], "vectorcraft-sync-a1b2c3d")
+            self.assertEqual(out["agreement_id"], "a-vectorcraft-a1b2c3d")
+            self.assertEqual(out["released_locks"], ["l-vectorcraft-tools-gate-host"])
+
+            docs = c.docs()
+            msg = docs[("messages", "vectorcraft-sync-a1b2c3d")]
+            self.assertEqual(msg["from"], "vectorcraft")
+            self.assertEqual(msg["kind"], "sync")
+            self.assertEqual(msg["summary"], "Gate host lanes in Scratch")
+            self.assertEqual(msg["body"], "Details on gate-host")
+            self.assertEqual(msg["refs"], ["vectorcraft@a1b2c3d"])
+
+            agr = docs[("agreements", "a-vectorcraft-a1b2c3d")]
+            self.assertEqual(agr["status"], "ready-to-adopt")
+            self.assertEqual(agr["builder"], "vectorcraft")
+            self.assertEqual(agr["adopter"], "bewareilive")
+            self.assertEqual(agr["summary"], "Gate host lanes in Scratch")
+            self.assertEqual(agr["commits"], {"vectorcraft": ["a1b2c3d"]})
+            self.assertIs(agr["hold"], False)
+            self.assertTrue(agr["t"].endswith("Z"))
+            self.assertTrue(agr["updated"].endswith("Z"))
+
+            self.assertIsNotNone(docs[("locks", "l-vectorcraft-tools-gate-host")]["released"])
+            self.assertIsNone(docs[("locks", "l-vectorcraft-tools-other")]["released"])
+            self.assertIsNone(docs[("locks", "l-bewareilive-tools-gate-host")]["released"])
+            self.assertEqual(c.run("check").returncode, 0)
+
+    def test_land_sync_updates_existing_agreement_preserving_commits(self):
+        with TempRepo() as r:
+            c = PosterCli(r)
+            c.run("append", "--from", "bewareilive", "--op", "set",
+                  "--collection", "agreements", "--id", "a-shared-gate",
+                  "--data", json.dumps({
+                      "t": "2026-10-20T10:00:00Z",
+                      "summary": "Initial proposal",
+                      "status": "building",
+                      "builder": "vectorcraft",
+                      "adopter": "all",
+                      "commits": {"bewareilive": ["0000abc"], "vectorcraft": ["1111def"]},
+                      "hold": True,
+                  }))
+            roster = load_roster(r.root / "participants.json")
+            res = land_sync(r.root, "vectorcraft", "2222fed", "Updated gate host",
+                            agreement_id="a-shared-gate", roster=roster)
+            self.assertEqual(res["agreement_id"], "a-shared-gate")
+            # Re-running with same commit does not duplicate it in commits[pid]
+            land_sync(r.root, "vectorcraft", "2222fed", "Updated gate host",
+                      agreement_id="a-shared-gate", roster=roster)
+
+            docs = c.docs()
+            agr = docs[("agreements", "a-shared-gate")]
+            self.assertEqual(agr["t"], "2026-10-20T10:00:00Z")
+            self.assertEqual(agr["status"], "ready-to-adopt")
+            self.assertEqual(agr["adopter"], "all")
+            self.assertIs(agr["hold"], False)
+            self.assertEqual(agr["commits"], {
+                "bewareilive": ["0000abc"],
+                "vectorcraft": ["1111def", "2222fed"],
+            })
+
+    def test_land_sync_validates_commit_and_summary(self):
+        with TempRepo() as r:
+            c = PosterCli(r)
+            for bad_sha in ("not-hex", "123456", "g1b2c3d"):
+                p = c.run("land-sync", "--from", "vectorcraft", "--commit", bad_sha,
+                          "--summary", "Valid summary")
+                self.assertEqual(p.returncode, 1, bad_sha)
+            for bad_sum in ("", "   ", "line1\nline2"):
+                p = c.run("land-sync", "--from", "vectorcraft", "--commit", "a1b2c3d",
+                          "--summary", bad_sum)
+                self.assertEqual(p.returncode, 1, bad_sum)
 
 
 if __name__ == "__main__":
