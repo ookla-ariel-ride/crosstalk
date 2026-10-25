@@ -9,6 +9,7 @@ from .logs import Line, append_line
 from .participants import Roster, load_roster
 from .posters import next_stamp
 from .replay import enrich_messages, load_all_lines, replay
+from .requests import extract_mentions
 
 COMMIT_RE = re.compile(r"^[0-9a-fA-F]{7,40}$")
 _LAST_DT = None  # type: Optional[datetime]
@@ -131,6 +132,10 @@ def post_consult(
     to_list = _str_list(to)
     if to_list:
         data["to"] = to_list
+    else:
+        mentioned = extract_mentions({"summary": summary, "body": body or ""}, roster=roster)
+        if mentioned:
+            data["to"] = mentioned
     return append_line(root, pid, "set", "messages", mid, data, roster=roster)
 
 

@@ -138,7 +138,7 @@ def cmd_inbox(args):
         if args.all
         else inbox_for(docs, args.pid, roster=roster)
     )
-    owner_msgs = unanswered_owner_messages(docs, args.pid)
+    owner_msgs = unanswered_owner_messages(docs, args.pid, roster=roster)
     out = {
         "pid": args.pid,
         "roster": {pid: {"trust": p.trust} for pid, p in roster.participants.items()},

@@ -369,6 +369,41 @@ class ConsultsUnitTests(unittest.TestCase):
         self.assertEqual(rep_doc["summary"], "Ack reply")
         self.assertEqual(rep_doc["refs"], ["vectorcraft@a1b2c3d"])
 
+    def test_post_consult_auto_populates_to_from_at_mentions_when_to_omitted(self):
+        from crosstalk.consults import post_consult
+
+        # Single @mention in summary
+        ln1 = post_consult(
+            self.r.root,
+            "vectorcraft",
+            "@BewareILive how does defender sound work?",
+            body="See vectorcraft@f0bfbca3 for context",
+            roster=self.roster,
+        )
+        doc1 = self.docs()[("messages", ln1.id)]
+        self.assertEqual(doc1["to"], ["bewareilive"])
+
+        # Aliases and body @mentions
+        ln2 = post_consult(
+            self.r.root,
+            "vectorcraft",
+            "Audio timing question",
+            body="Asking @bil and @amb (cc @reviewers)",
+            roster=self.roster,
+        )
+        doc2 = self.docs()[("messages", ln2.id)]
+        self.assertEqual(doc2["to"], ["bewareilive", "avoidmissingball", "codex"])
+
+        # @everyone broadcast leaves `to` omitted
+        ln3 = post_consult(
+            self.r.root,
+            "vectorcraft",
+            "@everyone status check on @bil",
+            roster=self.roster,
+        )
+        doc3 = self.docs()[("messages", ln3.id)]
+        self.assertNotIn("to", doc3)
+
 
 class ConsultsCliTests(unittest.TestCase):
     def setUp(self):
@@ -442,6 +477,16 @@ class ConsultsCliTests(unittest.TestCase):
         self.assertEqual(msg["body"], "Question...")
         self.assertEqual(msg["refs"], ["avoidmissingball@91bab82"])
         self.assertEqual(msg["to"], ["vectorcraft", "bewareilive"])
+
+        p_mention = self.run_cli(
+            "consult",
+            "--from", "vectorcraft",
+            "--summary", "@BewareILive how does defender sound work?",
+        )
+        self.assertEqual(p_mention.returncode, 0, p_mention.stderr)
+        mention_id = p_mention.stdout.strip()
+        mention_msg = self.read_replay()["messages"][mention_id]
+        self.assertEqual(mention_msg["to"], ["bewareilive"])
 
     def test_cli_adopt(self):
         self.r.write_log("vectorcraft", [

@@ -504,7 +504,7 @@
     if (!/[?&]viewer=reader\b/.test(location.search)) return res("readerNoControls", true, "skipped: open index.html?viewer=reader");
     await go("timeline");
     await addDoc("messages", "rd-1", { t: T0, from: "codex", kind: "sync", summary: "Seen by a reader" });
-    var controls = document.querySelectorAll("#composer, .star, .resolve, .reply-btn, .promote-btn, [id^=approve-], [id^=hold-], [id^=done-], #onboard-open").length;
+    var controls = document.querySelectorAll("#composer, .star, .resolve, .resolve-inc, .reply-btn, .promote-btn, [id^=approve-], [id^=hold-], [id^=done-], #onboard-open").length;
     var shown = $("viewer").textContent;
     return res("readerNoControls", controls === 0 && shown === "Viewing as a viewer (read only)", "controls=" + controls + " shown=" + JSON.stringify(shown));
   });
@@ -514,7 +514,7 @@
     if (!/[?&]viewer=editor\b/.test(location.search)) return res("editorNoControls", true, "skipped: open index.html?viewer=editor");
     await go("timeline");
     await addDoc("messages", "ed-1", { t: T0, from: "codex", kind: "sync", summary: "Seen by an editor" });
-    var controls = document.querySelectorAll("#composer, .star, .resolve, .reply-btn, .promote-btn, [id^=approve-], [id^=hold-], [id^=done-], #onboard-open").length;
+    var controls = document.querySelectorAll("#composer, .star, .resolve, .resolve-inc, .reply-btn, .promote-btn, [id^=approve-], [id^=hold-], [id^=done-], #onboard-open").length;
     var shown = $("viewer").textContent;
     return res("editorNoControls", controls === 0 && shown === "Viewing as Test Editor (editor)", "controls=" + controls + " shown=" + JSON.stringify(shown));
   });
@@ -918,6 +918,140 @@
     var ok = !!logo && logo.tagName.toLowerCase() === "svg" &&
       !!fav && /^data:image\/(svg\+xml|png)[;,]/.test(fav.getAttribute("href") || "");
     return res("logoAndFaviconPresent", ok, "logo=" + !!logo + " fav=" + (fav ? fav.getAttribute("rel") : "none"));
+  });
+
+  S.push(async function composerSubjectAndBody() {
+    await go("timeline");
+    var subj = $("noteSubject"), ta = $("note");
+    if (!subj || !ta) return res("composerSubjectAndBody", false, "missing #noteSubject or #note");
+    subj.value = "Explicit subject line";
+    subj.dispatchEvent(new Event("input", { bubbles: true }));
+    ta.value = "Short body";
+    ta.dispatchEvent(new Event("input", { bubbles: true }));
+    ta.dispatchEvent(new KeyboardEvent("keydown", { key: "Enter", metaKey: true, bubbles: true, cancelable: true }));
+    await tick(80);
+    var msgs = Object.keys(__store.messages || {}).map(function (id) { return __store.messages[id]; });
+    var posted = msgs.filter(function (m) { return m && m.summary === "Explicit subject line"; })[0];
+    var ok = !!posted && posted.summary === "Explicit subject line" && posted.body === "Short body" && $("noteSubject").value === "" && $("note").value === "";
+    return res("composerSubjectAndBody", ok, "posted=" + JSON.stringify(posted));
+  });
+
+  S.push(async function composerToChipsAndMentions() {
+    await go("timeline");
+    var bilChip = $("to-chip-bewareilive"), everyChip = $("to-everyone"), projChip = $("to-projects");
+    if (!bilChip || !everyChip || !projChip) return res("composerToChipsAndMentions", false, "missing recipient chips");
+    bilChip.click(); await tick();
+    var bilPressed = $("to-chip-bewareilive").getAttribute("aria-pressed") === "true" && $("to-everyone").getAttribute("aria-pressed") === "false";
+    var ta = $("note");
+    ta.value = "Syncing with @VectorCraft on shared audio";
+    ta.dispatchEvent(new Event("input", { bubbles: true }));
+    var labText = document.querySelector("#composer label").textContent;
+    $("notePost").click(); await tick(80);
+    var msgs = Object.keys(__store.messages || {}).map(function (id) { return Object.assign({ _id: id }, __store.messages[id]); });
+    var posted1 = msgs.filter(function (m) { return m.summary === "Syncing with @VectorCraft on shared audio"; })[0];
+    var toOk = !!posted1 && Array.isArray(posted1.to) && JSON.stringify(posted1.to) === JSON.stringify(["bewareilive", "vectorcraft"]);
+    var c1 = posted1 ? card(posted1._id) : null;
+    var mentionEl = c1 && c1.querySelector(".summary .mention");
+    var mentionOk = !!mentionEl && mentionEl.textContent === "@VectorCraft";
+
+    $("to-projects").click(); await tick();
+    var projPressed = $("to-projects").getAttribute("aria-pressed") === "true";
+    $("to-everyone").click(); await tick();
+    var everyReset = $("to-everyone").getAttribute("aria-pressed") === "true";
+    ta = $("note");
+    ta.value = "Broadcast update for @Everyone";
+    ta.dispatchEvent(new Event("input", { bubbles: true }));
+    $("notePost").click(); await tick(80);
+    msgs = Object.keys(__store.messages || {}).map(function (id) { return __store.messages[id]; });
+    var posted2 = msgs.filter(function (m) { return m && m.summary === "Broadcast update for @Everyone"; })[0];
+    var broadcastOk = !!posted2 && posted2.to === undefined;
+    var ok = bilPressed && /BewareILive/.test(labText) && /VectorCraft/.test(labText) && toOk && mentionOk && projPressed && everyReset && broadcastOk;
+    return res("composerToChipsAndMentions", ok,
+      "bilPressed=" + bilPressed + " lab=" + JSON.stringify(labText) + " to=" + JSON.stringify(posted1 && posted1.to) +
+      " mentionOk=" + mentionOk + " projPressed=" + projPressed + " everyReset=" + everyReset + " broadcastOk=" + broadcastOk);
+  });
+
+  S.push(async function composerMentionMenu() {
+    await go("timeline");
+    var ta = $("note"), menu = $("mention-menu");
+    if (!ta || !menu) return res("composerMentionMenu", false, "missing #note or #mention-menu");
+    ta.focus();
+    ta.value = "Hello @bew";
+    ta.setSelectionRange(ta.value.length, ta.value.length);
+    ta.dispatchEvent(new Event("input", { bubbles: true }));
+    await tick();
+    menu = $("mention-menu");
+    var openOk = !menu.hidden && menu.querySelectorAll(".mention-item").length > 0;
+    var item = menu.querySelector(".mention-item[data-handle='BewareILive']") || menu.querySelector(".mention-item");
+    if (item) item.click();
+    await tick();
+    var valAfter = $("note").value;
+    var closedAfter = $("mention-menu").hidden;
+    $("note").value = "";
+    $("note").dispatchEvent(new Event("input", { bubbles: true }));
+    var ok = openOk && valAfter === "Hello @BewareILive " && closedAfter;
+    return res("composerMentionMenu", ok, "openOk=" + openOk + " valAfter=" + JSON.stringify(valAfter) + " closedAfter=" + closedAfter);
+  });
+
+  S.push(async function composerAllMessageKinds() {
+    await go("timeline");
+    // 1. /ask slash command -> request (shows on Help tab and tracks @BewareILive)
+    var ta = $("note");
+    ta.value = "/ask @BewareILive Can we share the CRT shader?";
+    ta.dispatchEvent(new Event("input", { bubbles: true }));
+    var liveKindAsk = $("noteKind").value === "request";
+    $("notePost").click(); await tick(80);
+    await go("help");
+    var onHelp = helpHas("Can we share the CRT shader?");
+    await go("timeline");
+
+    // 2. agreement -> writes agreements/a-<id>
+    var k = $("noteKind"); k.value = "agreement"; k.dispatchEvent(new Event("change", { bubbles: true }));
+    $("to-chip-vectorcraft").click(); await tick();
+    var subj = $("noteSubject"); subj.value = "Shared vector math header"; subj.dispatchEvent(new Event("input", { bubbles: true }));
+    ta = $("note"); ta.value = "Both projects adopt vec2.h"; ta.dispatchEvent(new Event("input", { bubbles: true }));
+    $("notePost").click(); await tick(80);
+    var agrIds = Object.keys(__store.agreements || {}).filter(function (id) { return /^a-own-/.test(id) && __store.agreements[id].summary === "Shared vector math header"; });
+    var agrOk = agrIds.length === 1 && __store.agreements[agrIds[0]].builder === "vectorcraft" && __store.agreements[agrIds[0]].status === "agreed";
+
+    // 3. /alert slash command -> kind: "alert", important: true
+    ta = $("note"); ta.value = "/alert CI runner disk is 95% full"; ta.dispatchEvent(new Event("input", { bubbles: true }));
+    var liveKindAlert = $("noteKind").value === "alert";
+    $("notePost").click(); await tick(80);
+    var msgs = Object.keys(__store.messages || {}).map(function (id) { return __store.messages[id]; });
+    var alertMsg = msgs.filter(function (m) { return m && m.summary === "CI runner disk is 95% full"; })[0];
+    var alertOk = liveKindAlert && !!alertMsg && alertMsg.kind === "alert" && alertMsg.important === true;
+
+    // 4. lesson -> writes lessons/lesson-<id>
+    k = $("noteKind"); k.value = "lesson"; k.dispatchEvent(new Event("change", { bubbles: true }));
+    subj = $("noteSubject"); subj.value = "Never block on audio init"; subj.dispatchEvent(new Event("input", { bubbles: true }));
+    ta = $("note"); ta.value = "Gate audio behind user gesture"; ta.dispatchEvent(new Event("input", { bubbles: true }));
+    $("notePost").click(); await tick(80);
+    var lesIds = Object.keys(__store.lessons || {}).filter(function (id) { return /^lesson-own-/.test(id) && __store.lessons[id].summary === "Never block on audio init"; });
+    var lesOk = lesIds.length === 1 && __store.lessons[lesIds[0]].fix === "Gate audio behind user gesture";
+
+    // 5. incident -> writes incidents/i-<id> and resolves on Incidents tab
+    k = $("noteKind"); k.value = "incident"; k.dispatchEvent(new Event("change", { bubbles: true }));
+    subj = $("noteSubject"); subj.value = "MAME window stole focus"; subj.dispatchEvent(new Event("input", { bubbles: true }));
+    ta = $("note"); ta.value = "Headless flag missing in runner"; ta.dispatchEvent(new Event("input", { bubbles: true }));
+    $("notePost").click(); await tick(80);
+    var incIds = Object.keys(__store.incidents || {}).filter(function (id) { return /^i-own-/.test(id) && __store.incidents[id].summary === "MAME window stole focus"; });
+    var incId = incIds[0];
+    var incCreated = !!incId && __store.incidents[incId].end === null;
+    await go("incidents");
+    var resBtn = incId ? $("resolve-inc-" + incId) : null;
+    if (resBtn) { resBtn.click(); await tick(80); }
+    var incResolved = !!incId && !!__store.incidents[incId].end && !$("resolve-inc-" + incId);
+    await go("timeline");
+
+    // Clean up open help request so later scenarios see clean state if needed
+    var reqId = Object.keys(__store.messages || {}).filter(function (id) { return __store.messages[id].summary === "@BewareILive Can we share the CRT shader?"; })[0];
+    if (reqId) await addDoc("messages", "rep-" + reqId, { t: ago(0), from: "bewareilive", kind: "reply", summary: "Yes", replyTo: reqId });
+
+    var ok = liveKindAsk && onHelp && agrOk && alertOk && lesOk && incCreated && !!resBtn && incResolved;
+    return res("composerAllMessageKinds", ok,
+      "liveKindAsk=" + liveKindAsk + " onHelp=" + onHelp + " agrOk=" + agrOk + " alertOk=" + alertOk +
+      " lesOk=" + lesOk + " incCreated=" + incCreated + " resBtn=" + !!resBtn + " incResolved=" + incResolved);
   });
 
   S.push(async function partlyLive() {

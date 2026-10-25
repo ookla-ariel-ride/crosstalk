@@ -6,8 +6,16 @@ omitted means everyone (a broadcast). Open-ness is derived, never stored, so
 it cannot drift or race.
 """
 from datetime import datetime, timezone
+import re
 import time
 from typing import Dict, List, Optional, Tuple
+
+_MENTION_RE = re.compile(r"(?:^|[\s(\[,:;])@([A-Za-z0-9_-]+)")
+_BROADCAST_HANDLES = ("everyone", "all", "channel", "here")
+_ALIASES = {"bil": "bewareilive", "vc": "vectorcraft", "amb": "avoidmissingball"}
+_DEFAULT_PROJECTS = ("avoidmissingball", "bewareilive", "vectorcraft")
+_DEFAULT_REVIEWERS = ("codex",)
+_OWNER_MESSAGE_KINDS = ("owner", "alert", "agreement", "lesson", "decision")
 
 
 def _messages(docs: Dict) -> Dict[str, dict]:
@@ -43,10 +51,65 @@ def _t(doc: dict) -> str:
     return t if isinstance(t, str) else ""
 
 
-def _addressed(doc: dict, pid: str) -> bool:
+def _norm(s: str) -> str:
+    return re.sub(r"[^a-z0-9]", "", s.lower())
+
+
+def extract_mentions(doc: dict, roster=None) -> List[str]:
+    """Resolve @mentions in summary/body to participant ids (empty list if broadcast or none)."""
+    text = "%s\n%s" % (doc.get("summary") or "", doc.get("body") or "")
+    tokens = [_norm(m.group(1)) for m in _MENTION_RE.finditer(text)]
+    if not tokens:
+        return []
+    if any(t in _BROADCAST_HANDLES for t in tokens):
+        return []
+    participants = getattr(roster, "participants", roster) if roster is not None else None
+    by_norm = dict(_ALIASES)
+    projects = []  # type: List[str]
+    reviewers = []  # type: List[str]
+    if isinstance(participants, dict) and participants:
+        valid_pids = set(participants.keys())
+        by_norm = {k: v for k, v in _ALIASES.items() if v in valid_pids}
+        for pid, p in participants.items():
+            if pid == "owner":
+                by_norm["owner"] = "owner"
+                continue
+            by_norm[_norm(pid)] = pid
+            name = p.get("name") if isinstance(p, dict) else getattr(p, "name", None)
+            if isinstance(name, str) and name:
+                by_norm[_norm(name)] = pid
+            kind = p.get("kind") if isinstance(p, dict) else getattr(p, "kind", None)
+            if kind == "project":
+                projects.append(pid)
+            elif kind in ("reviewer", "researcher"):
+                reviewers.append(pid)
+    else:
+        for pid in _DEFAULT_PROJECTS + _DEFAULT_REVIEWERS + ("owner",):
+            by_norm[_norm(pid)] = pid
+        projects = list(_DEFAULT_PROJECTS)
+        reviewers = list(_DEFAULT_REVIEWERS)
+    out = []  # type: List[str]
+    seen = set()
+    for t in tokens:
+        matched = []  # type: List[str]
+        if t in ("projects", "teams"):
+            matched = projects
+        elif t == "reviewers":
+            matched = reviewers
+        elif t in by_norm:
+            matched = [by_norm[t]]
+        for pid in matched:
+            if pid not in seen:
+                seen.add(pid)
+                out.append(pid)
+    return out
+
+
+def _addressed(doc: dict, pid: str, roster=None) -> bool:
     to = doc.get("to")
     if to is None:
-        return True
+        mentioned = extract_mentions(doc, roster=roster)
+        return not mentioned or pid in mentioned
     if isinstance(to, str):
         return pid == to
     if isinstance(to, list):
@@ -54,8 +117,10 @@ def _addressed(doc: dict, pid: str) -> bool:
     return False
 
 
-def _recipients(doc: dict) -> List[str]:
+def _recipients(doc: dict, roster=None) -> List[str]:
     to = doc.get("to")
+    if to is None:
+        return extract_mentions(doc, roster=roster)
     if isinstance(to, str):
         raw = [to] if to else []
     elif isinstance(to, list):
@@ -107,7 +172,7 @@ def pending_recipients(doc: dict, replies: List[dict], roster=None) -> List[str]
         for r in replies
         if isinstance(r.get("from"), str) and _is_approved(r.get("from"), roster)
     }
-    return [pid for pid in _recipients(doc) if pid not in replied]
+    return [pid for pid in _recipients(doc, roster=roster) if pid not in replied]
 
 
 def _requests(docs: Dict, pid=None, open_only: bool = True,
@@ -119,8 +184,8 @@ def _requests(docs: Dict, pid=None, open_only: bool = True,
         if doc.get("kind") != "request":
             continue
         doc_replies = replies.get(did, [])
-        recipients = _recipients(doc)
-        if pid is not None and not _addressed(doc, pid):
+        recipients = _recipients(doc, roster=roster)
+        if pid is not None and not _addressed(doc, pid, roster=roster):
             continue
         if open_only:
             trusted_replies = [
@@ -175,7 +240,7 @@ def all_requests_for(docs: Dict, pid: str, roster=None) -> List[Tuple[str, dict,
     return _requests(docs, pid=pid, open_only=False, roster=roster)
 
 
-def unanswered_owner_messages(docs: Dict, pid: str) -> List[Tuple[str, dict, List[dict]]]:
+def unanswered_owner_messages(docs: Dict, pid: str, roster=None) -> List[Tuple[str, dict, List[dict]]]:
     """Owner messages addressed to pid that pid has not replied to yet, newest first."""
     messages = _messages(docs)
     replies = _replies_by_request(messages)
@@ -183,9 +248,11 @@ def unanswered_owner_messages(docs: Dict, pid: str) -> List[Tuple[str, dict, Lis
     for did, doc in messages.items():
         if doc.get("from") != "owner" or doc.get("replyTo"):
             continue
-        if not _addressed(doc, pid):
+        if doc.get("kind") not in _OWNER_MESSAGE_KINDS:
             continue
-        if pid == "owner" and "owner" not in _recipients(doc):
+        if not _addressed(doc, pid, roster=roster):
+            continue
+        if pid == "owner" and "owner" not in _recipients(doc, roster=roster):
             continue
         doc_replies = replies.get(did, [])
         if any(r.get("from") == pid for r in doc_replies):

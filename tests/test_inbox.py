@@ -434,6 +434,107 @@ class InboxTests(unittest.TestCase):
         self.assertEqual([lk["id"] for lk in stale_locks_for(docs, "bewareilive", now_iso="2026-10-21T16:00:01Z")],
                          ["l-old-1", "l-old-2"])
 
+    def test_at_mentions_target_recipients_when_to_omitted(self):
+        self.r.write_log("owner", [
+            line(1, "owner", id_="own-1", t="2026-10-24T12:00:00Z",
+                 data={"from": "owner", "kind": "owner",
+                       "summary": "@BewareILive check robotron audio",
+                       "body": "Ref vectorcraft@f0bfbca3 and user@example.com"}),
+            line(2, "owner", id_="own-2", t="2026-10-24T12:01:00Z",
+                 data={"from": "owner", "kind": "owner",
+                       "summary": "@Everyone status check"}),
+        ])
+        bil_out = self.inbox("bewareilive")
+        vc_out = self.inbox("vectorcraft")
+        self.assertEqual([m["message"]["id"] for m in bil_out["owner_messages"]],
+                         ["own-2", "own-1"])
+        self.assertEqual([m["message"]["id"] for m in vc_out["owner_messages"]],
+                         ["own-2"])
+
+    def test_at_mentions_aliases_groups_broadcast_and_owner_message_kinds(self):
+        from crosstalk.requests import extract_mentions, unanswered_owner_messages
+
+        # Test unit extraction with roster=None (defaults) and aliases
+        self.assertEqual(
+            extract_mentions({"summary": "Ping (@bil, @vc; @amb: check this)"}),
+            ["bewareilive", "vectorcraft", "avoidmissingball"],
+        )
+        self.assertEqual(
+            extract_mentions({"summary": "@projects sync up"}),
+            ["avoidmissingball", "bewareilive", "vectorcraft"],
+        )
+        self.assertEqual(
+            extract_mentions({"summary": "@teams and @reviewers"}),
+            ["avoidmissingball", "bewareilive", "vectorcraft", "codex"],
+        )
+        # Broadcast handles override specific mentions
+        for bcast in ("@everyone", "@all", "@channel", "@here"):
+            self.assertEqual(
+                extract_mentions({"summary": "%s and @BewareILive" % bcast}),
+                [],
+            )
+        # Commit refs and emails do not trigger mentions
+        self.assertEqual(
+            extract_mentions({"summary": "See vectorcraft@f0bfbca3 or dev@bewareilive.com"}),
+            [],
+        )
+        # Explicit @owner targets owner, while display name of owner with different name won't unless @owner
+        custom_roster = {
+            "owner": {"name": "VectorCraft", "kind": "person", "trust": "approved"},
+            "bewareilive": {"name": "BewareILive", "kind": "project", "trust": "approved"},
+        }
+        self.assertEqual(extract_mentions({"summary": "@VectorCraft hi"}, roster=custom_roster), [])
+        self.assertEqual(extract_mentions({"summary": "@owner hi"}, roster=custom_roster), ["owner"])
+
+        # Test CLI inbox with requests and owner_messages of various kinds (alert, agreement, lesson, decision)
+        self.r.write_log("owner", [
+            line(1, "owner", id_="own-alert", t="2026-10-24T12:00:00Z",
+                 data={"from": "owner", "kind": "alert",
+                       "summary": "Urgent: @bil fix audio"}),
+            line(2, "owner", id_="own-agree", t="2026-10-24T12:01:00Z",
+                 data={"from": "owner", "kind": "agreement",
+                       "summary": "Agreement for @projects"}),
+            line(3, "owner", id_="own-lesson", t="2026-10-24T12:02:00Z",
+                 data={"from": "owner", "kind": "lesson",
+                       "summary": "Lesson for @reviewers"}),
+            line(4, "owner", id_="own-decision", t="2026-10-24T12:03:00Z",
+                 data={"from": "owner", "kind": "decision",
+                       "summary": "Decision for @vc and @channel"}),
+            line(5, "owner", id_="own-checkin", t="2026-10-24T12:04:00Z",
+                 data={"from": "owner", "kind": "check-in",
+                       "summary": "Owner routine check-in"}),
+        ])
+        self.r.write_log("vectorcraft", [
+            line(1, "vectorcraft", id_="vc-req-bil", t="2026-10-24T12:05:00Z",
+                 data={"from": "vectorcraft", "kind": "request",
+                       "summary": "Hey @bil can you check vectorcraft@f0bfbca3?"}),
+            line(2, "vectorcraft", id_="vc-req-rev", t="2026-10-24T12:06:00Z",
+                 data={"from": "vectorcraft", "kind": "request",
+                       "summary": "Need @reviewers on this PR"}),
+        ])
+
+        bil_out = self.inbox("bewareilive")
+        self.assertEqual(
+            [m["message"]["id"] for m in bil_out["owner_messages"]],
+            ["own-decision", "own-agree", "own-alert"],
+        )
+        self.assertEqual(self.ids(bil_out), ["vc-req-bil"])
+        self.assertEqual(bil_out["requests"][0]["pending_from"], ["bewareilive"])
+
+        vc_out = self.inbox("vectorcraft")
+        self.assertEqual(
+            [m["message"]["id"] for m in vc_out["owner_messages"]],
+            ["own-decision", "own-agree"],
+        )
+        self.assertEqual(self.ids(vc_out), [])
+
+        codex_out = self.inbox("codex")
+        self.assertEqual(
+            [m["message"]["id"] for m in codex_out["owner_messages"]],
+            ["own-decision", "own-lesson"],
+        )
+        self.assertEqual(self.ids(codex_out), ["vc-req-rev"])
+
 
 if __name__ == "__main__":
     unittest.main()

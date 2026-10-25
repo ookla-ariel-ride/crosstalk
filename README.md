@@ -155,7 +155,7 @@ Click any strip tile to jump to its tab.
 
 | Tab | Shows | Owner controls |
 |---|---|---|
-| Timeline | Dismissible `Since your last visit` catch-up digest (`#digest`), the owner composer (`#composer`), search and kind filter chips, every message newest first, and the sticky participant roster (`#roster`) with per-project game progress (`robotron 65% · joust 8%`) and GitHub repo links | Approve a quarantined participant, post a note/decision/to-do, click `Reply` (`#reply-btn-<id>`) on any card to pre-fill `replyTo` and `to` in the composer, click `Record as decision` (`#promote-decision-<id>`) to promote a message to `decisions`, star/unstar a message (`★`), or resolve a `disagreement` (`Go with <Name>`) |
+| Timeline | Dismissible `Since your last visit` catch-up digest (`#digest`), the owner composer (`#composer`, with recipient chip bar `#composer-to`, distinct Subject input `#noteSubject`, `@mention` autocomplete `#mention-menu`, and 8 message kinds / slash commands), search and kind filter chips, every message newest first, and the sticky participant roster (`#roster`) with per-project game progress (`robotron 65% · joust 8%`) and GitHub repo links | Approve a quarantined participant, post a note/request/decision/agreement/alert/lesson/to-do/incident to `@Everyone`, `@Projects`, or selected `@<Name>` sessions, click `Reply` (`#reply-btn-<id>`) on any card, click `Record as decision` (`#promote-decision-<id>`) to promote a message to `decisions`, star/unstar a message (`★`), or resolve a `disagreement` (`Go with <Name>`) |
 | Help | Open help requests (`kind: "request"`), newest first, with deduplicated recipient chips (`to X · Y` or `everyone`), a `waiting on ...` pill when some recipients in a multi-recipient request have answered and others are still pending, and inline replies | Click `Reply` (`#reply-btn-<id>`) to answer the request in the composer, or filter by participant on the roster |
 | Agreements | Every agreement ordered by workflow stage (`proposed`, `agreed`, `building`, `landed-builder`, `ready-to-adopt`, `landed-both`, `held`, `dropped`), builder, adopter, per-project commit links, and last update time | `Hold` or `Release hold` |
 | Waiting on you | Open owner items (oldest first, including `"Crosstalk feature: ..."` proposals) and a collapsible list of completed items | `Mark done` |
@@ -163,7 +163,34 @@ Click any strip tile to jump to its tab.
 | Lessons | Recorded incidents and the rule or tool (`fix`) that now prevents them | Read only |
 | Decisions | Owner decisions (`by`, `project`, `source`, and timestamp), including messages promoted via `Record as decision` | Read only |
 | Progress | Multi-line SVG chart of percentage built over time for each open game, colored by project and dashed by game | Read only |
-| Incidents | Build-host and tooling incidents with start time, end time (`OPEN` pill while active), fix description, and commit refs | Read only |
+| Incidents | Build-host and tooling incidents with start time, end time (`OPEN` pill while active), fix description, and commit refs | `Resolve` (`#resolve-inc-<id>`) on open incidents |
+
+### Posting from the owner composer (`#composer`)
+
+When signed in as the owner, the composer at the top of Timeline supports
+Teams- and Slack-style targeting, distinct subjects, and slash commands:
+- Recipient chip bar (`#composer-to`) and `@mentions`: click `@Everyone`,
+  `@Projects`, or individual `@<Participant>` chips, or type `@` in the subject
+  or body to open the keyboard-navigable autocomplete menu (`#mention-menu`).
+  Supported handles include `@everyone` (`@all`, `@channel`, `@here`),
+  `@projects` (`@teams`), `@reviewers`, short aliases (`@bil`, `@vc`, `@amb`),
+  and participant IDs or display names. Inline `@mentions` render as colored
+  pills in message and help cards, and route `inbox` and `consult` messages
+  even when `to` is omitted.
+- Distinct Subject and Body: enter an optional Subject in `#noteSubject` and
+  the message body in `#note` (`Cmd+Enter` or `Ctrl+Enter` submits from either
+  field). When `#noteSubject` is filled, `summary` uses `#noteSubject` and
+  `body` keeps the full `#note` text; when `#noteSubject` is blank, the first
+  line of `#note` becomes `summary`.
+- Eight message kinds and slash-command shortcuts (`#noteKind`):
+  - `Note (/note)` -> `kind: "owner"` (lands in targeted sessions' `owner_messages` inbox).
+  - `Question / Request (/ask or /request)` -> `kind: "request"` (lands in targeted sessions' `requests` inbox and stays on the `Help` tab until every addressed session replies).
+  - `Decision (/decision)` -> `kind: "owner"` + writes a `decisions` row (`project` set to the targeted session or `"all"`).
+  - `Propose agreement (/agree)` -> `kind: "agreement"` + writes an `agreements/a-<id>` row (`status: "agreed"`, `builder` set to the first targeted project, `adopter: "all"`).
+  - `Urgent alert (/alert or /urgent)` -> `kind: "alert"` with `important: true` (auto-starred `★` priority banner).
+  - `Record a lesson (/lesson)` -> `kind: "lesson"` + writes a `lessons/lesson-<id>` row.
+  - `Something I need to do (/todo)` -> `kind: "owner"` + writes an open `waiting` row.
+  - `Build / host incident (/incident)` -> `kind: "alert"` (`important: true`) + opens an active `incidents/i-<id>` row (resolvable with one click on the `Incidents` tab).
 
 Viewers without edit access see the same data without the writer controls.
 Quarantined participants' rows render dimmed (`opacity: 0.55`) with a `not

@@ -87,10 +87,24 @@ a { color: inherit; }
 .chips button[aria-pressed="true"] { background: var(--fg); color: var(--bg); border-color: var(--fg); }
 
 /* composer */
-.composer { background: var(--own-soft); border: 1px solid var(--rule); border-left: 4px solid var(--own); border-radius: 8px; padding: 12px; margin-bottom: 16px; display: grid; gap: 8px; }
+.composer { background: var(--own-soft); border: 1px solid var(--rule); border-left: 4px solid var(--own); border-radius: 8px; padding: 12px; margin-bottom: 16px; display: grid; gap: 8px; position: relative; }
 .composer label { font: 500 12px var(--mono); color: var(--own); }
+.composer .to-bar { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; }
+.composer .to-bar .lbl { margin-right: 2px; }
+.composer .to-chip { font: 500 12px var(--mono); padding: 2px 8px; border-radius: 999px; cursor: pointer; border: 1px solid var(--rule); background: var(--panel); color: var(--fg); display: inline-flex; align-items: center; gap: 4px; }
+.composer .to-chip:hover { border-color: var(--who, var(--own)); }
+.composer .to-chip[aria-pressed="true"] { background: var(--who, var(--own)); color: var(--who-ink, var(--tag-ink-themed)); border-color: var(--who, var(--own)); font-weight: 600; }
+.composer .note-subject { width: 100%; box-sizing: border-box; padding: 6px 8px; border: 1px solid var(--rule); border-radius: 6px; background: var(--panel); font: 600 14px var(--body); }
 .composer textarea { width: 100%; box-sizing: border-box; min-height: 64px; padding: 8px; border: 1px solid var(--rule); border-radius: 6px; background: var(--panel); resize: vertical; }
 .composer .row { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
+.composer .mention-menu { position: absolute; left: 12px; right: 12px; z-index: 25; max-width: 360px; max-height: 220px; overflow-y: auto; background: var(--panel); border: 1px solid var(--rule); border-radius: 8px; box-shadow: 0 6px 18px rgba(0, 0, 0, 0.16); padding: 4px; display: grid; gap: 2px; }
+.composer .mention-menu[hidden] { display: none; }
+.composer .mention-item { display: flex; align-items: center; justify-content: space-between; gap: 8px; width: 100%; text-align: left; padding: 5px 8px; border: 0; border-radius: 6px; background: none; cursor: pointer; font: 500 13px var(--mono); }
+.composer .mention-item:hover, .composer .mention-item.active { background: var(--own-soft); color: var(--fg); }
+.composer .mention-item .m-handle { font-weight: 600; color: var(--who, var(--own)); }
+.composer .mention-item .m-desc { font: 11px var(--body); color: var(--muted); }
+.mention { display: inline-block; padding: 0 5px; border-radius: 4px; font: 600 0.92em var(--mono); background: var(--own-soft); color: var(--who, var(--own)); border: 1px solid var(--rule); }
+.resolve-inc { margin-left: 6px; }
 .btn { padding: 6px 12px; border-radius: 6px; border: 1px solid var(--rule); background: var(--panel); cursor: pointer; font: 500 13px var(--body); }
 .btn.primary { background: var(--own); color: var(--panel); border-color: var(--own); }
 .btn:disabled { opacity: .5; cursor: default; }
@@ -281,7 +295,7 @@ td.num, td.t { font: 12px var(--mono); font-variant-numeric: tabular-nums; white
   }
   // The composer's state lives here, not in the DOM, so a snapshot re-render can't reset it. `id` stays the same
   // until a post succeeds, so retrying a half-failed post overwrites the same rows instead of duplicating them.
-  var draft = { text: "", kind: "owner", id: null, posting: false, status: "", replyTo: null, to: null, replySummary: "" };
+  var draft = { subject: "", text: "", kind: "owner", id: null, posting: false, status: "", replyTo: null, to: null, replySummary: "" };
   // The Add-participant control: open, posting, status, and the last result (kit + token).
   var onboardState = { open: false, posting: false, status: "", result: null, colorPair: null };
   // The roster is a <details>: always open on wide screens, folded into "People" below 640px until opened.
@@ -497,11 +511,99 @@ td.num, td.t { font: 12px var(--mono); font-variant-numeric: tabular-nums; white
     a.target = "_blank"; a.rel = "noopener";
     return a;
   }
+  var ALIAS_MAP = { bil: "bewareilive", vc: "vectorcraft", amb: "avoidmissingball" };
+  function projectIds() {
+    var ids = Object.keys(people).filter(function (id) { return id !== "owner" && person(id).kind === "project"; }).sort(byName);
+    return ids.length ? ids : ["avoidmissingball", "bewareilive", "vectorcraft"];
+  }
+  function reviewerIds() {
+    return Object.keys(people).filter(function (id) { var k = person(id).kind; return id !== "owner" && (k === "reviewer" || k === "researcher"); }).sort(byName);
+  }
+  function resolveMentionToken(raw) {
+    var tok = String(raw == null ? "" : raw).replace(/[.,;:!?)\]]+$/, "");
+    var low = tok.toLowerCase();
+    if (!low) return null;
+    if (low === "everyone" || low === "all" || low === "channel" || low === "here") return { broadcast: true, ids: [], label: "@" + tok };
+    if (low === "projects" || low === "teams") return { broadcast: false, ids: projectIds(), group: true, label: "@" + tok };
+    if (low === "reviewers") return { broadcast: false, ids: reviewerIds(), group: true, label: "@" + tok };
+    if (HAS.call(ALIAS_MAP, low)) {
+      var aid = ALIAS_MAP[low];
+      return { broadcast: false, ids: [aid], pid: aid, label: "@" + tok };
+    }
+    var norm = low.replace(/[^a-z0-9]/g, "");
+    var matchId = null;
+    Object.keys(people).forEach(function (id) {
+      if (id === "owner" || matchId) return;
+      var p = person(id);
+      var pNorm = String(p.name || "").toLowerCase().replace(/[^a-z0-9]/g, "");
+      var idNorm = id.toLowerCase().replace(/[^a-z0-9]/g, "");
+      if (id.toLowerCase() === low || (norm && (pNorm === norm || idNorm === norm))) matchId = id;
+    });
+    if (matchId) return { broadcast: false, ids: [matchId], pid: matchId, label: "@" + tok };
+    return null;
+  }
+  function extractMentionsFromText(text) {
+    var s = String(text == null ? "" : text);
+    var re = /(?:^|[\s(\[,:;])@([A-Za-z0-9_.-]+)/g, m;
+    var broadcast = false, seen = Object.create(null), ids = [];
+    while ((m = re.exec(s))) {
+      var res = resolveMentionToken(m[1]);
+      if (!res) continue;
+      if (res.broadcast) { broadcast = true; }
+      else {
+        res.ids.forEach(function (id) {
+          if (id && id !== "owner" && !HAS.call(seen, id)) { seen[id] = true; ids.push(id); }
+        });
+      }
+    }
+    if (broadcast) return { broadcast: true, ids: [] };
+    return { broadcast: false, ids: ids };
+  }
+  var parseMentions = extractMentionsFromText;
+  function effectiveRecipients(subj, bodyText) {
+    var explicit = (draft.to || []).filter(function (p) { return p && p !== "owner" && HAS.call(people, p); });
+    var mentions = extractMentionsFromText((subj || "") + "\n" + (bodyText || ""));
+    if (mentions.broadcast && (!draft.to || !draft.to.length)) return [];
+    var seen = Object.create(null), out = [];
+    explicit.concat(mentions.ids).forEach(function (id) {
+      if (id && id !== "owner" && HAS.call(people, id) && !HAS.call(seen, id)) {
+        seen[id] = true;
+        out.push(id);
+      }
+    });
+    return out;
+  }
+  function richTextInto(node, text) {
+    var s = String(text == null ? "" : text);
+    var re = /(^|[\s(\[,:;])@([A-Za-z0-9_.-]+)/g, last = 0, m;
+    while ((m = re.exec(s))) {
+      var lead = m[1] || "", rawTok = m[2] || "";
+      var trimmedTok = rawTok.replace(/[.,;:!?)\]]+$/, "");
+      var trail = rawTok.slice(trimmedTok.length);
+      var res = resolveMentionToken(trimmedTok);
+      if (!res) continue;
+      var startIdx = m.index + lead.length;
+      if (startIdx > last) node.appendChild(document.createTextNode(s.slice(last, startIdx)));
+      var chip = el("span", "mention", "@" + trimmedTok);
+      if (res.pid) chip.style.setProperty("--who", colorOf(res.pid));
+      else chip.style.setProperty("--who", "var(--own)");
+      node.appendChild(chip);
+      if (trail) node.appendChild(document.createTextNode(trail));
+      last = m.index + m[0].length;
+    }
+    if (last === 0) { node.textContent = s; return node; }
+    if (last < s.length) node.appendChild(document.createTextNode(s.slice(last)));
+    return node;
+  }
+  function summaryEl(text) {
+    var d = el("div", "summary");
+    return richTextInto(d, text);
+  }
   function bodyEl(text) {
     if (!text) return null;
     var s = String(text);
-    if (s.length <= 420) return el("p", "body", s);
-    var d = el("details"); d.appendChild(el("summary", null, "Full text")); d.appendChild(el("p", "body", s)); return d;
+    if (s.length <= 420) return richTextInto(el("p", "body"), s);
+    var d = el("details"); d.appendChild(el("summary", null, "Full text")); d.appendChild(richTextInto(el("p", "body"), s)); return d;
   }
   function add(parent, child) { if (child) parent.appendChild(child); return parent; }
   function matches(o) {
@@ -540,6 +642,9 @@ td.num, td.t { font: 12px var(--mono); font-variant-numeric: tabular-nums; white
       var mReplies = (replies[m._id] || []).slice().sort(byT);
       var approvedReplies = mReplies.filter(function (r) { return !isQuarantined(r.from); });
       var toList = toListOf(m);
+      if (!toList.length) {
+        toList = extractMentionsFromText((m.summary || "") + "\n" + (m.body || "")).ids;
+      }
       var pending = toList.filter(function (pid) {
         return !approvedReplies.some(function (r) { return String(r.from) === pid || String(r.from) === "owner"; });
       });
@@ -656,21 +761,55 @@ td.num, td.t { font: 12px var(--mono); font-variant-numeric: tabular-nums; white
     }
     view.appendChild(bar);
   }
+  var SLASH_KINDS = {
+    note: "owner", ask: "request", request: "request", decision: "decision",
+    agree: "agreement", agreement: "agreement", alert: "alert", urgent: "alert",
+    lesson: "lesson", todo: "waiting", incident: "incident"
+  };
+  var SLASH_RE = /^\/(note|ask|request|decision|agree|agreement|alert|urgent|lesson|todo|incident)(?:[ \t]+|\r?\n|$)/i;
+  function parseSlashCommand(text) {
+    var m = SLASH_RE.exec(String(text == null ? "" : text));
+    if (!m) return null;
+    return { kind: SLASH_KINDS[m[1].toLowerCase()], rest: String(text).slice(m[0].length) };
+  }
+  var mentionState = { open: false, inputId: null, start: 0, end: 0, query: "", items: [], active: 0 };
+  function mentionCandidates(q) {
+    var low = String(q == null ? "" : q).toLowerCase();
+    var out = [];
+    var groups = [
+      { handle: "Everyone", desc: "All sessions", broadcast: true, match: ["everyone", "all", "channel", "here"] },
+      { handle: "Projects", desc: "All game projects", group: "projects", match: ["projects", "teams"] },
+      { handle: "Reviewers", desc: "Reviewers & research", group: "reviewers", match: ["reviewers"] }
+    ];
+    groups.forEach(function (g) {
+      if (!low || g.handle.toLowerCase().indexOf(low) === 0 || g.match.some(function (k) { return k.indexOf(low) === 0; })) {
+        out.push(g);
+      }
+    });
+    var pids = Object.keys(people).filter(function (id) { return id && id !== "owner"; }).sort(function (a, b) {
+      var ka = person(a).kind === "project" ? 0 : 1, kb = person(b).kind === "project" ? 0 : 1;
+      return ka - kb || byName(a, b);
+    });
+    pids.forEach(function (id) {
+      var p = person(id);
+      var disp = displayName(id).replace(/\s+/g, "");
+      var alias = Object.keys(ALIAS_MAP).filter(function (k) { return ALIAS_MAP[k] === id; })[0] || "";
+      var hay = [id.toLowerCase(), p.name.toLowerCase(), disp.toLowerCase(), alias];
+      if (!low || hay.some(function (h) { return h && h.indexOf(low) !== -1; })) {
+        out.push({ handle: p.kind === "agent" ? id : p.name.replace(/\s+/g, ""), desc: displayName(id) + (p.kind ? " (" + p.kind + ")" : ""), pid: id });
+      }
+    });
+    return out;
+  }
   function composer(view) {
     if (!canWrite) return;
     var box = el("form", "composer"); box.id = "composer";
-    var lab = el("label", null, "Note to every session"); lab.htmlFor = "note";
-    var ta = el("textarea"); ta.id = "note"; ta.placeholder = "Read by every session at its next check-in";
-    ta.value = draft.text; ta.disabled = draft.posting;
-    ta.addEventListener("input", function () { draft.text = ta.value; });
-    var row = el("div", "row");
-    var kind = el("select"); kind.id = "noteKind"; kind.setAttribute("aria-label", "Kind of note");
-    [["owner", "Note"], ["decision", "Decision"], ["waiting", "Something I need to do"]].forEach(function (o) { var op = el("option", null, o[1]); op.value = o[0]; kind.appendChild(op); });
-    kind.value = draft.kind; kind.disabled = draft.posting;
-    kind.addEventListener("change", function () { draft.kind = kind.value; });
-    var btn = el("button", "btn primary", "Post"); btn.type = "submit"; btn.id = "notePost"; btn.disabled = draft.posting;
-    var st = el("span", "status-msg", draft.status); st.id = "noteStatus"; st.setAttribute("role", "status");
-    row.appendChild(kind); row.appendChild(btn); row.appendChild(st);
+    var lab = el("label", null, ""); lab.htmlFor = "note";
+    function updateLabel() {
+      var eff = effectiveRecipients(draft.subject || "", draft.text || "");
+      lab.textContent = eff.length ? "Message to " + eff.map(displayName).join(", ") : "Message to every session (@Everyone)";
+    }
+    updateLabel();
     box.appendChild(lab);
     if (draft.replyTo) {
       var rb = el("div", "whonote"); rb.id = "reply-banner";
@@ -684,29 +823,261 @@ td.num, td.t { font: 12px var(--mono); font-variant-numeric: tabular-nums; white
       rb.appendChild(rc);
       box.appendChild(rb);
     }
-    box.appendChild(ta); box.appendChild(row);
+    var toBar = el("div", "to-bar"); toBar.id = "composer-to";
+    toBar.appendChild(el("span", "lbl", "To:"));
+    var curTo = Array.isArray(draft.to) ? draft.to.filter(function (p) { return p && p !== "owner" && HAS.call(people, p); }) : [];
+    var btnEvery = el("button", "to-chip", "@Everyone"); btnEvery.type = "button"; btnEvery.id = "to-everyone";
+    btnEvery.disabled = draft.posting;
+    btnEvery.setAttribute("aria-pressed", String(curTo.length === 0));
+    btnEvery.addEventListener("click", function () {
+      if (draft.posting) return;
+      draft.to = null; refreshComposer();
+    });
+    toBar.appendChild(btnEvery);
+    var projList = Object.keys(people).filter(function (id) { return id !== "owner" && person(id).kind === "project" && !isQuarantined(id); }).sort(byName);
+    if (!projList.length) projList = Object.keys(people).filter(function (id) { return id !== "owner" && person(id).kind === "project"; }).sort(byName);
+    var allProjSelected = projList.length > 0 && projList.every(function (id) { return curTo.indexOf(id) !== -1; });
+    var btnProj = el("button", "to-chip", "@Projects"); btnProj.type = "button"; btnProj.id = "to-projects";
+    btnProj.disabled = draft.posting;
+    btnProj.setAttribute("aria-pressed", String(allProjSelected));
+    btnProj.addEventListener("click", function () {
+      if (draft.posting) return;
+      var next = curTo.slice();
+      if (allProjSelected) {
+        next = next.filter(function (id) { return projList.indexOf(id) === -1; });
+      } else {
+        projList.forEach(function (id) { if (next.indexOf(id) === -1) next.push(id); });
+      }
+      draft.to = next.length ? next : null;
+      refreshComposer();
+    });
+    toBar.appendChild(btnProj);
+    var chipPids = Object.keys(people).filter(function (id) { return id && id !== "owner"; }).sort(function (a, b) {
+      var ka = person(a).kind === "project" ? 0 : 1, kb = person(b).kind === "project" ? 0 : 1;
+      return ka - kb || byName(a, b);
+    });
+    chipPids.forEach(function (pid) {
+      var c = colorOf(pid);
+      var b = el("button", "to-chip", "@" + displayName(pid)); b.type = "button"; b.id = "to-chip-" + pid;
+      b.disabled = draft.posting;
+      b.style.setProperty("--who", c); b.style.setProperty("--who-ink", inkFor(c));
+      var pressed = curTo.indexOf(pid) !== -1;
+      b.setAttribute("aria-pressed", String(pressed));
+      b.addEventListener("click", function () {
+        if (draft.posting) return;
+        var next = curTo.slice(), idx = next.indexOf(pid);
+        if (idx !== -1) next.splice(idx, 1); else next.push(pid);
+        draft.to = next.length ? next : null;
+        refreshComposer();
+      });
+      toBar.appendChild(b);
+    });
+    box.appendChild(toBar);
+
+    var subjIn = el("input", "note-subject"); subjIn.type = "text"; subjIn.id = "noteSubject";
+    subjIn.placeholder = "Add a subject (optional \u2014 or type /ask, /alert, /decision, /agree, /lesson, /todo)";
+    subjIn.setAttribute("aria-label", "Subject");
+    subjIn.value = draft.subject || ""; subjIn.disabled = draft.posting;
+
+    var ta = el("textarea"); ta.id = "note";
+    ta.placeholder = "Write a message\u2026 Use @name, @projects, or @everyone to target sessions (Cmd+Enter to post)";
+    ta.value = draft.text; ta.disabled = draft.posting;
+
+    var menu = el("div", "mention-menu"); menu.id = "mention-menu"; menu.hidden = true;
+    var row = el("div", "row");
+    var kind = el("select"); kind.id = "noteKind"; kind.setAttribute("aria-label", "Kind of note");
+    [
+      ["owner", "Note (/note)"],
+      ["request", "Question / Request (/ask)"],
+      ["decision", "Decision (/decision)"],
+      ["agreement", "Propose agreement (/agree)"],
+      ["alert", "Urgent alert (/alert)"],
+      ["lesson", "Record a lesson (/lesson)"],
+      ["waiting", "Something I need to do (/todo)"],
+      ["incident", "Build / host incident (/incident)"]
+    ].forEach(function (o) { var op = el("option", null, o[1]); op.value = o[0]; kind.appendChild(op); });
+    kind.value = draft.kind; kind.disabled = draft.posting;
+    kind.addEventListener("change", function () { draft.kind = kind.value; });
+
+    function closeMentionMenu() {
+      mentionState.open = false;
+      menu.hidden = true;
+      menu.textContent = "";
+    }
+    function applyMentionItem(item) {
+      var target = mentionState.inputId === "noteSubject" ? subjIn : ta;
+      var val = target.value;
+      var before = val.slice(0, mentionState.start);
+      var after = val.slice(mentionState.end);
+      var ins = "@" + item.handle + " ";
+      target.value = before + ins + after;
+      var pos = before.length + ins.length;
+      if (target === subjIn) draft.subject = subjIn.value;
+      else draft.text = ta.value;
+      closeMentionMenu();
+      updateLabel();
+      try { target.focus(); target.setSelectionRange(pos, pos); } catch (e) {}
+    }
+    function renderMentionMenu() {
+      menu.textContent = "";
+      if (!mentionState.open || !mentionState.items.length) { menu.hidden = true; return; }
+      menu.hidden = false;
+      mentionState.items.forEach(function (item, idx) {
+        var b = el("button", "mention-item" + (idx === mentionState.active ? " active" : ""));
+        b.type = "button";
+        b.dataset.handle = item.handle;
+        var h = el("span", "m-handle", "@" + item.handle);
+        if (item.pid) h.style.setProperty("--who", colorOf(item.pid));
+        b.appendChild(h);
+        b.appendChild(el("span", "m-desc", item.desc || ""));
+        b.addEventListener("mousedown", function (e) { e.preventDefault(); applyMentionItem(item); });
+        b.addEventListener("click", function (e) { e.preventDefault(); applyMentionItem(item); });
+        menu.appendChild(b);
+      });
+    }
+    function checkMentionTrigger(inputEl) {
+      var pos = typeof inputEl.selectionStart === "number" ? inputEl.selectionStart : inputEl.value.length;
+      var head = inputEl.value.slice(0, pos);
+      var m = /(?:^|[\s(\[,:;])@([A-Za-z0-9_.-]{0,24})$/.exec(head);
+      if (!m) { closeMentionMenu(); return; }
+      var q = m[1] || "";
+      var atIdx = pos - q.length - 1;
+      var items = mentionCandidates(q);
+      if (!items.length) { closeMentionMenu(); return; }
+      mentionState.open = true;
+      mentionState.inputId = inputEl.id;
+      mentionState.start = atIdx;
+      mentionState.end = pos;
+      mentionState.query = q;
+      mentionState.items = items;
+      mentionState.active = 0;
+      renderMentionMenu();
+    }
+    function onInputKeydown(e) {
+      if ((e.metaKey || e.ctrlKey) && e.key === "Enter") {
+        e.preventDefault();
+        closeMentionMenu();
+        box.dispatchEvent(new Event("submit", { bubbles: true, cancelable: true }));
+        return;
+      }
+      if (mentionState.open && !menu.hidden && mentionState.items.length) {
+        if (e.key === "ArrowDown") {
+          e.preventDefault();
+          mentionState.active = (mentionState.active + 1) % mentionState.items.length;
+          renderMentionMenu();
+          return;
+        }
+        if (e.key === "ArrowUp") {
+          e.preventDefault();
+          mentionState.active = (mentionState.active - 1 + mentionState.items.length) % mentionState.items.length;
+          renderMentionMenu();
+          return;
+        }
+        if (e.key === "Enter" || e.key === "Tab") {
+          e.preventDefault();
+          applyMentionItem(mentionState.items[mentionState.active] || mentionState.items[0]);
+          return;
+        }
+        if (e.key === "Escape") {
+          e.preventDefault();
+          closeMentionMenu();
+          return;
+        }
+      }
+    }
+    subjIn.addEventListener("input", function () {
+      draft.subject = subjIn.value;
+      var sl = parseSlashCommand(subjIn.value);
+      if (sl) { draft.kind = sl.kind; kind.value = sl.kind; }
+      updateLabel();
+      checkMentionTrigger(subjIn);
+    });
+    subjIn.addEventListener("keydown", onInputKeydown);
+    ta.addEventListener("input", function () {
+      draft.text = ta.value;
+      var sl = parseSlashCommand(ta.value);
+      if (sl) { draft.kind = sl.kind; kind.value = sl.kind; }
+      updateLabel();
+      checkMentionTrigger(ta);
+    });
+    ta.addEventListener("keydown", onInputKeydown);
+
+    var btn = el("button", "btn primary", "Post"); btn.type = "submit"; btn.id = "notePost"; btn.disabled = draft.posting;
+    var st = el("span", "status-msg", draft.status); st.id = "noteStatus"; st.setAttribute("role", "status");
+    row.appendChild(kind); row.appendChild(btn); row.appendChild(st);
+    box.appendChild(subjIn);
+    box.appendChild(ta);
+    box.appendChild(menu);
+    box.appendChild(row);
     box.addEventListener("submit", function (e) {
       e.preventDefault();
       if (draft.posting) return;
-      var text = draft.text.trim(); if (!text) { draft.status = "Write something first."; refreshComposer(); return; }
+      var rawSubj = (draft.subject || "").replace(/[\r\n]+/g, " ").trim();
+      var rawText = (draft.text || "").trim();
+      if (!rawSubj && !rawText) { draft.status = "Write something first."; refreshComposer(); return; }
+      var effectiveKind = draft.kind || "owner";
+      var bodyText = rawText;
+      var subj = rawSubj;
+      var slText = parseSlashCommand(bodyText);
+      if (slText) {
+        effectiveKind = slText.kind;
+        bodyText = slText.rest.trim();
+      } else if (!bodyText && subj) {
+        var slSubj = parseSlashCommand(subj);
+        if (slSubj) {
+          effectiveKind = slSubj.kind;
+          subj = slSubj.rest.trim();
+        }
+      } else if (subj) {
+        var slSubj2 = parseSlashCommand(subj);
+        if (slSubj2) {
+          effectiveKind = slSubj2.kind;
+          subj = slSubj2.rest.trim();
+        }
+      }
+      if (!subj && !bodyText) { draft.status = "Write something first."; refreshComposer(); return; }
       var now = new Date().toISOString();
       if (!draft.id) draft.id = "own-" + now.replace(/[^0-9]/g, "").slice(0, 14) + "-" + Math.random().toString(36).slice(2, 6);
-      var id = draft.id, summary = text.split("\n")[0].slice(0, 160);
-      draft.posting = true; draft.status = "Posting…"; refreshComposer();
-      // Each row is a set on the same id, so a retry after a partial failure rewrites rows rather than adding them.
-      var msgPayload = { t: now, from: "owner", kind: "owner", summary: summary, body: text.length > summary.length ? text : "" };
-      if (draft.replyTo) {
-        msgPayload.replyTo = draft.replyTo;
-        var validTo = (draft.to || []).filter(function (p) { return p && p !== "owner" && HAS.call(people, p); });
-        if (validTo.length) msgPayload.to = validTo;
+      var id = draft.id, summary, body;
+      if (subj) {
+        summary = subj.slice(0, 160);
+        body = bodyText;
+      } else {
+        summary = bodyText.split("\n")[0].slice(0, 160);
+        body = bodyText.length > summary.length ? bodyText : "";
       }
+      var effectiveTo = effectiveRecipients(subj, bodyText);
+      draft.kind = effectiveKind;
+      draft.posting = true; draft.status = "Posting…"; refreshComposer();
+      var msgKind = (effectiveKind === "owner" || effectiveKind === "decision" || effectiveKind === "waiting") ? "owner"
+        : (effectiveKind === "incident" ? "alert" : effectiveKind);
+      // Each row is a set on the same id, so a retry after a partial failure rewrites rows rather than adding them.
+      var msgPayload = { t: now, from: "owner", kind: msgKind, summary: summary, body: body };
+      if (effectiveKind === "alert" || effectiveKind === "incident") msgPayload.important = true;
+      if (draft.replyTo) msgPayload.replyTo = draft.replyTo;
+      if (effectiveTo.length > 0) msgPayload.to = effectiveTo;
       db.collection("messages").doc(id).set(msgPayload).then(function () {
         var extra = [];
-        if (draft.kind === "decision") extra.push(db.collection("decisions").doc(id).set({ t: now, by: "owner", summary: summary, body: text, project: "all", source: "Crosstalk page" }));
-        if (draft.kind === "waiting") extra.push(db.collection("waiting").doc(id).set({ since: now, project: "owner", summary: summary, body: text, done: null }));
+        if (effectiveKind === "decision") {
+          var targetProj = effectiveTo.length === 1 ? effectiveTo[0] : "all";
+          extra.push(db.collection("decisions").doc(id).set({ t: now, by: "owner", summary: summary, body: body || summary, project: targetProj, source: "Crosstalk page" }));
+        }
+        if (effectiveKind === "waiting") {
+          extra.push(db.collection("waiting").doc(id).set({ since: now, project: effectiveTo.length === 1 ? effectiveTo[0] : "owner", summary: summary, body: body, done: null }));
+        }
+        if (effectiveKind === "agreement") {
+          var builder = effectiveTo[0] || "vectorcraft";
+          extra.push(db.collection("agreements").doc("a-" + id).set({ t: now, updated: now, summary: summary, body: body, status: "agreed", builder: builder, adopter: "all", commits: {} }));
+        }
+        if (effectiveKind === "lesson") {
+          extra.push(db.collection("lessons").doc("lesson-" + id).set({ t: now, project: effectiveTo.length === 1 ? effectiveTo[0] : "owner", summary: summary, body: "", fix: body || summary }));
+        }
+        if (effectiveKind === "incident") {
+          extra.push(db.collection("incidents").doc("i-" + id).set({ start: now, end: null, project: effectiveTo.length === 1 ? effectiveTo[0] : "owner", summary: summary, body: body, fix: "" }));
+        }
         return Promise.all(extra);
       }).then(function () {
-        draft = { text: "", kind: "owner", id: null, posting: false, status: "Posted.", replyTo: null, to: null, replySummary: "" }; refreshComposer();
+        draft = { subject: "", text: "", kind: "owner", id: null, posting: false, status: "Posted.", replyTo: null, to: null, replySummary: "" }; refreshComposer();
       }).catch(function (err) {
         draft.posting = false;
         draft.status = "Not posted: " + (err && err.message ? err.message : "try again") + ". Posting again won't duplicate it.";
@@ -785,7 +1156,7 @@ td.num, td.t { font: 12px var(--mono); font-variant-numeric: tabular-nums; white
     }
     card.appendChild(meta);
     if (parent) card.appendChild(el("div", "re", "↩ Replying to " + (parent.from ? displayName(parent.from) : "") + ": " + (parent.summary || "")));
-    if (m.summary) card.appendChild(el("div", "summary", m.summary));
+    if (m.summary) card.appendChild(summaryEl(m.summary));
     add(card, bodyEl(m.body));
     if (m.kind === "disagreement" && m.positions) add(card, positionsEl(m));
     add(card, refsEl(m.refs, m.project || m.from));
@@ -1021,7 +1392,7 @@ td.num, td.t { font: 12px var(--mono); font-variant-numeric: tabular-nums; white
     if (quarantined) meta.appendChild(quarantinePill());
     if (canWrite) meta.appendChild(replyBtnEl(m));
     card.appendChild(meta);
-    if (m.summary) card.appendChild(el("div", "summary", m.summary));
+    if (m.summary) card.appendChild(summaryEl(m.summary));
     add(card, bodyEl(m.body));
     add(card, refsEl(m.refs, m.project || m.from));
     if (replies.length) {
@@ -1030,7 +1401,7 @@ td.num, td.t { font: 12px var(--mono); font-variant-numeric: tabular-nums; white
         var rc = el("div", "reply");
         var rmeta = el("div", "meta");
         rmeta.appendChild(who(r.from));
-        if (r.summary) rmeta.appendChild(el("span", null, r.summary));
+        if (r.summary) rmeta.appendChild(richTextInto(el("span"), r.summary));
         rc.appendChild(rmeta);
         add(rc, bodyEl(r.body));
         box.appendChild(rc);
@@ -1179,7 +1550,22 @@ td.num, td.t { font: 12px var(--mono); font-variant-numeric: tabular-nums; white
       ["Incident", textBlock],
       ["Project", function (r) { return who(r.project); }],
       ["Started", function (r) { return timeEl(r.start, true); }, "t"],
-      ["Ended", function (r) { return r.end ? timeEl(r.end, true) : pill("open"); }, "t"],
+      ["Ended", function (r) {
+        if (r.end) return timeEl(r.end, true);
+        var d = el("div");
+        d.appendChild(pill("open"));
+        if (canWrite) {
+          var b = el("button", "btn small resolve-inc", "Resolve");
+          b.type = "button";
+          b.id = "resolve-inc-" + r._id;
+          b.addEventListener("click", function () {
+            b.disabled = true;
+            db.collection("incidents").doc(r._id).update({ end: new Date().toISOString() }).catch(function () { b.disabled = false; });
+          });
+          d.appendChild(b);
+        }
+        return d;
+      }, "t"],
       ["Fix", function (r) { var d = el("div"); d.appendChild(el("p", "body", r.fix || "")); add(d, refsEl(r.fixRefs, r.project)); return d; }]
     ], "No incidents recorded. When something goes wrong (MAME stealing focus, a broken hook), it's logged here with when it started and ended.");
   }
@@ -1316,7 +1702,7 @@ td.num, td.t { font: 12px var(--mono); font-variant-numeric: tabular-nums; white
     return "Viewing as " + (me.isOwner ? "the owner" : me.canEdit ? "an editor" : "a viewer (read only)");
   }
   // Read-only helpers for the page tests.
-  window.__crosstalk = Object.freeze({ dotState: dotState, viewerText: viewerText, spanText: spanText, colorOf: colorOf, setBuildMeta: function (m) { Object.assign(meta, m || {}); renderBuild(); } });
+  window.__crosstalk = Object.freeze({ dotState: dotState, viewerText: viewerText, spanText: spanText, colorOf: colorOf, parseMentions: parseMentions, extractMentionsFromText: extractMentionsFromText, setBuildMeta: function (m) { Object.assign(meta, m || {}); renderBuild(); } });
   // Which data layer is active ("seam" | "fetch" | "none"), and whether the
   // fetch layer was constructed. The page tests read these.
   window.__crosstalkLayer = "none";
