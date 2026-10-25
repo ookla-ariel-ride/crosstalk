@@ -5,6 +5,7 @@ import shutil
 import subprocess
 import sys
 import threading
+import time
 import unittest
 import urllib.error
 import urllib.request
@@ -419,6 +420,23 @@ class OwnerTests(unittest.TestCase):
                 self.assertEqual(status, 200)
                 status, _body, cookie2 = self.login(srv, {"pin": srv.pin})
                 self.assertEqual(status, 401)
+
+    def test_login_is_throttled_after_five_failures(self):
+        with TempRepo() as r:
+            r.write_roster()
+            with self.server(r) as srv:
+                for _ in range(5):
+                    status, body, cookie = self.login(srv, {"pin": "000000"})
+                    self.assertEqual(status, 401)
+                # The sixth attempt is refused even with the correct PIN.
+                status, body, headers = request_with_headers(
+                    srv.url + "/api/login", "POST", {"pin": srv.pin})
+                self.assertEqual(status, 429)
+                self.assertIn("Retry-After", headers)
+                # After the window clears, the correct PIN works again.
+                srv.state.login_failures = [time.time() - 601.0] * 5
+                status, body, cookie = self.login(srv, {"pin": srv.pin})
+                self.assertEqual(status, 200)
 
     def test_without_a_cookie_the_viewer_is_read_only(self):
         with TempRepo() as r:

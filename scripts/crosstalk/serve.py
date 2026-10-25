@@ -49,6 +49,10 @@ COOKIE_NAME = "crosstalk_session"
 # The startup PIN is good for ten minutes and for one login; a session for twelve hours.
 PIN_TTL = 10 * 60.0
 SESSION_TTL = 12 * 60 * 60.0
+# Login throttling: after this many failed attempts in a rolling window,
+# refuse further logins until the window clears.
+LOGIN_WINDOW = 10 * 60.0
+LOGIN_MAX_FAILURES = 5
 # The fields of a roster entry the owner may write.
 ROSTER_FIELDS = ("name", "kind", "color", "colorDark", "checkInMin", "trust", "repo", "parent")
 
@@ -219,6 +223,8 @@ class ServerState:
         self.pin = None  # type: Optional[str]
         self.pin_expires = 0.0
         self.pin_used = False
+        self.login_failures = []  # type: List[float]
+        self.login_lock = threading.Lock()
 
     def make_pin(self) -> str:
         """The one-time startup PIN: six digits, good for ten minutes."""
@@ -226,6 +232,21 @@ class ServerState:
         self.pin_expires = time.time() + PIN_TTL
         self.pin_used = False
         return self.pin
+
+    def login_locked(self) -> Optional[float]:
+        """Retry-After seconds when login is throttled, or None when allowed."""
+        now = time.time()
+        with self.login_lock:
+            self.login_failures = [t for t in self.login_failures
+                                   if now - t < LOGIN_WINDOW]
+            if len(self.login_failures) >= LOGIN_MAX_FAILURES:
+                oldest = min(self.login_failures)
+                return max(1.0, LOGIN_WINDOW - (now - oldest))
+            return None
+
+    def record_login_failure(self) -> None:
+        with self.login_lock:
+            self.login_failures.append(time.time())
 
 
 class CrosstalkHandler(BaseHTTPRequestHandler):
@@ -423,6 +444,11 @@ class CrosstalkHandler(BaseHTTPRequestHandler):
         return self.state.tokens.verify("Bearer " + token, "owner").ok
 
     def _login(self):
+        retry = self.state.login_locked()
+        if retry is not None:
+            self._json(429, {"error": "too many failed logins; retry later"},
+                       headers=[("Retry-After", str(int(retry)))])
+            return
         body = self._read_json()
         if body is None:
             return
@@ -436,6 +462,7 @@ class CrosstalkHandler(BaseHTTPRequestHandler):
             return
         ok = self._check_pin(pin) if pin is not None else self._check_owner_token(token)
         if not ok:
+            self.state.record_login_failure()
             self._error(401, "that pin or token is not valid")
             return
         sid = self.state.sessions.create()
