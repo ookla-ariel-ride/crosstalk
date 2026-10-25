@@ -244,6 +244,119 @@ class InboxTests(unittest.TestCase):
         docs = enrich_messages(replay(lines), lines)
         self.assertEqual([did for (did, _, _) in open_requests(docs)], ["vc-self"])
 
+    def test_owner_messages_unanswered_and_replied(self):
+        self.r.write_log("owner", [
+            line(1, "owner", id_="own-bcast",
+                 data={"from": "owner", "kind": "owner", "summary": "all hands"},
+                 t="2026-10-21T18:00:00Z"),
+            line(2, "owner", id_="own-codex",
+                 data={"from": "owner", "kind": "owner", "summary": "for codex", "to": ["codex"]},
+                 t="2026-10-21T19:00:00Z"),
+            line(3, "owner", id_="own-bil",
+                 data={"from": "owner", "kind": "owner", "summary": "for bil", "to": ["bewareilive"]},
+                 t="2026-10-21T20:00:00Z"),
+        ])
+        out = self.inbox("bewareilive")
+        self.assertEqual([m["message"]["id"] for m in out["owner_messages"]], ["own-bil", "own-bcast"])
+        self.assertEqual(self.inbox("owner")["owner_messages"], [])
+
+        # Another participant replying to broadcast owner message does not close it for bewareilive
+        self.r.write_log("codex", [rep(1, "codex", "codex-r1", "own-bcast", t="2026-10-21T20:30:00Z")])
+        out2 = self.inbox("bewareilive")
+        self.assertEqual([m["message"]["id"] for m in out2["owner_messages"]], ["own-bil", "own-bcast"])
+        bcast_entry = [m for m in out2["owner_messages"] if m["message"]["id"] == "own-bcast"][0]
+        self.assertEqual(len(bcast_entry["replies"]), 1)
+        self.assertEqual(bcast_entry["replies"][0]["trust"], "approved")
+
+        # Once bewareilive replies to own-bil, own-bil drops out for bewareilive
+        self.r.write_log("bewareilive", [rep(1, "bewareilive", "bewareilive-r1", "own-bil")])
+        out3 = self.inbox("bewareilive")
+        self.assertEqual([m["message"]["id"] for m in out3["owner_messages"]], ["own-bcast"])
+
+    def test_agreements_to_adopt(self):
+        self.r.write_log("vectorcraft", [
+            line(1, "vectorcraft", collection="agreements", id_="a-ready",
+                 data={"builder": "vectorcraft", "adopter": "bewareilive",
+                       "status": "ready-to-adopt",
+                       "commits": {"vectorcraft": ["111"], "bewareilive": []},
+                       "updated": "2026-10-21T20:00:00Z"}),
+            line(2, "vectorcraft", collection="agreements", id_="a-both",
+                 data={"builder": "vectorcraft", "adopter": "both",
+                       "status": "landed-builder",
+                       "commits": {"vectorcraft": ["222"]},
+                       "t": "2026-10-21T19:00:00Z"}),
+            line(3, "vectorcraft", collection="agreements", id_="a-all",
+                 data={"builder": "vectorcraft", "adopter": "all",
+                       "status": "landed-builder",
+                       "t": "2026-10-21T18:00:00Z"}),
+            line(4, "vectorcraft", collection="agreements", id_="a-held-flag",
+                 data={"builder": "vectorcraft", "adopter": "bewareilive",
+                       "status": "ready-to-adopt", "hold": True,
+                       "updated": "2026-10-21T21:00:00Z"}),
+            line(5, "vectorcraft", collection="agreements", id_="a-held-status",
+                 data={"builder": "vectorcraft", "adopter": "bewareilive",
+                       "status": "held", "updated": "2026-10-21T21:00:00Z"}),
+            line(6, "vectorcraft", collection="agreements", id_="a-agreed",
+                 data={"builder": "vectorcraft", "adopter": "bewareilive",
+                       "status": "agreed", "updated": "2026-10-21T21:00:00Z"}),
+            line(7, "vectorcraft", collection="agreements", id_="a-done",
+                 data={"builder": "vectorcraft", "adopter": "bewareilive",
+                       "status": "ready-to-adopt",
+                       "commits": {"bewareilive": ["abc1234"]},
+                       "updated": "2026-10-21T21:00:00Z"}),
+            line(8, "vectorcraft", collection="agreements", id_="a-codex",
+                 data={"builder": "vectorcraft", "adopter": "codex",
+                       "status": "ready-to-adopt",
+                       "updated": "2026-10-21T21:00:00Z"}),
+        ])
+        out_bil = self.inbox("bewareilive")
+        self.assertEqual([a["id"] for a in out_bil["agreements_to_adopt"]],
+                         ["a-ready", "a-both", "a-all"])
+        # Builder does not adopt its own 'both'/'all' agreements
+        out_vc = self.inbox("vectorcraft")
+        self.assertEqual(out_vc["agreements_to_adopt"], [])
+        out_codex = self.inbox("codex")
+        self.assertEqual([a["id"] for a in out_codex["agreements_to_adopt"]],
+                         ["a-codex", "a-both", "a-all"])
+
+    def test_stale_locks(self):
+        from crosstalk.replay import enrich_messages, load_all_lines, replay
+        from crosstalk.requests import stale_locks_for
+
+        self.r.write_log("bewareilive", [
+            line(1, "bewareilive", collection="locks", id_="l-old-2",
+                 data={"project": "bewareilive", "path": "b.rs",
+                       "since": "2026-10-21T12:00:00Z"}),
+            line(2, "bewareilive", collection="locks", id_="l-old-1",
+                 data={"project": "bewareilive", "path": "a.rs",
+                       "since": "2026-10-21T10:00:00Z", "released": None}),
+            line(3, "bewareilive", collection="locks", id_="l-fresh",
+                 data={"project": "bewareilive", "path": "c.rs",
+                       "since": "2099-01-01T00:00:00Z", "released": None}),
+            line(4, "bewareilive", collection="locks", id_="l-released",
+                 data={"project": "bewareilive", "path": "d.rs",
+                       "since": "2026-10-21T08:00:00Z", "released": "2026-10-21T09:00:00Z"}),
+        ])
+        self.r.write_log("vectorcraft", [
+            line(1, "vectorcraft", collection="locks", id_="l-vc",
+                 data={"project": "vectorcraft", "path": "v.rs",
+                       "since": "2026-10-21T08:00:00Z", "released": None}),
+        ])
+        out = self.inbox("bewareilive")
+        self.assertEqual([lk["id"] for lk in out["stale_locks"]], ["l-old-1", "l-old-2"])
+
+        lines = load_all_lines(self.r.root)
+        docs = enrich_messages(replay(lines), lines)
+        # At 15:00Z: l-old-1 (10:00Z, 5h) is stale; l-old-2 (12:00Z, 3h) is not
+        self.assertEqual([lk["id"] for lk in stale_locks_for(docs, "bewareilive", now_iso="2026-10-21T15:00:00Z")],
+                         ["l-old-1"])
+        # At 16:00:00Z: l-old-2 is exactly 4h old (not > 4h)
+        self.assertEqual([lk["id"] for lk in stale_locks_for(docs, "bewareilive", now_iso="2026-10-21T16:00:00Z")],
+                         ["l-old-1"])
+        # At 16:00:01Z: both are > 4h old, sorted oldest since first
+        self.assertEqual([lk["id"] for lk in stale_locks_for(docs, "bewareilive", now_iso="2026-10-21T16:00:01Z")],
+                         ["l-old-1", "l-old-2"])
+
 
 if __name__ == "__main__":
     unittest.main()

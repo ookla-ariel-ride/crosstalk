@@ -5,7 +5,9 @@ messages doc's `replyTo` points at its id. `to` lists the asked participants;
 omitted means everyone (a broadcast). Open-ness is derived, never stored, so
 it cannot drift or race.
 """
-from typing import Dict, List, Tuple
+from datetime import datetime, timezone
+import time
+from typing import Dict, List, Optional, Tuple
 
 
 def _messages(docs: Dict) -> Dict[str, dict]:
@@ -124,3 +126,99 @@ def inbox_for(docs: Dict, pid: str) -> List[Tuple[str, dict, List[dict]]]:
 def all_requests_for(docs: Dict, pid: str) -> List[Tuple[str, dict, List[dict]]]:
     """Every request addressed to pid (to contains pid, or to absent), newest first, answered included."""
     return _requests(docs, pid=pid, open_only=False)
+
+
+def unanswered_owner_messages(docs: Dict, pid: str) -> List[Tuple[str, dict, List[dict]]]:
+    """Owner messages addressed to pid that pid has not replied to yet, newest first."""
+    messages = _messages(docs)
+    replies = _replies_by_request(messages)
+    out = []  # type: List[Tuple[str, dict, List[dict]]]
+    for did, doc in messages.items():
+        if doc.get("from") != "owner" and doc.get("kind") != "owner":
+            continue
+        if not _addressed(doc, pid):
+            continue
+        if pid == "owner" and "owner" not in _recipients(doc):
+            continue
+        doc_replies = replies.get(did, [])
+        if any(r.get("from") == pid for r in doc_replies):
+            continue
+        out.append((did, doc, doc_replies))
+    out.sort(key=lambda item: _t(item[1]), reverse=True)
+    return out
+
+
+def _agreement_time(doc: dict) -> str:
+    u = doc.get("updated")
+    if isinstance(u, str) and u:
+        return u
+    t = doc.get("t")
+    return t if isinstance(t, str) else ""
+
+
+def agreements_to_adopt_for(docs: Dict, pid: str) -> List[dict]:
+    """Unheld agreements ready for pid to adopt with no commits from pid yet, newest first."""
+    out = []  # type: List[dict]
+    for (coll, did), doc in docs.items():
+        if coll != "agreements" or not isinstance(doc, dict):
+            continue
+        if doc.get("hold") or doc.get("status") == "held":
+            continue
+        if doc.get("status") not in ("landed-builder", "ready-to-adopt"):
+            continue
+        adopter = doc.get("adopter")
+        is_adopter = (
+            adopter == pid
+            or (isinstance(adopter, list) and pid in adopter)
+            or (adopter in (None, "", "all", "both") and doc.get("builder") != pid)
+        )
+        if not is_adopter:
+            continue
+        commits = doc.get("commits")
+        if isinstance(commits, dict) and commits.get(pid):
+            continue
+        out.append(dict(doc, id=did))
+    out.sort(key=_agreement_time, reverse=True)
+    return out
+
+
+def _parse_iso(ts) -> Optional[float]:
+    if not isinstance(ts, str) or not ts.strip():
+        return None
+    s = ts.strip()
+    if s.endswith("Z"):
+        s = s[:-1] + "+00:00"
+    try:
+        dt = datetime.fromisoformat(s)
+    except ValueError:
+        try:
+            dt = datetime.strptime(ts.strip(), "%Y-%m-%dT%H:%M:%SZ")
+        except ValueError:
+            return None
+    if dt.tzinfo is None:
+        dt = dt.replace(tzinfo=timezone.utc)
+    return dt.timestamp()
+
+
+def stale_locks_for(docs: Dict, pid: str, now_iso: Optional[str] = None,
+                    stale_hours: float = 4.0) -> List[dict]:
+    """Unreleased locks for project == pid older than stale_hours, oldest since first."""
+    now_ts = _parse_iso(now_iso) if now_iso is not None else time.time()
+    if now_ts is None:
+        now_ts = time.time()
+    threshold = float(stale_hours) * 3600.0
+    items = []  # type: List[Tuple[float, str, str, dict]]
+    for (coll, did), doc in docs.items():
+        if coll != "locks" or not isinstance(doc, dict):
+            continue
+        if doc.get("released"):
+            continue
+        if doc.get("project") != pid:
+            continue
+        since_ts = _parse_iso(doc.get("since"))
+        if since_ts is None:
+            continue
+        if (now_ts - since_ts) > threshold:
+            items.append((since_ts, str(doc.get("since") or ""), did, dict(doc, id=did)))
+    items.sort(key=lambda x: (x[0], x[1], x[2]))
+    return [x[3] for x in items]

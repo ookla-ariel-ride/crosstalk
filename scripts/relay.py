@@ -17,7 +17,14 @@ from crosstalk.onboard import onboard, regenerate_kit  # noqa: E402
 from crosstalk.participants import load_roster  # noqa: E402
 from crosstalk.pull import pull  # noqa: E402
 from crosstalk.replay import enrich_messages, load_all_lines, replay  # noqa: E402
-from crosstalk.requests import all_requests_for, inbox_for, pending_recipients  # noqa: E402
+from crosstalk.requests import (  # noqa: E402
+    agreements_to_adopt_for,
+    all_requests_for,
+    inbox_for,
+    pending_recipients,
+    stale_locks_for,
+    unanswered_owner_messages,
+)
 from crosstalk.serve import serve  # noqa: E402
 from crosstalk.service import SERVICE  # noqa: E402
 from crosstalk.tokens import TOKEN_FILE, Tokens, load_tokens  # noqa: E402
@@ -125,6 +132,7 @@ def cmd_inbox(args):
     lines = load_all_lines(ROOT, roster)
     docs = enrich_messages(replay(lines), lines)
     requests = all_requests_for(docs, args.pid) if args.all else inbox_for(docs, args.pid)
+    owner_msgs = unanswered_owner_messages(docs, args.pid)
     out = {
         "pid": args.pid,
         "roster": {pid: {"trust": p.trust} for pid, p in roster.participants.items()},
@@ -137,6 +145,15 @@ def cmd_inbox(args):
             }
             for (did, doc, replies) in requests
         ],
+        "owner_messages": [
+            {
+                "message": dict(doc, id=did),
+                "replies": [dict(r, trust=_trust(r.get("from"), roster)) for r in replies],
+            }
+            for (did, doc, replies) in owner_msgs
+        ],
+        "agreements_to_adopt": agreements_to_adopt_for(docs, args.pid),
+        "stale_locks": stale_locks_for(docs, args.pid, now_iso=getattr(args, "now", None)),
         "service": SERVICE,
     }
     print(json.dumps(out, ensure_ascii=False, sort_keys=True, indent=2))
