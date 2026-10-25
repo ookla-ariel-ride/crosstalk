@@ -22,6 +22,7 @@ import hmac
 import json
 import os
 import secrets
+import socket
 import subprocess
 import sys
 import tempfile
@@ -45,6 +46,8 @@ KNOWN_COLLECTIONS = tuple(COLLECTIONS) + ("participants",)
 JSON_TYPE = "application/json; charset=utf-8"
 HTML_TYPE = "text/html; charset=utf-8"
 MAX_BODY = 1024 * 1024
+# A slow client cannot hold a request thread forever.
+READ_TIMEOUT = 30.0
 COOKIE_NAME = "crosstalk_session"
 # The startup PIN is good for ten minutes and for one login; a session for twelve hours.
 PIN_TTL = 10 * 60.0
@@ -254,10 +257,34 @@ class CrosstalkHandler(BaseHTTPRequestHandler):
 
     server_version = "Crosstalk/1.0"
     protocol_version = "HTTP/1.1"
+    timeout = READ_TIMEOUT
 
     @property
     def state(self) -> ServerState:
         return self.server.state  # type: ignore[attr-defined]
+
+    def handle(self):
+        """One connection: internal errors become JSON, never a dead thread."""
+        try:
+            super().handle()
+        except (BrokenPipeError, ConnectionResetError, socket.timeout):
+            pass
+        except Exception:
+            try:
+                self._json(500, {"error": "internal error"})
+            except Exception:
+                pass
+
+    def send_error(self, code, message=None, explain=None):
+        """Errors unsupported by a do_* method stay JSON (e.g. a 501)."""
+        try:
+            self._error(code, message or "error")
+        except Exception:
+            try:
+                self.send_response(code)
+                self.end_headers()
+            except Exception:
+                pass
 
     def log_message(self, fmt, *args):
         # One line per request: never a header, never a body, so no secret

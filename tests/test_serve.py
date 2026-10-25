@@ -2,6 +2,7 @@ import json
 import os
 import select
 import shutil
+import socket
 import subprocess
 import sys
 import threading
@@ -15,7 +16,7 @@ from helpers import SPEC_ROSTER, RunningServer, TempRepo, line
 
 from crosstalk.logs import append_line, check_all
 from crosstalk.participants import load_roster
-from crosstalk.serve import repo_commit
+from crosstalk.serve import CrosstalkHandler, repo_commit
 from crosstalk.tokens import token_hash
 
 
@@ -656,6 +657,56 @@ class HealthTests(unittest.TestCase):
             self.assertEqual(status, 200)
             self.assertTrue(body["ok"])
             self.assertEqual(body["fatal"], [])
+
+
+class RobustnessTests(unittest.TestCase):
+    def test_an_unsupported_method_is_501_json(self):
+        with TempRepo() as r:
+            r.write_roster()
+            with RunningServer(r.root) as srv:
+                status, body = request(srv.url + "/api/snapshot", "PUT")
+            self.assertEqual(status, 501)
+            self.assertIn("error", body)
+
+    def test_an_internal_error_is_500_json(self):
+        with TempRepo() as r:
+            r.write_roster()
+            with RunningServer(r.root) as srv:
+                original = CrosstalkHandler._snapshot
+
+                def boom(self):
+                    raise RuntimeError("boom")
+
+                CrosstalkHandler._snapshot = boom
+                try:
+                    status, body = request(srv.url + "/api/snapshot")
+                finally:
+                    CrosstalkHandler._snapshot = original
+            self.assertEqual(status, 500)
+            self.assertIn("error", body)
+
+    def test_a_slow_client_is_timed_out(self):
+        with TempRepo() as r:
+            r.write_roster()
+            with RunningServer(r.root) as srv:
+                old = CrosstalkHandler.timeout
+                CrosstalkHandler.timeout = 0.5
+                try:
+                    s = socket.create_connection(("127.0.0.1", srv.port), timeout=5)
+                    s.sendall(b"GET /api/snapshot HTTP/1.1\r\nHost: x\r\n")
+                    s.settimeout(5)
+                    start = time.time()
+                    try:
+                        data = s.recv(4096)
+                    except (ConnectionResetError, socket.timeout):
+                        data = b""
+                    elapsed = time.time() - start
+                    s.close()
+                    self.assertEqual(data, b"")
+                    self.assertLess(elapsed, 3)
+                finally:
+                    CrosstalkHandler.timeout = old
+
 
 
 if __name__ == "__main__":
