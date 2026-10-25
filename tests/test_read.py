@@ -8,6 +8,8 @@ from pathlib import Path
 
 from helpers import TempRepo, line
 
+from crosstalk.service import SERVICE
+
 REPO = Path(__file__).resolve().parent.parent
 
 
@@ -97,6 +99,19 @@ class ReadTests(unittest.TestCase):
         self.assertEqual(svc["name"], "Crosstalk")
         for key in ("purpose", "capabilities", "commands", "protocol"):
             self.assertIn(key, svc)
+
+    def test_write_command_runs_clean(self):
+        # The service block's write command is a complete example: substitute the
+        # placeholders and it must append a line without error.
+        self.r.write_roster()
+        cmd = SERVICE["commands"]["write"]
+        cmd = (cmd.replace("<repo>", str(self.r.root))
+                  .replace("<id>", "codex")
+                  .replace("<n>", "1"))
+        p = subprocess.run(cmd, shell=True, stdout=subprocess.PIPE,
+                           stderr=subprocess.PIPE, universal_newlines=True, cwd="/")
+        self.assertEqual(p.returncode, 0, p.stderr)
+        self.assertTrue((self.r.root / "log" / "codex.jsonl").is_file())
 
 
 if __name__ == "__main__":

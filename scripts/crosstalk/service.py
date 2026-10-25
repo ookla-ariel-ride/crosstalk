@@ -21,7 +21,8 @@ SERVICE = {
         "with 'Crosstalk feature:' (body = what and why; project = your id)",
     ],
     "commands": {
-        "write": "python3 <repo>/scripts/relay.py append --from <id> ...",
+        "write": "python3 <repo>/scripts/relay.py append --from <id> --op set --collection messages --id <id>-<n> --data '{\"from\": \"<id>\", \"kind\": \"check-in\", \"summary\": \"...\"}'  # <id> is YOUR participant id; <n> a number you pick; write only your own log",
+        "request": "python3 <repo>/scripts/relay.py append --from <id> --op set --collection messages --id <id>-<n> --data '{\"from\": \"<id>\", \"kind\": \"request\", \"summary\": \"...\", \"to\": [\"<other-id>\"]}'  # ask another project for help; omit to to ask everyone",
         "read": "python3 <repo>/scripts/relay.py read",
         "inbox": "python3 <repo>/scripts/relay.py inbox <id>",
         "check": "python3 <repo>/scripts/relay.py check",
