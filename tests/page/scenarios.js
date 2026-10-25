@@ -598,6 +598,69 @@
     return res("newSinceVisit", txt === "2 new" && gone && advanced, "badge=" + JSON.stringify(txt) + " gone=" + gone + " stored " + before + " -> " + after);
   });
 
+  // ---------- Help tab: open requests and their answers ----------
+  function helpCards() { return [].slice.call(document.querySelectorAll("#view .card")); }
+  function helpHas(summary) { return helpCards().some(function (c) { return c.textContent.indexOf(summary) !== -1; }); }
+  function helpFrom() { return helpCards().map(function (c) { return c.dataset.from; }); }
+
+  S.push(async function helpTabListed() {
+    await go("help");
+    await addDoc("messages", "hreq-1", { t: ago(1), from: "vectorcraft", kind: "request", summary: "How do I land this?", to: ["bewareilive"] });
+    var listed = helpHas("How do I land this?");
+    var badge = $("tab-help").querySelector(".n").textContent;
+    await go("timeline");
+    return res("helpTabListed", listed && badge === "1", "listed=" + listed + " badge=" + badge);
+  });
+
+  S.push(async function helpAnsweredDrops() {
+    await go("help");
+    await addDoc("messages", "hreq-2", { t: ago(1), from: "vectorcraft", kind: "request", summary: "Still open?", to: ["bewareilive"] });
+    var before = helpHas("Still open?");
+    await addDoc("messages", "hrep-2", { t: ago(1), from: "bewareilive", kind: "reply", summary: "Yes", replyTo: "hreq-2" });
+    var after = helpHas("Still open?");
+    await go("timeline");
+    return res("helpAnsweredDrops", before && !after, "before=" + before + " after=" + after);
+  });
+
+  S.push(async function helpToChips() {
+    await go("help");
+    await addDoc("messages", "hreq-3", { t: ago(1), from: "codex", kind: "request", summary: "Two recipients", to: ["bewareilive", "vectorcraft"] });
+    await addDoc("messages", "hreq-4", { t: ago(1), from: "codex", kind: "request", summary: "Everyone" });
+    function toText(summary) {
+      var c = helpCards().filter(function (x) { return x.textContent.indexOf(summary) !== -1; })[0];
+      var t = c && c.querySelector(".to");
+      return t ? t.textContent : null;
+    }
+    var a = toText("Two recipients"), b = toText("Everyone");
+    await go("timeline");
+    return res("helpToChips", a === "to BewareILive · VectorCraft" && b === "everyone", "two=" + JSON.stringify(a) + " none=" + JSON.stringify(b));
+  });
+
+  S.push(async function helpQuarantineDimmed() {
+    await go("help");
+    await addDoc("participants", "hqbot", { name: "Help Q bot", kind: "tool", color: "#555555" });
+    await addDoc("messages", "hreq-5", { t: ago(1), from: "hqbot", kind: "request", summary: "From a quarantined requester" });
+    var c = helpCards().filter(function (x) { return x.dataset.from === "hqbot"; })[0];
+    var dim = !!c && c.classList.contains("quarantined") && getComputedStyle(c).opacity === "0.55";
+    await go("timeline");
+    return res("helpQuarantineDimmed", dim, "dim=" + dim);
+  });
+
+  S.push(async function helpFilter() {
+    await go("timeline");
+    await addDoc("messages", "hreq-6", { t: ago(1), from: "bewareilive", kind: "request", summary: "BIL asks" });
+    await addDoc("messages", "hreq-7", { t: ago(1), from: "vectorcraft", kind: "request", summary: "VC asks" });
+    var b = $("who-bewareilive");
+    if (!b) return res("helpFilter", false, "no roster entry");
+    b.click(); await tick();
+    await go("help");
+    var froms = helpFrom();
+    var onlyBil = froms.length > 0 && froms.every(function (f) { return f === "bewareilive"; });
+    await go("timeline");
+    $("who-bewareilive").click(); await tick();
+    return res("helpFilter", onlyBil, "froms=" + JSON.stringify(froms));
+  });
+
   S.push(async function partlyLive() {
     var before = $("liveText").textContent;
     __kill("locks", "revoked"); await tick();

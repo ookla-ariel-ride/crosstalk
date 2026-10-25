@@ -116,7 +116,7 @@ a { color: inherit; }
 /* A reply sits indented with a reply line beside it; its "Replying to" line names the message it answers. */
 .msg.reply-to { margin-left: 28px; }
 .msg.reply-to::before { content: ""; position: absolute; left: -16px; top: 6px; bottom: 6px; border-left: 2px solid var(--rule); }
-.msg.quarantined { opacity: .55; }
+.msg.quarantined, .card.quarantined { opacity: .55; }
 .msg .re { font: 12px/1.35 var(--mono); color: var(--muted); margin: 4px 0 2px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .msg.important { border-width: 2px; border-color: var(--muted); border-top: 5px solid var(--who, var(--muted)); border-left: 3px solid var(--who, var(--muted)); padding-left: 15px; }
 .msg.important .summary { font-size: 16px; }
@@ -230,7 +230,7 @@ td.num, td.t { font: 12px var(--mono); font-variant-numeric: tabular-nums; white
   var TABS = [
     ["timeline", "Timeline", "messages"], ["agreements", "Agreements", "agreements"], ["waiting", "Waiting on you", "waiting"],
     ["locks", "File claims", "locks"], ["lessons", "Lessons", "lessons"], ["decisions", "Decisions", "decisions"],
-    ["progress", "Progress", "progress"], ["incidents", "Incidents", "incidents"]
+    ["progress", "Progress", "progress"], ["incidents", "Incidents", "incidents"], ["help", "Help", null]
   ];
   var STATUSES = ["proposed", "agreed", "building", "landed-builder", "ready-to-adopt", "landed-both", "held", "dropped"];
   var data = {}; COLS.forEach(function (c) { data[c] = []; });
@@ -454,6 +454,23 @@ td.num, td.t { font: 12px var(--mono); font-variant-numeric: tabular-nums; white
   function isImportant(m) { var k = kindOf(m); return m.important === true || (m.important !== false && (k === "alert" || k === "disagreement" || k === "owner")); }
   function byT(a, b) { var ta = ts(a.t), tb = ts(b.t); return (isNaN(ta) ? Infinity : ta) - (isNaN(tb) ? Infinity : tb); }
 
+    // Open help requests, derived over data.messages: a request (kind "request") is open while no
+      // message's replyTo points at it. Newest first, each with its replies in order. O(n) over the flat list.
+  function openRequests() {
+    var byId = {}; data.messages.forEach(function (m) { byId[m._id] = m; });
+    var answered = {}, replies = {};
+    data.messages.forEach(function (m) {
+      if (m.replyTo && byId[m.replyTo]) { answered[m.replyTo] = true; (replies[m.replyTo] = replies[m.replyTo] || []).push(m); }
+    });
+    var out = [];
+    data.messages.forEach(function (m) {
+      if (m.kind !== "request" || answered[m._id]) return;
+      out.push({ request: m, replies: (replies[m._id] || []).slice().sort(byT) });
+    });
+    out.sort(function (a, b) { return byT(b.request, a.request); });
+    return out;
+  }
+
   /* ---------- status strip ---------- */
   function renderStrip() {
     var msgs = data.messages.slice().sort(byT);
@@ -526,7 +543,9 @@ td.num, td.t { font: 12px var(--mono); font-variant-numeric: tabular-nums; white
     TABS.forEach(function (t) {
       var b = el("button", null, t[1]); b.type = "button"; b.id = "tab-" + t[0];
       b.setAttribute("role", "tab"); b.setAttribute("aria-selected", String(tab === t[0]));
-      var n = t[0] === "waiting" ? data.waiting.filter(function (w) { return !w.done; }).length : data[t[2]].length;
+      var n = t[0] === "waiting" ? data.waiting.filter(function (w) { return !w.done; }).length
+        : t[0] === "help" ? openRequests().length
+        : data[t[2]].length;
       b.appendChild(el("span", "n", n));
       if (t[0] === "timeline" && nNew > 0) { var badge = el("span", "new", nNew + " new"); badge.id = "new-badge"; b.appendChild(badge); }
       b.addEventListener("click", function () { if (t[0] === "timeline") markVisited(); tab = t[0]; try { history.replaceState(null, "", "#" + t[0]); } catch (e) {} renderAll(); });
@@ -799,6 +818,56 @@ td.num, td.t { font: 12px var(--mono); font-variant-numeric: tabular-nums; white
     view.appendChild(grid);
   }
 
+  /* ---------- help ---------- */
+  // A Help card is one open request: the requester's tag (dimmed when quarantined), the
+  // to-chips ("to X · Y" or "everyone"), the summary/body, then each reply inline with its
+  // sender tag and summary. All row data goes through textContent, never innerHTML.
+  function helpCard(m, replies) {
+    var from = String(m.from == null ? "" : m.from);
+    var card = el("div", "card");
+    card.dataset.from = from;
+    var quarantined = isQuarantined(from);
+    if (quarantined) card.classList.add("quarantined");
+    var meta = el("div", "meta");
+    meta.appendChild(who(m.from));
+    var to = [].concat(m.to == null ? [] : m.to).filter(function (x) { return x != null && x !== ""; }).map(String);
+    meta.appendChild(el("span", "to", to.length ? "to " + to.map(displayName).join(" \u00b7 ") : "everyone"));
+    if (quarantined) meta.appendChild(quarantinePill());
+    card.appendChild(meta);
+    if (m.summary) card.appendChild(el("div", "summary", m.summary));
+    add(card, bodyEl(m.body));
+    add(card, refsEl(m.refs, m.project || m.from));
+    if (replies.length) {
+      var box = el("div", "replies");
+      replies.forEach(function (r) {
+        var rc = el("div", "reply");
+        var rmeta = el("div", "meta");
+        rmeta.appendChild(who(r.from));
+        if (r.summary) rmeta.appendChild(el("span", null, r.summary));
+        rc.appendChild(rmeta);
+        add(rc, bodyEl(r.body));
+        box.appendChild(rc);
+      });
+      card.appendChild(box);
+    }
+    return card;
+  }
+
+  function renderHelp(view) {
+    toolbar(view, false);
+    var reqs = openRequests().filter(function (r) {
+      var whoOk = !whoFilter || String(r.request.from == null ? "" : r.request.from) === whoFilter;
+      return whoOk && (matches(r.request) || r.replies.some(matches));
+    });
+    if (!reqs.length) {
+      view.appendChild(el("div", "empty", "No open requests. A project asks for help with a kind request; it stays here until someone answers it."));
+      return;
+    }
+    var cards = el("div", "cards");
+    reqs.forEach(function (r) { cards.appendChild(helpCard(r.request, r.replies)); });
+    view.appendChild(cards);
+  }
+
   /* ---------- agreements ---------- */
   function renderAgreements(view) {
     toolbar(view, false);
@@ -990,7 +1059,7 @@ td.num, td.t { font: 12px var(--mono); font-variant-numeric: tabular-nums; white
     var view = document.getElementById("view");
     var f = keepFocus ? captureFocus() : null;
     view.textContent = "";
-    ({ timeline: renderTimeline, agreements: renderAgreements, waiting: renderWaiting, locks: renderLocks, lessons: renderLessons, decisions: renderDecisions, progress: renderProgress, incidents: renderIncidents }[tab] || renderTimeline)(view);
+    ({ timeline: renderTimeline, agreements: renderAgreements, waiting: renderWaiting, locks: renderLocks, lessons: renderLessons, decisions: renderDecisions, progress: renderProgress, incidents: renderIncidents, help: renderHelp }[tab] || renderTimeline)(view);
     restoreFocus(f);
   }
   // The heading names every project in the roster, each in its color; "Crosstalk" until the roster loads.
