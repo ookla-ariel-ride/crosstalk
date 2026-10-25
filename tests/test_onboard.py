@@ -78,6 +78,39 @@ class OnboardTests(unittest.TestCase):
                 onboard(r.root, "codex", "Codex Two", "reviewer")
             self.assertIn("codex", str(cm.exception))
 
+    def test_repo_with_newline_refused(self):
+        with TempRepo() as r:
+            r.write_roster()
+            with self.assertRaises(ValueError):
+                onboard(r.root, "x", "X", "tool", repo="owner/repo\nrm -rf")
+
+    def test_repo_list_refused(self):
+        with TempRepo() as r:
+            r.write_roster()
+            with self.assertRaises(ValueError):
+                onboard(r.root, "x", "X", "tool", repo=["owner/repo"])
+
+    def test_repo_too_long_refused(self):
+        with TempRepo() as r:
+            r.write_roster()
+            with self.assertRaises(ValueError):
+                onboard(r.root, "x", "X", "tool", repo="o" * 121 + "/r")
+
+    def test_valid_repo_accepted(self):
+        with TempRepo() as r:
+            r.write_roster()
+            onboard(r.root, "x", "X", "tool", repo="owner/repo")
+            roster = load_roster(r.root / "participants.json")
+            self.assertEqual(roster.participants["x"].repo, "owner/repo")
+
+    def test_load_roster_rejects_bad_repo(self):
+        with TempRepo() as r:
+            roster = json.loads(json.dumps(SPEC_ROSTER))
+            roster["participants"][0]["repo"] = "bad\nrepo"
+            r.write_roster(roster)
+            with self.assertRaises(ValueError):
+                load_roster(r.root / "participants.json")
+
     def test_duplicate_name_refused(self):
         with TempRepo() as r:
             r.write_roster()

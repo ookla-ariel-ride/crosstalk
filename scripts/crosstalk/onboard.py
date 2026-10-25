@@ -15,7 +15,7 @@ from contextlib import contextmanager
 from pathlib import Path
 from typing import Dict, Optional, Tuple
 
-from .participants import ID_RE, KINDS, NAME_BAD_RE, Roster, load_roster
+from .participants import ID_RE, KINDS, NAME_BAD_RE, Roster, load_roster, repo_problem
 from .tokens import TOKEN_FILE, Tokens, load_tokens
 
 # Deterministic palette: (light-theme color, dark-theme color), hue-matched.
@@ -270,6 +270,9 @@ def _onboard(root, id, name, kind, repo, check_in_min, parent, color, color_dark
                                      or not isinstance(check_in_min, int)
                                      or check_in_min <= 0):
         raise ValueError("participant %s: bad checkInMin %r" % (id, check_in_min))
+    problem = repo_problem(id, repo)
+    if problem:
+        raise ValueError(problem)
 
     if color is None and color_dark is None:
         color, color_dark = pick_colors(roster)

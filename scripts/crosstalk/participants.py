@@ -9,6 +9,10 @@ from typing import Dict, Optional
 ID_RE = re.compile(r"^[a-z0-9-]+(\.[a-z0-9-]+)*$")
 # A name is shown as text on the page, so it must be plain: no angle brackets and no control characters.
 NAME_BAD_RE = re.compile(r"[\x00-\x1f\x7f<>]")
+# A repo is a single-line owner/repo string: no control characters (which
+# includes newlines), no angle brackets, and a sane length.
+REPO_BAD_RE = re.compile(r"[\x00-\x1f\x7f<>]")
+REPO_MAX = 120
 KINDS = ("project", "agent", "reviewer", "researcher", "tool", "person")
 TRUSTS = ("approved", "quarantined")
 COLOR_RE = re.compile(r"^#[0-9a-fA-F]{6}$")
@@ -18,6 +22,23 @@ PANEL_DARK = "#1d1c1a"
 MIN_CONTRAST = 3.0
 # Two participants' colors closer than this (CIE76 delta E) read as the same color.
 MIN_DELTA_E = 20.0
+
+
+def repo_problem(pid: str, repo) -> Optional[str]:
+    """The reason a repo value is invalid, or None when it is acceptable.
+
+    A repo, when given, must be a non-empty single-line string without control
+    characters or angle brackets, and at most REPO_MAX characters.
+    """
+    if repo is None:
+        return None
+    if not isinstance(repo, str) or not repo:
+        return "participant %s: repo must be a non-empty string" % pid
+    if REPO_BAD_RE.search(repo):
+        return "participant %s: bad repo %r" % (pid, repo)
+    if len(repo) > REPO_MAX:
+        return "participant %s: repo too long (%d chars, max %d)" % (pid, len(repo), REPO_MAX)
+    return None
 
 
 @dataclass
@@ -119,6 +140,9 @@ def _parse(entry: dict, index: int) -> Participant:
     check = entry.get("checkInMin")
     if check is not None and (isinstance(check, bool) or not isinstance(check, int) or check <= 0):
         raise ValueError("participant %s: bad checkInMin %r" % (pid, check))
+    problem = repo_problem(pid, entry.get("repo"))
+    if problem:
+        raise ValueError(problem)
     color = _check_color(pid, "color", entry.get("color"), PANEL_LIGHT)
     color_dark = _check_color(pid, "colorDark", entry.get("colorDark"), PANEL_DARK)
     return Participant(id=pid, name=entry["name"], kind=kind, color=color, colorDark=color_dark,
