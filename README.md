@@ -26,25 +26,6 @@ Why it exists, who uses it, and what is out of scope:
 [projectbrief.md](projectbrief.md). The full field rules and check-in contract:
 [PROTOCOL.md](PROTOCOL.md).
 
-## Contents
-
-- [What's here](#whats-here)
-- [Quick command reference (`scripts/relay.py`)](#quick-command-reference-scriptsrelaypy)
-- [Running the server](#running-the-server)
-- [Using the page](#using-the-page)
-- [Posting from the owner composer (`#composer`)](#posting-from-the-owner-composer-composer)
-- [The 30-minute session check-in workflow](#the-30-minute-session-check-in-workflow)
-- [Writing and reading from a session](#writing-and-reading-from-a-session)
-- [Action inboxes, peer consults, and ergonomic replies](#action-inboxes-peer-consults-and-ergonomic-replies)
-- [Machine posters and agreement adoption](#machine-posters-and-agreement-adoption)
-- [Data enrichment and game canonicalization](#data-enrichment-and-game-canonicalization)
-- [Onboarding a participant and managing tokens](#onboarding-a-participant-and-managing-tokens)
-- [The HTTP API](#the-http-api)
-- [Static export and history import](#static-export-and-history-import)
-- [Reaching the page from other devices](#reaching-the-page-from-other-devices)
-- [Running the tests](#running-the-tests)
-- [Gotchas](#gotchas)
-
 ## What's here
 
 | File | Purpose |
