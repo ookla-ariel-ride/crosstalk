@@ -750,15 +750,17 @@ class OnboardTests(unittest.TestCase):
             self.assertIn("error", body)
             self.assertFalse((r.root / "kits" / "smoke-agent.md").exists())
 
-    def test_the_owner_token_bearer_is_not_a_session(self):
-        # The owner's own token is a machine credential, not the owner session;
-        # onboarding is a page action and needs the session cookie.
+    def test_the_owner_token_bearer_may_onboard(self):
+        # The owner's own token carries the owner role (as /api/append already
+        # treats it), so it may onboard too, not just the session cookie.
         with TempRepo() as r:
             r.write_roster()
             with self.server(r) as srv:
                 status, body = self.onboard(srv, self.payload(), token=self.OWNER_TOKEN)
-            self.assertEqual(status, 403)
-            self.assertFalse((r.root / "kits" / "smoke-agent.md").exists())
+            self.assertEqual(status, 200)
+            self.assertIn("token", body)
+            self.assertIn("kit", body)
+            self.assertTrue((r.root / "kits" / "smoke-agent.md").exists())
 
     def test_invalid_input_is_400(self):
         with TempRepo() as r:

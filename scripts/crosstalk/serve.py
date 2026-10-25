@@ -543,10 +543,10 @@ class CrosstalkHandler(BaseHTTPRequestHandler):
         The minted token is returned once, in this response only; it is never
         logged and never appears in an error body.
         """
-        if not self._owner_session():
+        if self._role() != "owner":
             header = self.headers.get("Authorization")
             if header and self.state.tokens.verify(header).ok:
-                self._error(403, "only the owner session may onboard a participant")
+                self._error(403, "only the owner may onboard a participant")
             else:
                 self._error(401, "no valid owner session")
             return
