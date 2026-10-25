@@ -706,6 +706,42 @@ class OwnerTests(unittest.TestCase):
             pin = first.split(":")[1].split()[0]
             self.assertRegex(pin, r"^\d{6}$")
 
+    def test_a_session_survives_a_restart(self):
+        import tempfile as _tf
+        with TempRepo() as r:
+            r.write_roster()
+            sessions = Path(_tf.mkdtemp()) / "sessions.json"
+            with self.server(r, sessions=sessions) as srv:
+                status, _body, cookie = self.login(srv, {"pin": srv.pin})
+                self.assertEqual(status, 200)
+            # A second server over the same root + sessions file: the cookie holds.
+            with self.server(r, sessions=sessions) as srv2:
+                status, body = request(srv2.url + "/api/me", "GET", headers={"Cookie": self.cookie_of(cookie)})
+                self.assertEqual(status, 200)
+                self.assertTrue(body["isOwner"])
+
+    def test_an_expired_session_is_dropped_when_loaded(self):
+        import json as _json
+        import time as _time
+        import tempfile as _tf
+        with TempRepo() as r:
+            r.write_roster()
+            sessions = Path(_tf.mkdtemp()) / "sessions.json"
+            stale = "x" * 32
+            sessions.write_text(_json.dumps({stale: _time.time() - 10}), encoding="utf-8")
+            with self.server(r, sessions=sessions) as srv:
+                status, body = request(srv.url + "/api/me", "GET",
+                                       headers={"Cookie": "crosstalk_session=" + stale})
+                self.assertEqual(status, 200)
+                self.assertFalse(body["isOwner"])
+
+    def test_the_sessions_file_stays_out_of_the_repo(self):
+        with TempRepo() as r:
+            r.write_roster()
+            with self.server(r) as srv:
+                self.login(srv, {"pin": srv.pin})
+                self.assertEqual(sorted(p.name for p in r.root.iterdir()), ["log", "participants.json"])
+
 
 class OnboardTests(unittest.TestCase):
     """POST /api/onboard: the owner session adds a participant."""

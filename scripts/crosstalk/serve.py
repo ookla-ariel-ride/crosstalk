@@ -218,11 +218,18 @@ class TokenStore:
 
 
 class Sessions:
-    """Owner sessions, in memory only: a restart forgets them all."""
+    """Owner sessions.
 
-    def __init__(self):
-        self._lock = threading.Lock()
+    Without a path, sessions are memory-only: a restart forgets them all.
+    With a path, they persist across restarts in a 0600 JSON file outside
+    the repo (the housekeeper must never commit them).
+    """
+
+    def __init__(self, path=None):
+        self._lock = threading.RLock()
+        self._path = Path(path) if path else None
         self._sessions = {}  # type: Dict[str, float]
+        self._load()
 
     def create(self, ttl: float = SESSION_TTL) -> str:
         """A new opaque session id."""
@@ -230,6 +237,7 @@ class Sessions:
         with self._lock:
             self._prune()
             self._sessions[sid] = time.time() + ttl
+            self._save()
         return sid
 
     def valid(self, sid: Optional[str]) -> bool:
@@ -241,23 +249,51 @@ class Sessions:
                 return False
             if expires < time.time():
                 del self._sessions[sid]
+                self._save()
                 return False
             return True
 
     def _prune(self) -> None:
         now = time.time()
-        for sid in [s for s, e in self._sessions.items() if e < now]:
-            del self._sessions[sid]
+        stale = [s for s, e in self._sessions.items() if e < now]
+        if stale:
+            for sid in stale:
+                del self._sessions[sid]
+            self._save()
+
+    def _load(self) -> None:
+        if self._path is None or not self._path.exists():
+            return
+        try:
+            raw = json.loads(self._path.read_text(encoding="utf-8"))
+            if not isinstance(raw, dict):
+                return
+            now = time.time()
+            for sid, expires in raw.items():
+                if isinstance(sid, str) and isinstance(expires, (int, float)) and expires > now:
+                    self._sessions[sid] = expires
+        except (OSError, ValueError):
+            return
+
+    def _save(self) -> None:
+        if self._path is None:
+            return
+        with self._lock:
+            try:
+                atomic_write_text(self._path, json.dumps(self._sessions, sort_keys=True) + "\n")
+                os.chmod(str(self._path), 0o600)
+            except OSError:
+                pass
 
 
 class ServerState:
     """What the handlers share: the served root, the replay cache, the tokens."""
 
-    def __init__(self, root, tokens=None):
+    def __init__(self, root, tokens=None, sessions=None):
         self.root = Path(root)
         self.tokens = TokenStore(self.root, tokens)
         self.cache = ReplayCache(self.root)
-        self.sessions = Sessions()
+        self.sessions = Sessions(sessions)
         self.pin = None  # type: Optional[str]
         self.pin_expires = 0.0
         self.pin_used = False
@@ -731,12 +767,13 @@ class RunningServer:
     """The server in a thread: `with RunningServer(root) as srv: ...`."""
 
     def __init__(self, root, port: int = 0, host: str = "127.0.0.1", tokens=None,
-                 no_pin: bool = False):
+                 no_pin: bool = False, sessions=None):
         self.root = Path(root)
         self.host = host
         self.port = port
         self.tokens = tokens
         self.no_pin = no_pin
+        self.sessions = sessions
         self._httpd = None
         self._thread = None
 
@@ -747,7 +784,7 @@ class RunningServer:
             return self
         httpd = ThreadingHTTPServer((self.host, self.port), CrosstalkHandler)
         httpd.daemon_threads = True
-        httpd.state = ServerState(self.root, self.tokens)  # type: ignore[attr-defined]
+        httpd.state = ServerState(self.root, self.tokens, sessions=self.sessions)  # type: ignore[attr-defined]
         if not self.no_pin:
             httpd.state.make_pin()  # type: ignore[attr-defined]
         self._httpd = httpd
@@ -792,23 +829,34 @@ class RunningServer:
 
 
 def start(root, port: int = 0, host: str = "127.0.0.1", tokens=None,
-          no_pin: bool = False) -> RunningServer:
+          no_pin: bool = False, sessions=None) -> RunningServer:
     """Start a server over `root` and return it (a context manager).
 
     Port 0 asks the OS for an ephemeral port, which the tests use.
+    `sessions` is the path where owner sessions persist across restarts;
+    None keeps them in memory only (the tests' default).
     """
     return RunningServer(root, port=port, host=host, tokens=tokens,
-                         no_pin=no_pin).start_server()
+                         no_pin=no_pin, sessions=sessions).start_server()
+
+
+DEFAULT_SESSIONS = Path.home() / ".crosstalk-sessions.json"
 
 
 def serve(root, host: str = "127.0.0.1", port: int = 8484, no_pin: bool = False,
-          tokens=None) -> None:
+          tokens=None, sessions=None) -> None:
     """Run the server in the foreground and print the one-time startup PIN.
 
     The PIN is how the owner logs in on the page; it is good for one login
     and ten minutes. `--no-pin` turns it off (the owner token still works).
+    Owner sessions persist (default ~/.crosstalk-sessions.json, 0600), so a
+    restart no longer logs the owner out. `CROSSTALK_SESSIONS` overrides
+    the path; an empty value keeps sessions in memory only.
     """
-    server = RunningServer(root, port=port, host=host, tokens=tokens, no_pin=no_pin)
+    if sessions is None:
+        sessions = os.environ.get("CROSSTALK_SESSIONS", DEFAULT_SESSIONS) or None
+    server = RunningServer(root, port=port, host=host, tokens=tokens,
+                           no_pin=no_pin, sessions=sessions)
     server.start_server()
     if server.pin:
         print("Login PIN: %s  (one login, ten minutes)" % server.pin, flush=True)

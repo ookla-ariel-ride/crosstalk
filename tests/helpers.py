@@ -1,4 +1,5 @@
 import json
+import os
 import shutil
 import sys
 import tempfile
@@ -19,6 +20,9 @@ class RunningServer(_RunningServer):
     def __init__(self, root, **kwargs):
         kwargs.setdefault("port", 0)
         kwargs.setdefault("host", "127.0.0.1")
+        if "sessions" not in kwargs:
+            kwargs["sessions"] = Path(tempfile.gettempdir()) / \
+                ("crosstalk-test-sessions-" + os.urandom(6).hex() + ".json")
         _RunningServer.__init__(self, root, **kwargs)
 
 
