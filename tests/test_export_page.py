@@ -69,6 +69,16 @@ class ExporterTests(unittest.TestCase):
         self.assertEqual(count, len(replay(load_all_lines(r.root, roster))))
         self.assertEqual(snap["collections"]["messages"]["m-0001"]["summary"], "old")
 
+    def test_export_snapshot_enriches_messages(self):
+        # data.from and data.t may be absent from a message row; the export
+        # fills both from the writing line, like the live snapshot does.
+        r = self.r
+        r.write_log("codex", [line(1, "codex", data={"kind": "reply", "summary": "hi"})])
+        snap = build_snapshot(r.root)
+        doc = snap["collections"]["messages"]["codex-0001"]
+        self.assertEqual(doc["from"], "codex")
+        self.assertEqual(doc["t"], "2026-10-21T18:00:00Z")
+
     def test_export_stamps_the_commit_and_the_publish_time(self):
         r = self.r
         out = r.root / "page.html"

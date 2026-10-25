@@ -86,8 +86,12 @@ class AppendTests(unittest.TestCase):
             with self.assertRaises(ValueError):
                 append_line(r.root, "codex", "set", "messages", "codex-1", {"body": "x"}, roster=ro)
             self.assertFalse((r.root / "log" / "codex.jsonl").exists())
+            with self.assertRaises(ValueError):
+                append_line(r.root, "codex", "set", "messages", "codex-1",
+                            {"kind": "review", "summary": "ok"}, roster=ro)
+            self.assertFalse((r.root / "log" / "codex.jsonl").exists())
             append_line(r.root, "codex", "set", "messages", "codex-1",
-                        {"kind": "review", "summary": "ok"}, roster=ro)
+                        {"from": "codex", "kind": "review", "summary": "ok"}, roster=ro)
             append_line(r.root, "codex", "set", "lessons", "codex-l", {}, roster=ro)
 
     def test_skew_measured_both_ways(self):
@@ -98,7 +102,7 @@ class AppendTests(unittest.TestCase):
             def t(secs):
                 return time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime(secs))
 
-            ok = {"kind": "reply", "summary": "x"}
+            ok = {"from": "codex", "kind": "reply", "summary": "x"}
             self.assertEqual(message_problems("messages", "set", dict(ok, t=t(now + 90)), ro, now), ([], []))
             (e,) = message_problems("messages", "set", dict(ok, t=t(now + 300)), ro, now)[0]
             self.assertIn("5 min ahead of", e)
@@ -111,7 +115,8 @@ class AppendTests(unittest.TestCase):
             future = time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime(time.time() + 600))
             with self.assertRaises(ValueError):
                 append_line(r.root, "codex", "set", "messages", "codex-1",
-                            {"kind": "reply", "summary": "x", "t": future}, roster=ro)
+                            {"from": "codex", "kind": "reply", "summary": "x", "t": future},
+                            roster=ro)
             self.assertFalse((r.root / "log" / "codex.jsonl").exists())
 
 if __name__ == "__main__":

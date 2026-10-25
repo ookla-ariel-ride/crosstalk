@@ -47,10 +47,10 @@ class CliTests(unittest.TestCase):
         with TempRepo() as r:
             c = Cli(r)
             p = c.run("append", "--from", "codex", "--op", "set", "--collection", "messages",
-                      "--id", "codex-0001", "--data", '{"kind": "reply", "summary": "hi"}')
+                      "--id", "codex-0001", "--data", '{"from": "codex", "kind": "reply", "summary": "hi"}')
             self.assertEqual((p.returncode, p.stdout.strip()), (0, "1"), p.stderr)
             p = c.run("append", "--from", "codex", "--op", "set", "--collection", "messages",
-                      "--id", "codex-0002", "--data", '{"kind": "reply", "summary": "yo"}')
+                      "--id", "codex-0002", "--data", '{"from": "codex", "kind": "reply", "summary": "yo"}')
             self.assertEqual(p.stdout.strip(), "2")
             self.assertEqual(c.run("check").returncode, 0)
 
@@ -85,7 +85,7 @@ class CliTests(unittest.TestCase):
         with TempRepo() as r:
             c = Cli(r)
             f = r.root / "d.json"
-            f.write_text('{"kind": "reply", "summary": "café"}', encoding="utf-8")
+            f.write_text('{"from": "codex", "kind": "reply", "summary": "café"}', encoding="utf-8")
             p = c.run("append", "--from", "codex", "--op", "set", "--collection", "messages",
                       "--id", "codex-0001", "--data-file", str(f))
             self.assertEqual((p.returncode, p.stdout.strip()), (0, "1"), p.stderr)
@@ -118,7 +118,7 @@ class CliTests(unittest.TestCase):
             c = Cli(r)
             p = c.run("append", "--from", "codex", "--op", "set", "--collection", "messages",
                       "--id", "codex-0001", "--data",
-                      '{"kind": "status", "summary": "hi", "t": "2026-01-01T00:00:00Z",'
+                      '{"from": "codex", "kind": "status", "summary": "hi", "t": "2026-01-01T00:00:00Z",'
                       ' "to": ["owner"]}')
             self.assertEqual(p.returncode, 0, p.stderr)
             self.assertIn("warning: unknown kind 'status'", p.stderr)

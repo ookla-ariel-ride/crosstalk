@@ -57,6 +57,31 @@ class SnapshotTests(unittest.TestCase):
             self.assertEqual(sorted(body["collections"]), ["messages"])
             self.assertEqual(body["collections"]["messages"]["codex-0001"]["summary"], "hi")
 
+    def test_messages_are_enriched_with_writer_and_time(self):
+        # Rows may omit data.from and data.t (the protocol says the line's own t
+        # is the clock). The snapshot fills both from the writing line so the
+        # page can attribute and sort the message.
+        with TempRepo() as r:
+            r.write_roster()
+            r.write_log("codex", [line(1, "codex", data={"kind": "reply", "summary": "hi"})])
+            with RunningServer(r.root) as srv:
+                _, body = request(srv.url + "/api/snapshot")
+            doc = body["collections"]["messages"]["codex-0001"]
+            self.assertEqual(doc["from"], "codex")
+            self.assertEqual(doc["t"], "2026-10-21T18:00:00Z")
+
+    def test_enrichment_keeps_explicit_fields(self):
+        with TempRepo() as r:
+            r.write_roster()
+            r.write_log("codex", [line(1, "codex", data={"from": "codex", "kind": "reply",
+                                                          "summary": "hi",
+                                                          "t": "2026-10-20T09:00:00Z"})])
+            with RunningServer(r.root) as srv:
+                _, body = request(srv.url + "/api/snapshot")
+            doc = body["collections"]["messages"]["codex-0001"]
+            self.assertEqual(doc["from"], "codex")
+            self.assertEqual(doc["t"], "2026-10-20T09:00:00Z")
+
     def test_snapshot_replays_every_collection(self):
         with TempRepo() as r:
             r.write_roster()
@@ -239,7 +264,7 @@ class AppendTests(unittest.TestCase):
 
     def message(self, **over):
         body = {"from": "codex", "op": "set", "collection": "messages", "id": "codex-0001",
-                "data": {"kind": "reply", "summary": "hi"}}
+                "data": {"from": "codex", "kind": "reply", "summary": "hi"}}
         body.update(over)
         return body
 
@@ -254,7 +279,7 @@ class AppendTests(unittest.TestCase):
             self.assertEqual(body["op"], "set")
             self.assertEqual(body["collection"], "messages")
             self.assertEqual(body["id"], "codex-0001")
-            self.assertEqual(body["data"], {"kind": "reply", "summary": "hi"})
+            self.assertEqual(body["data"], {"from": "codex", "kind": "reply", "summary": "hi"})
             raw = (r.root / "log" / "codex.jsonl").read_text(encoding="utf-8")
             written = json.loads(raw.strip())
             self.assertEqual(written["seq"], 1)
@@ -344,7 +369,8 @@ class AppendTests(unittest.TestCase):
             with self.server(r) as srv:
                 def local():
                     append_line(r.root, "codex", "set", "messages", "codex-0002",
-                                {"kind": "reply", "summary": "local"}, roster=ro)
+                                {"from": "codex", "kind": "reply", "summary": "local"},
+                                roster=ro)
 
                 def remote():
                     statuses.append(self.append(srv, self.message(), self.TOKEN)[0])
@@ -540,7 +566,8 @@ class OwnerTests(unittest.TestCase):
                 status, body = request(srv.url + "/api/append", "POST",
                                        {"from": "owner", "op": "set", "collection": "messages",
                                         "id": "own-20261024-1200-abcd",
-                                        "data": {"kind": "owner", "summary": "a note"}},
+                                        "data": {"from": "owner", "kind": "owner",
+                                                 "summary": "a note"}},
                                        {"Cookie": self.cookie_of(cookie)})
                 self.assertEqual(status, 201)
                 self.assertEqual(body["from"], "owner")
@@ -655,7 +682,7 @@ class OwnerTests(unittest.TestCase):
                 # The cookie alone carries the owner: no bearer token is sent.
                 status, body = request(srv.url + "/api/append", "POST",
                                        {"from": "owner", "op": "set", "collection": "messages",
-                                        "id": "own-1", "data": {"kind": "owner", "summary": "hi"}},
+                                        "id": "own-1", "data": {"from": "owner", "kind": "owner", "summary": "hi"}},
                                        {"Cookie": self.cookie_of(cookie)})
                 self.assertEqual(status, 201)
 

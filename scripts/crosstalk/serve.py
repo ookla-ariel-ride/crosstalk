@@ -37,7 +37,7 @@ from urllib.parse import urlsplit
 from .courier import atomic_write_text
 from .logs import COLLECTIONS, append_line, check_all, check_all
 from .participants import load_roster
-from .replay import load_all_lines, replay
+from .replay import enrich_messages, load_all_lines, replay
 from .tokens import TOKEN_FILE, Result, Tokens
 
 # The collections the page reads. "participants" is the owner's roster.
@@ -151,7 +151,8 @@ class ReplayCache:
             roster_path = self.root / "participants.json"
             raw = json.loads(roster_path.read_text(encoding="utf-8"))
             roster = load_roster(roster_path)
-            docs = replay(load_all_lines(self.root, roster))
+            lines = load_all_lines(self.root, roster)
+            docs = enrich_messages(replay(lines), lines)
             entries = {}
             for entry in raw.get("participants", []):
                 if isinstance(entry, dict) and isinstance(entry.get("id"), str):

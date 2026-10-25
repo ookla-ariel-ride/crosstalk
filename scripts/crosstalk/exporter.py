@@ -16,7 +16,7 @@ from typing import Dict, Optional
 
 from .logs import check_all
 from .participants import load_roster
-from .replay import load_all_lines, replay
+from .replay import enrich_messages, load_all_lines, replay
 
 SNAPSHOT_ID = "crosstalk-snapshot"
 UNKNOWN_COMMIT = "unknown"
@@ -56,7 +56,8 @@ def build_snapshot(root: Path) -> dict:
     if fatal:
         p = fatal[0]
         raise RuntimeError("%s:%d: %s" % (p.file, p.line, p.message))
-    docs = replay(load_all_lines(root, roster))
+    lines = load_all_lines(root, roster)
+    docs = enrich_messages(replay(lines), lines)
     collections = {}  # type: Dict[str, Dict[str, dict]]
     for (coll, did), fields in sorted(docs.items()):
         collections.setdefault(coll, {})[did] = fields
