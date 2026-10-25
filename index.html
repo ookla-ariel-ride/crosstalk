@@ -140,6 +140,10 @@ a.who-link { text-decoration: none; }
 .pill.agreement, .pill.landed-both, .pill.done { background: var(--ok); color: var(--panel); }
 .pill.alert, .pill.held, .pill.disagreement { background: var(--warn); color: var(--panel); }
 .pill.owner { background: var(--own); color: var(--panel); }
+.pill.pending-to { background: var(--warn); color: var(--panel); text-transform: none; }
+#digest { margin-bottom: 12px; border-left: 4px solid var(--own); }
+#digest #digest-dismiss { margin-left: auto; }
+#composer #reply-banner { margin: 0; }
 .pill.building, .pill.landed-builder, .pill.ready-to-adopt, .pill.agreed { background: var(--vc-soft); color: var(--fg); }
 .pill.dropped { text-decoration: line-through; }
 .summary { font: 600 15px/1.35 var(--body); margin: 6px 0 4px; text-wrap: balance; overflow-wrap: anywhere; }
@@ -251,7 +255,7 @@ td.num, td.t { font: 12px var(--mono); font-variant-numeric: tabular-nums; white
   }
   // The composer's state lives here, not in the DOM, so a snapshot re-render can't reset it. `id` stays the same
   // until a post succeeds, so retrying a half-failed post overwrites the same rows instead of duplicating them.
-  var draft = { text: "", kind: "owner", id: null, posting: false, status: "" };
+  var draft = { text: "", kind: "owner", id: null, posting: false, status: "", replyTo: null, to: null, replySummary: "" };
   // The Add-participant control: open, posting, status, and the last result (kit + token).
   var onboardState = { open: false, posting: false, status: "", result: null, colorPair: null };
   // The roster is a <details>: always open on wide screens, folded into "People" below 640px until opened.
@@ -284,20 +288,47 @@ td.num, td.t { font: 12px var(--mono); font-variant-numeric: tabular-nums; white
   // newer than the stored time; opening the Timeline tab moves the marker forward.
   var LAST_VISIT_KEY = "crosstalk.lastVisit";
   var CAN_STORE = (function () { try { var k = "__ct_probe"; window.localStorage.setItem(k, "1"); window.localStorage.removeItem(k); return true; } catch (e) { return false; } })();
-  var visitTs = null;
+  var visitTs = null, digestSince = null, digestDismissed = false, lastWrittenVisit = null;
   function serverNow() { var t = meta.serverTime ? ts(meta.serverTime) : NaN; return isNaN(t) ? Date.now() : t; }
   function readVisit() {
     if (!CAN_STORE) return null;
     try { var v = window.localStorage.getItem(LAST_VISIT_KEY), n = v == null ? null : Number(v); return n != null && isFinite(n) && n > 0 ? n : null; } catch (e) { return null; }
   }
-  function writeVisit(t) { if (CAN_STORE) { try { window.localStorage.setItem(LAST_VISIT_KEY, String(Math.round(t))); } catch (e) {} } }
+  function writeVisit(t) {
+    lastWrittenVisit = Math.round(t);
+    if (CAN_STORE) { try { window.localStorage.setItem(LAST_VISIT_KEY, String(lastWrittenVisit)); } catch (e) {} }
+  }
+  function syncVisit() {
+    var s = readVisit();
+    if (s != null && s !== lastWrittenVisit) {
+      visitTs = s;
+      digestSince = s;
+      digestDismissed = false;
+      lastWrittenVisit = s;
+    }
+  }
   function newCount() {
+    syncVisit();
     if (visitTs == null) return 0;
     var n = 0;
     data.messages.forEach(function (m) { var t = ts(m.t); if (!isNaN(t) && t > visitTs) n++; });
     return n;
   }
-  function markVisited() { visitTs = serverNow(); writeVisit(visitTs); }
+  function hasNewProg(since) {
+    if (since == null) return false;
+    return data.progress.some(function (p) { var t = ts(p.t); return !isNaN(t) && t > since && typeof p.pct === "number"; });
+  }
+  function markVisited() {
+    syncVisit();
+    if (newCount() > 0 || hasNewProg(visitTs)) {
+      digestSince = visitTs;
+      digestDismissed = false;
+    } else if (digestSince == null) {
+      digestSince = visitTs;
+    }
+    visitTs = serverNow();
+    writeVisit(visitTs);
+  }
   // Rows are untrusted, so a participant's fields are checked before they reach a URL or a style.
   var HAS = Object.prototype.hasOwnProperty;
   var ID = "[a-z0-9-]+(?:\\.[a-z0-9-]+)*";
@@ -454,18 +485,29 @@ td.num, td.t { font: 12px var(--mono); font-variant-numeric: tabular-nums; white
   function isImportant(m) { var k = kindOf(m); return m.important === true || (m.important !== false && (k === "alert" || k === "disagreement" || k === "owner")); }
   function byT(a, b) { var ta = ts(a.t), tb = ts(b.t); return (isNaN(ta) ? Infinity : ta) - (isNaN(tb) ? Infinity : tb); }
 
-    // Open help requests, derived over data.messages: a request (kind "request") is open while no
-      // message's replyTo points at it. Newest first, each with its replies in order. O(n) over the flat list.
+    // Open help requests, derived over data.messages: a single-recipient or broadcast request is open
+    // while no message's replyTo points at it; a multi-recipient request stays open while any listed
+    // recipient has not replied. Newest first, each with its replies in order and pending recipients.
   function openRequests() {
     var byId = {}; data.messages.forEach(function (m) { byId[m._id] = m; });
-    var answered = {}, replies = {};
+    var replies = {};
     data.messages.forEach(function (m) {
-      if (m.replyTo && byId[m.replyTo]) { answered[m.replyTo] = true; (replies[m.replyTo] = replies[m.replyTo] || []).push(m); }
+      if (m.replyTo && byId[m.replyTo]) (replies[m.replyTo] = replies[m.replyTo] || []).push(m);
     });
     var out = [];
     data.messages.forEach(function (m) {
-      if (m.kind !== "request" || answered[m._id]) return;
-      out.push({ request: m, replies: (replies[m._id] || []).slice().sort(byT) });
+      if (m.kind !== "request") return;
+      var mReplies = (replies[m._id] || []).slice().sort(byT);
+      var toList = [].concat(m.to == null ? [] : m.to).filter(function (x) { return x != null && x !== ""; }).map(String);
+      var pending;
+      if (toList.length >= 2) {
+        pending = toList.filter(function (pid) { return !mReplies.some(function (r) { return String(r.from) === pid; }); });
+        if (!pending.length) return;
+      } else {
+        if (mReplies.length !== 0) return;
+        pending = toList.length === 1 ? toList.slice() : [];
+      }
+      out.push({ request: m, replies: mReplies, pending: pending });
     });
     out.sort(function (a, b) { return byT(b.request, a.request); });
     return out;
@@ -588,7 +630,18 @@ td.num, td.t { font: 12px var(--mono); font-variant-numeric: tabular-nums; white
     var btn = el("button", "btn primary", "Post"); btn.type = "submit"; btn.id = "notePost"; btn.disabled = draft.posting;
     var st = el("span", "status-msg", draft.status); st.id = "noteStatus"; st.setAttribute("role", "status");
     row.appendChild(kind); row.appendChild(btn); row.appendChild(st);
-    box.appendChild(lab); box.appendChild(ta); box.appendChild(row);
+    box.appendChild(lab);
+    if (draft.replyTo) {
+      var rb = el("div", "whonote"); rb.id = "reply-banner";
+      rb.appendChild(el("span", null, "Replying to " + draft.replySummary));
+      var rc = el("button", "btn small", "Cancel"); rc.type = "button"; rc.id = "reply-cancel";
+      rc.addEventListener("click", function () {
+        draft.replyTo = null; draft.to = null; draft.replySummary = ""; refreshComposer();
+      });
+      rb.appendChild(rc);
+      box.appendChild(rb);
+    }
+    box.appendChild(ta); box.appendChild(row);
     box.addEventListener("submit", function (e) {
       e.preventDefault();
       if (draft.posting) return;
@@ -598,11 +651,16 @@ td.num, td.t { font: 12px var(--mono); font-variant-numeric: tabular-nums; white
       var id = draft.id, summary = text.split("\n")[0].slice(0, 160);
       draft.posting = true; draft.status = "Posting…"; refreshComposer();
       // Each row is a set on the same id, so a retry after a partial failure rewrites rows rather than adding them.
-      var writes = [db.collection("messages").doc(id).set({ t: now, from: "owner", kind: "owner", summary: summary, body: text.length > summary.length ? text : "" })];
+      var msgPayload = { t: now, from: "owner", kind: "owner", summary: summary, body: text.length > summary.length ? text : "" };
+      if (draft.replyTo) {
+        msgPayload.replyTo = draft.replyTo;
+        if (draft.to && draft.to.length) msgPayload.to = draft.to;
+      }
+      var writes = [db.collection("messages").doc(id).set(msgPayload)];
       if (draft.kind === "decision") writes.push(db.collection("decisions").doc(id).set({ t: now, by: "owner", summary: summary, body: text, project: "all", source: "Crosstalk page" }));
       if (draft.kind === "waiting") writes.push(db.collection("waiting").doc(id).set({ since: now, project: "owner", summary: summary, body: text, done: null }));
       Promise.all(writes).then(function () {
-        draft = { text: "", kind: "owner", id: null, posting: false, status: "Posted." }; refreshComposer();
+        draft = { text: "", kind: "owner", id: null, posting: false, status: "Posted.", replyTo: null, to: null, replySummary: "" }; refreshComposer();
       }).catch(function (err) {
         draft.posting = false;
         draft.status = "Not posted: " + (err && err.message ? err.message : "try again") + ". Posting again won't duplicate it.";
@@ -616,6 +674,25 @@ td.num, td.t { font: 12px var(--mono); font-variant-numeric: tabular-nums; white
     var hadFocus = old.contains(document.activeElement) ? document.activeElement.id : null;
     var tmp = el("div"); composer(tmp); old.replaceWith(tmp.firstChild);
     var f = hadFocus && document.getElementById(hadFocus); if (f && !f.disabled) f.focus();
+  }
+  function replyBtnEl(m) {
+    var b = el("button", "btn small reply-btn", "Reply"); b.type = "button"; b.id = "reply-btn-" + m._id;
+    b.addEventListener("click", function () {
+      draft.replyTo = m._id;
+      draft.to = m.from ? [String(m.from)] : null;
+      draft.replySummary = (m.from ? displayName(m.from) + ": " : "") + (m.summary || m._id);
+      if (tab !== "timeline") {
+        markVisited();
+        tab = "timeline";
+        try { history.replaceState(null, "", "#timeline"); } catch (e) {}
+        renderAll();
+      } else {
+        refreshComposer();
+      }
+      var n = document.getElementById("note");
+      if (n && !n.disabled) n.focus();
+    });
+    return b;
   }
   function msgCard(m, isReply, parent) {
     var from = String(m.from == null ? "" : m.from);
@@ -634,6 +711,21 @@ td.num, td.t { font: 12px var(--mono); font-variant-numeric: tabular-nums; white
     if (m.kind) meta.appendChild(pill(kindOf(m))); if (imp) meta.appendChild(pill("important"));
     if (quarantined) meta.appendChild(quarantinePill());
     if (canWrite && !isReply) {
+      meta.appendChild(replyBtnEl(m));
+      if (kindOf(m) !== "decision") {
+        var recorded = data.decisions.some(function (d) { return d._id === "d-from-" + m._id; });
+        var promBtn = el("button", "btn small promote-btn", recorded ? "Recorded" : "Record as decision");
+        promBtn.type = "button"; promBtn.id = "promote-decision-" + m._id;
+        promBtn.disabled = recorded;
+        promBtn.addEventListener("click", function () {
+          promBtn.disabled = true;
+          db.collection("decisions").doc("d-from-" + m._id).set({
+            t: new Date().toISOString(), by: "owner", project: "all",
+            summary: m.summary || "(no summary)", body: m.body || m.summary || "", source: "Crosstalk page"
+          }).then(function () { promBtn.textContent = "Recorded"; }).catch(function () { promBtn.disabled = false; });
+        });
+        meta.appendChild(promBtn);
+      }
       var star = el("button", "star", imp ? "\u2605" : "\u2606"); star.type = "button"; star.id = "star-" + m._id;
       star.setAttribute("aria-pressed", String(imp)); star.setAttribute("aria-label", imp ? "Unmark important" : "Mark important");
       star.addEventListener("click", function () { star.disabled = true; db.collection("messages").doc(m._id).update({ important: !imp }).catch(function () { star.disabled = false; }); });
@@ -792,6 +884,45 @@ td.num, td.t { font: 12px var(--mono); font-variant-numeric: tabular-nums; white
       clr.addEventListener("click", function () { whoFilter = null; renderView(true); });
       note.appendChild(clr); feed.appendChild(note);
     }
+    syncVisit();
+    if (!digestDismissed && digestSince != null) {
+      var newMsgs = data.messages.filter(function (m) { var t = ts(m.t); return !isNaN(t) && t > digestSince; });
+      var newProg = data.progress.filter(function (p) { var t = ts(p.t); return !isNaN(t) && t > digestSince && typeof p.pct === "number"; });
+      if (newMsgs.length > 0 || newProg.length > 0) {
+        var parts = [];
+        if (newMsgs.length > 0) {
+          var bySender = Object.create(null), senders = [];
+          newMsgs.forEach(function (m) {
+            var f = String(m.from == null ? "" : m.from);
+            if (!HAS.call(bySender, f)) { bySender[f] = 0; senders.push(f); }
+            bySender[f]++;
+          });
+          parts.push(newMsgs.length + (newMsgs.length === 1 ? " message" : " messages") + " (" + senders.map(function (f) { return displayName(f) + " " + bySender[f]; }).join(", ") + ")");
+        }
+        if (newProg.length > 0) {
+          var latestProg = Object.create(null), progGames = [];
+          newProg.forEach(function (p) {
+            var g = typeof p.game === "string" && p.game ? p.game : "";
+            if (!g) return;
+            if (!HAS.call(latestProg, g)) { latestProg[g] = p; progGames.push(g); }
+            else if (ts(p.t) >= ts(latestProg[g].t)) latestProg[g] = p;
+          });
+          if (progGames.length) parts.push(progGames.map(function (g) { return latestProg[g].game + " " + latestProg[g].pct + "%"; }).join(" \u00b7 "));
+        }
+        if (parts.length > 0) {
+          var dig = el("div", "card"); dig.id = "digest";
+          var dmeta = el("div", "meta");
+          dmeta.appendChild(el("strong", null, "Since your last visit"));
+          var dis = el("button", "btn small", "Dismiss"); dis.type = "button"; dis.id = "digest-dismiss";
+          dis.addEventListener("click", function () { digestDismissed = true; renderView(true); });
+          dmeta.appendChild(dis);
+          dig.appendChild(dmeta);
+          var dsum = el("div", "summary", parts.join(" \u00b7 ")); dsum.id = "digest-summary";
+          dig.appendChild(dsum);
+          feed.appendChild(dig);
+        }
+      }
+    }
     var log = el("div", "log"); log.id = "log";
     var byId = {}; data.messages.forEach(function (m) { byId[m._id] = m; });
     // Replies keep their own cards; a parent also shows when a reply to it matches the filter or search.
@@ -822,7 +953,7 @@ td.num, td.t { font: 12px var(--mono); font-variant-numeric: tabular-nums; white
   // A Help card is one open request: the requester's tag (dimmed when quarantined), the
   // to-chips ("to X · Y" or "everyone"), the summary/body, then each reply inline with its
   // sender tag and summary. All row data goes through textContent, never innerHTML.
-  function helpCard(m, replies) {
+  function helpCard(m, replies, pending) {
     var from = String(m.from == null ? "" : m.from);
     var card = el("div", "card");
     card.dataset.from = from;
@@ -832,7 +963,11 @@ td.num, td.t { font: 12px var(--mono); font-variant-numeric: tabular-nums; white
     meta.appendChild(who(m.from));
     var to = [].concat(m.to == null ? [] : m.to).filter(function (x) { return x != null && x !== ""; }).map(String);
     meta.appendChild(el("span", "to", to.length ? "to " + to.map(displayName).join(" \u00b7 ") : "everyone"));
+    if (pending && pending.length > 0 && replies && replies.length > 0) {
+      meta.appendChild(el("span", "pill pending-to", "waiting on " + pending.map(displayName).join(" \u00b7 ")));
+    }
     if (quarantined) meta.appendChild(quarantinePill());
+    if (canWrite) meta.appendChild(replyBtnEl(m));
     card.appendChild(meta);
     if (m.summary) card.appendChild(el("div", "summary", m.summary));
     add(card, bodyEl(m.body));
@@ -864,7 +999,7 @@ td.num, td.t { font: 12px var(--mono); font-variant-numeric: tabular-nums; white
       return;
     }
     var cards = el("div", "cards");
-    reqs.forEach(function (r) { cards.appendChild(helpCard(r.request, r.replies)); });
+    reqs.forEach(function (r) { cards.appendChild(helpCard(r.request, r.replies, r.pending)); });
     view.appendChild(cards);
   }
 
@@ -1126,6 +1261,8 @@ td.num, td.t { font: 12px var(--mono); font-variant-numeric: tabular-nums; white
   window.__crosstalkFetchLayer = false;
   visitTs = readVisit();
   if (visitTs == null) { visitTs = serverNow(); writeVisit(visitTs); }
+  else { lastWrittenVisit = Math.round(visitTs); }
+  digestSince = visitTs;
   // The sticky strip's height drives the roster's sticky offset and the tab scroll
   // padding. A ResizeObserver keeps it current without forcing layout on every render.
   (function syncStripH() {
