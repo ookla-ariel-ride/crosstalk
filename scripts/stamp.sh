@@ -1,8 +1,8 @@
 #!/bin/sh
 # Writes build/index.html: index.html with the commit it was published from
 # and the publish time filled in. Refuses if index.html has unsaved changes,
-# so the stamped hash always matches the code. Publish build/index.html with
-# the Artifact tool, passing the page URL as `url`.
+# so the stamped hash always matches the code. Used for the static export;
+# the live server serves index.html straight from the checkout.
 set -eu
 cd "$(dirname "$0")/.."
 

@@ -129,7 +129,6 @@ LOADER_JS = """(function () {
     canEdit: function () { return Promise.resolve(false); },
     isOwner: function () { return Promise.resolve(false); }
   };
-  window.claude = { use: function (n) { return Promise.resolve(n === "db" ? db : n === "user" ? user : null); } };
   window.__crosstalkDataLayer = { db: db, user: user };
   window.__crosstalkExport = {
     snapshot: SNAP,

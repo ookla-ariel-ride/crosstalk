@@ -1,5 +1,4 @@
 <title>Crosstalk</title>
-<meta name="claude:viewport-fit-sides" content="cover">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Chivo:wght@500;800&family=IBM+Plex+Sans:wght@400;500;600&family=IBM+Plex+Mono:wght@400;500&display=swap">
 <style>
@@ -172,7 +171,7 @@ td.num, td.t { font: 12px var(--mono); font-variant-numeric: tabular-nums; white
 <div class="wrap">
   <header>
     <h1 id="heading">Crosstalk</h1>
-    <p class="sub">What the projects' Claude sessions say to each other, what they've agreed, who holds which shared file, and what's waiting on you. Updates live.</p>
+    <p class="sub">What the projects' agent sessions say to each other, what they've agreed, who holds which shared file, and what's waiting on you. Updates live.</p>
   </header>
 
   <div class="strip" id="strip">
@@ -400,7 +399,7 @@ td.num, td.t { font: 12px var(--mono); font-variant-numeric: tabular-nums; white
     function tabName(c) { var t = TABS.filter(function (t) { return t[2] === c; })[0]; return t ? t[1] : "People"; }
     if (offline) {
       setLive(false, "Offline");
-      latest = liveTracked ? (liveFatal.length ? liveFatal[0] : "the server is unreachable") : "sign in to claude.ai to see the log";
+      latest = liveTracked ? (liveFatal.length ? liveFatal[0] : "the server is unreachable") : "the log is unavailable while offline";
     }
     else if (liveTracked && liveFatal.length) {
       setLive(false, "Offline");
@@ -951,8 +950,8 @@ td.num, td.t { font: 12px var(--mono); font-variant-numeric: tabular-nums; white
   }
   // Read-only helpers for the page tests.
   window.__crosstalk = Object.freeze({ dotState: dotState, viewerText: viewerText, spanText: spanText, colorOf: colorOf });
-  // Which data layer is active ("seam" | "claude" | "fetch" | "none"), and whether
-  // the fetch layer was constructed. The page tests read these.
+  // Which data layer is active ("seam" | "fetch" | "none"), and whether the
+  // fetch layer was constructed. The page tests read these.
   window.__crosstalkLayer = "none";
   window.__crosstalkFetchLayer = false;
   renderAll();
@@ -964,8 +963,8 @@ td.num, td.t { font: 12px var(--mono); font-variant-numeric: tabular-nums; white
 
   function setLive(on, text) { document.getElementById("live").classList.toggle("on", on); document.getElementById("liveText").textContent = text; }
 
-  // The fetch data layer: the page's own default when no seam and no window.claude
-  // are present (the live server). It polls /api/snapshot every 5 seconds, posts
+  // The fetch data layer: the page's own default when no seam is present (the
+  // live server). It polls /api/snapshot every 5 seconds, posts
   // writes to /api/append, and reads the viewer from /api/me.
   function fetchLayer() {
     window.__crosstalkFetchLayer = true;
@@ -1138,20 +1137,15 @@ td.num, td.t { font: 12px var(--mono); font-variant-numeric: tabular-nums; white
   }
 
   (async function () {
-    // The data layer: a seam (window.__crosstalkDataLayer) wins, then the legacy
-    // window.claude path. The fetch layer (Task 6) is the default when neither is
-    // present. The seam is what the stub harness and the static export inject.
+    // The data layer: a seam (window.__crosstalkDataLayer) wins, then the fetch
+    // layer is the default. The seam is what the stub harness and the static
+    // export inject.
     var layer = window.__crosstalkDataLayer;
     var user = null;
     if (layer && layer.db && layer.user) {
       window.__crosstalkLayer = "seam";
       db = layer.db;
       user = layer.user;
-    } else if (window.claude && window.claude.use) {
-      window.__crosstalkLayer = "claude";
-      db = await window.claude.use("db");
-      if (!db) { offline = true; renderStrip(); return; }
-      user = await window.claude.use("user");
     } else {
       window.__crosstalkLayer = "fetch";
       var fl = fetchLayer();

@@ -51,7 +51,9 @@ class ExporterTests(unittest.TestCase):
         html = out.read_text(encoding="utf-8")
         self.assertIn("<title>Crosstalk</title>", html)
         # The page's own code is in there, and the snapshot travels with it.
-        self.assertIn("window.claude", html)
+        # The export injects the seam; the retired claude shim stays out.
+        self.assertIn("window.__crosstalkDataLayer", html)
+        self.assertNotIn("window.claude", html)
         self.assertIn('id="crosstalk-snapshot"', html)
         self.assertNotIn("data.json", html)
         self.assertEqual(info["documents"], 1)

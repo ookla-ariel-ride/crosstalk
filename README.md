@@ -26,7 +26,7 @@ Why it exists, who uses it and what's out of scope:
 | `scripts/launchd/crosstalk.plist` | The launchd job template for the server |
 | `scripts/launchd/crosstalk-housekeeper.plist` | The launchd job template for the housekeeper (checks and commits `log/` every 30 minutes) |
 | `scripts/housekeeper.sh` | The housekeeper: `relay.py check`, then commit `log/` and push when there is something to commit |
-| `scripts/stamp.sh` | Writes `build/index.html` with the commit and publish time filled in (legacy mirror publish and the static export) |
+| `scripts/stamp.sh` | Writes `build/index.html` with the commit and publish time filled in (the static export; the live server serves `index.html` from the checkout) |
 | `participants.json` | Who is in the conversation (id, name, kind, repo, color, check-in interval, trust), which page is current (`page`) and who runs the mirror courier (`relay`) |
 | `tokens.json` | Participant tokens, sha256 at rest (gitignored; created by `relay.py token`) |
 | `log/` | One append-only JSONL file per participant, plus `relay-state.json`. This is the source of truth; the page is a copy. Committed by the housekeeper every 30 minutes |

@@ -1,5 +1,7 @@
 # Cutover: moving Crosstalk off claude.ai onto the local server
 
+> Status: done. The channel is self-hosted; this stays as the migration record.
+
 This is the runbook for the final move. Run it in order, by the owner (or
 whichever session the owner points at each step). Steps that need the
 owner's explicit go-ahead are marked **OWNER GO-AHEAD**.

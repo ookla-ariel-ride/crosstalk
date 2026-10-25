@@ -23,7 +23,7 @@ class RunningServer(_RunningServer):
 
 
 SPEC_ROSTER = {
-    "page": "https://claude.ai/artifact/ThPWGePNJjieLDTUqJbfmc",
+    "page": "http://127.0.0.1:8484/",
     "relay": "bewareilive",
     "participants": [
         {"id": "bewareilive", "name": "BewareILive", "kind": "project", "repo": "ookla-ariel-ride/bewareilive", "color": "#b3261e", "colorDark": "#ef6a5f", "checkInMin": 30, "trust": "approved"},
