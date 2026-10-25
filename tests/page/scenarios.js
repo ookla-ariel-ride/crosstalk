@@ -62,6 +62,17 @@
     return res("refViaRoster", ok1 && ok2, "with repo=" + JSON.stringify(links) + " without repo plain=" + JSON.stringify(plain));
   });
 
+  // A roster entry links its repo (or an agent's inherited parent repo) right of the name.
+  S.push(async function rosterRepoLink() {
+    await go("timeline");
+    function link(e) { return e && e.querySelector("a.rrepo"); }
+    var bil = link(entry("bewareilive")), ver = link(entry("bewareilive.verifier")), codex = link(entry("codex")), owner = link(entry("owner"));
+    var ok = !!bil && bil.href === "https://github.com/ookla-ariel-ride/bewareilive" && bil.textContent === "repo \u2197" &&
+      !!ver && ver.href === "https://github.com/ookla-ariel-ride/bewareilive" &&
+      !codex && !owner;
+    return res("rosterRepoLink", ok, "bewareilive=" + (bil && bil.href) + " verifier=" + (ver && ver.href) + " codex=" + !!codex + " owner=" + !!owner);
+  });
+
   S.push(async function threeWayPositions() {
     await addDoc("messages", "dis-1", { t: T0, from: "bewareilive", kind: "disagreement", summary: "Three views",
       positions: { bewareilive: "Do A", vectorcraft: "Do B", codex: "Do C" } });
@@ -86,6 +97,18 @@
     var c = card("own-c"), w = c && c.querySelector(".who");
     var got = w ? getComputedStyle(w).backgroundColor : null, want = rgb("var(--own)");
     return res("ownerColorThemed", got === want && c.classList.contains("own"), "background=" + got + " --own=" + want + " class=" + (c && c.className));
+  });
+
+  // A sender tag links to its participant's repo; a repo-less sender stays a plain tag.
+  S.push(async function senderTagLinks() {
+    await go("timeline");
+    await addDoc("messages", "stl-1", { t: ago(1), from: "bewareilive", kind: "sync", summary: "Linked sender tag" });
+    await addDoc("messages", "stl-2", { t: ago(1), from: "owner", kind: "owner", summary: "Owner has no repo" });
+    var w1 = card("stl-1") && card("stl-1").querySelector(".who"), a1 = w1 && w1.closest("a");
+    var w2 = card("stl-2") && card("stl-2").querySelector(".who"), a2 = w2 && w2.closest("a");
+    var ok = !!a1 && a1.href === "https://github.com/ookla-ariel-ride/bewareilive" && a1.querySelector(".who") === w1 &&
+      !a2 && w2 && w2.textContent === "Owner";
+    return res("senderTagLinks", ok, "bil=" + (a1 && a1.href) + " ownerLinked=" + !!a2);
   });
 
   S.push(async function composerKindKept() {
@@ -236,6 +259,28 @@
       " label=" + lbl + " tile=" + JSON.stringify(tiles) + " since=" + (since && since.textContent));
   });
 
+  // The Check-ins tile names the worst late participant and adds "N of M on time"; all-on-time keeps its wording.
+  S.push(async function checkTileCounts() {
+    await go("timeline");
+    var saved = __store.participants;
+    __store.participants = {
+      "aa": { name: "On time A", kind: "tool", color: "#555555", checkInMin: 30, trust: "approved" },
+      "bb": { name: "On time B", kind: "tool", color: "#555555", checkInMin: 30, trust: "approved" },
+      "cc": { name: "Late C", kind: "tool", color: "#555555", checkInMin: 30, trust: "approved" }
+    };
+    __emit("participants"); await tick();
+    var now = Date.now();
+    await addDoc("messages", "cct-a", { t: new Date(now - 60000).toISOString(), from: "aa", kind: "check-in", summary: "ci" });
+    await addDoc("messages", "cct-b", { t: new Date(now - 60000).toISOString(), from: "bb", kind: "check-in", summary: "ci" });
+    await addDoc("messages", "cct-c", { t: new Date(now - 40 * 60000).toISOString(), from: "cc", kind: "check-in", summary: "ci" });
+    var val = $("checkVal").textContent, hint = $("checkHint").textContent;
+    await addDoc("messages", "cct-c2", { t: new Date(now).toISOString(), from: "cc", kind: "check-in", summary: "ci" });
+    var allOn = $("checkVal").textContent;
+    __store.participants = saved; __emit("participants"); await tick();
+    var ok = /^2 of 3 on time /.test(hint) && /due every 30 min$/.test(hint) && /10 min late$/.test(val) && allOn === "all on time";
+    return res("checkTileCounts", ok, "val=" + JSON.stringify(val) + " hint=" + JSON.stringify(hint) + " allOn=" + JSON.stringify(allOn));
+  });
+
   S.push(async function toArrow() {
     await go("timeline");
     await addDoc("messages", "to-1", { t: ago(1), from: "codex", kind: "sync", summary: "Review: 3 findings", to: "bewareilive" });
@@ -260,6 +305,18 @@
       "dot=" + state + " pill=" + (p && p.textContent) + " inFilter=" + listed);
   });
 
+  // An important (alert/owner) card carries .important and a sender-colored 3px left border.
+  S.push(async function importantMarker() {
+    await go("timeline");
+    await addDoc("messages", "imp-1", { t: ago(1), from: "vectorcraft", kind: "alert", summary: "Attention needed" });
+    var c = card("imp-1");
+    if (!c) return res("importantMarker", false, "no card");
+    var who = c.style.getPropertyValue("--who"), want = window.__crosstalk.colorOf("vectorcraft");
+    var bw = getComputedStyle(c).borderLeftWidth, bc = getComputedStyle(c).borderLeftColor;
+    var ok = c.classList.contains("important") && who === want && bw === "3px" && bc === rgb(want);
+    return res("importantMarker", ok, "cls=" + c.classList.contains("important") + " --who=" + who + " width=" + bw + " color=" + bc + " want=" + rgb(want));
+  });
+
   // Lateness reads in minutes under an hour, hours under two days, then days.
   S.push(async function lateInHours() {
     var got = [5, 59, 60, 1505, 2880].map(window.__crosstalk.spanText);
@@ -282,6 +339,21 @@
     return res("themedColors", ok, "light=" + light + "/" + lightTag + " dark=" + dark + "/" + darkTag + " heading=" + JSON.stringify(h));
   });
 
+  // In light mode the heading names every project; with a repo each name is a link to that repo.
+  S.push(async function repoLinksHeading() {
+    await go("timeline");
+    var saved = __store.participants;
+    __store.participants = { bewareilive: Object.assign({}, saved.bewareilive), vectorcraft: Object.assign({}, saved.vectorcraft) };
+    __emit("participants"); await tick();
+    var links = [].slice.call(document.querySelectorAll("#heading a.proj")).map(function (a) { return [a.textContent, a.href]; });
+    var title = $("heading").textContent;
+    __store.participants = saved; __emit("participants"); await tick();
+    var ok = links.length === 2 && links[0][0] === "BewareILive" && links[0][1] === "https://github.com/ookla-ariel-ride/bewareilive" &&
+      links[1][0] === "VectorCraft" && links[1][1] === "https://github.com/ookla-ariel-ride/vectorcraft" &&
+      title === "BewareILive · VectorCraft";
+    return res("repoLinksHeading", ok, JSON.stringify(links) + " title=" + JSON.stringify(title));
+  });
+
   // A game's line has its project's color; two games of one project differ by dash.
   S.push(async function progressByProject() {
     await put("progress", {
@@ -297,6 +369,21 @@
     return res("progressByProject", ok, JSON.stringify(lines) + " legend=" + legend);
   });
 
+  // The roster shows each project's latest progress per game, and nothing for a project with none.
+  S.push(async function rosterProgress() {
+    await go("timeline");
+    await put("progress", {
+      "rg-1": { t: ago(60), project: "bewareilive", game: "joust", pct: 62 },
+      "rg-2": { t: ago(60), project: "bewareilive", game: "robotron", pct: 41 },
+      "rg-3": { t: ago(30), project: "vectorcraft", game: "tempest", pct: 30 },
+      "rg-4": { t: ago(5), project: "vectorcraft", game: "tempest", pct: 45 }
+    });
+    function prog(id) { var e = entry(id), d = e && e.querySelector(".rprog"); return d ? d.textContent : null; }
+    var bil = prog("bewareilive"), vc = prog("vectorcraft"), amb = prog("avoidmissingball"), codex = prog("codex");
+    var ok = bil === "joust 62% · robotron 41%" && vc === "tempest 45%" && amb === null && codex === null;
+    return res("rosterProgress", ok, "bil=" + JSON.stringify(bil) + " vc=" + JSON.stringify(vc) + " amb=" + JSON.stringify(amb) + " codex=" + JSON.stringify(codex));
+  });
+
   // Older decisions give `date` and no `by`; the table shows the date and an empty By cell, not "?".
   S.push(async function decisionDateNoBy() {
     await put("decisions", { "d-old": { date: "2026-10-21", project: "both", summary: "Dated only" } });
@@ -304,6 +391,36 @@
     var row = document.querySelector("#view tbody tr"), by = row && row.children[1].textContent, when = row && row.children[4].textContent;
     await go("timeline");
     return res("decisionDateNoBy", by === "" && /Oct 2[01]/.test(when || ""), "by=" + JSON.stringify(by) + " when=" + JSON.stringify(when));
+  });
+
+  // The Open-agreements hint reads "N open of M".
+  S.push(async function agreementsCopy() {
+    var docs = {};
+    for (var i = 0; i < 29; i++) docs["ag-" + i] = { t: T0, summary: "Agreement " + i, status: i < 2 ? "landed-both" : "agreed" };
+    await put("agreements", docs);
+    var val = $("agreeVal").textContent, hint = $("agreeHint").textContent;
+    await go("timeline");
+    return res("agreementsCopy", val === "27" && hint === "27 open of 29", "val=" + val + " hint=" + JSON.stringify(hint));
+  });
+
+  // A seeded lock's repo + path render as a github blob link in the tile hint and the tab rows.
+  S.push(async function claimRowsLink() {
+    var now = new Date().toISOString();
+    await put("locks", {
+      "lk-1": { repo: "ookla-ariel-ride/bewareilive", path: "docs/plan.md", project: "bewareilive", holder: "bewareilive", note: "editing", since: now },
+      "lk-2": { repo: "ookla-ariel-ride/vectorcraft", path: "src/a b.cpp", project: "vectorcraft", holder: "vectorcraft", note: "editing", since: now },
+      "lk-3": { repo: "not a repo", path: "x", project: "codex", note: "bad repo", since: now }
+    });
+    await go("locks");
+    var rows = [].slice.call(document.querySelectorAll("#view tbody tr")).map(function (tr) { var a = tr.querySelector("td a"); return a ? a.href : null; });
+    var hintLinks = [].slice.call(document.querySelectorAll("#lockHint a")).map(function (a) { return a.href; });
+    await go("timeline");
+    var ok = rows.length === 3 &&
+      rows[0] === "https://github.com/ookla-ariel-ride/bewareilive/blob/main/docs/plan.md" &&
+      rows[1] === "https://github.com/ookla-ariel-ride/vectorcraft/blob/main/src/a%20b.cpp" &&
+      rows[2] === null &&
+      hintLinks.length === 2 && hintLinks[0] === rows[0] && hintLinks[1] === rows[1];
+    return res("claimRowsLink", ok, "rows=" + JSON.stringify(rows) + " hint=" + JSON.stringify(hintLinks));
   });
 
   // ready-to-adopt is a known status: it sorts before landed-both and gets the in-progress pill.
@@ -463,7 +580,25 @@
           " parentShown=" + parentShown + " parentSent=" + parentSent + " colorSent=" + colorSent);
       });
 
-    S.push(async function partlyLive() {
+    // "N new" since the last visit: fresh messages badge the Timeline tab until it is opened.
+  S.push(async function newSinceVisit() {
+    var KEY = "crosstalk.lastVisit";
+    try { localStorage.removeItem(KEY); } catch (e) {}
+    await go("timeline"); // opening the timeline records "now" as the last visit
+    await go("agreements");
+    var before = null; try { before = localStorage.getItem(KEY); } catch (e) {}
+    var now = new Date();
+    await addDoc("messages", "new-1", { t: now.toISOString(), from: "codex", kind: "sync", summary: "New one" });
+    await addDoc("messages", "new-2", { t: now.toISOString(), from: "codex", kind: "sync", summary: "New two" });
+    var badge = document.getElementById("new-badge"), txt = badge ? badge.textContent : null;
+    await go("timeline"); // opening the timeline clears the badge and advances the stored time
+    var after = null; try { after = localStorage.getItem(KEY); } catch (e) {}
+    var gone = document.getElementById("new-badge") === null;
+    var advanced = before != null && after != null && Number(after) > Number(before);
+    return res("newSinceVisit", txt === "2 new" && gone && advanced, "badge=" + JSON.stringify(txt) + " gone=" + gone + " stored " + before + " -> " + after);
+  });
+
+  S.push(async function partlyLive() {
     var before = $("liveText").textContent;
     __kill("locks", "revoked"); await tick();
     var after = $("liveText").textContent, latest = $("latest").textContent;

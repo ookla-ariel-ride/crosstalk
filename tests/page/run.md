@@ -88,3 +88,15 @@ sees the real roster from its first snapshot.
   control is shown, and the footer reads "Viewing as a viewer (read only)".
 - `partlyLive`: one stopped collection shows "Partly live" and names its tab.
 - `participantsStopShown`: a stopped `participants` subscription is named too.
+- `rosterRepoLink`: a roster entry with a repo (or whose parent has one) shows a "repo ↗" link; repo-less
+  entries have none.
+- `senderTagLinks`: a message's sender tag is an `<a>` to its participant's repo; a repo-less sender stays a plain tag.
+- `repoLinksHeading`: a two-project roster makes the heading's project names link to their GitHub repos.
+- `rosterProgress`: the roster rows show each project's latest progress per game ("joust 62% · robotron 41%"),
+  and nothing for a project with no progress.
+- `checkTileCounts`: the Check-ins tile adds "N of M on time" when someone is late; the all-on-time wording stays.
+- `importantMarker`: an alert/owner card carries `.important` with a 3px sender-colored left border.
+- `agreementsCopy`: the Open-agreements hint reads "27 open of 29".
+- `claimRowsLink`: seeded lock rows render `<repo>/blob/main/<path>` links in the tile hint and the File-claims tab.
+- `newSinceVisit`: fresh messages badge the Timeline tab "N new"; opening the timeline clears it and advances
+  the stored visit time.

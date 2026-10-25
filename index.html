@@ -23,11 +23,13 @@
   --bil: #ef6a5f; --bil-soft: #3a1f1c; --vc: #6fb2e2; --vc-soft: #1a2b38; --own: #b892e6; --own-soft: #2c2238;
   --ok: #7cc48a; --warn: #e0a54a; --bad: #f08a80; --tag-ink-themed: #151413; color-scheme: dark }
 
+html { scroll-padding-top: var(--strip-h, 0px); }
 body { background: var(--bg); color: var(--fg); font: 15px/1.5 var(--body); }
 .wrap { max-width: 1040px; margin: 0 auto; padding-block: 24px 64px;
   padding-left: max(16px, env(safe-area-inset-left, 0px)); padding-right: max(16px, env(safe-area-inset-right, 0px)); }
 h1 { font: 800 clamp(24px, 5vw, 36px)/1.1 var(--display); margin: 0; letter-spacing: -0.01em; text-wrap: balance; }
 h1 .proj { color: var(--who); } h1 .x { color: var(--muted); font-weight: 500; }
+h1 a.proj { text-decoration: none; } h1 a.proj:hover { text-decoration: underline; }
 .sub { color: var(--muted); max-width: 64ch; margin: 6px 0 0; }
 header { display: flex; flex-wrap: wrap; gap: 8px 18px; align-items: flex-end; justify-content: space-between; }
 header .lead { flex: 1 1 380px; min-width: 0; }
@@ -45,7 +47,7 @@ button:focus-visible, input:focus-visible, textarea:focus-visible, select:focus-
 a { color: inherit; }
 
 /* status strip */
-.strip { display: grid; grid-template-columns: repeat(auto-fit, minmax(160px, 1fr)); gap: 10px; margin: 18px 0 14px; }
+.strip { display: grid; grid-template-columns: repeat(auto-fit, minmax(160px, 1fr)); gap: 10px; margin: 0 0 14px; padding-top: 18px; position: sticky; top: 0; z-index: 10; background: var(--bg); }
 .tile { background: var(--panel); border: 1px solid var(--rule); border-radius: 8px; padding: 10px 12px; min-width: 0; }
 .tile .lbl { font: 500 11px var(--mono); letter-spacing: .06em; text-transform: uppercase; color: var(--muted); }
 .tile .val { font: 800 22px/1.2 var(--display); font-variant-numeric: tabular-nums; margin-top: 2px; }
@@ -64,6 +66,7 @@ a { color: inherit; }
 .tabs button { background: none; border: 0; border-bottom: 3px solid transparent; padding: 8px 12px; cursor: pointer; font: 500 14px var(--body); color: var(--muted); }
 .tabs button[aria-selected="true"] { color: var(--fg); border-bottom-color: var(--fg); }
 .tabs .n { font: 11px var(--mono); margin-left: 4px; color: var(--muted); }
+.tabs .new { font: 500 11px var(--mono); margin-left: 6px; padding: 1px 7px; border-radius: 999px; background: var(--own); color: var(--panel); }
 
 /* toolbar */
 .tools { display: flex; flex-wrap: wrap; gap: 8px 12px; align-items: center; margin-bottom: 12px; }
@@ -85,7 +88,7 @@ a { color: inherit; }
 /* timeline: a roster beside one feed (mockup C). A participant's color shows in three places only: the
    sender tag's background, the card's top border and the roster entry's accent. Text keeps the theme's ink. */
 .feedgrid { display: grid; grid-template-columns: 210px minmax(0, 1fr); gap: 20px; align-items: start; }
-.roster { position: sticky; top: 12px; max-height: calc(100vh - 24px); overflow-y: auto; box-sizing: border-box; background: var(--panel); border: 1px solid var(--rule); border-radius: 8px; padding: 10px 8px 12px; font-size: 13px; }
+.roster { position: sticky; top: calc(var(--strip-h, 0px) + 12px); max-height: calc(100vh - var(--strip-h, 0px) - 24px); overflow-y: auto; box-sizing: border-box; background: var(--panel); border: 1px solid var(--rule); border-radius: 8px; padding: 10px 8px 12px; font-size: 13px; }
 .roster > summary { display: none; }
 .rgroup h3 { font: 800 11px var(--display); letter-spacing: .08em; text-transform: uppercase; color: var(--muted); margin: 12px 0 4px 4px; }
 .rgroup:first-of-type h3 { margin-top: 0; }
@@ -101,6 +104,9 @@ a { color: inherit; }
 .cdot { flex: none; width: 8px; height: 8px; border-radius: 50%; }
 .cdot.ok { background: var(--ok); } .cdot.warn { background: var(--warn); } .cdot.bad { background: var(--bad); }
 .rx { display: flex; flex-wrap: wrap; gap: 4px 6px; align-items: center; padding: 2px 0 4px 9px; }
+.rrepo { display: inline-block; margin: 0 0 1px 9px; font: 11px var(--mono); color: var(--muted); text-decoration: none; }
+.rrepo:hover { text-decoration: underline; }
+.rprog { margin: 0 0 3px 9px; font: 11px var(--mono); color: var(--muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .btn.small { padding: 1px 8px; font-size: 12px; }
 .order { color: var(--muted); font: 12px var(--mono); margin: 0 0 12px; }
 .whonote { display: flex; flex-wrap: wrap; gap: 6px 10px; align-items: center; font: 12px var(--mono); color: var(--muted); margin: -4px 0 12px; }
@@ -112,7 +118,7 @@ a { color: inherit; }
 .msg.reply-to::before { content: ""; position: absolute; left: -16px; top: 6px; bottom: 6px; border-left: 2px solid var(--rule); }
 .msg.quarantined { opacity: .55; }
 .msg .re { font: 12px/1.35 var(--mono); color: var(--muted); margin: 4px 0 2px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.msg.important { border-width: 2px; border-color: var(--muted); border-top: 5px solid var(--who, var(--muted)); }
+.msg.important { border-width: 2px; border-color: var(--muted); border-top: 5px solid var(--who, var(--muted)); border-left: 3px solid var(--who, var(--muted)); padding-left: 15px; }
 .msg.important .summary { font-size: 16px; }
 .pill.important { background: var(--bad); color: var(--panel); }
 .pill.quarantine { background: none; border: 1px dashed var(--muted); color: var(--fg); }
@@ -128,6 +134,7 @@ a { color: inherit; }
 /* The sender tag: a solid block of the participant's color; --who-ink is white or dark, whichever reads on it. */
 td .who { white-space: nowrap; overflow-wrap: normal; }
 .who { display: inline-block; padding: 0 6px; border-radius: 4px; font: 600 12px/1.6 var(--mono); background: var(--who, var(--muted)); color: var(--who-ink, var(--tag-ink-themed)); overflow-wrap: anywhere; }
+a.who-link { text-decoration: none; }
 .to { color: var(--muted); }
 .pill { display: inline-block; padding: 1px 7px; border-radius: 4px; font: 500 11px var(--mono); text-transform: uppercase; letter-spacing: .05em; background: var(--rule); color: var(--fg); white-space: nowrap; }
 .pill.agreement, .pill.landed-both, .pill.done { background: var(--ok); color: var(--panel); }
@@ -141,6 +148,8 @@ details summary { cursor: pointer; font: 12px var(--mono); color: var(--muted); 
 .refs { display: flex; flex-wrap: wrap; gap: 4px; margin-top: 8px; }
 .refs a, .refs span { font: 11px var(--mono); padding: 1px 6px; border-radius: 4px; background: var(--bg); border: 1px solid var(--rule); text-decoration: none; }
 .refs a:hover { text-decoration: underline; }
+a.lock-blob { text-decoration: none; }
+a.lock-blob:hover { text-decoration: underline; }
 .replies { margin-top: 10px; display: grid; gap: 8px; border-left: 2px solid var(--rule); padding-left: 10px; }
 .reply .summary { font-size: 14px; margin: 2px 0; }
 .positions { display: grid; grid-template-columns: repeat(auto-fit, minmax(160px, 1fr)); gap: 8px; margin-top: 8px; }
@@ -270,6 +279,25 @@ td.num, td.t { font: 12px var(--mono); font-variant-numeric: tabular-nums; white
     return e;
   }
   function agoEl(v) { var t = ts(v); var e = el("span", "ago", agoText(t)); if (!isNaN(t)) e.dataset.t = t; return e; }
+  // "New since your last visit": a per-browser timestamp in localStorage. The first
+  // visit stores "now" (nothing reads as new yet); each snapshot render counts messages
+  // newer than the stored time; opening the Timeline tab moves the marker forward.
+  var LAST_VISIT_KEY = "crosstalk.lastVisit";
+  var CAN_STORE = (function () { try { var k = "__ct_probe"; window.localStorage.setItem(k, "1"); window.localStorage.removeItem(k); return true; } catch (e) { return false; } })();
+  var visitTs = null;
+  function serverNow() { var t = meta.serverTime ? ts(meta.serverTime) : NaN; return isNaN(t) ? Date.now() : t; }
+  function readVisit() {
+    if (!CAN_STORE) return null;
+    try { var v = window.localStorage.getItem(LAST_VISIT_KEY), n = v == null ? null : Number(v); return n != null && isFinite(n) && n > 0 ? n : null; } catch (e) { return null; }
+  }
+  function writeVisit(t) { if (CAN_STORE) { try { window.localStorage.setItem(LAST_VISIT_KEY, String(Math.round(t))); } catch (e) {} } }
+  function newCount() {
+    if (visitTs == null) return 0;
+    var n = 0;
+    data.messages.forEach(function (m) { var t = ts(m.t); if (!isNaN(t) && t > visitTs) n++; });
+    return n;
+  }
+  function markVisited() { visitTs = serverNow(); writeVisit(visitTs); }
   // Rows are untrusted, so a participant's fields are checked before they reach a URL or a style.
   var HAS = Object.prototype.hasOwnProperty;
   var ID = "[a-z0-9-]+(?:\\.[a-z0-9-]+)*";
@@ -314,7 +342,11 @@ td.num, td.t { font: 12px var(--mono); font-variant-numeric: tabular-nums; white
     var id = String(p == null ? "" : p), c = colorOf(id);
     var e = el("span", "who", id === "" ? "?" : displayName(id));
     e.style.setProperty("--who", c); e.style.setProperty("--who-ink", inkFor(c));
-    return e;
+    var repo = id === "" ? null : repoFor(id);
+    if (!repo) return e;
+    var a = el("a", "who-link", null); a.href = "https://github.com/" + repo; a.target = "_blank"; a.rel = "noopener";
+    a.appendChild(e);
+    return a;
   }
   // Quarantine applies only once the roster has loaded with at least one participant. Before the first
   // participants snapshot, or while the collection is empty (a page published before the courier's first trip),
@@ -391,6 +423,18 @@ td.num, td.t { font: 12px var(--mono); font-variant-numeric: tabular-nums; white
     });
     return box;
   }
+  // A file claim's repo + path become a blob link: https://github.com/<repo>/blob/main/<path>.
+  // The repo must match the roster's repo pattern and the path must be a string; each
+  // path segment is URL-encoded.
+  var REPO = /^[\w.-]+\/[\w.-]+$/;
+  function lockLink(l) {
+    var repo = l && typeof l.repo === "string" ? l.repo : "", path = l && typeof l.path === "string" ? l.path : "";
+    if (!repo || !path || !REPO.test(repo)) return null;
+    var a = el("a", "lock-blob", path);
+    a.href = "https://github.com/" + repo + "/blob/main/" + path.split("/").map(encodeURIComponent).join("/");
+    a.target = "_blank"; a.rel = "noopener";
+    return a;
+  }
   function bodyEl(text) {
     if (!text) return null;
     var s = String(text);
@@ -442,7 +486,7 @@ td.num, td.t { font: 12px var(--mono); font-variant-numeric: tabular-nums; white
     var open = data.agreements.filter(function (a) { return a.status !== "landed-both" && a.status !== "dropped"; });
     var held = open.filter(isHeld).length;
     document.getElementById("agreeVal").textContent = open.length;
-    document.getElementById("agreeHint").textContent = held ? held + " on hold" : data.agreements.length + " in total";
+    document.getElementById("agreeHint").textContent = open.length + " open of " + data.agreements.length + (held ? " \u00b7 " + held + " on hold" : "");
     document.getElementById("t-agree").className = "tile" + (held ? " warn" : "");
     var waits = data.waiting.filter(function (w) { return !w.done; });
     document.getElementById("waitVal").textContent = waits.length;
@@ -452,7 +496,9 @@ td.num, td.t { font: 12px var(--mono); font-variant-numeric: tabular-nums; white
     document.getElementById("t-wait").className = "tile" + (waits.length ? " warn" : " ok");
     var locks = data.locks.filter(function (l) { return !l.released; });
     document.getElementById("lockVal").textContent = locks.length;
-    document.getElementById("lockHint").textContent = locks.length ? locks.slice(0, 2).map(function (l) { return l.path; }).join(", ") : "no shared files claimed";
+    var lockHint = document.getElementById("lockHint"); lockHint.textContent = "";
+    if (!locks.length) lockHint.textContent = "no shared files claimed";
+    else locks.slice(0, 2).forEach(function (l, i) { if (i) lockHint.appendChild(document.createTextNode(", ")); lockHint.appendChild(lockLink(l) || el("span", null, String(l.path == null ? "" : l.path))); });
   }
 
   // The roster's worst check-in dot: "all on time", or the latest participant, e.g. "VectorCraft 38 min late".
@@ -467,21 +513,23 @@ td.num, td.t { font: 12px var(--mono); font-variant-numeric: tabular-nums; white
     if (!rosterReady()) { tile.className = "tile"; val.textContent = "roster not loaded"; hint.textContent = loaded.participants ? "the participants list is empty" : "waiting for the participants list"; return; }
     if (!due.length) { tile.className = "tile"; val.className = "val"; val.textContent = "\u2014"; hint.textContent = "no one has a check-in interval"; return; }
     if (!late.length) { tile.className = "tile ok"; val.textContent = "all on time"; hint.textContent = due.length + (due.length === 1 ? " participant checks in" : " participants check in"); return; }
-    var w = late[0];
+    var w = late[0], on = due.length - late.length;
     tile.className = "tile " + w.state;
     val.textContent = displayName(w.p.id) + (isFinite(w.late) ? " " + spanText(w.late) + " late" : " hasn't checked in");
-    hint.textContent = (late.length > 1 ? (late.length - 1) + " more late \u00b7 " : "") + "due every " + w.p.checkInMin + " min";
+    hint.textContent = on + " of " + due.length + " on time \u00b7 due every " + w.p.checkInMin + " min";
   }
 
   /* ---------- tabs ---------- */
   function renderTabs() {
     var nav = document.getElementById("tabs"); nav.textContent = "";
+    var nNew = newCount();
     TABS.forEach(function (t) {
       var b = el("button", null, t[1]); b.type = "button"; b.id = "tab-" + t[0];
       b.setAttribute("role", "tab"); b.setAttribute("aria-selected", String(tab === t[0]));
       var n = t[0] === "waiting" ? data.waiting.filter(function (w) { return !w.done; }).length : data[t[2]].length;
       b.appendChild(el("span", "n", n));
-      b.addEventListener("click", function () { tab = t[0]; try { history.replaceState(null, "", "#" + t[0]); } catch (e) {} renderAll(); });
+      if (t[0] === "timeline" && nNew > 0) { var badge = el("span", "new", nNew + " new"); badge.id = "new-badge"; b.appendChild(badge); }
+      b.addEventListener("click", function () { if (t[0] === "timeline") markVisited(); tab = t[0]; try { history.replaceState(null, "", "#" + t[0]); } catch (e) {} renderAll(); });
       nav.appendChild(b);
     });
   }
@@ -635,7 +683,23 @@ td.num, td.t { font: 12px var(--mono); font-variant-numeric: tabular-nums; white
     });
     return d;
   }
-  // A nested sub-agent shows its own name; anyone else shows the full display name ("Parent › name" for an agent).
+  // A project's latest progress row per game, one muted line for the roster: "joust 62% \u00b7 robotron 41%".
+  function rosterProgressLine(id) {
+    var p = person(id);
+    if (p.kind !== "project") return null;
+    var latest = Object.create(null), games = [];
+    data.progress.forEach(function (r) {
+      if (String(r.project) !== id || typeof r.pct !== "number" || isNaN(ts(r.t))) return;
+      var g = typeof r.game === "string" && r.game ? r.game : "";
+      if (!g) return;
+      if (!HAS.call(latest, g)) { latest[g] = r; games.push(g); }
+      else if (ts(r.t) >= ts(latest[g].t)) latest[g] = r;
+    });
+    if (!games.length) return null;
+    games.sort();
+    return games.map(function (g) { return latest[g].game + " " + latest[g].pct + "%"; }).join(" \u00b7 ");
+  }
+  // A nested sub-agent shows its own name; anyone else shows the full display name ("Parent \u203a name" for an agent).
   function rosterEntry(id, now, st, kids, nested) {
     var p = person(id), li = el("li", "rentry"), c = colorOf(id); li.dataset.id = id;
     var b = el("button", "rp"); b.type = "button"; b.id = "who-" + id;
@@ -655,6 +719,14 @@ td.num, td.t { font: 12px var(--mono); font-variant-numeric: tabular-nums; white
     if (r && !isNaN(r.msg)) { var since = el("span", "since", compactAgo(now - r.msg)); since.title = "last message " + agoText(r.msg); b.appendChild(since); }
     b.addEventListener("click", function () { whoFilter = whoFilter === id ? null : id; renderView(true); });
     li.appendChild(b);
+    var repo = repoFor(id);
+    if (repo) {
+      var rl = el("a", "rrepo", "repo \u2197");
+      rl.href = "https://github.com/" + repo; rl.target = "_blank"; rl.rel = "noopener"; rl.title = repo;
+      li.appendChild(rl);
+    }
+    var prog = rosterProgressLine(id);
+    if (prog) li.appendChild(el("div", "rprog", prog));
     if (isQuarantined(id)) {
       var rx = el("div", "rx"); rx.appendChild(quarantinePill());
       // Only a roster member can be approved: the page updates that participants doc and never writes one any other way.
@@ -816,7 +888,7 @@ td.num, td.t { font: 12px var(--mono); font-variant-numeric: tabular-nums; white
   function renderLocks(view) {
     var rows = data.locks.slice().sort(function (a, b) { return (a.released ? 1 : 0) - (b.released ? 1 : 0) || (ts(b.since) || 0) - (ts(a.since) || 0); });
     simpleTable(view, rows, [
-      ["File", function (r) { var d = el("div"); d.appendChild(el("code", null, r.path || "")); if (r.repo) d.appendChild(el("div", "ago", r.repo)); return d; }],
+      ["File", function (r) { var d = el("div"); d.appendChild(lockLink(r) || el("code", null, r.path || "")); if (r.repo) d.appendChild(el("div", "ago", r.repo)); return d; }],
       ["Held by", function (r) { var d = el("div"); d.appendChild(who(r.project)); if (r.holder) d.appendChild(el("div", "ago", r.holder)); return d; }],
       ["Why", function (r) { return el("span", null, r.note || ""); }],
       ["Since", function (r) { var d = el("div"); d.appendChild(timeEl(r.since, true)); d.appendChild(el("div")).appendChild(agoEl(r.since)); return d; }, "t"],
@@ -928,7 +1000,10 @@ td.num, td.t { font: 12px var(--mono); font-variant-numeric: tabular-nums; white
     if (!ids.length) { h.textContent = "Crosstalk"; return; }
     ids.forEach(function (id, i) {
       if (i) { h.appendChild(document.createTextNode(" ")); h.appendChild(el("span", "x", "\u00b7")); h.appendChild(document.createTextNode(" ")); }
-      var n = el("span", "proj", person(id).name); n.style.setProperty("--who", colorOf(id)); h.appendChild(n);
+      var repo = repoFor(id), name = person(id).name;
+      var n = repo ? el("a", "proj", name) : el("span", "proj", name);
+      if (repo) { n.href = "https://github.com/" + repo; n.target = "_blank"; n.rel = "noopener"; }
+      n.style.setProperty("--who", colorOf(id)); h.appendChild(n);
     });
   }
   function renderAll() { var f = captureFocus(); renderHeading(); renderStrip(); renderTabs(); renderView(false); restoreFocus(f); }
@@ -939,7 +1014,7 @@ td.num, td.t { font: 12px var(--mono); font-variant-numeric: tabular-nums; white
   }
   [["t-check", "timeline"], ["t-agree", "agreements"], ["t-wait", "waiting"], ["t-lock", "locks"]].forEach(function (p) {
     var t = document.getElementById(p[0]); t.dataset.go = p[1]; t.setAttribute("role", "button"); t.tabIndex = 0;
-    function go() { tab = p[1]; query = ""; queryRaw = ""; try { history.replaceState(null, "", "#" + p[1]); } catch (e) {} renderAll(); document.getElementById("tabs").scrollIntoView({ behavior: "smooth", block: "start" }); }
+    function go() { if (p[1] === "timeline") markVisited(); tab = p[1]; query = ""; queryRaw = ""; try { history.replaceState(null, "", "#" + p[1]); } catch (e) {} renderAll(); document.getElementById("tabs").scrollIntoView({ behavior: "smooth", block: "start" }); }
     t.addEventListener("click", go);
     t.addEventListener("keydown", function (e) { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); go(); } });
   });
@@ -976,6 +1051,17 @@ td.num, td.t { font: 12px var(--mono); font-variant-numeric: tabular-nums; white
   // fetch layer was constructed. The page tests read these.
   window.__crosstalkLayer = "none";
   window.__crosstalkFetchLayer = false;
+  visitTs = readVisit();
+  if (visitTs == null) { visitTs = serverNow(); writeVisit(visitTs); }
+  // The sticky strip's height drives the roster's sticky offset and the tab scroll
+  // padding. A ResizeObserver keeps it current without forcing layout on every render.
+  (function syncStripH() {
+    var strip = document.getElementById("strip");
+    if (!strip) return;
+    function set() { document.documentElement.style.setProperty("--strip-h", Math.ceil(strip.getBoundingClientRect().height) + "px"); }
+    set();
+    if (window.ResizeObserver) new ResizeObserver(set).observe(strip);
+  })();
   renderAll();
   setInterval(function () {
     document.querySelectorAll(".ago[data-t]").forEach(function (a) { a.textContent = agoText(Number(a.dataset.t)); });
