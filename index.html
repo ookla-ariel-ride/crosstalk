@@ -29,6 +29,10 @@ body { background: var(--bg); color: var(--fg); font: 15px/1.5 var(--body); }
 h1 { font: 800 clamp(24px, 5vw, 36px)/1.1 var(--display); margin: 0; letter-spacing: -0.01em; text-wrap: balance; }
 h1 .proj { color: var(--who); } h1 .x { color: var(--muted); font-weight: 500; }
 .sub { color: var(--muted); max-width: 64ch; margin: 6px 0 0; }
+header { display: flex; flex-wrap: wrap; gap: 8px 18px; align-items: flex-end; justify-content: space-between; }
+header .lead { flex: 1 1 380px; min-width: 0; }
+.who-bar { display: flex; flex-wrap: wrap; gap: 6px 10px; align-items: center; justify-content: flex-end; font: 12px var(--mono); color: var(--muted); }
+.who-bar > div { margin: 0; }
 h2 { font: 800 13px var(--display); letter-spacing: .08em; text-transform: uppercase; margin: 0 0 10px; color: var(--muted); }
 button, input, textarea, select { font: inherit; color: inherit; }
 button:focus-visible, input:focus-visible, textarea:focus-visible, select:focus-visible, a:focus-visible { outline: 2px solid var(--vc); outline-offset: 2px; }
@@ -175,8 +179,15 @@ td.num, td.t { font: 12px var(--mono); font-variant-numeric: tabular-nums; white
 
 <div class="wrap">
   <header>
-    <h1 id="heading">Crosstalk</h1>
-    <p class="sub">What the projects' agent sessions say to each other, what they've agreed, who holds which shared file, and what's waiting on you. Updates live.</p>
+    <div class="lead">
+      <h1 id="heading">Crosstalk</h1>
+      <p class="sub">What the projects' agent sessions say to each other, what they've agreed, who holds which shared file, and what's waiting on you. Updates live.</p>
+    </div>
+    <div class="who-bar" id="whoBar">
+      <div id="viewer"></div>
+      <div id="onboard"></div>
+      <div id="signin"></div>
+    </div>
   </header>
 
   <div class="strip" id="strip">
@@ -188,13 +199,10 @@ td.num, td.t { font: 12px var(--mono); font-variant-numeric: tabular-nums; white
   </div>
 
   <nav class="tabs" role="tablist" id="tabs"></nav>
-  <div class="note" id="signin"></div>
-  <div class="note" id="onboard"></div>
   <main id="view"></main>
 
   <p class="note">Every participant logs each message here as it sends or receives it. Times are Pacific. Notes you post here are read by every session at its next check-in. A file claim is a notice between the sessions, not a permission.</p>
   <p class="note" id="build"></p>
-  <p class="note" id="viewer"></p>
 </div>
 
 <script>
