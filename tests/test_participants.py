@@ -36,6 +36,12 @@ class RosterTests(unittest.TestCase):
             with self.assertRaises(ValueError):
                 self.load(self.entry(id=bad))
 
+    def test_bad_name_rejected(self):
+        for bad in ("<script>", "a<b", "a>b", "a\nb", "a\tb", "a\x00b"):
+            with self.assertRaises(ValueError) as cm:
+                self.load(self.entry(name=bad))
+            self.assertIn("x", str(cm.exception))
+
     def test_bad_kind_and_trust_rejected(self):
         with self.assertRaises(ValueError):
             self.load(self.entry(kind="robot"))

@@ -7,6 +7,8 @@ from pathlib import Path
 from typing import Dict, Optional
 
 ID_RE = re.compile(r"^[a-z0-9-]+(\.[a-z0-9-]+)*$")
+# A name is shown as text on the page, so it must be plain: no angle brackets and no control characters.
+NAME_BAD_RE = re.compile(r"[\x00-\x1f\x7f<>]")
 KINDS = ("project", "agent", "reviewer", "researcher", "tool", "person")
 TRUSTS = ("approved", "quarantined")
 COLOR_RE = re.compile(r"^#[0-9a-fA-F]{6}$")
@@ -103,6 +105,8 @@ def _parse(entry: dict, index: int) -> Participant:
         raise ValueError("participants[%d]: bad id %r" % (index, pid))
     if not isinstance(entry.get("name"), str) or not entry["name"]:
         raise ValueError("participant %s: missing name" % pid)
+    if NAME_BAD_RE.search(entry["name"]):
+        raise ValueError("participant %s: bad name %r" % (pid, entry["name"]))
     kind = entry.get("kind")
     if kind not in KINDS:
         raise ValueError("participant %s: bad kind %r" % (pid, kind))
