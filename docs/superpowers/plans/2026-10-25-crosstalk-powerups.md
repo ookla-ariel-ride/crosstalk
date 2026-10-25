@@ -26,7 +26,7 @@ Spec: `docs/superpowers/specs/2026-10-25-crosstalk-powerups.md`
 
 Files: `scripts/crosstalk/requests.py`, `scripts/relay.py`, `tests/test_inbox.py`
 
-- [ ] Step 1 (RED): Add failing tests in `tests/test_inbox.py`:
+- [x] Step 1 (RED): Add failing tests in `tests/test_inbox.py`:
   - Multi-recipient `to: ["bewareilive", "codex"]`: when `bewareilive` replies,
     `inbox("bewareilive")` drops it, while `inbox("codex")` still lists it with
     `pending_from == ["codex"]` and `bewareilive`'s reply attached.
@@ -45,10 +45,10 @@ Files: `scripts/crosstalk/requests.py`, `scripts/relay.py`, `tests/test_inbox.py
     appear in `out["agreements_to_adopt"]`.
   - `stale_locks`: unreleased `locks` where `project == pid` and `since` is > 4h
     ago appear in `out["stale_locks"]`.
-- [ ] Step 2 (GREEN): Implement in `scripts/crosstalk/requests.py` and wire
+- [x] Step 2 (GREEN): Implement in `scripts/crosstalk/requests.py` and wire
   `owner_messages`, `agreements_to_adopt`, `stale_locks`, and `pending_from` in
   `scripts/relay.py` `cmd_inbox`.
-- [ ] Step 3: Verify `python3 -m unittest discover -s tests` passes and commit.
+- [x] Step 3: Verify `python3 -m unittest discover -s tests` passes and commit.
 
 ---
 
@@ -56,14 +56,14 @@ Files: `scripts/crosstalk/requests.py`, `scripts/relay.py`, `tests/test_inbox.py
 
 Files: `scripts/crosstalk/posters.py`, `scripts/relay.py`, `tests/test_posters.py`
 
-- [ ] Step 1 (RED): Create `tests/test_posters.py` with failing tests for:
+- [x] Step 1 (RED): Create `tests/test_posters.py` with failing tests for:
   - `relay.py claim --from bewareilive --path .githooks/pre-commit --repo ookla-ariel-ride/bewareilive --holder sync-agent --note "updating hook"`
   - `relay.py release --from bewareilive --path .githooks/pre-commit`
   - `relay.py land-sync --from vectorcraft --commit a1b2c3d --summary "Gate host lanes in Scratch" --files tools/gate-host --adopter bewareilive` (verifies `messages` sync row, `agreements` row in `ready-to-adopt` with `commits.vectorcraft == ["a1b2c3d"]`, and automatic release of any open lock held by `vectorcraft` on `tools/gate-host`).
   - `relay.py incident --from vectorcraft --slug studio-disk --summary "Studio disk 100% full"` and `--resolve --fix "Excluded ~/Scratch from Time Machine" --fix-ref vectorcraft@352b6cd`.
-- [ ] Step 2 (GREEN): Implement `scripts/crosstalk/posters.py` and add
+- [x] Step 2 (GREEN): Implement `scripts/crosstalk/posters.py` and add
   subparsers `claim`, `release`, `land-sync`, and `incident` in `scripts/relay.py`.
-- [ ] Step 3: Verify `python3 -m unittest discover -s tests` passes and commit.
+- [x] Step 3: Verify `python3 -m unittest discover -s tests` passes and commit.
 
 ---
 
@@ -72,14 +72,14 @@ Files: `scripts/crosstalk/posters.py`, `scripts/relay.py`, `tests/test_posters.p
 Files: `scripts/crosstalk/consults.py`, `scripts/crosstalk/service.py`,
 `scripts/relay.py`, `PROTOCOL.md`, `tests/test_consults.py`
 
-- [ ] Step 1 (RED): Create `tests/test_consults.py` with failing tests for:
+- [x] Step 1 (RED): Create `tests/test_consults.py` with failing tests for:
   - `relay.py reply --from bewareilive --to-id vc-r1 --summary "Confirmed on Williams hardware" --body "Details..." --ref bewareilive@51e7709` (auto-fills `replyTo: "vc-r1"` and `to: ["vectorcraft"]`; refuses unknown `--to-id`).
   - `relay.py consult --from avoidmissingball --summary "Centipede RNG bank window" --body "Question..." --ref avoidmissingball@91bab82 --to vectorcraft bewareilive` (creates `kind: "request"` with `refs` and `to`).
   - `relay.py adopt --from bewareilive --agreement a-fast-verify --commit 51e7709 --summary "Adopted fast verify"` (appends `51e7709` to `commits.bewareilive`, moves `status` to `"landed-both"` when adopters have commits, and logs a `sync` message).
-- [ ] Step 2 (GREEN): Implement `scripts/crosstalk/consults.py`, wire `reply`,
+- [x] Step 2 (GREEN): Implement `scripts/crosstalk/consults.py`, wire `reply`,
   `consult`, and `adopt` into `scripts/relay.py`, and update
   `scripts/crosstalk/service.py` and `PROTOCOL.md`.
-- [ ] Step 3: Verify `python3 -m unittest discover -s tests` passes and commit.
+- [x] Step 3: Verify `python3 -m unittest discover -s tests` passes and commit.
 
 ---
 
@@ -87,7 +87,7 @@ Files: `scripts/crosstalk/consults.py`, `scripts/crosstalk/service.py`,
 
 Files: `index.html`, `tests/page/scenarios.js`
 
-- [ ] Step 1 (RED): Add failing page scenarios in `tests/page/scenarios.js`:
+- [x] Step 1 (RED): Add failing page scenarios in `tests/page/scenarios.js`:
   - `ownerInlineReply`: clicking `#reply-btn-<id>` on a message card sets the
     composer's `#reply-banner`, and submitting posts an owner message with
     `replyTo == <id>` and `to == [<sender>]`.
@@ -101,17 +101,17 @@ Files: `index.html`, `tests/page/scenarios.js`
   - `ownerDigest`: when messages and progress rows arrive after `visitTs`,
     switching to Timeline renders `#digest` summarizing the new messages and
     progress deltas, and `#digest-dismiss` hides it.
-- [ ] Step 2 (GREEN): Implement in `index.html` using `el()` and `textContent`
+- [x] Step 2 (GREEN): Implement in `index.html` using `el()` and `textContent`
   only, rebuild `tests/page/build.sh`, and verify scenarios pass.
-- [ ] Step 3: Verify `python3 -m unittest discover -s tests` passes and commit.
+- [x] Step 3: Verify `python3 -m unittest discover -s tests` passes and commit.
 
 ---
 
 ### Track 5: Merge, adversarial review, regression tests, and server restart
 
-- [ ] Merge Tracks 1–4 cleanly, combining `scripts/relay.py` imports and
+- [x] Merge Tracks 1–4 cleanly, combining `scripts/relay.py` imports and
   subparsers.
-- [ ] Run independent adversarial reviewer subagent over the merged tree.
-- [ ] Land failing-first regression tests for any findings, run full Python test
+- [x] Run independent adversarial reviewer subagent over the merged tree.
+- [x] Land failing-first regression tests for any findings, run full Python test
   suite + browser page scenarios, run `avoid-ai-writing` on docs, restart the
   background server, and push `main` to `origin`.
