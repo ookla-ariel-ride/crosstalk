@@ -921,6 +921,10 @@ td.num, td.t { font: 12px var(--mono); font-variant-numeric: tabular-nums; white
   }
   // Read-only helpers for the page tests.
   window.__crosstalk = Object.freeze({ dotState: dotState, viewerText: viewerText, spanText: spanText, colorOf: colorOf });
+  // Which data layer is active ("seam" | "claude" | "fetch" | "none"), and whether
+  // the fetch layer was constructed. The page tests read these.
+  window.__crosstalkLayer = "none";
+  window.__crosstalkFetchLayer = false;
   renderAll();
   setInterval(function () {
     document.querySelectorAll(".ago[data-t]").forEach(function (a) { a.textContent = agoText(Number(a.dataset.t)); });
@@ -931,9 +935,21 @@ td.num, td.t { font: 12px var(--mono); font-variant-numeric: tabular-nums; white
   function setLive(on, text) { document.getElementById("live").classList.toggle("on", on); document.getElementById("liveText").textContent = text; }
 
   (async function () {
-    db = window.claude && window.claude.use ? await window.claude.use("db") : null;
-    if (!db) { offline = true; renderStrip(); return; }
-    var user = await window.claude.use("user");
+    // The data layer: a seam (window.__crosstalkDataLayer) wins, then the legacy
+    // window.claude path. The fetch layer (Task 6) is the default when neither is
+    // present. The seam is what the stub harness and the static export inject.
+    var layer = window.__crosstalkDataLayer;
+    var user = null;
+    if (layer && layer.db && layer.user) {
+      window.__crosstalkLayer = "seam";
+      db = layer.db;
+      user = layer.user;
+    } else {
+      window.__crosstalkLayer = "claude";
+      db = window.claude && window.claude.use ? await window.claude.use("db") : null;
+      if (!db) { offline = true; renderStrip(); return; }
+      user = await window.claude.use("user");
+    }
     // me() resolves every field at once; canEdit() is a promise, so it can't be tested for truth directly.
     var me = user && user.me ? await user.me() : null;
     canWrite = !!(me && me.canEdit);

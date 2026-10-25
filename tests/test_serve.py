@@ -558,5 +558,39 @@ class OwnerTests(unittest.TestCase):
             self.assertRegex(pin, r"^\d{6}$")
 
 
+class HealthTests(unittest.TestCase):
+    def test_health_is_ok_when_the_log_is_clean(self):
+        with TempRepo() as r:
+            r.write_roster()
+            r.write_log("codex", [line(1, "codex", data={"kind": "reply", "summary": "hi"})])
+            with RunningServer(r.root) as srv:
+                status, body = request(srv.url + "/api/health")
+            self.assertEqual(status, 200)
+            self.assertTrue(body["ok"])
+            self.assertEqual(body["fatal"], [])
+            self.assertRegex(body["server_time"], r"^\d{4}-\d\d-\d\dT\d\d:\d\d:\d\dZ$")
+
+    def test_health_reports_a_fatal_line(self):
+        with TempRepo() as r:
+            r.write_roster()
+            r.write_log("codex", [line(2, "codex", data={"kind": "reply", "summary": "hi"})])
+            with RunningServer(r.root) as srv:
+                status, body = request(srv.url + "/api/health")
+            self.assertEqual(status, 200)
+            self.assertFalse(body["ok"])
+            self.assertEqual(len(body["fatal"]), 1)
+            self.assertRegex(body["fatal"][0], r"^log/codex\.jsonl:1: seq 2, expected 1")
+
+    def test_health_ignores_non_fatal_problems(self):
+        with TempRepo() as r:
+            r.write_roster()
+            r.write_log("ghost", [line(1, "ghost", data={"kind": "reply", "summary": "hi"})])
+            with RunningServer(r.root) as srv:
+                status, body = request(srv.url + "/api/health")
+            self.assertEqual(status, 200)
+            self.assertTrue(body["ok"])
+            self.assertEqual(body["fatal"], [])
+
+
 if __name__ == "__main__":
     unittest.main()

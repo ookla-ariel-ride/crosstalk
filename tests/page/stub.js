@@ -19,6 +19,10 @@ function coll(c){ return {
 window.__viewer = { id: "u_test", name: "Test Owner", isOwner: true, canEdit: true, email: null, avatarUrl: "", color: "#888" };
 // Opened with ?viewer=reader, the stub viewer is an unnamed read-only viewer.
 if (/[?&]viewer=reader\b/.test(location.search)) __viewer = { id: "u_reader", name: "", isOwner: false, canEdit: false, email: null, avatarUrl: "", color: "#888" };
-window.claude = { use: async function(n){ if(n==="db") return { collection: coll };
-  if(n==="user") return { canEdit:async function(){return __viewer.canEdit;}, isOwner:async function(){return __viewer.isOwner;}, me:async function(){ return Object.assign({}, __viewer); } };
+var db = { collection: coll };
+var user = { canEdit:async function(){return __viewer.canEdit;}, isOwner:async function(){return __viewer.isOwner;}, me:async function(){ return Object.assign({}, __viewer); } };
+window.claude = { use: async function(n){ if(n==="db") return db;
+  if(n==="user") return user;
   return null; } };
+// The seam the page prefers: the same db/user objects, exposed directly.
+window.__crosstalkDataLayer = { db: db, user: user };

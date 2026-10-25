@@ -18,6 +18,11 @@
 
   var S = [];
 
+  // The page must use the injected seam (window.__crosstalkDataLayer), not window.claude.
+  S.push(async function dataLayerSeamUsed() {
+    return res("dataLayerSeamUsed", window.__crosstalkLayer === "seam", "layer=" + window.__crosstalkLayer);
+  });
+
   S.push(async function unknownSenderNeutral() {
     await go("timeline");
     await addDoc("messages", "gemini-1", { t: T0, from: "gemini", kind: "sync", summary: "From an unlisted sender" });

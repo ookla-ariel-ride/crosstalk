@@ -34,7 +34,7 @@ from typing import Dict, List, Optional, Tuple
 from urllib.parse import urlsplit
 
 from .courier import atomic_write_text
-from .logs import COLLECTIONS, append_line
+from .logs import COLLECTIONS, append_line, check_all, check_all
 from .participants import load_roster
 from .replay import load_all_lines, replay
 from .tokens import TOKEN_FILE, Result, Tokens
@@ -268,6 +268,8 @@ class CrosstalkHandler(BaseHTTPRequestHandler):
         path = urlsplit(self.path).path
         if path == "/api/snapshot":
             self._snapshot()
+        elif path == "/api/health":
+            self._health()
         elif path == "/api/me":
             self._me()
         elif path.startswith("/api/"):
@@ -293,6 +295,23 @@ class CrosstalkHandler(BaseHTTPRequestHandler):
                          "commit": repo_commit(self.state.root),
                          "roster": entries,
                          "collections": collections})
+
+    def _health(self):
+        """The log's health: ok when nothing fatal, plus the fatal lines named.
+
+        The page's "live" strip reads this: a fatal line surfaces as the
+        Offline reason, and the server_time is the freshness clock.
+        """
+        root = self.state.root
+        try:
+            roster = load_roster(root / "participants.json")
+        except (OSError, ValueError) as e:
+            self._json(200, {"ok": False, "server_time": now_iso(),
+                             "fatal": ["participants.json:0: %s" % e]})
+            return
+        problems = check_all(root, roster)
+        fatal = ["%s:%d: %s" % (p.file, p.line, p.message) for p in problems if p.fatal]
+        self._json(200, {"ok": not fatal, "server_time": now_iso(), "fatal": fatal})
 
     def _collection(self, name: str):
         if name not in KNOWN_COLLECTIONS:
