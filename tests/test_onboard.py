@@ -137,6 +137,15 @@ class OnboardTests(unittest.TestCase):
             with self.assertRaises(ValueError):
                 onboard(r.root, "helper", "Helper", "agent")
 
+    def test_check_in_min_bounded(self):
+        with TempRepo() as r:
+            r.write_roster()
+            for bad in (0, -5, 1441, 9999):
+                with self.assertRaises(ValueError):
+                    onboard(r.root, "x", "X", "tool", check_in_min=bad)
+            onboard(r.root, "ok1", "Ok1", "tool", check_in_min=1)
+            onboard(r.root, "ok2", "Ok2", "tool", check_in_min=1440)
+
     def test_auto_colors_survive_load_roster(self):
         with TempRepo() as r:
             r.write_roster()
@@ -198,6 +207,13 @@ class OnboardTests(unittest.TestCase):
             kit = (r.root / "kits" / "newbie.md").read_text(encoding="utf-8")
             self.assertIn(result["token"], kit)
             self.assertIn('"from":"newbie"', kit)
+
+    def test_kit_file_is_0600(self):
+        with TempRepo() as r:
+            r.write_roster()
+            onboard(r.root, "newbie", "Newbie", "tool")
+            mode = (r.root / "kits" / "newbie.md").stat().st_mode & 0o777
+            self.assertEqual(mode, 0o600)
 
     def test_kit_text_has_identity_and_key(self):
         with TempRepo() as r:

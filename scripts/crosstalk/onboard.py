@@ -237,6 +237,7 @@ def _write_kit(root: Path, pid: str, token: str, entry: dict) -> Path:
     kit_path = root / "kits" / (pid + ".md")
     kit_path.parent.mkdir(parents=True, exist_ok=True)
     kit_path.write_text(kit_text(root, pid, token, entry), encoding="utf-8")
+    os.chmod(kit_path, 0o600)
     return kit_path
 
 
@@ -283,7 +284,8 @@ def _onboard(root, id, name, kind, repo, check_in_min, parent, color, color_dark
         raise ValueError("participant %s: parent %s not in roster" % (id, parent))
     if check_in_min is not None and (isinstance(check_in_min, bool)
                                      or not isinstance(check_in_min, int)
-                                     or check_in_min <= 0):
+                                     or check_in_min < 1
+                                     or check_in_min > 1440):
         raise ValueError("participant %s: bad checkInMin %r" % (id, check_in_min))
     problem = repo_problem(id, repo)
     if problem:
