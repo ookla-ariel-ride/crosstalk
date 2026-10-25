@@ -2,6 +2,7 @@ import json
 import shutil
 import subprocess
 import sys
+import threading
 import unittest
 from pathlib import Path
 
@@ -38,6 +39,38 @@ def kit_entry(**kw):
 
 
 class OnboardTests(unittest.TestCase):
+    def test_concurrent_onboards_do_not_lose_entries(self):
+        # Two onboards racing between their read and write used to lose one
+        # entry (the last writer won). The flock serializes the whole
+        # read-modify-write, so all N distinct ids must survive with working keys.
+        with TempRepo() as r:
+            r.write_roster()
+            n = 5
+            barrier = threading.Barrier(n)
+            results = [None] * n
+            errors = []
+
+            def work(i):
+                try:
+                    barrier.wait()
+                    results[i] = onboard(r.root, "c%d" % i, "C%d" % i, "tool")
+                except Exception as e:  # noqa: BLE001
+                    errors.append(e)
+
+            threads = [threading.Thread(target=work, args=(i,)) for i in range(n)]
+            for t in threads:
+                t.start()
+            for t in threads:
+                t.join()
+            self.assertEqual(errors, [])
+            roster = load_roster(r.root / "participants.json")
+            for i in range(n):
+                self.assertIn("c%d" % i, roster.participants)
+            store = Tokens.load(r.root / "tokens.json")
+            for i in range(n):
+                self.assertIsNotNone(results[i])
+                self.assertTrue(store.verify("Bearer " + results[i]["token"], "c%d" % i).ok)
+
     def test_duplicate_id_refused(self):
         with TempRepo() as r:
             r.write_roster()

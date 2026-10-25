@@ -7,9 +7,11 @@ roster's own validation accepts; it never reimplements the color rules.
 
 Python 3.9, standard library only.
 """
+import fcntl
 import json
 import os
 import tempfile
+from contextlib import contextmanager
 from pathlib import Path
 from typing import Dict, Optional, Tuple
 
@@ -42,6 +44,26 @@ PALETTE = [
 ]
 
 PROBE_ID = "palette-probe"
+
+# Onboarding is a read-modify-write of participants.json and tokens.json. Two
+# onboards racing between their read and their write used to lose one entry
+# (the last writer won). The flock below serializes the whole critical section
+# across processes (the page and the CLI share this file), while the atomic
+# _atomic_write stays for crash safety.
+LOCK_FILE = "log/.onboard.lock"
+
+
+@contextmanager
+def _locked_onboard(root: Path):
+    path = Path(root) / LOCK_FILE
+    path.parent.mkdir(parents=True, exist_ok=True)
+    fd = os.open(str(path), os.O_CREAT | os.O_RDWR, 0o600)
+    try:
+        fcntl.flock(fd, fcntl.LOCK_EX)
+        yield
+    finally:
+        fcntl.flock(fd, fcntl.LOCK_UN)
+        os.close(fd)
 
 
 def _entry_raw(p) -> dict:
@@ -212,6 +234,12 @@ def onboard(root, id, name, kind, repo=None, check_in_min=None, parent=None,
     validation rejects.
     """
     root = Path(root)
+    with _locked_onboard(root):
+        return _onboard(root, id, name, kind, repo, check_in_min, parent, color, color_dark)
+
+
+def _onboard(root, id, name, kind, repo, check_in_min, parent, color, color_dark):
+    """The onboard body, run under the exclusive flock (see _locked_onboard)."""
     roster_path = root / "participants.json"
     roster = load_roster(roster_path)
     try:

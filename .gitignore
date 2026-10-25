@@ -4,3 +4,4 @@ __pycache__/
 tests/page/out/
 tokens.json
 kits/
+log/.onboard.lock
