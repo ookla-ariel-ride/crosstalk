@@ -116,19 +116,22 @@ def adopt_agreement(
     if doc.get("hold") is True or doc.get("status") == "held":
         raise ValueError("agreement %r is on hold" % agreement_id)
 
-    raw_commits = doc.get("commits") or {}
-    commits = {
-        k: list(v) if isinstance(v, list) else []
-        for k, v in raw_commits.items()
-    }
+    raw_commits = doc.get("commits")
+    commits = {}  # type: Dict[str, list]
+    if isinstance(raw_commits, dict):
+        for k, v in raw_commits.items():
+            if isinstance(v, list):
+                commits[k] = [x for x in v if isinstance(x, str) and x]
+            elif isinstance(v, str) and v:
+                commits[k] = [v]
+            else:
+                commits[k] = []
     pid_commits = commits.setdefault(pid, [])
     if commit not in pid_commits:
         pid_commits.append(commit)
 
     adopter = doc.get("adopter")
-    if isinstance(adopter, str) and adopter in roster.participants:
-        new_status = "landed-both" if commits.get(adopter) else "ready-to-adopt"
-    elif adopter in (None, "", "all", "both"):
+    if adopter in (None, "", "all", "both"):
         builder = doc.get("builder")
         other_projects = [
             p.id
@@ -141,8 +144,17 @@ def adopt_agreement(
             new_status = "landed-both"
         else:
             new_status = "ready-to-adopt"
-    else:
+    elif isinstance(adopter, str):
         new_status = "landed-both" if commits.get(adopter) else "ready-to-adopt"
+    elif isinstance(adopter, list):
+        targets = [x for x in adopter if isinstance(x, str) and x]
+        new_status = (
+            "landed-both"
+            if (targets and all(bool(commits.get(x)) for x in targets))
+            else "ready-to-adopt"
+        )
+    else:
+        new_status = "ready-to-adopt"
 
     stamp = now_iso()
     last_ln = last_line_map(lines).get(("agreements", agreement_id))

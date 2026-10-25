@@ -204,6 +204,50 @@ class ConsultsUnitTests(unittest.TestCase):
             adopt_agreement(self.r.root, "bewareilive", "a-status-held", "51e7709", roster=self.roster)
         self.assertIn("is on hold", str(ctx_status_held.exception))
 
+    def test_adopt_agreement_handles_list_adopter_and_malformed_commits(self):
+        from crosstalk.consults import adopt_agreement
+
+        self.r.write_log("vectorcraft", [
+            line(1, "vectorcraft", collection="agreements", id_="a-list-adopter",
+                 data={
+                     "builder": "vectorcraft",
+                     "adopter": ["bewareilive", "avoidmissingball"],
+                     "status": "ready-to-adopt",
+                     "summary": "List adopter agreement",
+                 }),
+            line(2, "vectorcraft", collection="agreements", id_="a-list-commits",
+                 data={
+                     "builder": "vectorcraft",
+                     "adopter": "bewareilive",
+                     "status": "ready-to-adopt",
+                     "commits": ["a1b2c3d"],
+                     "summary": "List commits agreement",
+                 }),
+            line(3, "vectorcraft", collection="agreements", id_="a-str-commits",
+                 data={
+                     "builder": "vectorcraft",
+                     "adopter": "bewareilive",
+                     "status": "ready-to-adopt",
+                     "commits": {"vectorcraft": "a1b2c3d"},
+                     "summary": "String commits agreement",
+                 }),
+        ])
+        res1 = adopt_agreement(self.r.root, "bewareilive", "a-list-adopter", "51e7709", roster=self.roster)
+        self.assertEqual(res1["status"], "ready-to-adopt")
+        res1b = adopt_agreement(self.r.root, "avoidmissingball", "a-list-adopter", "91bab82", roster=self.roster)
+        self.assertEqual(res1b["status"], "landed-both")
+
+        res2 = adopt_agreement(self.r.root, "bewareilive", "a-list-commits", "51e7709", roster=self.roster)
+        self.assertEqual(res2["status"], "landed-both")
+        self.assertEqual(self.docs()[("agreements", "a-list-commits")]["commits"], {"bewareilive": ["51e7709"]})
+
+        res3 = adopt_agreement(self.r.root, "bewareilive", "a-str-commits", "51e7709", roster=self.roster)
+        self.assertEqual(res3["status"], "landed-both")
+        self.assertEqual(
+            self.docs()[("agreements", "a-str-commits")]["commits"],
+            {"vectorcraft": ["a1b2c3d"], "bewareilive": ["51e7709"]},
+        )
+
 
 class ConsultsCliTests(unittest.TestCase):
     def setUp(self):
