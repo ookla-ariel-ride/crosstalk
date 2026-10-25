@@ -170,6 +170,60 @@ class RepoCommitTests(unittest.TestCase):
                 _, body = request(srv.url + "/api/snapshot")
             self.assertRegex(body["commit"], r"^[0-9a-f]{7,40}$")
 
+    @unittest.skipUnless(shutil.which("git"), "git is not installed")
+    def test_the_commit_is_cached_between_snapshots(self):
+        with TempRepo() as r:
+            env = dict(os.environ, GIT_AUTHOR_NAME="t", GIT_AUTHOR_EMAIL="t@example.com",
+                       GIT_COMMITTER_NAME="t", GIT_COMMITTER_EMAIL="t@example.com")
+            subprocess.run(["git", "init", "-q", str(r.root)], check=True, env=env)
+            subprocess.run(["git", "commit", "-q", "--allow-empty", "-m", "one"],
+                           cwd=str(r.root), check=True, env=env)
+            import crosstalk.serve as serve_mod
+            calls = []
+            real_run = serve_mod.subprocess.run
+
+            def counting(*args, **kwargs):
+                calls.append(args)
+                return real_run(*args, **kwargs)
+
+            serve_mod.subprocess.run = counting
+            try:
+                first = repo_commit(r.root)
+                second = repo_commit(r.root)
+            finally:
+                serve_mod.subprocess.run = real_run
+            self.assertEqual(first, second)
+            self.assertEqual(len(calls), 1, "the second read must reuse the cache")
+
+    @unittest.skipUnless(shutil.which("git"), "git is not installed")
+    def test_the_commit_cache_invalidates_when_head_changes(self):
+        with TempRepo() as r:
+            env = dict(os.environ, GIT_AUTHOR_NAME="t", GIT_AUTHOR_EMAIL="t@example.com",
+                       GIT_COMMITTER_NAME="t", GIT_COMMITTER_EMAIL="t@example.com")
+            subprocess.run(["git", "init", "-q", str(r.root)], check=True, env=env)
+            subprocess.run(["git", "commit", "-q", "--allow-empty", "-m", "one"],
+                           cwd=str(r.root), check=True, env=env)
+            import crosstalk.serve as serve_mod
+            calls = []
+            real_run = serve_mod.subprocess.run
+
+            def counting(*args, **kwargs):
+                calls.append(args)
+                return real_run(*args, **kwargs)
+
+            serve_mod.subprocess.run = counting
+            try:
+                first = repo_commit(r.root)
+                self.assertEqual(len(calls), 1)
+                head = r.root / ".git" / "HEAD"
+                st = head.stat()
+                os.utime(str(head), (st.st_atime, st.st_mtime + 10))
+                second = repo_commit(r.root)
+                self.assertEqual(len(calls), 2, "a HEAD change must re-read the commit")
+            finally:
+                serve_mod.subprocess.run = real_run
+            self.assertEqual(first, second)
+
 
 class AppendTests(unittest.TestCase):
     """POST /api/append: one bearer token, one line in the log."""

@@ -65,11 +65,44 @@ def now_iso() -> str:
     return time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime())
 
 
+# The served checkout's commit, cached on .git/HEAD's mtime so the page's 5s
+# polls do not spawn git each time. A small TTL is the fallback for refs that
+# move without touching HEAD itself (a symref HEAD).
+COMMIT_TTL = 60.0
+
+_commit_cache = {}  # type: Dict[str, Tuple[Optional[tuple], float, Optional[str]]]
+_commit_lock = threading.Lock()
+
+
+def _head_stamp(root: Path) -> Optional[tuple]:
+    try:
+        st = (root / ".git" / "HEAD").stat()
+    except OSError:
+        return None
+    return (st.st_mtime_ns, st.st_size)
+
+
 def repo_commit(root) -> Optional[str]:
     """The short hash of the served checkout's HEAD, or None when there is none.
 
     Read-only: the server never commits and never touches the working tree.
     """
+    root = Path(root)
+    stamp = _head_stamp(root)
+    now = time.time()
+    with _commit_lock:
+        cached = _commit_cache.get(str(root))
+        if cached is not None:
+            cstamp, ctime, cvalue = cached
+            if cstamp == stamp and now - ctime < COMMIT_TTL:
+                return cvalue
+    value = _git_commit(root)
+    with _commit_lock:
+        _commit_cache[str(root)] = (stamp, time.time(), value)
+    return value
+
+
+def _git_commit(root: Path) -> Optional[str]:
     try:
         out = subprocess.run(["git", "-C", str(root), "rev-parse", "--short", "HEAD"],
                              stdout=subprocess.PIPE, stderr=subprocess.DEVNULL, timeout=10)
