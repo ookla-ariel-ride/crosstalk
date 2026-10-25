@@ -33,6 +33,12 @@ header { display: flex; flex-wrap: wrap; gap: 8px 18px; align-items: flex-end; j
 header .lead { flex: 1 1 380px; min-width: 0; }
 .who-bar { display: flex; flex-wrap: wrap; gap: 6px 10px; align-items: center; justify-content: flex-end; font: 12px var(--mono); color: var(--muted); }
 .who-bar > div { margin: 0; }
+.swatches { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; }
+.swatch { width: 28px; height: 28px; border-radius: 50%; border: 1px solid var(--rule); cursor: pointer; padding: 0; }
+.swatch:hover { outline: 1px solid var(--fg); outline-offset: 2px; }
+.swatch.sel, .chip.sel { box-shadow: 0 0 0 2px var(--panel), 0 0 0 4px var(--fg); }
+.lbl { font: 500 12px var(--mono); color: var(--muted); }
+.color-wrap { display: flex; flex-direction: column; gap: 4px; }
 h2 { font: 800 13px var(--display); letter-spacing: .08em; text-transform: uppercase; margin: 0 0 10px; color: var(--muted); }
 button, input, textarea, select { font: inherit; color: inherit; }
 button:focus-visible, input:focus-visible, textarea:focus-visible, select:focus-visible, a:focus-visible { outline: 2px solid var(--vc); outline-offset: 2px; }
@@ -238,7 +244,7 @@ td.num, td.t { font: 12px var(--mono); font-variant-numeric: tabular-nums; white
   // until a post succeeds, so retrying a half-failed post overwrites the same rows instead of duplicating them.
   var draft = { text: "", kind: "owner", id: null, posting: false, status: "" };
   // The Add-participant control: open, posting, status, and the last result (kit + token).
-  var onboardState = { open: false, posting: false, status: "", result: null };
+  var onboardState = { open: false, posting: false, status: "", result: null, colorPair: null };
   // The roster is a <details>: always open on wide screens, folded into "People" below 640px until opened.
   var WIDE = window.matchMedia ? window.matchMedia("(min-width: 641px)") : null, rosterOpen = false;
   // A failed Approve keeps its message here, by participant id, so a re-render doesn't drop it.
@@ -1164,6 +1170,11 @@ td.num, td.t { font: 12px var(--mono); font-variant-numeric: tabular-nums; white
             return j;
           });
         });
+      },
+      // The pickable (color, colorDark) pairs for the Add form.
+      palette: function () {
+        return fetch("/api/palette", { credentials: "same-origin" })
+          .then(function (r) { return r.ok ? r.json() : { pairs: [] }; });
       }
     };
 
@@ -1251,10 +1262,38 @@ td.num, td.t { font: 12px var(--mono); font-variant-numeric: tabular-nums; white
             var parentLab = el("label", null, "Parent (agents only)"); parentLab.htmlFor = "onboard-parent";
             var parentIn = el("input"); parentIn.id = "onboard-parent"; parentIn.placeholder = "parent participant id"; parentIn.setAttribute("aria-label", "Parent (agents only)");
             parentRow.appendChild(parentLab); parentRow.appendChild(parentIn);
-            var colorLab = el("label", null, "Color (optional)"); colorLab.htmlFor = "onboard-color";
-            var colorIn = el("input"); colorIn.id = "onboard-color"; colorIn.placeholder = "#rrggbb"; colorIn.setAttribute("aria-label", "Color (optional)");
-            var colorDarkLab = el("label", null, "Dark color (optional)"); colorDarkLab.htmlFor = "onboard-colorDark";
-            var colorDarkIn = el("input"); colorDarkIn.id = "onboard-colorDark"; colorDarkIn.placeholder = "#rrggbb"; colorDarkIn.setAttribute("aria-label", "Dark color (optional)");
+            var colorWrap = el("div", "color-wrap");
+            var colorLab = el("span", "lbl", "Color"); colorWrap.appendChild(colorLab);
+            var autoChip = el("button", "btn small chip", "Auto"); autoChip.type = "button"; autoChip.id = "onboard-auto"; autoChip.setAttribute("aria-pressed", "true");
+            var swatchRow = el("div", "swatches"); swatchRow.id = "onboard-swatches";
+            swatchRow.appendChild(autoChip);
+            function paintSwatches() {
+              var chips = swatchRow.querySelectorAll("button.swatch"); for (var i = 0; i < chips.length; i++) chips[i].remove();
+              var pairs = onboardState.palettePairs || [];
+              pairs.forEach(function (pair, n) {
+                var s = el("button", "swatch"); s.type = "button";
+                s.style.backgroundColor = pair[0];
+                s.title = "Color " + (n + 1) + " · light " + pair[0] + " · dark " + pair[1];
+                s.setAttribute("aria-label", "Color " + (n + 1));
+                if (onboardState.colorPair && onboardState.colorPair[0] === pair[0]) s.classList.add("sel");
+                s.addEventListener("click", function () {
+                  onboardState.colorPair = pair;
+                  autoChip.setAttribute("aria-pressed", "false"); autoChip.classList.remove("sel");
+                  paintSwatches();
+                });
+                swatchRow.appendChild(s);
+              });
+            }
+            autoChip.addEventListener("click", function () {
+              onboardState.colorPair = null;
+              autoChip.setAttribute("aria-pressed", "true"); autoChip.classList.add("sel");
+              paintSwatches();
+            });
+            if (onboardState.palettePairs == null && user && typeof user.palette === "function") {
+              user.palette().then(function (res) { onboardState.palettePairs = (res && res.pairs) || []; paintSwatches(); })
+                .catch(function () { onboardState.palettePairs = []; });
+            }
+            paintSwatches();
             var checkLab = el("label", null, "Check-in (min, optional)"); checkLab.htmlFor = "onboard-checkInMin";
             var checkIn = el("input"); checkIn.id = "onboard-checkInMin"; checkIn.placeholder = "e.g. 30"; checkIn.setAttribute("aria-label", "Check-in interval (minutes, optional)");
             var submit = el("button", "btn primary", "Add"); submit.type = "submit"; submit.id = "onboard-submit"; submit.disabled = onboardState.posting;
@@ -1264,8 +1303,7 @@ td.num, td.t { font: 12px var(--mono); font-variant-numeric: tabular-nums; white
             form.appendChild(kindLab); form.appendChild(kindSel);
             form.appendChild(repoLab); form.appendChild(repoIn);
             form.appendChild(parentRow);
-            form.appendChild(colorLab); form.appendChild(colorIn);
-            form.appendChild(colorDarkLab); form.appendChild(colorDarkIn);
+            form.appendChild(colorWrap); colorWrap.appendChild(swatchRow);
             form.appendChild(checkLab); form.appendChild(checkIn);
             form.appendChild(submit); form.appendChild(st);
             function syncParent() { parentRow.style.display = kindSel.value === "agent" ? "" : "none"; }
@@ -1279,10 +1317,10 @@ td.num, td.t { font: 12px var(--mono); font-variant-numeric: tabular-nums; white
         if (repo) fields.repo = repo;
         var parent = parentIn.value.trim();
         if (parent) fields.parent = parent;
-        var color = colorIn.value.trim();
-        if (color) fields.color = color;
-        var colorDark = colorDarkIn.value.trim();
-        if (colorDark) fields.colorDark = colorDark;
+        if (onboardState.colorPair) {
+          fields.color = onboardState.colorPair[0];
+          fields.colorDark = onboardState.colorPair[1];
+        }
         var checkInMin = checkIn.value.trim();
         if (checkInMin !== "") {
           var n = Number(checkInMin);

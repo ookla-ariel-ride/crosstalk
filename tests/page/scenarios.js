@@ -429,11 +429,16 @@
         open.click(); await tick();
         var form = $("onboard-form");
         if (!form) return res("ownerAddParticipant", false, "no form after opening the control");
-        // The form must offer the optional fields: parent (agents), color, colorDark, checkInMin.
-        var parentIn = $("onboard-parent"), colorIn = $("onboard-color"), colorDarkIn = $("onboard-colorDark"), checkIn = $("onboard-checkInMin");
-        if (!parentIn || !colorIn || !colorDarkIn || !checkIn) {
-          return res("ownerAddParticipant", false, "missing optional fields: parent=" + !!parentIn + " color=" + !!colorIn + " colorDark=" + !!colorDarkIn + " checkInMin=" + !!checkIn);
+        // The form must offer a Color picker: an Auto chip plus tappable swatches
+        // (no raw hex inputs), the parent row for agents, and checkInMin.
+        var parentIn = $("onboard-parent"), swatches = $("onboard-swatches"), checkIn = $("onboard-checkInMin"), auto = $("onboard-auto");
+        if (!parentIn || !swatches || !checkIn || !auto) {
+          return res("ownerAddParticipant", false, "missing fields: parent=" + !!parentIn + " swatches=" + !!swatches + " checkInMin=" + !!checkIn + " auto=" + !!auto);
         }
+        var swatchCount = swatches.querySelectorAll("button.swatch").length;
+        if (swatchCount < 2) return res("ownerAddParticipant", false, "fewer than two color swatches (" + swatchCount + ")");
+        var first = swatches.querySelector("button.swatch");
+        first.click(); await tick();
         var parentRow = $("onboard-parent-row");
         var parentHiddenInitially = parentRow && parentRow.style.display === "none";
         $("onboard-id").value = "smoke-agent";
@@ -450,11 +455,12 @@
         var tokOk = !!tok && tok.readOnly && tok.value === "fake-token-123";
         var tokenFields = document.querySelectorAll("#onboard-token").length;
         var parentSent = window.__lastOnboardFields && window.__lastOnboardFields.parent === "bewareilive";
-        var ok = kitOk && tokOk && !!copy && tokenFields === 1 && parentHiddenInitially && parentShown && parentSent;
+        var colorSent = window.__lastOnboardFields && window.__lastOnboardFields.color === "#aa3366" && window.__lastOnboardFields.colorDark === "#dd88bb";
+        var ok = kitOk && tokOk && !!copy && tokenFields === 1 && parentHiddenInitially && parentShown && parentSent && colorSent;
         return res("ownerAddParticipant", ok,
           "kit=" + (kit && JSON.stringify(kit.value)) + " token=" + (tok && JSON.stringify(tok.value)) +
           " copy=" + !!copy + " tokenFields=" + tokenFields + " parentHiddenInitially=" + parentHiddenInitially +
-          " parentShown=" + parentShown + " parentSent=" + parentSent);
+          " parentShown=" + parentShown + " parentSent=" + parentSent + " colorSent=" + colorSent);
       });
 
     S.push(async function partlyLive() {

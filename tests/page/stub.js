@@ -34,7 +34,8 @@ var user = { canEdit:async function(){return __viewer.canEdit;}, isOwner:async f
     }
     var err = new Error("that pin or token is not valid"); err.code = "401"; throw err;
   },
-  onboard: async function(fields) { window.__lastOnboardFields = fields; return Object.assign({}, __onboardResult); } };
+  onboard: async function(fields) { window.__lastOnboardFields = fields; return Object.assign({}, __onboardResult); },
+  palette: async function() { return { pairs: window.__palettePairs || [["#aa3366", "#dd88bb"], ["#3366aa", "#88bbdd"]] }; } };
 window.claude = { use: async function(n){ if(n==="db") return db;
   if(n==="user") return user;
   return null; } };

@@ -36,7 +36,7 @@ from urllib.parse import urlsplit
 
 from .courier import atomic_write_text
 from .logs import COLLECTIONS, append_line, check_all, check_all
-from .onboard import onboard
+from .onboard import PALETTE, onboard
 from .participants import load_roster
 from .replay import enrich_messages, load_all_lines, replay
 from .tokens import TOKEN_FILE, Result, Tokens
@@ -355,6 +355,8 @@ class CrosstalkHandler(BaseHTTPRequestHandler):
             self._health()
         elif path == "/api/me":
             self._me()
+        elif path == "/api/palette":
+            self._palette()
         elif path.startswith("/api/"):
             self._collection(path[len("/api/"):])
         elif path == "/":
@@ -580,6 +582,12 @@ class CrosstalkHandler(BaseHTTPRequestHandler):
             self._json(200, {"name": None, "isOwner": False, "canEdit": True, "viewer": "editor"})
         else:
             self._json(200, {"name": None, "isOwner": False, "canEdit": False, "viewer": "viewer"})
+
+    def _palette(self):
+        # The candidate (color, colorDark) pairs the page's picker shows. The
+        # roster check still runs at onboard time, so a stale pair is refused
+        # with an honest 400 rather than silently stored.
+        self._json(200, {"pairs": [list(p) for p in PALETTE]})
 
     # -- writes -------------------------------------------------------------
 
