@@ -316,6 +316,22 @@ class AppendTests(unittest.TestCase):
             raw = (r.root / "log" / "codex.jsonl").read_text(encoding="utf-8")
             self.assertNotIn(self.TOKEN, raw)
 
+    def test_a_malformed_id_is_400_not_a_crash(self):
+        # A quarantined (or unknown) participant posting a non-string id used to
+        # crash the request thread in _trust_problem (id.startswith on a null).
+        with TempRepo() as r:
+            roster = json.loads(json.dumps(SPEC_ROSTER))
+            for entry in roster["participants"]:
+                if entry["id"] == "codex":
+                    entry["trust"] = "quarantined"
+            r.write_roster(roster)
+            with self.server(r) as srv:
+                for bad in (None, 5, [], {}):
+                    status, body = self.append(srv, self.message(id=bad), self.TOKEN)
+                    self.assertEqual(status, 400, (bad, body))
+                    self.assertIn("id", json.dumps(body))
+            self.assertFalse((r.root / "log" / "codex.jsonl").exists())
+
 
 class OwnerTests(unittest.TestCase):
     """The owner on the page: a PIN or a token, then a session cookie."""

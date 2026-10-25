@@ -197,6 +197,11 @@ def append_line(root: Path, from_: str, op: str, collection: str, id: str, data:
         # Checked before any path is built: on a case-insensitive disk "Codex" would
         # open codex.jsonl.
         raise ValueError("bad participant id %r" % (from_,))
+    if not isinstance(id, str) or not id:
+        # Checked before the trust rules run: _trust_problem calls id.startswith,
+        # which would raise AttributeError (and kill the request thread) on a
+        # null/number/array/object id.
+        raise ValueError("id must be a non-empty string")
     if op not in OPS:
         raise ValueError("unknown op %r" % (op,))
     if roster is not None:
