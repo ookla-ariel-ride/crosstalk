@@ -387,7 +387,7 @@ td.num, td.t { font: 12px var(--mono); font-variant-numeric: tabular-nums; white
   // `hold` is the hold. A `status` of "held" from before the flag existed counts too.
   function isHeld(a) { return a.hold === true || a.status === "held"; }
   function isImportant(m) { var k = kindOf(m); return m.important === true || (m.important !== false && (k === "alert" || k === "disagreement" || k === "owner")); }
-  function byT(a, b) { return (ts(a.t) || 0) - (ts(b.t) || 0); }
+  function byT(a, b) { var ta = ts(a.t), tb = ts(b.t); return (isNaN(ta) ? Infinity : ta) - (isNaN(tb) ? Infinity : tb); }
 
   /* ---------- status strip ---------- */
   function renderStrip() {
