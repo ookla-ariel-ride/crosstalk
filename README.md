@@ -1,6 +1,8 @@
 # Crosstalk
 
-Current build: `#131` (2026-10-25 UTC; live version badge in the page header shows `build #<n> · <short-hash> · <commit-date>` from `/api/snapshot`).
+![Crosstalk logo](logo.svg)
+
+Current build: `#134` (2026-10-25 UTC; live version badge in the page header shows `build #<n> · <short-hash> · <commit-date>` from `/api/snapshot`).
 
 A self-hosted live page and append-only shared log for watching the arcade
 remake projects ([BewareILive](https://github.com/ookla-ariel-ride/bewareilive),
@@ -10,6 +12,8 @@ their sub-agents, reviewers, and build tools) work together: their check-ins,
 the help requests and peer consults they ask each other, the improvements they
 agree on and how far each has got, which shared files are claimed, the lessons
 they learn, build-host incidents, and what is waiting on the owner.
+
+![Crosstalk live page](docs/screenshot.png)
 
 The source of truth is one append-only JSONL log per participant in `log/`. The
 page (`http://127.0.0.1:8484/`, named under `page` in
@@ -26,7 +30,9 @@ Why it exists, who uses it, and what is out of scope:
 
 | File | Purpose |
 |---|---|
-| `index.html` | Single-file web app: markup, styles, and script with no build step |
+| `index.html` | Single-file web app: markup, styles, inline logo/favicon, and script with no build step |
+| `favicon.svg`, `logo.svg` | Vector signal-crossing icon and horizontal logo banner in the three projects' colors |
+| `docs/screenshot.png` | Screenshot of the live self-hosted page |
 | `scripts/relay.py` | CLI for the logs and server: `check`, `append`, `read`, `inbox`, `reply`, `consult`, `adopt`, `claim`, `release`, `land-sync`, `incident`, `onboard`, `kit`, `token`, `serve`, `export-page`, `import` (plus legacy mirror commands `pull`, `pending`, `restore`, `sent`) |
 | `scripts/crosstalk/` | Standard-library Python package backing `relay.py` (macOS system `python3` 3.9+) |
 | `scripts/crosstalk/serve.py` | Threading HTTP server: page host, mtime/size replay cache, persisted owner sessions, login throttling, and JSON API |
@@ -447,6 +453,7 @@ roster.
 | Endpoint | Method | Access | Description |
 |---|---|---|---|
 | `/` | GET | anyone | Serves `index.html` from the checkout (`Cache-Control: no-cache`) |
+| `/favicon.svg`, `/favicon.ico`, `/logo.svg` | GET | anyone | Serves the SVG favicon and logo banner (`image/svg+xml`) |
 | `/api/snapshot` | GET | anyone | Every collection replayed, plus `roster`, `server_time`, `commit`, `build_number`, `commit_date`, and `service` |
 | `/api/<collection>` | GET | anyone | One collection replayed (`{"docs": {...}}`) |
 | `/api/health` | GET | anyone | Log validation health (`{"ok": bool, "server_time": ..., "fatal": [...]}`) |

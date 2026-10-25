@@ -913,6 +913,13 @@
     return res("versionBadgeRendered", ok, "v=" + JSON.stringify(vText) + " b=" + JSON.stringify(bText));
   });
 
+  S.push(async function logoAndFaviconPresent() {
+    var logo = $("logo"), fav = $("favicon");
+    var ok = !!logo && logo.tagName.toLowerCase() === "svg" &&
+      !!fav && /^data:image\/svg\+xml,/.test(fav.getAttribute("href") || "");
+    return res("logoAndFaviconPresent", ok, "logo=" + !!logo + " fav=" + (fav ? fav.getAttribute("rel") : "none"));
+  });
+
   S.push(async function partlyLive() {
     var before = $("liveText").textContent;
     __kill("locks", "revoked"); await tick();

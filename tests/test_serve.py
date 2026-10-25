@@ -150,6 +150,20 @@ class SnapshotTests(unittest.TestCase):
                     self.assertIn("crosstalk", resp.read().decode("utf-8"))
                     self.assertEqual(resp.headers.get("Cache-Control"), "no-cache")
 
+    def test_favicon_and_logo_served(self):
+        with TempRepo() as r:
+            r.write_roster()
+            shutil.copy(str(Path(__file__).resolve().parent.parent / "favicon.svg"),
+                        str(r.root / "favicon.svg"))
+            shutil.copy(str(Path(__file__).resolve().parent.parent / "logo.svg"),
+                        str(r.root / "logo.svg"))
+            with RunningServer(r.root) as srv:
+                for path in ("/favicon.svg", "/favicon.ico", "/logo.svg"):
+                    with urllib.request.urlopen(srv.url + path, timeout=10) as resp:
+                        self.assertEqual(resp.status, 200, path)
+                        self.assertIn("image/svg+xml", resp.headers.get("Content-Type", ""), path)
+                        self.assertIn("<svg", resp.read().decode("utf-8"), path)
+
 
 class ReplayCacheTests(unittest.TestCase):
     def test_direct_append_shows_up_without_a_restart(self):
