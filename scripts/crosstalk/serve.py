@@ -36,6 +36,7 @@ from urllib.parse import urlsplit
 
 from .courier import atomic_write_text
 from .logs import COLLECTIONS, append_line, check_all, check_all
+from .onboard import onboard
 from .participants import load_roster
 from .replay import enrich_messages, load_all_lines, replay
 from .tokens import TOKEN_FILE, Result, Tokens
@@ -427,6 +428,8 @@ class CrosstalkHandler(BaseHTTPRequestHandler):
             self._append()
         elif path == "/api/login":
             self._login()
+        elif path == "/api/onboard":
+            self._onboard()
         else:
             self._error(404, "no such endpoint")
 
@@ -533,6 +536,41 @@ class CrosstalkHandler(BaseHTTPRequestHandler):
         cookie = "%s=%s; Path=/; Max-Age=%d; HttpOnly; SameSite=Strict" % (
             COOKIE_NAME, sid, int(SESSION_TTL))
         self._json(200, {"ok": True, "viewer": "owner"}, headers=[("Set-Cookie", cookie)])
+
+    def _onboard(self):
+        """The owner session adds a participant: roster entry, key, kit.
+
+        The minted token is returned once, in this response only; it is never
+        logged and never appears in an error body.
+        """
+        if not self._owner_session():
+            header = self.headers.get("Authorization")
+            if header and self.state.tokens.verify(header).ok:
+                self._error(403, "only the owner session may onboard a participant")
+            else:
+                self._error(401, "no valid owner session")
+            return
+        body = self._read_json()
+        if body is None:
+            return
+        if not isinstance(body, dict):
+            self._error(400, "the body must be a JSON object")
+            return
+        try:
+            result = onboard(self.state.root, body.get("id"), body.get("name"),
+                             body.get("kind"), repo=body.get("repo"),
+                             check_in_min=body.get("checkInMin"),
+                             parent=body.get("parent"),
+                             color=body.get("color"), color_dark=body.get("colorDark"))
+        except ValueError as e:
+            self._error(400, str(e))
+            return
+        try:
+            kit = Path(result["kit_path"]).read_text(encoding="utf-8")
+        except OSError as e:
+            self._error(500, "cannot read the kit: %s" % e)
+            return
+        self._json(200, {"token": result["token"], "kit": kit})
 
     def _me(self):
         role = self._role()

@@ -706,6 +706,109 @@ class OwnerTests(unittest.TestCase):
             self.assertRegex(pin, r"^\d{6}$")
 
 
+class OnboardTests(unittest.TestCase):
+    """POST /api/onboard: the owner session adds a participant."""
+
+    OWNER_TOKEN = "the-owner-token"
+
+    def server(self, r, **kwargs):
+        kwargs.setdefault("tokens", {"owner": token_hash(self.OWNER_TOKEN)})
+        return RunningServer(r.root, **kwargs)
+
+    def login(self, srv):
+        status, body, headers = request_with_headers(srv.url + "/api/login", "POST", {"pin": srv.pin})
+        return headers.get("Set-Cookie", "").split(";")[0]
+
+    def onboard(self, srv, body, cookie=None, token=None):
+        headers = {}
+        if cookie:
+            headers["Cookie"] = cookie
+        if token:
+            headers["Authorization"] = "Bearer " + token
+        return request(srv.url + "/api/onboard", "POST", body, headers)
+
+    def payload(self, **over):
+        body = {"id": "smoke-agent", "name": "Smoke Agent", "kind": "agent", "parent": "bewareilive"}
+        body.update(over)
+        return body
+
+    def test_a_viewer_is_401(self):
+        with TempRepo() as r:
+            r.write_roster()
+            with self.server(r) as srv:
+                status, body = self.onboard(srv, self.payload())
+            self.assertEqual(status, 401)
+            self.assertIn("error", body)
+            self.assertFalse((r.root / "kits" / "smoke-agent.md").exists())
+
+    def test_an_editor_bearer_token_is_403(self):
+        with TempRepo() as r:
+            r.write_roster()
+            with RunningServer(r.root, tokens={"codex": token_hash("codex-token")}) as srv:
+                status, body = self.onboard(srv, self.payload(), token="codex-token")
+            self.assertEqual(status, 403)
+            self.assertIn("error", body)
+            self.assertFalse((r.root / "kits" / "smoke-agent.md").exists())
+
+    def test_the_owner_token_bearer_is_not_a_session(self):
+        # The owner's own token is a machine credential, not the owner session;
+        # onboarding is a page action and needs the session cookie.
+        with TempRepo() as r:
+            r.write_roster()
+            with self.server(r) as srv:
+                status, body = self.onboard(srv, self.payload(), token=self.OWNER_TOKEN)
+            self.assertEqual(status, 403)
+            self.assertFalse((r.root / "kits" / "smoke-agent.md").exists())
+
+    def test_invalid_input_is_400(self):
+        with TempRepo() as r:
+            r.write_roster()
+            with self.server(r) as srv:
+                cookie = self.login(srv)
+                status, body = self.onboard(srv, self.payload(kind="nope"), cookie)
+            self.assertEqual(status, 400)
+            self.assertIn("kind", json.dumps(body))
+            self.assertFalse((r.root / "kits" / "smoke-agent.md").exists())
+
+    def test_the_owner_session_adds_a_quarantined_participant(self):
+        with TempRepo() as r:
+            r.write_roster()
+            with self.server(r) as srv:
+                cookie = self.login(srv)
+                status, body = self.onboard(srv, self.payload(), cookie)
+                self.assertEqual(status, 200)
+                self.assertIn("token", body)
+                self.assertIn("kit", body)
+                self.assertIn("smoke-agent", body["kit"])
+                self.assertIn(body["token"], body["kit"])
+                # The roster of record gains the entry, quarantined.
+                on_disk = json.loads((r.root / "participants.json").read_text(encoding="utf-8"))
+                entry = [p for p in on_disk["participants"] if p["id"] == "smoke-agent"][0]
+                self.assertEqual(entry["trust"], "quarantined")
+                self.assertEqual(entry["kind"], "agent")
+                self.assertEqual(entry["parent"], "bewareilive")
+                # The next snapshot serves it dimmable (trust quarantined).
+                status, snap = request(srv.url + "/api/snapshot")
+                self.assertEqual(snap["roster"]["smoke-agent"]["trust"], "quarantined")
+                # The token is kept only as a hash at rest, and never in the snapshot.
+                tokens = json.loads((r.root / "tokens.json").read_text(encoding="utf-8"))
+                self.assertEqual(tokens["smoke-agent"], token_hash(body["token"]))
+                self.assertNotIn(body["token"], json.dumps(tokens))
+                self.assertNotIn(body["token"], json.dumps(snap))
+
+    def test_the_token_never_reaches_an_error_body(self):
+        with TempRepo() as r:
+            r.write_roster()
+            with self.server(r) as srv:
+                cookie = self.login(srv)
+                status, body = self.onboard(srv, self.payload(), cookie)
+                token = body["token"]
+                # A duplicate id is refused; the error must not echo the token.
+                status, err = self.onboard(srv, self.payload(), cookie)
+                self.assertEqual(status, 400)
+                self.assertNotIn(token, json.dumps(err))
+
+
 class HealthTests(unittest.TestCase):
     def test_health_is_ok_when_the_log_is_clean(self):
         with TempRepo() as r:
