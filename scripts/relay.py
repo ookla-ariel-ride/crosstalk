@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Command line for the Crosstalk log: check, append, import, pull, pending, restore, sent, token, serve."""
+"""Command line for the Crosstalk log: check, append, import, pull, pending, restore, sent, token, onboard, kit, serve."""
 import argparse
 import json
 import sys
@@ -13,6 +13,7 @@ from crosstalk.courier import pending, restore, sent  # noqa: E402
 from crosstalk.exporter import export_page  # noqa: E402
 from crosstalk.importer import import_snapshots, merge_snapshots  # noqa: E402
 from crosstalk.logs import append_line, check_all, message_problems  # noqa: E402
+from crosstalk.onboard import onboard, regenerate_kit  # noqa: E402
 from crosstalk.participants import load_roster  # noqa: E402
 from crosstalk.pull import pull  # noqa: E402
 from crosstalk.replay import load_all_lines, replay  # noqa: E402
@@ -173,7 +174,11 @@ def cmd_serve(args):
 
 
 def cmd_token(args):
-    """Mint an API token for a participant and print it once."""
+    """Mint an API token for a participant and print it once.
+
+    `--new` rotates the key (mint a fresh one); `--kit` also regenerates
+    kits/<pid>.md with the new key.
+    """
     try:
         roster = load_roster(ROOT / "participants.json")
     except ValueError as e:
@@ -182,6 +187,15 @@ def cmd_token(args):
     if args.pid not in roster.participants:
         err("unknown participant %r" % args.pid)
         return 1
+    if args.kit:
+        try:
+            result = regenerate_kit(ROOT, args.pid)
+        except ValueError as e:
+            err(str(e))
+            return 1
+        print(result["token"])
+        print(result["kit_path"])
+        return 0
     store = load_tokens(ROOT / TOKEN_FILE) or Tokens(ROOT / TOKEN_FILE)
     try:
         token = store.mint(args.pid)
@@ -189,6 +203,32 @@ def cmd_token(args):
         err("cannot write %s: %s" % (TOKEN_FILE, e))
         return 1
     print(token)
+    return 0
+
+
+def cmd_onboard(args):
+    """Add a participant: roster entry, minted key, kit. Prints the kit path and the token once."""
+    try:
+        result = onboard(ROOT, args.pid, args.name, args.kind, repo=args.repo,
+                         check_in_min=args.check_in_min, parent=args.parent,
+                         color=args.color, color_dark=args.color_dark)
+    except ValueError as e:
+        err(str(e))
+        return 1
+    print(result["kit_path"])
+    print(result["token"])
+    return 0
+
+
+def cmd_kit(args):
+    """Regenerate kits/<pid>.md with a fresh key; prints the kit path and the token once."""
+    try:
+        result = regenerate_kit(ROOT, args.pid)
+    except ValueError as e:
+        err(str(e))
+        return 1
+    print(result["kit_path"])
+    print(result["token"])
     return 0
 
 
@@ -237,7 +277,26 @@ def build_parser():
 
     t = sub.add_parser("token", help="mint an API token for a participant; prints it once")
     t.add_argument("pid", metavar="PID")
+    t.add_argument("--new", action="store_true", help="rotate the key (mint a fresh one)")
+    t.add_argument("--kit", action="store_true",
+                   help="regenerate kits/<pid>.md with the new key")
     t.set_defaults(fn=cmd_token)
+
+    o = sub.add_parser("onboard", help="add a participant: roster entry, key, kit")
+    o.add_argument("pid", metavar="PID")
+    o.add_argument("--name", required=True, help="the participant's display name")
+    o.add_argument("--kind", required=True, help="project, agent, reviewer, researcher, tool or person")
+    o.add_argument("--repo", help="the participant's repo (owner/repo)")
+    o.add_argument("--checkInMin", dest="check_in_min", type=int,
+                   help="check-in interval in minutes")
+    o.add_argument("--parent", help="the parent participant id (agents need one)")
+    o.add_argument("--color", help="light-theme color, #rrggbb")
+    o.add_argument("--colorDark", dest="color_dark", help="dark-theme color, #rrggbb")
+    o.set_defaults(fn=cmd_onboard)
+
+    k = sub.add_parser("kit", help="regenerate a participant's kit")
+    k.add_argument("pid", metavar="PID")
+    k.set_defaults(fn=cmd_kit)
 
     sv = sub.add_parser("serve", help="run the page host and API server")
     sv.add_argument("--port", type=int, default=8484,
