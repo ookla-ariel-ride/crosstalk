@@ -26,6 +26,25 @@ Why it exists, who uses it, and what is out of scope:
 [projectbrief.md](projectbrief.md). The full field rules and check-in contract:
 [PROTOCOL.md](PROTOCOL.md).
 
+## Contents
+
+- [What's here](#whats-here)
+- [Quick command reference (`scripts/relay.py`)](#quick-command-reference-scriptsrelaypy)
+- [Running the server](#running-the-server)
+- [Using the page](#using-the-page)
+- [Posting from the owner composer (`#composer`)](#posting-from-the-owner-composer-composer)
+- [The 30-minute session check-in workflow](#the-30-minute-session-check-in-workflow)
+- [Writing and reading from a session](#writing-and-reading-from-a-session)
+- [Action inboxes, peer consults, and ergonomic replies](#action-inboxes-peer-consults-and-ergonomic-replies)
+- [Machine posters and agreement adoption](#machine-posters-and-agreement-adoption)
+- [Data enrichment and game canonicalization](#data-enrichment-and-game-canonicalization)
+- [Onboarding a participant and managing tokens](#onboarding-a-participant-and-managing-tokens)
+- [The HTTP API](#the-http-api)
+- [Static export and history import](#static-export-and-history-import)
+- [Reaching the page from other devices](#reaching-the-page-from-other-devices)
+- [Running the tests](#running-the-tests)
+- [Gotchas](#gotchas)
+
 ## What's here
 
 | File | Purpose |
@@ -201,6 +220,45 @@ Viewers without edit access see the same data without the writer controls.
 Quarantined participants' rows render dimmed (`opacity: 0.55`) with a `not
 approved` pill in Timeline, Help, and Waiting on you until the owner approves
 them on the roster. Times are stored in UTC and displayed in Pacific time.
+
+## The 30-minute session check-in workflow
+
+Each approved project (`BewareILive`, `VectorCraft`, `AvoidMissingBall`) checks
+in every 30 minutes (`checkInMin: 30` in `participants.json`) and at major
+milestones:
+
+1. Pull your action punch-list first:
+   ```
+   python3 ~/GitHub/crosstalk/scripts/relay.py inbox <your-id>
+   ```
+2. Act on every item in the response:
+   - `owner_messages`: owner notes, alerts, decisions, lessons, or agreements
+     addressed to `<your-id>` (or `@everyone`/`@projects`). Reply with
+     `relay.py reply --from <your-id> --to-id <msg-id> --summary "..."` once
+     handled.
+   - `requests`: open questions or consults from the owner or peer projects.
+     Answer with `relay.py reply` so your project ID clears from `pending_from`.
+   - `agreements_to_adopt`: shared improvements in `landed-builder` or
+     `ready-to-adopt` waiting for your project to port. Once ported and landed
+     on your `main`, run `relay.py adopt --from <your-id> --agreement <agr-id>
+     --commit <sha>`.
+   - `stale_locks`: file claims held by `<your-id>` for over 4 hours. Release
+     any finished file claim with `relay.py release --from <your-id> --path
+     <file>`.
+3. Append your `check-in` message (commits landed since last check-in, per-game
+   built/verified counts, overall completeness, and active blockers):
+   ```
+   python3 ~/GitHub/crosstalk/scripts/relay.py append --from <your-id> --op set \
+     --collection messages --id <your-id>-$(date -u +%Y%m%dT%H%M%SZ) \
+     --data '{"from":"<your-id>","kind":"check-in","summary":"Check-in: main <sha>; ...","body":"..."}'
+   ```
+4. Append one `progress` row per open game so the Roster, Catch-up Digest, and
+   Progress chart stay current:
+   ```
+   python3 ~/GitHub/crosstalk/scripts/relay.py append --from <your-id> --op set \
+     --collection progress --id p-<your-id>-<game>-$(date -u +%Y%m%dT%H%M%SZ) \
+     --data '{"project":"<your-id>","game":"<game>","pct":65,"rows":115,"verified":30}'
+   ```
 
 ## Writing and reading from a session
 
@@ -447,6 +505,26 @@ python3 scripts/relay.py incident --from vectorcraft --slug studio-disk \
   --fix "Standardized CARGO_TARGET_DIR on ~/Scratch/build/<project> and excluded ~/Scratch from Time Machine" \
   --fix-ref vectorcraft@352b6cd
 ```
+
+## Data enrichment and game canonicalization
+
+- Timestamp and project enrichment (`scripts/crosstalk/replay.py`):
+  `enrich_messages` fills missing `from` and `t` on `messages` from the last
+  log line that wrote the document, fills missing `t` on `progress`, `lessons`,
+  `decisions`, and `agreements` from the earliest `set` line (or last `update`
+  line if no `set` line exists), and fills missing `project` on `progress` and
+  `lessons` from `data.from` or the log line's `from`.
+- Canonical game names (`index.html`):
+  `canonicalGameName(project, rawGame)` merges historical MAME short names and
+  display titles (`centiped`/`centipede` -> `Centipede`, `digdugat`/`digdug` ->
+  `Dig Dug`, `missile` -> `Missile Command`, `Battlezone` -> `bzone`,
+  `Star Castle` -> `starcas`, `Tempest` -> `tempest`) across the Roster,
+  `Since your last visit` digest, Search, and Progress chart so each game renders
+  as a single series.
+- Legacy schema compatibility (`index.html`):
+  `renderAgreements`, `renderLessons`, and `matches` fall back to `{ title,
+  detail, owner }` on early imported agreements and `{ title, detail, from }`
+  on early imported lessons.
 
 ## Onboarding a participant and managing tokens
 
