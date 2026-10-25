@@ -409,8 +409,11 @@ class CrosstalkHandler(BaseHTTPRequestHandler):
         if self._owner_session():
             return "owner"
         header = self.headers.get("Authorization")
-        if header and self.state.tokens.verify(header).ok:
-            return "editor"
+        if header:
+            result = self.state.tokens.verify(header)
+            if result.ok:
+                # The owner's own token carries the owner role, not editor.
+                return "owner" if result.pid == "owner" else "editor"
         return "viewer"
 
     def _identity(self):

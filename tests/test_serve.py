@@ -377,6 +377,26 @@ class OwnerTests(unittest.TestCase):
             self.assertEqual(status, 200)
             self.assertTrue(me["isOwner"])
 
+    def test_an_owner_token_bearer_acts_as_owner(self):
+        # The owner token is the credential that outlives the PIN; as a bearer it
+        # must carry the owner role (write participants / act as owner).
+        with TempRepo() as r:
+            roster = json.loads(json.dumps(SPEC_ROSTER))
+            for entry in roster["participants"]:
+                if entry["id"] == "codex":
+                    entry["trust"] = "quarantined"
+            r.write_roster(roster)
+            with self.server(r) as srv:
+                status, body = request(srv.url + "/api/append", "POST",
+                                       {"from": "owner", "op": "update",
+                                        "collection": "participants",
+                                        "id": "codex", "data": {"trust": "approved"}},
+                                       {"Authorization": "Bearer " + self.OWNER_TOKEN})
+                self.assertEqual(status, 201)
+            on_disk = json.loads((r.root / "participants.json").read_text(encoding="utf-8"))
+            entry = [pp for pp in on_disk["participants"] if pp["id"] == "codex"][0]
+            self.assertEqual(entry["trust"], "approved")
+
     def test_a_wrong_pin_or_token_is_refused(self):
         with TempRepo() as r:
             r.write_roster()
