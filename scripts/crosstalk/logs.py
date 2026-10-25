@@ -110,6 +110,9 @@ def _validate(raw: str, owner: str, expected: int, _prior: List[Line],
     if d["op"] == "set" and not d["id"].startswith(owner + "-") \
             and not d["id"].startswith(LEGACY_PREFIXES):
         return "set of id %r must start with %r" % (d["id"], owner + "-")
+    if d["collection"] == "messages" and d["data"].get("kind") == "owner" \
+            and owner != "owner" and d.get("via") != "import":
+        return "only 'owner' may post kind 'owner'"
     if roster is not None:
         msg = _trust_problem(d, owner, roster)
         if msg:
@@ -128,6 +131,9 @@ def _trust_problem(d: dict, owner: str, roster: Roster) -> Optional[str]:
     if d["collection"] == "messages" and "from" in d["data"] \
             and d["data"]["from"] != owner and d.get("via") != "import":
         return "message data.from %r is not its writer %r" % (d["data"]["from"], owner)
+    if d["collection"] == "messages" and d["data"].get("kind") == "owner" \
+            and owner != "owner" and d.get("via") != "import":
+        return "only 'owner' may post kind 'owner'"
     return None
 
 
@@ -153,6 +159,8 @@ def message_problems(collection: str, op: str, data: dict, roster: Roster,
     kind = data.get("kind")
     if isinstance(kind, str) and kind and kind not in KINDS:
         warnings.append("unknown kind %r (known: %s)" % (kind, ", ".join(KINDS)))
+    if kind == "owner" and data.get("from") not in (None, "owner"):
+        errors.append("only 'owner' may post kind 'owner'")
     if "to" in data:
         to = data["to"]
         if not isinstance(to, list) or not all(isinstance(x, str) for x in to):

@@ -172,5 +172,36 @@ class TrustTests(unittest.TestCase):
             lines, problems = read_log(path, roster)
             self.assertEqual((len(lines), len(problems)), (0, 1))
 
+    def test_non_owner_cannot_post_kind_owner(self):
+        from crosstalk.logs import append_line, message_problems
+
+        with TempRepo() as r:
+            roster = load_roster(r.write_roster(roster_with_gemini()))
+            errs, _ = message_problems(
+                "messages", "set",
+                {"from": "codex", "kind": "owner", "summary": "spoof"},
+                roster,
+            )
+            self.assertIn("only 'owner' may post kind 'owner'", errs)
+
+            with self.assertRaises(ValueError) as ctx:
+                append_line(
+                    r.root, "codex", "set", "messages", "codex-1",
+                    {"from": "codex", "kind": "owner", "summary": "spoof"},
+                    roster=roster,
+                )
+            self.assertIn("only 'owner' may post kind 'owner'", str(ctx.exception))
+
+            path = r.write_log("codex", [
+                line(1, "codex", id_="codex-1",
+                     data={"from": "codex", "kind": "owner", "summary": "spoof"})
+            ])
+            lines, problems = read_log(path)
+            self.assertEqual(lines, [])
+            self.assertEqual(len(problems), 1)
+            self.assertTrue(problems[0].fatal)
+            self.assertIn("only 'owner' may post kind 'owner'", problems[0].message)
+
+
 if __name__ == "__main__":
     unittest.main()

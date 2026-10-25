@@ -134,7 +134,7 @@ def unanswered_owner_messages(docs: Dict, pid: str) -> List[Tuple[str, dict, Lis
     replies = _replies_by_request(messages)
     out = []  # type: List[Tuple[str, dict, List[dict]]]
     for did, doc in messages.items():
-        if doc.get("from") != "owner" and doc.get("kind") != "owner":
+        if doc.get("from") != "owner" or doc.get("replyTo"):
             continue
         if not _addressed(doc, pid):
             continue

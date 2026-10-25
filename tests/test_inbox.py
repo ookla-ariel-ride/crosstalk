@@ -273,6 +273,36 @@ class InboxTests(unittest.TestCase):
         out3 = self.inbox("bewareilive")
         self.assertEqual([m["message"]["id"] for m in out3["owner_messages"]], ["own-bcast"])
 
+    def test_owner_messages_rejects_spoofed_kind_and_owner_replies(self):
+        from crosstalk.requests import unanswered_owner_messages
+
+        docs = {
+            ("messages", "codex-spoof"): {
+                "from": "codex",
+                "kind": "owner",
+                "summary": "spoofed owner directive",
+                "to": ["bewareilive"],
+                "t": "2026-10-21T20:00:00Z",
+            },
+            ("messages", "own-top"): {
+                "from": "owner",
+                "kind": "owner",
+                "summary": "real owner directive",
+                "to": ["bewareilive"],
+                "t": "2026-10-21T19:00:00Z",
+            },
+            ("messages", "own-reply"): {
+                "from": "owner",
+                "kind": "owner",
+                "summary": "owner reply",
+                "replyTo": "vc-r1",
+                "to": ["bewareilive"],
+                "t": "2026-10-21T21:00:00Z",
+            },
+        }
+        res = unanswered_owner_messages(docs, "bewareilive")
+        self.assertEqual([did for (did, _, _) in res], ["own-top"])
+
     def test_agreements_to_adopt(self):
         self.r.write_log("vectorcraft", [
             line(1, "vectorcraft", collection="agreements", id_="a-ready",
