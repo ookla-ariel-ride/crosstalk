@@ -356,8 +356,8 @@ td.num, td.t { font: 12px var(--mono); font-variant-numeric: tabular-nums; white
     return n;
   }
   function validProg(p, since) {
-    var t = ts(p.t);
-    return !isNaN(t) && t > since && typeof p.game === "string" && p.game !== "" && typeof p.pct === "number" && isFinite(p.pct);
+    var t = ts(p.t || p.updated || p.date);
+    return !isNaN(t) && t > since && canonicalGameName(p.project, p.game) !== "" && typeof p.pct === "number" && isFinite(p.pct);
   }
   function hasNewProg(since) {
     if (since == null) return false;
@@ -511,19 +511,40 @@ td.num, td.t { font: 12px var(--mono); font-variant-numeric: tabular-nums; white
     a.target = "_blank"; a.rel = "noopener";
     return a;
   }
-  var ALIAS_MAP = { bil: "bewareilive", vc: "vectorcraft", amb: "avoidmissingball" };
+  var GAME_CANON = {
+    centiped: "Centipede", centipede: "Centipede",
+    digdugat: "Dig Dug", digdug: "Dig Dug", "dig dug": "Dig Dug",
+    missile: "Missile Command", "missile command": "Missile Command",
+    battlezone: "bzone", bzone: "bzone",
+    "star castle": "starcas", starcas: "starcas",
+    tempest: "tempest"
+  };
+  function canonicalGameName(project, rawGame) {
+    var g = typeof rawGame === "string" ? rawGame.trim() : "";
+    if (!g) return "";
+    var low = g.toLowerCase();
+    return HAS.call(GAME_CANON, low) ? GAME_CANON[low] : g;
+  }
+  var ALIAS_MAP = {
+    bil: "bewareilive", bewareilive: "bewareilive",
+    vc: "vectorcraft", vectorcraft: "vectorcraft",
+    amb: "avoidmissingball", avoidmissingball: "avoidmissingball",
+    codex: "codex"
+  };
   function projectIds() {
     var ids = Object.keys(people).filter(function (id) { return id !== "owner" && person(id).kind === "project"; }).sort(byName);
     return ids.length ? ids : ["avoidmissingball", "bewareilive", "vectorcraft"];
   }
   function reviewerIds() {
-    return Object.keys(people).filter(function (id) { var k = person(id).kind; return id !== "owner" && (k === "reviewer" || k === "researcher"); }).sort(byName);
+    var ids = Object.keys(people).filter(function (id) { var k = person(id).kind; return id !== "owner" && (k === "reviewer" || k === "researcher"); }).sort(byName);
+    return ids.length ? ids : ["codex"];
   }
   function resolveMentionToken(raw) {
     var tok = String(raw == null ? "" : raw).replace(/[.,;:!?)\]]+$/, "");
     var low = tok.toLowerCase();
     if (!low) return null;
     if (low === "everyone" || low === "all" || low === "channel" || low === "here") return { broadcast: true, ids: [], label: "@" + tok };
+    if (low === "owner") return { broadcast: false, ids: [], pid: "owner", label: "@" + tok };
     if (low === "projects" || low === "teams") return { broadcast: false, ids: projectIds(), group: true, label: "@" + tok };
     if (low === "reviewers") return { broadcast: false, ids: reviewerIds(), group: true, label: "@" + tok };
     if (HAS.call(ALIAS_MAP, low)) {
@@ -609,14 +630,16 @@ td.num, td.t { font: 12px var(--mono); font-variant-numeric: tabular-nums; white
   function matches(o) {
     if (!query) return true;
     var commits = o.commits && typeof o.commits === "object" ? Object.keys(o.commits).map(function (k) { return [].concat(o.commits[k] || []).join(" "); }) : [];
-    var hay = [o.summary, o.body, o.fix, o.path, o.note, o.game, o.source, o.project ? person(o.project).name : "",
+    var projId = o.project || o.owner || o.from;
+    var hay = [o.summary, o.title, o.body, o.detail, o.fix, o.path, o.note, o.game, o.game ? canonicalGameName(o.project, o.game) : "", o.source,
+      o.owner, o.from, projId ? person(projId).name : "",
       [].concat(o.refs || []).join(" "), [].concat(o.fixRefs || []).join(" "), commits.join(" ")].join(" ").toLowerCase();
     return hay.indexOf(query) !== -1;
   }
   // `hold` is the hold. A `status` of "held" from before the flag existed counts too.
   function isHeld(a) { return a.hold === true || a.status === "held"; }
   function isImportant(m) { var k = kindOf(m); return m.important === true || (m.important !== false && (k === "alert" || k === "disagreement" || k === "owner")); }
-  function byT(a, b) { var ta = ts(a.t), tb = ts(b.t); return (isNaN(ta) ? Infinity : ta) - (isNaN(tb) ? Infinity : tb); }
+  function byT(a, b) { var ta = ts(a.t || a.updated || a.date), tb = ts(b.t || b.updated || b.date); return (isNaN(ta) ? Infinity : ta) - (isNaN(tb) ? Infinity : tb); }
 
     // Open help requests, derived over data.messages: a single-recipient or broadcast request is open
     // while no message's replyTo points at it; a multi-recipient request stays open while any listed
@@ -645,8 +668,15 @@ td.num, td.t { font: 12px var(--mono); font-variant-numeric: tabular-nums; white
       if (!toList.length) {
         toList = extractMentionsFromText((m.summary || "") + "\n" + (m.body || "")).ids;
       }
+      if (!toList.length && String(m.from) === "owner") {
+        var projs = Object.keys(people).filter(function (id) { return person(id).kind === "project" && !isQuarantined(id); }).sort(byName);
+        if (projs.length) toList = projs;
+      }
       var pending = toList.filter(function (pid) {
-        return !approvedReplies.some(function (r) { return String(r.from) === pid || String(r.from) === "owner"; });
+        return !approvedReplies.some(function (r) {
+          var rf = String(r.from || "");
+          return rf === pid || person(rf).parent === pid || (String(m.from) !== "owner" && rf === "owner");
+        });
       });
       if (toList.length >= 2) {
         if (!pending.length) return;
@@ -831,7 +861,7 @@ td.num, td.t { font: 12px var(--mono); font-variant-numeric: tabular-nums; white
     btnEvery.setAttribute("aria-pressed", String(curTo.length === 0));
     btnEvery.addEventListener("click", function () {
       if (draft.posting) return;
-      draft.to = null; refreshComposer();
+      draft.to = null; closeMentionMenu(); refreshComposer();
     });
     toBar.appendChild(btnEvery);
     var projList = Object.keys(people).filter(function (id) { return id !== "owner" && person(id).kind === "project" && !isQuarantined(id); }).sort(byName);
@@ -849,6 +879,7 @@ td.num, td.t { font: 12px var(--mono); font-variant-numeric: tabular-nums; white
         projList.forEach(function (id) { if (next.indexOf(id) === -1) next.push(id); });
       }
       draft.to = next.length ? next : null;
+      closeMentionMenu();
       refreshComposer();
     });
     toBar.appendChild(btnProj);
@@ -868,6 +899,7 @@ td.num, td.t { font: 12px var(--mono); font-variant-numeric: tabular-nums; white
         var next = curTo.slice(), idx = next.indexOf(pid);
         if (idx !== -1) next.splice(idx, 1); else next.push(pid);
         draft.to = next.length ? next : null;
+        closeMentionMenu();
         refreshComposer();
       });
       toBar.appendChild(b);
@@ -1070,7 +1102,7 @@ td.num, td.t { font: 12px var(--mono); font-variant-numeric: tabular-nums; white
           extra.push(db.collection("agreements").doc("a-" + id).set({ t: now, updated: now, summary: summary, body: body, status: "agreed", builder: builder, adopter: "all", commits: {} }));
         }
         if (effectiveKind === "lesson") {
-          extra.push(db.collection("lessons").doc("lesson-" + id).set({ t: now, project: effectiveTo.length === 1 ? effectiveTo[0] : "owner", summary: summary, body: "", fix: body || summary }));
+          extra.push(db.collection("lessons").doc("lesson-" + id).set({ t: now, project: effectiveTo.length === 1 ? effectiveTo[0] : "owner", summary: summary, body: body || "", fix: body || summary }));
         }
         if (effectiveKind === "incident") {
           extra.push(db.collection("incidents").doc("i-" + id).set({ start: now, end: null, project: effectiveTo.length === 1 ? effectiveTo[0] : "owner", summary: summary, body: body, fix: "" }));
@@ -1084,14 +1116,17 @@ td.num, td.t { font: 12px var(--mono); font-variant-numeric: tabular-nums; white
         refreshComposer();
       });
     });
+    if (mentionState.open && mentionState.items && mentionState.items.length) {
+      renderMentionMenu();
+    }
     view.appendChild(box);
   }
   function refreshComposer() {
     document.querySelectorAll(".reply-btn").forEach(function (b) { b.disabled = draft.posting; });
     var old = document.getElementById("composer"); if (!old) return;
-    var hadFocus = old.contains(document.activeElement) ? document.activeElement.id : null;
+    var f = old.contains(document.activeElement) ? captureFocus() : null;
     var tmp = el("div"); composer(tmp); old.replaceWith(tmp.firstChild);
-    var f = hadFocus && document.getElementById(hadFocus); if (f && !f.disabled) f.focus();
+    restoreFocus(f);
   }
   function replyBtnEl(m) {
     var b = el("button", "btn small reply-btn", "Reply"); b.type = "button"; b.id = "reply-btn-" + m._id;
@@ -1099,6 +1134,7 @@ td.num, td.t { font: 12px var(--mono); font-variant-numeric: tabular-nums; white
     b.addEventListener("click", function () {
       if (draft.posting) return;
       draft.replyTo = m._id;
+      draft.kind = "owner";
       var fromId = m.from ? String(m.from) : "";
       draft.to = fromId && fromId !== "owner" && HAS.call(people, fromId) ? [fromId] : null;
       draft.replySummary = (m.from ? displayName(m.from) + ": " : "") + (m.summary || m._id);
@@ -1223,15 +1259,16 @@ td.num, td.t { font: 12px var(--mono); font-variant-numeric: tabular-nums; white
     if (p.kind !== "project") return null;
     var latest = Object.create(null), games = [];
     data.progress.forEach(function (r) {
-      if (String(r.project) !== id || typeof r.pct !== "number" || isNaN(ts(r.t))) return;
-      var g = typeof r.game === "string" && r.game ? r.game : "";
+      var rt = ts(r.t || r.updated || r.date);
+      if (String(r.project) !== id || typeof r.pct !== "number" || !isFinite(r.pct) || isNaN(rt)) return;
+      var g = canonicalGameName(r.project, r.game);
       if (!g) return;
-      if (!HAS.call(latest, g)) { latest[g] = r; games.push(g); }
-      else if (ts(r.t) >= ts(latest[g].t)) latest[g] = r;
+      if (!HAS.call(latest, g)) { latest[g] = { r: r, t: rt, game: g }; games.push(g); }
+      else if (rt >= latest[g].t) latest[g] = { r: r, t: rt, game: g };
     });
     if (!games.length) return null;
     games.sort();
-    return games.map(function (g) { return latest[g].game + " " + latest[g].pct + "%"; }).join(" \u00b7 ");
+    return games.map(function (g) { return g + " " + latest[g].r.pct + "%"; }).join(" \u00b7 ");
   }
   // A nested sub-agent shows its own name; anyone else shows the full display name ("Parent \u203a name" for an agent).
   function rosterEntry(id, now, st, kids, nested) {
@@ -1323,14 +1360,16 @@ td.num, td.t { font: 12px var(--mono); font-variant-numeric: tabular-nums; white
           parts.push(newMsgs.length + (newMsgs.length === 1 ? " message" : " messages") + " (" + senders.map(function (f) { return (f ? displayName(f) : "?") + " " + bySender[f]; }).join(", ") + ")");
         }
         if (newProg.length > 0) {
-          var latestProg = Object.create(null), progGames = [];
+          var latestProg = Object.create(null), progKeys = [];
           newProg.forEach(function (p) {
-            var g = typeof p.game === "string" && p.game ? p.game : "";
+            var g = canonicalGameName(p.project, p.game);
             if (!g) return;
-            if (!HAS.call(latestProg, g)) { latestProg[g] = p; progGames.push(g); }
-            else if (ts(p.t) >= ts(latestProg[g].t)) latestProg[g] = p;
+            var k = String(p.project || "") + ":" + g;
+            var pt = ts(p.t || p.updated || p.date);
+            if (!HAS.call(latestProg, k)) { latestProg[k] = { p: p, t: pt, game: g }; progKeys.push(k); }
+            else if (pt >= latestProg[k].t) latestProg[k] = { p: p, t: pt, game: g };
           });
-          if (progGames.length) parts.push(progGames.map(function (g) { return latestProg[g].game + " " + latestProg[g].pct + "%"; }).join(" \u00b7 "));
+          if (progKeys.length) parts.push(progKeys.map(function (k) { return latestProg[k].game + " " + latestProg[k].p.pct + "%"; }).join(" \u00b7 "));
         }
         if (parts.length > 0) {
           var dig = el("div", "card"); dig.id = "digest";
@@ -1385,6 +1424,7 @@ td.num, td.t { font: 12px var(--mono); font-variant-numeric: tabular-nums; white
     var meta = el("div", "meta");
     meta.appendChild(who(m.from));
     var to = toListOf(m);
+    if (!to.length) to = extractMentionsFromText((m.summary || "") + "\n" + (m.body || "")).ids;
     meta.appendChild(el("span", "to", to.length ? "to " + to.map(displayName).join(" \u00b7 ") : "everyone"));
     if (pending && pending.length > 0 && replies && replies.length > 0) {
       meta.appendChild(el("span", "pill pending-to", "waiting on " + pending.map(displayName).join(" \u00b7 ")));
@@ -1413,6 +1453,12 @@ td.num, td.t { font: 12px var(--mono); font-variant-numeric: tabular-nums; white
 
   function renderHelp(view) {
     toolbar(view, false);
+    if (whoFilter) {
+      var note = el("div", "whonote"); note.appendChild(el("span", null, "Showing only " + displayName(whoFilter) + "'s messages."));
+      var clr = el("button", "btn small", "Show everyone"); clr.type = "button"; clr.id = "who-clear";
+      clr.addEventListener("click", function () { whoFilter = null; renderView(true); });
+      note.appendChild(clr); view.appendChild(note);
+    }
     var reqs = openRequests().filter(function (r) {
       var whoOk = !whoFilter || String(r.request.from == null ? "" : r.request.from) === whoFilter;
       return whoOk && (matches(r.request) || r.replies.some(matches));
@@ -1440,10 +1486,17 @@ td.num, td.t { font: 12px var(--mono); font-variant-numeric: tabular-nums; white
     var tb = el("tbody");
     rows.forEach(function (a) {
       var tr = el("tr");
-      var c1 = el("td"); c1.appendChild(el("div", "summary", a.summary || "")); add(c1, bodyEl(a.body)); add(c1, refsEl(a.refs, a.builder)); tr.appendChild(c1);
+      var bld = a.builder || a.owner;
+      var c1 = el("td"); c1.appendChild(el("div", "summary", a.summary || a.title || "")); add(c1, bodyEl(a.body || a.detail || "")); add(c1, refsEl(a.refs, bld)); tr.appendChild(c1);
       var held = isHeld(a);
-      var c2 = el("td"); c2.appendChild(pill(held ? "held" : a.status || "proposed")); if (held && a.holdNote) c2.appendChild(el("div", "ago", a.holdNote)); tr.appendChild(c2);
-      var c3 = el("td"); if (a.builder) c3.appendChild(who(a.builder)); tr.appendChild(c3);
+      var rawStatus = String(a.status || "");
+      var longStatus = !held && STATUSES.indexOf(rawStatus) === -1 && rawStatus.length > 20;
+      var c2 = el("td");
+      c2.appendChild(pill(held ? "held" : (longStatus ? "agreed" : (rawStatus || "proposed"))));
+      if (longStatus) c2.appendChild(el("div", "ago", rawStatus));
+      if (held && a.holdNote) c2.appendChild(el("div", "ago", a.holdNote));
+      tr.appendChild(c2);
+      var c3 = el("td"); if (bld) c3.appendChild(who(bld)); tr.appendChild(c3);
       var c4 = el("td"); if (a.adopter) c4.appendChild(who(a.adopter)); tr.appendChild(c4);
       var c5 = el("td");
       Object.keys(a.commits && typeof a.commits === "object" ? a.commits : {}).forEach(function (p) {
@@ -1528,9 +1581,9 @@ td.num, td.t { font: 12px var(--mono); font-variant-numeric: tabular-nums; white
   }
   function renderLessons(view) {
     simpleTable(view, data.lessons.slice().sort(byT).reverse(), [
-      ["What happened", function (r) { var d = el("div"); d.appendChild(el("div", "summary", r.summary || "")); add(d, bodyEl(r.body)); return d; }],
-      ["What prevents it now", function (r) { var d = el("div"); d.appendChild(el("p", "body", r.fix || "")); add(d, refsEl(r.refs, r.project)); return d; }],
-      ["From", function (r) { return who(r.project); }],
+      ["What happened", function (r) { var d = el("div"); d.appendChild(el("div", "summary", r.summary || r.title || "")); add(d, bodyEl(r.body || r.detail || "")); return d; }],
+      ["What prevents it now", function (r) { var d = el("div"); d.appendChild(el("p", "body", r.fix || "")); add(d, refsEl(r.refs, r.project || r.from)); return d; }],
+      ["From", function (r) { return who(r.project || r.from); }],
       ["When", function (r) { return timeEl(r.t, true); }, "t"]
     ], "No lessons recorded yet. Each incident and the rule or tool that now prevents it goes here; the new-project guide's lessons index is built from these.");
   }
@@ -1575,22 +1628,25 @@ td.num, td.t { font: 12px var(--mono); font-variant-numeric: tabular-nums; white
   var DASHES = ["", "7 4", "2 3", "10 3 2 3", "4 4 1 4"];
   function renderProgress(view) {
     toolbar(view, false);
-    var all = data.progress.filter(function (p) { return !isNaN(ts(p.t)) && typeof p.pct === "number"; });
+    var all = data.progress.filter(function (p) { return !isNaN(ts(p.t || p.updated || p.date)) && typeof p.pct === "number" && isFinite(p.pct) && canonicalGameName(p.project, p.game) !== ""; });
     var pts = all.filter(matches).sort(byT);
     if (!pts.length) { view.appendChild(el("div", "empty", all.length ? "No games match." : "No progress recorded yet. Each check-in records every open game's percentage built here.")); return; }
     var groups = {}, keys = [];
     var gameNo = {}, style = {};
     pts.forEach(function (p) {
-      var k = person(p.project).name + ": " + p.game;
+      var canon = canonicalGameName(p.project, p.game);
+      var k = person(p.project).name + ": " + canon;
       if (!groups[k]) {
         groups[k] = []; keys.push(k);
         var n = gameNo[p.project] = (gameNo[p.project] || 0) + 1;
         style[k] = { col: colorOf(p.project), dash: DASHES[(n - 1) % DASHES.length] };
       }
-      groups[k].push(p);
+      var g = groups[k], pt = ts(p.t || p.updated || p.date);
+      if (g.length && ts(g[g.length - 1].t || g[g.length - 1].updated || g[g.length - 1].date) === pt) g[g.length - 1] = p;
+      else g.push(p);
     });
     var W = 900, H = 300, L = 44, R = 16, T = 12, B = 34;
-    var t0 = ts(pts[0].t), t1 = ts(pts[pts.length - 1].t); if (t1 === t0) t1 = t0 + 3600000;
+    var t0 = ts(pts[0].t || pts[0].updated || pts[0].date), t1 = ts(pts[pts.length - 1].t || pts[pts.length - 1].updated || pts[pts.length - 1].date); if (t1 === t0) t1 = t0 + 3600000;
     function x(t) { return L + (t - t0) / (t1 - t0) * (W - L - R); }
     function y(v) { return T + (1 - Math.max(0, Math.min(100, v)) / 100) * (H - T - B); }
     var ns = "http://www.w3.org/2000/svg";
@@ -1608,10 +1664,10 @@ td.num, td.t { font: 12px var(--mono); font-variant-numeric: tabular-nums; white
     var legend = el("div", "legend");
     keys.forEach(function (k, i) {
       var col = style[k].col, dash = style[k].dash, g = groups[k];
-      var d = g.map(function (p, j) { return (j ? "L" : "M") + x(ts(p.t)).toFixed(1) + " " + y(p.pct).toFixed(1); }).join(" ");
+      var d = g.map(function (p, j) { return (j ? "L" : "M") + x(ts(p.t || p.updated || p.date)).toFixed(1) + " " + y(p.pct).toFixed(1); }).join(" ");
       var line = s("path", { d: d, fill: "none", stroke: col, "stroke-width": 2.5 }); if (dash) line.setAttribute("stroke-dasharray", dash); svg.appendChild(line);
       var last = g[g.length - 1];
-      svg.appendChild(s("circle", { cx: x(ts(last.t)), cy: y(last.pct), r: 4, fill: col }));
+      svg.appendChild(s("circle", { cx: x(ts(last.t || last.updated || last.date)), cy: y(last.pct), r: 4, fill: col }));
       var li = el("span"), sw = s("svg", { width: 24, height: 6, "aria-hidden": "true" }), sl = s("line", { x1: 0, x2: 24, y1: 3, y2: 3, stroke: col, "stroke-width": 2.5 });
       if (dash) sl.setAttribute("stroke-dasharray", dash);
       sw.appendChild(sl); li.appendChild(sw); li.appendChild(document.createTextNode(k + " " + last.pct + "%")); legend.appendChild(li);
@@ -1702,7 +1758,7 @@ td.num, td.t { font: 12px var(--mono); font-variant-numeric: tabular-nums; white
     return "Viewing as " + (me.isOwner ? "the owner" : me.canEdit ? "an editor" : "a viewer (read only)");
   }
   // Read-only helpers for the page tests.
-  window.__crosstalk = Object.freeze({ dotState: dotState, viewerText: viewerText, spanText: spanText, colorOf: colorOf, parseMentions: parseMentions, extractMentionsFromText: extractMentionsFromText, setBuildMeta: function (m) { Object.assign(meta, m || {}); renderBuild(); } });
+  window.__crosstalk = Object.freeze({ dotState: dotState, viewerText: viewerText, spanText: spanText, colorOf: colorOf, canonicalGameName: canonicalGameName, parseMentions: parseMentions, extractMentionsFromText: extractMentionsFromText, setBuildMeta: function (m) { Object.assign(meta, m || {}); renderBuild(); } });
   // Which data layer is active ("seam" | "fetch" | "none"), and whether the
   // fetch layer was constructed. The page tests read these.
   window.__crosstalkLayer = "none";
@@ -1736,6 +1792,8 @@ td.num, td.t { font: 12px var(--mono); font-variant-numeric: tabular-nums; white
     liveTracked = true;
     var subs = {};  // collection -> {cb, err}
     var lastSnap = null;  // merged collections
+    var lastSnapJson = null;
+    var lastColJson = {};
     var pollTimer = null;
     var POLL_MS = 5000;
 
@@ -1748,12 +1806,26 @@ td.num, td.t { font: 12px var(--mono); font-variant-numeric: tabular-nums; white
 
     function deliver(c) {
       var s = subs[c];
-      if (s && s.cb) { try { s.cb(snapFor(c)); } catch (e) {} }
+      if (!s || !s.cb) return;
+      var colJson = JSON.stringify((lastSnap && lastSnap[c]) || {});
+      if (colJson === lastColJson[c] && loaded[c] === true && subState[c] === "ok") return;
+      lastColJson[c] = colJson;
+      try { s.cb(snapFor(c)); } catch (e) {}
     }
 
-    function deliverAll() { Object.keys(subs).forEach(deliver); }
+    function deliverAll() {
+      var curJson = JSON.stringify(lastSnap);
+      if (curJson === lastSnapJson && COLS.every(function (c) { return loaded[c] === true && subState[c] === "ok"; })) {
+        document.querySelectorAll(".ago[data-t]").forEach(function (e) { e.textContent = agoText(Number(e.dataset.t)); });
+        return;
+      }
+      lastSnapJson = curJson;
+      Object.keys(subs).forEach(deliver);
+    }
 
     function failAll(e) {
+      lastSnapJson = null;
+      lastColJson = {};
       Object.keys(subs).forEach(function (c) {
         var s = subs[c];
         if (s && s.err) { try { s.err(e); } catch (x) {} }
@@ -1845,12 +1917,16 @@ td.num, td.t { font: 12px var(--mono); font-variant-numeric: tabular-nums; white
       };
     }
 
+    var TS_KEYS = { t: 1, updated: 1, since: 1, done: 1, start: 1, end: 1, released: 1 };
     function append(c, id, op, data) {
       var from = (data && typeof data.from === "string" && data.from) ? data.from : "owner";
       var clean = {};
       Object.keys(data || {}).forEach(function (k) {
         var v = data[k];
-        if (k === "t" && typeof v === "string") v = v.replace(/\.\d{3}Z$/, "Z");
+        if (HAS.call(TS_KEYS, k) && typeof v === "string") v = v.replace(/\.\d{3}Z$/, "Z");
+        else if (k === "resolution" && v && typeof v === "object" && typeof v.t === "string") {
+          v = Object.assign({}, v, { t: v.t.replace(/\.\d{3}Z$/, "Z") });
+        }
         clean[k] = v;
       });
       var body = { from: from, op: op, collection: c, id: id, data: clean };

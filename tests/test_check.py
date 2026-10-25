@@ -232,6 +232,31 @@ class TrustTests(unittest.TestCase):
                 )
                 self.assertIn("summary must be one line (put the rest in body)", errs)
 
+    def test_message_problems_rejects_bad_summary_or_kind_on_update(self):
+        from crosstalk.logs import message_problems
+
+        with TempRepo() as r:
+            roster = load_roster(r.write_roster(roster_with_gemini()))
+            for bad_val in (123, None, "", "   "):
+                errs_s, _ = message_problems(
+                    "messages", "update",
+                    {"summary": bad_val},
+                    roster,
+                )
+                self.assertTrue(errs_s, "expected error for summary=%r" % (bad_val,))
+                errs_k, _ = message_problems(
+                    "messages", "update",
+                    {"kind": bad_val},
+                    roster,
+                )
+                self.assertTrue(errs_k, "expected error for kind=%r" % (bad_val,))
+            errs_ok, _ = message_problems(
+                "messages", "update",
+                {"summary": "Valid updated summary", "kind": "sync"},
+                roster,
+            )
+            self.assertEqual(errs_ok, [])
+
 
 if __name__ == "__main__":
     unittest.main()

@@ -3,7 +3,7 @@ import unittest
 
 from helpers import TempRepo, line
 from crosstalk.logs import Line
-from crosstalk.replay import load_all_lines, order_key, replay
+from crosstalk.replay import enrich_messages, load_all_lines, order_key, replay
 
 DEL = {"__delete__": True}
 
@@ -69,6 +69,32 @@ class ReplayTests(unittest.TestCase):
         with TempRepo() as r:
             (r.root / "log").rmdir()
             self.assertEqual(load_all_lines(r.root), [])
+
+    def test_enrich_messages_enriches_progress_lessons_decisions_agreements(self):
+        lines = [
+            L(1, "bewareilive", op="set", id_="p-bil-1", collection="progress",
+              data={"summary": "Wave 1"}, t="2026-10-21T10:00:00Z"),
+            L(2, "bewareilive", op="update", id_="p-bil-1", collection="progress",
+              data={"status": "done"}, t="2026-10-21T12:00:00Z"),
+            L(1, "vectorcraft", op="set", id_="l-vc-1", collection="lessons",
+              data={"from": "vectorcraft", "summary": "Lesson 1"}, t="2026-10-21T11:00:00Z"),
+            L(1, "owner", op="set", id_="d-own-1", collection="decisions",
+              data={"summary": "Decision 1"}, t="2026-10-21T13:00:00Z"),
+            L(1, "vectorcraft", op="set", id_="a-vc-1", collection="agreements",
+              data={"summary": "Agreement 1"}, t="2026-10-21T14:00:00Z"),
+            L(2, "bewareilive", op="update", id_="a-vc-1", collection="agreements",
+              data={"status": "landed-both"}, t="2026-10-21T15:00:00Z"),
+            L(1, "codex", op="update", id_="d-upd-only", collection="decisions",
+              data={"summary": "Update only"}, t="2026-10-21T16:00:00Z"),
+        ]
+        docs = enrich_messages(replay(lines), lines)
+        self.assertEqual(docs[("progress", "p-bil-1")]["t"], "2026-10-21T10:00:00Z")
+        self.assertEqual(docs[("progress", "p-bil-1")]["project"], "bewareilive")
+        self.assertEqual(docs[("lessons", "l-vc-1")]["t"], "2026-10-21T11:00:00Z")
+        self.assertEqual(docs[("lessons", "l-vc-1")]["project"], "vectorcraft")
+        self.assertEqual(docs[("decisions", "d-own-1")]["t"], "2026-10-21T13:00:00Z")
+        self.assertEqual(docs[("agreements", "a-vc-1")]["t"], "2026-10-21T14:00:00Z")
+        self.assertEqual(docs[("decisions", "d-upd-only")]["t"], "2026-10-21T16:00:00Z")
 
 
 if __name__ == "__main__":

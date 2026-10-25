@@ -36,7 +36,7 @@ from urllib.parse import urlsplit
 
 from .courier import atomic_write_text
 from .logs import COLLECTIONS, append_line, check_all, check_all
-from .onboard import PALETTE, onboard
+from .onboard import PALETTE, _locked_onboard, onboard
 from .participants import load_roster
 from .replay import enrich_messages, load_all_lines, replay
 from .service import SERVICE
@@ -780,61 +780,62 @@ class CrosstalkHandler(BaseHTTPRequestHandler):
             self._error(400, "the participants collection is keyed by participant id")
             return
         path = self.state.root / "participants.json"
-        try:
-            raw = json.loads(path.read_text(encoding="utf-8"))
-        except (OSError, ValueError) as e:
-            self._error(500, "cannot read participants.json: %s" % e)
-            return
-        entries = raw.get("participants") if isinstance(raw, dict) else None
-        if not isinstance(entries, list):
-            self._error(500, "participants.json has no participants list")
-            return
-        index = None
-        for i, entry in enumerate(entries):
-            if isinstance(entry, dict) and entry.get("id") == doc_id:
-                index = i
-                break
-        if index is None:
-            self._error(400, "no participant %r in the roster" % doc_id)
-            return
-        merged = dict(entries[index])
-        unknown = []
-        for key, value in data.items():
-            if key == "id":
-                if value != doc_id:
-                    self._error(400, "the roster id and the doc id differ")
-                    return
-                continue
-            if key not in ROSTER_FIELDS:
-                unknown.append(key)
-                continue
-            merged[key] = value
-        if unknown:
-            self._error(400, "unknown roster field: %s" % ", ".join(sorted(unknown)))
-            return
-        new_raw = dict(raw)
-        new_entries = list(entries)
-        new_entries[index] = merged
-        new_raw["participants"] = new_entries
-        problem = roster_problem(new_raw, path.parent)
-        if problem:
-            self._error(400, problem)
-            return
-        try:
-            roster = load_roster(path)
-            ln = append_line(self.state.root, "owner", "update", "participants", doc_id, merged,
-                             t=None, via=via, roster=roster)
-        except ValueError as e:
-            self._error(400, str(e))
-            return
-        except OSError as e:
-            self._error(500, "cannot write the log: %s" % e)
-            return
-        try:
-            atomic_write_text(path, json.dumps(new_raw, indent=2, ensure_ascii=False) + "\n")
-        except OSError as e:
-            self._error(500, "cannot write participants.json: %s" % e)
-            return
+        with _locked_onboard(self.state.root):
+            try:
+                raw = json.loads(path.read_text(encoding="utf-8"))
+            except (OSError, ValueError) as e:
+                self._error(500, "cannot read participants.json: %s" % e)
+                return
+            entries = raw.get("participants") if isinstance(raw, dict) else None
+            if not isinstance(entries, list):
+                self._error(500, "participants.json has no participants list")
+                return
+            index = None
+            for i, entry in enumerate(entries):
+                if isinstance(entry, dict) and entry.get("id") == doc_id:
+                    index = i
+                    break
+            if index is None:
+                self._error(400, "no participant %r in the roster" % doc_id)
+                return
+            merged = dict(entries[index])
+            unknown = []
+            for key, value in data.items():
+                if key == "id":
+                    if value != doc_id:
+                        self._error(400, "the roster id and the doc id differ")
+                        return
+                    continue
+                if key not in ROSTER_FIELDS:
+                    unknown.append(key)
+                    continue
+                merged[key] = value
+            if unknown:
+                self._error(400, "unknown roster field: %s" % ", ".join(sorted(unknown)))
+                return
+            new_raw = dict(raw)
+            new_entries = list(entries)
+            new_entries[index] = merged
+            new_raw["participants"] = new_entries
+            problem = roster_problem(new_raw, path.parent)
+            if problem:
+                self._error(400, problem)
+                return
+            try:
+                roster = load_roster(path)
+                ln = append_line(self.state.root, "owner", "update", "participants", doc_id, merged,
+                                 t=None, via=via, roster=roster)
+            except ValueError as e:
+                self._error(400, str(e))
+                return
+            except OSError as e:
+                self._error(500, "cannot write the log: %s" % e)
+                return
+            try:
+                atomic_write_text(path, json.dumps(new_raw, indent=2, ensure_ascii=False) + "\n")
+            except OSError as e:
+                self._error(500, "cannot write participants.json: %s" % e)
+                return
         self._line(201, ln)
 
 

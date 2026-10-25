@@ -10,7 +10,7 @@ import re
 import time
 from typing import Dict, List, Optional, Tuple
 
-_MENTION_RE = re.compile(r"(?:^|[\s(\[,:;])@([A-Za-z0-9_-]+)")
+_MENTION_RE = re.compile(r"(?:^|[\s(\[,:;])@([A-Za-z0-9_.-]+)")
 _BROADCAST_HANDLES = ("everyone", "all", "channel", "here")
 _ALIASES = {"bil": "bewareilive", "vc": "vectorcraft", "amb": "avoidmissingball"}
 _DEFAULT_PROJECTS = ("avoidmissingball", "bewareilive", "vectorcraft")
@@ -57,49 +57,71 @@ def _norm(s: str) -> str:
 
 def extract_mentions(doc: dict, roster=None) -> List[str]:
     """Resolve @mentions in summary/body to participant ids (empty list if broadcast or none)."""
-    text = "%s\n%s" % (doc.get("summary") or "", doc.get("body") or "")
-    tokens = [_norm(m.group(1)) for m in _MENTION_RE.finditer(text)]
-    if not tokens:
+    s = doc.get("summary")
+    b = doc.get("body")
+    text = "%s\n%s" % (s if isinstance(s, str) else "", b if isinstance(b, str) else "")
+    raw_tokens = []  # type: List[str]
+    for m in _MENTION_RE.finditer(text):
+        tok = m.group(1).rstrip(".,;:!?)]")
+        if tok:
+            raw_tokens.append(tok)
+    if not raw_tokens:
         return []
-    if any(t in _BROADCAST_HANDLES for t in tokens):
+    if any(_norm(t) in _BROADCAST_HANDLES or t.lower() in _BROADCAST_HANDLES for t in raw_tokens):
         return []
     participants = getattr(roster, "participants", roster) if roster is not None else None
     by_norm = dict(_ALIASES)
     projects = []  # type: List[str]
     reviewers = []  # type: List[str]
     if isinstance(participants, dict) and participants:
-        valid_pids = set(participants.keys())
+        valid_pids = set(participants.keys()) - {"owner"}
         by_norm = {k: v for k, v in _ALIASES.items() if v in valid_pids}
+        all_projects = []  # type: List[str]
+        approved_projects = []  # type: List[str]
+        all_reviewers = []  # type: List[str]
+        approved_reviewers = []  # type: List[str]
         for pid, p in participants.items():
             if pid == "owner":
-                by_norm["owner"] = "owner"
                 continue
+            by_norm[pid.lower()] = pid
             by_norm[_norm(pid)] = pid
             name = p.get("name") if isinstance(p, dict) else getattr(p, "name", None)
             if isinstance(name, str) and name:
+                by_norm[name.lower()] = pid
                 by_norm[_norm(name)] = pid
             kind = p.get("kind") if isinstance(p, dict) else getattr(p, "kind", None)
             if kind == "project":
-                projects.append(pid)
+                all_projects.append(pid)
+                if _is_approved(pid, roster):
+                    approved_projects.append(pid)
             elif kind in ("reviewer", "researcher"):
-                reviewers.append(pid)
+                all_reviewers.append(pid)
+                if _is_approved(pid, roster):
+                    approved_reviewers.append(pid)
+        projects = approved_projects if approved_projects else all_projects
+        reviewers = approved_reviewers if approved_reviewers else all_reviewers
     else:
-        for pid in _DEFAULT_PROJECTS + _DEFAULT_REVIEWERS + ("owner",):
+        for pid in _DEFAULT_PROJECTS + _DEFAULT_REVIEWERS:
+            by_norm[pid.lower()] = pid
             by_norm[_norm(pid)] = pid
         projects = list(_DEFAULT_PROJECTS)
         reviewers = list(_DEFAULT_REVIEWERS)
     out = []  # type: List[str]
     seen = set()
-    for t in tokens:
+    for raw_t in raw_tokens:
+        low = raw_t.lower()
+        t = _norm(raw_t)
         matched = []  # type: List[str]
         if t in ("projects", "teams"):
             matched = projects
         elif t == "reviewers":
             matched = reviewers
+        elif low in by_norm:
+            matched = [by_norm[low]]
         elif t in by_norm:
             matched = [by_norm[t]]
         for pid in matched:
-            if pid not in seen:
+            if pid != "owner" and pid not in seen:
                 seen.add(pid)
                 out.append(pid)
     return out
@@ -120,7 +142,18 @@ def _addressed(doc: dict, pid: str, roster=None) -> bool:
 def _recipients(doc: dict, roster=None) -> List[str]:
     to = doc.get("to")
     if to is None:
-        return extract_mentions(doc, roster=roster)
+        mentioned = extract_mentions(doc, roster=roster)
+        if mentioned:
+            return mentioned
+        if doc.get("kind") == "request" and doc.get("from") == "owner" and roster is not None:
+            participants = getattr(roster, "participants", roster)
+            if isinstance(participants, dict):
+                approved_projects = sorted(
+                    pid for pid in participants if _is_approved_project(pid, roster)
+                )
+                if approved_projects:
+                    return approved_projects
+        return []
     if isinstance(to, str):
         raw = [to] if to else []
     elif isinstance(to, list):
@@ -172,7 +205,10 @@ def pending_recipients(doc: dict, replies: List[dict], roster=None) -> List[str]
         for r in replies
         if isinstance(r.get("from"), str) and _is_approved(r.get("from"), roster)
     }
-    return [pid for pid in _recipients(doc, roster=roster) if pid not in replied]
+    return [
+        pid for pid in _recipients(doc, roster=roster)
+        if _is_approved(pid, roster) and pid not in replied
+    ]
 
 
 def _requests(docs: Dict, pid=None, open_only: bool = True,

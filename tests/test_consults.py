@@ -404,6 +404,25 @@ class ConsultsUnitTests(unittest.TestCase):
         doc3 = self.docs()[("messages", ln3.id)]
         self.assertNotIn("to", doc3)
 
+        # @projects or self-mention filters out sender pid and quarantined participants
+        ln4 = post_consult(
+            self.r.root,
+            "vectorcraft",
+            "@projects check shared bus timing (from @vectorcraft, cc @owner)",
+            roster=self.roster,
+        )
+        doc4 = self.docs()[("messages", ln4.id)]
+        self.assertEqual(doc4["to"], ["bewareilive", "avoidmissingball"])
+
+        ln5 = post_consult(
+            self.r.root,
+            "vectorcraft",
+            "Note from @vectorcraft (cc @owner)",
+            roster=self.roster,
+        )
+        doc5 = self.docs()[("messages", ln5.id)]
+        self.assertNotIn("to", doc5)
+
 
 class ConsultsCliTests(unittest.TestCase):
     def setUp(self):

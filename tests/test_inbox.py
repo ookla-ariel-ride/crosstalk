@@ -478,13 +478,13 @@ class InboxTests(unittest.TestCase):
             extract_mentions({"summary": "See vectorcraft@f0bfbca3 or dev@bewareilive.com"}),
             [],
         )
-        # Explicit @owner targets owner, while display name of owner with different name won't unless @owner
+        # @owner is excluded from extract_mentions so "(cc @owner)" does not narrow a broadcast
         custom_roster = {
             "owner": {"name": "VectorCraft", "kind": "person", "trust": "approved"},
             "bewareilive": {"name": "BewareILive", "kind": "project", "trust": "approved"},
         }
         self.assertEqual(extract_mentions({"summary": "@VectorCraft hi"}, roster=custom_roster), [])
-        self.assertEqual(extract_mentions({"summary": "@owner hi"}, roster=custom_roster), ["owner"])
+        self.assertEqual(extract_mentions({"summary": "@owner hi"}, roster=custom_roster), [])
 
         # Test CLI inbox with requests and owner_messages of various kinds (alert, agreement, lesson, decision)
         self.r.write_log("owner", [
@@ -534,6 +534,100 @@ class InboxTests(unittest.TestCase):
             ["own-decision", "own-lesson"],
         )
         self.assertEqual(self.ids(codex_out), ["vc-req-rev"])
+
+    def test_extract_mentions_subagent_dots_punctuation_quarantine_and_non_string(self):
+        from crosstalk.requests import extract_mentions
+
+        roster = {
+            "owner": {"name": "Owner", "kind": "person", "trust": "approved"},
+            "bewareilive": {"name": "BewareILive", "kind": "project", "trust": "approved"},
+            "vectorcraft": {"name": "VectorCraft", "kind": "project", "trust": "approved"},
+            "quarantined-proj": {"name": "QuarantinedProj", "kind": "project", "trust": "quarantined"},
+            "codex": {"name": "Codex", "kind": "reviewer", "trust": "approved"},
+            "quarantined-rev": {"name": "QuarantinedRev", "kind": "reviewer", "trust": "quarantined"},
+            "bewareilive.verifier": {"name": "BIL Verifier", "kind": "agent", "trust": "approved"},
+        }
+        self.assertEqual(
+            extract_mentions(
+                {"summary": "Ask @bewareilive.verifier, @bil! (@vc?) and @owner."},
+                roster=roster,
+            ),
+            ["bewareilive.verifier", "bewareilive", "vectorcraft"],
+        )
+        self.assertEqual(
+            extract_mentions({"summary": "@projects and @reviewers"}, roster=roster),
+            ["bewareilive", "vectorcraft", "codex"],
+        )
+        self.assertEqual(
+            extract_mentions({"summary": 123, "body": ["not-a-str"]}, roster=roster),
+            [],
+        )
+
+    def test_pending_recipients_quarantine_and_owner_broadcast_request(self):
+        from crosstalk.participants import load_roster
+        from crosstalk.replay import enrich_messages, load_all_lines, replay
+        from crosstalk.requests import open_requests, pending_recipients
+
+        roster_data = json.loads(json.dumps(SPEC_ROSTER))
+        roster_data["participants"].append({
+            "id": "qbot",
+            "name": "QBot",
+            "kind": "agent",
+            "parent": "bewareilive",
+            "color": "#2e7d32",
+            "colorDark": "#81c784",
+            "trust": "quarantined",
+        })
+        self.r.write_roster(roster_data)
+        roster = load_roster(self.r.root / "participants.json")
+
+        # Quarantined recipient in `to` does not deadlock multi-recipient request
+        self.r.write_log("vectorcraft", [
+            req(1, "vectorcraft", "vc-q", to=["bewareilive", "qbot"], t="2026-10-21T18:00:00Z"),
+        ])
+        self.r.write_log("owner", [
+            line(1, "owner", id_="own-req-bcast", t="2026-10-21T18:05:00Z",
+                 data={"from": "owner", "kind": "request", "summary": "Are all projects in sync? (cc @owner)"}),
+        ])
+        lines = load_all_lines(self.r.root, roster)
+        docs = enrich_messages(replay(lines), lines)
+        self.assertEqual(
+            pending_recipients(docs[("messages", "vc-q")], [], roster=roster),
+            ["bewareilive"],
+        )
+        self.assertEqual(
+            pending_recipients(docs[("messages", "own-req-bcast")], [], roster=roster),
+            ["bewareilive", "vectorcraft"],
+        )
+
+        # bewareilive replies to both: vc-q closes, own-req-bcast stays open waiting for vectorcraft
+        self.r.write_log("bewareilive", [
+            rep(1, "bewareilive", "bewareilive-r1", "vc-q", t="2026-10-21T19:00:00Z"),
+            rep(2, "bewareilive", "bewareilive-r2", "own-req-bcast", t="2026-10-21T19:01:00Z"),
+        ])
+        lines2 = load_all_lines(self.r.root, roster)
+        docs2 = enrich_messages(replay(lines2), lines2)
+        self.assertEqual(
+            [did for (did, _, _) in open_requests(docs2, roster=roster)],
+            ["own-req-bcast"],
+        )
+        self.assertEqual(
+            pending_recipients(
+                docs2[("messages", "own-req-bcast")],
+                [docs2[("messages", "bewareilive-r2")]],
+                roster=roster,
+            ),
+            ["vectorcraft"],
+        )
+
+        # vectorcraft replies to own-req-bcast: now it closes
+        self.r.write_log("vectorcraft", [
+            req(1, "vectorcraft", "vc-q", to=["bewareilive", "qbot"], t="2026-10-21T18:00:00Z"),
+            rep(2, "vectorcraft", "vectorcraft-r1", "own-req-bcast", t="2026-10-21T19:02:00Z"),
+        ])
+        lines3 = load_all_lines(self.r.root, roster)
+        docs3 = enrich_messages(replay(lines3), lines3)
+        self.assertEqual(open_requests(docs3, roster=roster), [])
 
 
 if __name__ == "__main__":

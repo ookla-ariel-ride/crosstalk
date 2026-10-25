@@ -901,6 +901,38 @@ class OnboardTests(unittest.TestCase):
                 self.assertEqual(status, 400)
                 self.assertNotIn(token, json.dumps(err))
 
+    def test_append_roster_locks_onboard(self):
+        import crosstalk.serve as serve_mod
+
+        entered = []
+        real_lock = getattr(serve_mod, "_locked_onboard", None)
+        self.assertIsNotNone(real_lock, "_locked_onboard should be imported in serve")
+
+        from contextlib import contextmanager
+
+        @contextmanager
+        def tracking_lock(root):
+            entered.append(Path(root))
+            with real_lock(root):
+                yield
+
+        with TempRepo() as r:
+            r.write_roster()
+            serve_mod._locked_onboard = tracking_lock
+            try:
+                with self.server(r) as srv:
+                    cookie = self.login(srv)
+                    status, _body = request(
+                        srv.url + "/api/append", "POST",
+                        {"from": "owner", "op": "update", "collection": "participants",
+                         "id": "codex", "data": {"trust": "quarantined"}},
+                        {"Cookie": cookie},
+                    )
+                    self.assertEqual(status, 201)
+            finally:
+                serve_mod._locked_onboard = real_lock
+            self.assertEqual(entered, [r.root])
+
 
 class HealthTests(unittest.TestCase):
     def test_health_is_ok_when_the_log_is_clean(self):

@@ -1054,6 +1054,124 @@
       " lesOk=" + lesOk + " incCreated=" + incCreated + " resBtn=" + !!resBtn + " incResolved=" + incResolved);
   });
 
+  S.push(async function canonicalGameProgress() {
+    var savedProg = Object.assign({}, __store.progress || {});
+    await put("progress", {
+      "amb-1": { t: ago(30), project: "avoidmissingball", game: "centiped", pct: 0 },
+      "amb-2": { t: ago(20), project: "avoidmissingball", game: "centipede", pct: 5 },
+      "amb-3": { t: ago(10), project: "avoidmissingball", game: "Centipede", pct: 12 },
+      "amb-4": { t: ago(25), project: "avoidmissingball", game: "digdugat", pct: 0 },
+      "amb-5": { t: ago(10), project: "avoidmissingball", game: "Dig Dug", pct: 8 },
+      "amb-6": { t: ago(25), project: "avoidmissingball", game: "missile", pct: 0 },
+      "amb-7": { t: ago(10), project: "avoidmissingball", game: "Missile Command", pct: 15 }
+    });
+    await go("timeline");
+    var ambEntry = entry("avoidmissingball");
+    var rprog = ambEntry && ambEntry.querySelector(".rprog") ? ambEntry.querySelector(".rprog").textContent : null;
+    var rosterOk = rprog === "Centipede 12% \u00b7 Dig Dug 8% \u00b7 Missile Command 15%";
+    await go("progress");
+    var paths = document.querySelectorAll("#view .chart path").length;
+    var legendText = document.querySelector("#view .legend") ? document.querySelector("#view .legend").textContent : "";
+    var chartOk = paths === 3 &&
+      legendText.indexOf("AvoidMissingBall: Centipede 12%") !== -1 &&
+      legendText.indexOf("AvoidMissingBall: Dig Dug 8%") !== -1 &&
+      legendText.indexOf("AvoidMissingBall: Missile Command 15%") !== -1;
+    await put("progress", savedProg);
+    await go("timeline");
+    return res("canonicalGameProgress", rosterOk && chartOk,
+      "rprog=" + JSON.stringify(rprog) + " paths=" + paths + " legend=" + JSON.stringify(legendText));
+  });
+
+  S.push(async function legacyAgreementsAndLessonsRendered() {
+    await addDoc("agreements", "leg-ag-1", {
+      t: T0,
+      title: "Legacy Agreement Title",
+      detail: "Legacy agreement detail body",
+      owner: "bewareilive",
+      status: "Completed on builder branch and waiting for downstream verification"
+    });
+    await go("agreements");
+    var agRows = [].slice.call(document.querySelectorAll("#view tbody tr")).filter(function (tr) {
+      return tr.textContent.indexOf("Legacy Agreement Title") !== -1;
+    });
+    var agRow = agRows[0];
+    var agSum = agRow && agRow.querySelector(".summary") ? agRow.querySelector(".summary").textContent : "";
+    var agBody = agRow && agRow.querySelector(".body") ? agRow.querySelector(".body").textContent : "";
+    var agWho = agRow && agRow.children[2] && agRow.children[2].querySelector(".who") ? agRow.children[2].querySelector(".who").textContent : "";
+    var agPill = agRow && agRow.children[1] && agRow.children[1].querySelector(".pill") ? agRow.children[1].querySelector(".pill").textContent : "";
+    var agOk = agSum === "Legacy Agreement Title" && agBody === "Legacy agreement detail body" && agWho === "BewareILive" && agPill === "agreed";
+
+    await addDoc("lessons", "leg-les-1", {
+      t: T0,
+      title: "Legacy Lesson Title",
+      detail: "Legacy lesson detail body",
+      from: "vectorcraft",
+      fix: "Prevented by pre-commit check"
+    });
+    await go("lessons");
+    var lesRows = [].slice.call(document.querySelectorAll("#view tbody tr")).filter(function (tr) {
+      return tr.textContent.indexOf("Legacy Lesson Title") !== -1;
+    });
+    var lesRow = lesRows[0];
+    var lesSum = lesRow && lesRow.querySelector(".summary") ? lesRow.querySelector(".summary").textContent : "";
+    var lesWho = lesRow && lesRow.children[2] && lesRow.children[2].querySelector(".who") ? lesRow.children[2].querySelector(".who").textContent : "";
+    var lesOk = lesSum === "Legacy Lesson Title" && lesWho === "VectorCraft";
+    await go("timeline");
+    return res("legacyAgreementsAndLessonsRendered", agOk && lesOk,
+      "agSum=" + JSON.stringify(agSum) + " agWho=" + JSON.stringify(agWho) + " agPill=" + JSON.stringify(agPill) +
+      " lesSum=" + JSON.stringify(lesSum) + " lesWho=" + JSON.stringify(lesWho));
+  });
+
+  S.push(async function ownerBroadcastRequestWaitsForAllProjects() {
+    await go("help");
+    await addDoc("messages", "own-bcast-req", {
+      t: ago(2),
+      from: "owner",
+      kind: "request",
+      summary: "Are all the projects in sync?"
+    });
+    var listedInitially = helpHas("Are all the projects in sync?");
+    await addDoc("messages", "own-bcast-rep-bil", {
+      t: ago(1),
+      from: "bewareilive",
+      kind: "sync",
+      summary: "BewareILive is in sync",
+      replyTo: "own-bcast-req"
+    });
+    await addDoc("messages", "own-bcast-rep-self", {
+      t: ago(1),
+      from: "owner",
+      kind: "owner",
+      summary: "Thanks, waiting on the other two",
+      replyTo: "own-bcast-req"
+    });
+    var c = helpCards().filter(function (x) { return x.textContent.indexOf("Are all the projects in sync?") !== -1; })[0];
+    var stillOpenAfterOne = !!c;
+    var pendingPill = c && c.querySelector(".pill.pending-to");
+    var waitingText = pendingPill ? pendingPill.textContent : "";
+    await addDoc("messages", "own-bcast-rep-vc", {
+      t: ago(1),
+      from: "vectorcraft",
+      kind: "sync",
+      summary: "VectorCraft is in sync",
+      replyTo: "own-bcast-req"
+    });
+    var stillOpenAfterTwo = helpHas("Are all the projects in sync?");
+    await addDoc("messages", "own-bcast-rep-amb", {
+      t: ago(1),
+      from: "avoidmissingball",
+      kind: "sync",
+      summary: "AvoidMissingBall is in sync",
+      replyTo: "own-bcast-req"
+    });
+    var closedAfterAllThree = !helpHas("Are all the projects in sync?");
+    await go("timeline");
+    var ok = listedInitially && stillOpenAfterOne && waitingText === "waiting on AvoidMissingBall \u00b7 VectorCraft" && stillOpenAfterTwo && closedAfterAllThree;
+    return res("ownerBroadcastRequestWaitsForAllProjects", ok,
+      "initial=" + listedInitially + " afterOne=" + stillOpenAfterOne + " waiting=" + JSON.stringify(waitingText) +
+      " afterTwo=" + stillOpenAfterTwo + " closedAfterThree=" + closedAfterAllThree);
+  });
+
   S.push(async function partlyLive() {
     var before = $("liveText").textContent;
     __kill("locks", "revoked"); await tick();
