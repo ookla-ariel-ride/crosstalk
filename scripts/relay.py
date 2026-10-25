@@ -104,6 +104,12 @@ def cmd_read(args):
     return 0
 
 
+def _trust(pid, roster):
+    """The trust of a participant id: approved, quarantined, or unknown when absent."""
+    p = roster.participants.get(pid)
+    return p.trust if p is not None else "unknown"
+
+
 def cmd_inbox(args):
     """Print the open requests addressed to a participant as JSON."""
     roster = load_roster(ROOT / "participants.json")
@@ -119,10 +125,19 @@ def cmd_inbox(args):
     lines = load_all_lines(ROOT, roster)
     docs = enrich_messages(replay(lines), lines)
     requests = all_requests_for(docs, args.pid) if args.all else inbox_for(docs, args.pid)
-    out = {"pid": args.pid, "requests": [
-        {"request": dict(doc, id=did), "replies": replies}
-        for (did, doc, replies) in requests
-    ], "service": SERVICE}
+    out = {
+        "pid": args.pid,
+        "roster": {pid: {"trust": p.trust} for pid, p in roster.participants.items()},
+        "requests": [
+            {
+                "request": dict(doc, id=did),
+                "trust": _trust(doc.get("from"), roster),
+                "replies": [dict(r, trust=_trust(r.get("from"), roster)) for r in replies],
+            }
+            for (did, doc, replies) in requests
+        ],
+        "service": SERVICE,
+    }
     print(json.dumps(out, ensure_ascii=False, sort_keys=True, indent=2))
     return 0
 

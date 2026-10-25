@@ -43,7 +43,13 @@ def _t(doc: dict) -> str:
 
 def _addressed(doc: dict, pid: str) -> bool:
     to = doc.get("to")
-    return to is None or (isinstance(to, list) and pid in to)
+    if to is None:
+        return True
+    if isinstance(to, str):
+        return pid == to
+    if isinstance(to, list):
+        return pid in to
+    return False
 
 
 def _requests(docs: Dict, pid=None, open_only: bool = True) -> List[Tuple[str, dict, List[dict]]]:

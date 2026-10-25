@@ -97,6 +97,14 @@ class InboxTests(unittest.TestCase):
         replies = out["requests"][0]["replies"]
         self.assertEqual([r["summary"] for r in replies], ["answer own-r1", "answer codex-r1"])
 
+    def test_string_to_is_one_recipient(self):
+        # A string `to` names one recipient, matching the page's help card.
+        self.r.write_log("vectorcraft", [req(1, "vectorcraft", "vc-r1", to="bewareilive")])
+        out = self.inbox("bewareilive")
+        self.assertEqual(self.ids(out), ["vc-r1"])
+        out2 = self.inbox("codex")
+        self.assertEqual(out2["requests"], [])
+
     def test_quarantined_requester_listed(self):
         roster = json.loads(json.dumps(SPEC_ROSTER))
         for p in roster["participants"]:
@@ -106,6 +114,44 @@ class InboxTests(unittest.TestCase):
         self.r.write_log("codex", [req(1, "codex", "codex-r1", to=["bewareilive"])])
         out = self.inbox("bewareilive")
         self.assertEqual(self.ids(out), ["codex-r1"])
+
+    def test_quarantined_requester_flagged(self):
+        roster = json.loads(json.dumps(SPEC_ROSTER))
+        for p in roster["participants"]:
+            if p["id"] == "codex":
+                p["trust"] = "quarantined"
+        self.r.write_roster(roster)
+        self.r.write_log("codex", [req(1, "codex", "codex-r1", to=["bewareilive"])])
+        out = self.inbox("bewareilive")
+        self.assertEqual(out["requests"][0]["trust"], "quarantined")
+
+    def test_approved_requester_flagged(self):
+        self.r.write_log("vectorcraft", [req(1, "vectorcraft", "vc-r1", to=["bewareilive"])])
+        out = self.inbox("bewareilive")
+        self.assertEqual(out["requests"][0]["trust"], "approved")
+
+    def test_quarantined_reply_flagged(self):
+        roster = json.loads(json.dumps(SPEC_ROSTER))
+        for p in roster["participants"]:
+            if p["id"] == "codex":
+                p["trust"] = "quarantined"
+        self.r.write_roster(roster)
+        self.r.write_log("vectorcraft", [req(1, "vectorcraft", "vc-r1", to=["bewareilive"])])
+        self.r.write_log("codex", [rep(1, "codex", "codex-r1", "vc-r1")])
+        out = self.inbox("bewareilive", "--all")
+        self.assertEqual(out["requests"][0]["replies"][0]["trust"], "quarantined")
+
+    def test_unknown_requester_flagged(self):
+        self.r.write_log("gemini", [req(1, "gemini", "gemini-r1", to=["bewareilive"])])
+        out = self.inbox("bewareilive")
+        self.assertEqual(out["requests"][0]["trust"], "unknown")
+
+    def test_roster_map_present(self):
+        self.r.write_log("vectorcraft", [req(1, "vectorcraft", "vc-r1", to=["bewareilive"])])
+        out = self.inbox("bewareilive")
+        self.assertIn("roster", out)
+        self.assertEqual(out["roster"]["codex"]["trust"], "approved")
+        self.assertEqual(out["roster"]["bewareilive"]["trust"], "approved")
 
     def test_unknown_pid_exits_1(self):
         p = self.run_cli("inbox", "gemini")
