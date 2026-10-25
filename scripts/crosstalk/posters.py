@@ -130,16 +130,34 @@ def land_sync(root: Path, pid: str, commit: str, summary: str,
     if not isinstance(commit, str) or not COMMIT_RE.fullmatch(commit.strip()):
         raise ValueError("bad commit sha %r" % (commit,))
     commit = commit.strip()
-    if not isinstance(summary, str) or not summary.strip() or "\n" in summary.strip():
+    if not isinstance(summary, str) or "\n" in summary or "\r" in summary or not summary.strip():
         raise ValueError("summary must be a non-empty single-line string")
     summary = summary.strip()
+    file_slugs = [(f, "l-%s-%s" % (pid, slugify_path(f))) for f in (files or [])]
 
     short_sha = commit[:7].lower()
     agr_id = agreement_id or ("a-%s-%s" % (pid, short_sha))
     msg_id = "%s-sync-%s" % (pid, short_sha)
     lines = load_all_lines(root, roster)
     docs = replay(lines)
-    ts = next_stamp(lines, pid, [("agreements", agr_id), ("messages", msg_id)], base_ts=now_iso())
+
+    locks_to_release = []  # type: List[str]
+    if file_slugs:
+        seen = set()
+        for f, slug_id in file_slugs:
+            for (coll, did), doc in sorted(docs.items()):
+                if coll != "locks" or did in seen:
+                    continue
+                if doc.get("released"):
+                    continue
+                if did == slug_id or (doc.get("project") == pid and doc.get("path") == f):
+                    seen.add(did)
+                    locks_to_release.append(did)
+
+    target_keys = [("agreements", agr_id), ("messages", msg_id)] + [
+        ("locks", did) for did in locks_to_release
+    ]
+    ts = next_stamp(lines, pid, target_keys, base_ts=now_iso())
 
     existing_agr = docs.get(("agreements", agr_id))
     commits = {}  # type: Dict[str, List[str]]
@@ -169,7 +187,6 @@ def land_sync(root: Path, pid: str, commit: str, summary: str,
         agr_op = "update"
     append_line(root, pid, agr_op, "agreements", agr_id, agr_data, t=ts, roster=roster)
 
-    msg_id = "%s-sync-%s" % (pid, short_sha)
     msg_data = {
         "from": pid,
         "kind": "sync",
@@ -181,20 +198,10 @@ def land_sync(root: Path, pid: str, commit: str, summary: str,
     append_line(root, pid, "set", "messages", msg_id, msg_data, t=ts, roster=roster)
 
     released_locks = []  # type: List[str]
-    if files:
-        seen = set()
-        for f in files:
-            slug_id = "l-%s-%s" % (pid, slugify_path(f))
-            for (coll, did), doc in sorted(docs.items()):
-                if coll != "locks" or did in seen:
-                    continue
-                if doc.get("released"):
-                    continue
-                if did == slug_id or (doc.get("project") == pid and doc.get("path") == f):
-                    append_line(root, pid, "update", "locks", did, {"released": ts},
-                                t=ts, roster=roster)
-                    seen.add(did)
-                    released_locks.append(did)
+    for did in locks_to_release:
+        append_line(root, pid, "update", "locks", did, {"released": ts},
+                    t=ts, roster=roster)
+        released_locks.append(did)
 
     return {
         "message_id": msg_id,

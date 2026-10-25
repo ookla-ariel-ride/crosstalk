@@ -248,6 +248,32 @@ class ConsultsUnitTests(unittest.TestCase):
             {"vectorcraft": ["a1b2c3d"], "bewareilive": ["51e7709"]},
         )
 
+    def test_adopt_agreement_invalid_summary_leaves_no_partial_write(self):
+        from crosstalk.consults import adopt_agreement
+
+        self.r.write_log("vectorcraft", [
+            line(1, "vectorcraft", collection="agreements", id_="a-fast-verify",
+                 data={
+                     "t": "2026-10-25T10:00:00Z",
+                     "summary": "Fast verify",
+                     "builder": "vectorcraft",
+                     "adopter": "bewareilive",
+                     "status": "ready-to-adopt",
+                     "commits": {"vectorcraft": ["a1b2c3d"]},
+                 })
+        ])
+        for bad_summary in ("Line 1\nLine 2", "Line 1\rLine 2", "Trailing\n", "   "):
+            with self.assertRaises(ValueError):
+                adopt_agreement(
+                    self.r.root,
+                    "bewareilive",
+                    "a-fast-verify",
+                    "51e7709",
+                    summary=bad_summary,
+                    roster=self.roster,
+                )
+        self.assertFalse((self.r.root / "log" / "bewareilive.jsonl").exists())
+
 
 class ConsultsCliTests(unittest.TestCase):
     def setUp(self):

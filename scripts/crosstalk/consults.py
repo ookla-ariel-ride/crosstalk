@@ -105,10 +105,17 @@ def adopt_agreement(
     roster: Optional[Roster] = None,
 ) -> Dict[str, str]:
     """Record a project's adoption commit on an agreement and post a sync message."""
-    if not isinstance(commit, str) or not COMMIT_RE.fullmatch(commit):
+    if not isinstance(commit, str) or not COMMIT_RE.fullmatch(commit.strip()):
         raise ValueError("bad commit %r (expected 7-40 hex chars)" % (commit,))
+    commit = commit.strip()
+    if summary is not None:
+        if not isinstance(summary, str) or "\n" in summary or "\r" in summary or not summary.strip():
+            raise ValueError("summary must be a non-empty single-line string")
+        summary = summary.strip()
     root = Path(root)
     roster = _ensure_roster(root, roster)
+    if not isinstance(pid, str) or pid not in roster.participants:
+        raise ValueError("unknown participant %r" % (pid,))
     lines = load_all_lines(root, roster)
     docs = replay(lines)
     doc = docs.get(("agreements", agreement_id))

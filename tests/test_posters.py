@@ -213,10 +213,15 @@ class LandSyncTests(unittest.TestCase):
                 p = c.run("land-sync", "--from", "vectorcraft", "--commit", bad_sha,
                           "--summary", "Valid summary")
                 self.assertEqual(p.returncode, 1, bad_sha)
-            for bad_sum in ("", "   ", "line1\nline2"):
+            for bad_sum in ("", "   ", "line1\nline2", "trailing\n", "line1\rline2"):
                 p = c.run("land-sync", "--from", "vectorcraft", "--commit", "a1b2c3d",
                           "--summary", bad_sum)
                 self.assertEqual(p.returncode, 1, bad_sum)
+            p_bad_file = c.run("land-sync", "--from", "codex", "--commit", "a1b2c3d",
+                               "--summary", "Valid summary", "--files", "...")
+            self.assertEqual(p_bad_file.returncode, 1)
+            self.assertFalse((r.root / "log" / "codex.jsonl").exists())
+            self.assertFalse((r.root / "log" / "vectorcraft.jsonl").exists())
 
 
 class IncidentTests(unittest.TestCase):
