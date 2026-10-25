@@ -145,6 +145,37 @@ class ImportTests(unittest.TestCase):
                 import_snapshots(r.root, [a, b])
             self.assertFalse((r.root / "log" / "bewareilive.jsonl").exists())
 
+    def test_symlinked_files_are_skipped(self):
+        with TempRepo() as r:
+            r.write_roster()
+            target = r.root / "secret.json"
+            target.write_text(json.dumps({"kind": "reply", "summary": "secret"}),
+                              encoding="utf-8")
+            snap = r.root / "s"
+            (snap / "messages").mkdir(parents=True)
+            (snap / "messages" / "m-1.json").write_text(
+                json.dumps({"t": "2026-01-01T00:00:00Z"}), encoding="utf-8")
+            (snap / "messages" / "evil.json").symlink_to(target)
+            import_snapshots(r.root, [snap])
+            docs = replay(load_all_lines(r.root))
+            self.assertEqual(list(docs), [("messages", "m-1")])
+            self.assertEqual(target.read_text(encoding="utf-8"),
+                             json.dumps({"kind": "reply", "summary": "secret"}))
+
+    def test_symlinked_dirs_are_skipped(self):
+        with TempRepo() as r:
+            r.write_roster()
+            outside = r.root / "outside"
+            outside.mkdir()
+            (outside / "m-1.json").write_text(
+                json.dumps({"t": "2026-01-01T00:00:00Z"}), encoding="utf-8")
+            snap = r.root / "s"
+            snap.mkdir()
+            (snap / "messages").symlink_to(outside, target_is_directory=True)
+            import_snapshots(r.root, [snap])
+            docs = replay(load_all_lines(r.root))
+            self.assertEqual(docs, {})
+
     def test_real_snapshots_import_cleanly(self):
         with TempRepo() as r:
             shutil.copy(str(REPO / "participants.json"), str(r.root / "participants.json"))

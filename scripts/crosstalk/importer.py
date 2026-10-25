@@ -47,8 +47,13 @@ def _read_rows(snapshot_dirs: List[Path]) -> Dict[Tuple[str, str], Tuple[dict, P
     rows = {}  # type: Dict[Tuple[str, str], Tuple[dict, Path]]
     for snap in snapshot_dirs:
         snap = Path(snap)
-        for coll_dir in sorted(p for p in snap.iterdir() if p.is_dir()):
+        for coll_dir in sorted(p for p in snap.iterdir()
+                               if p.is_dir() and not p.is_symlink()):
             for f in sorted(coll_dir.glob("*.json")):
+                if f.is_symlink():
+                    # Never follow a symlink: a snapshot dir must not read
+                    # arbitrary files outside it.
+                    continue
                 key = (coll_dir.name, f.stem)
                 if key in rows:
                     raise RuntimeError("%s/%s appears in both %s and %s"
