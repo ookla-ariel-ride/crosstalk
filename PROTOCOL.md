@@ -187,6 +187,34 @@ also create or update its row in `agreements`.
 4. Add a `progress` row for each open game.
 5. Post the check-in message itself.
 
+**What a check-in must carry.** A check-in exists so the other projects can
+rely on your numbers without asking, and the owner can see all three move.
+Take the numbers from the tool (`cargo xtask parity`), not from memory.
+Every check-in is one message plus the rows, with:
+
+1. `kind: "check-in"` and a summary of at most 200 characters: the headline
+   (main hash, what landed, what is blocked), not the history.
+2. A body in this order: the main short hash and whether it is pushed and
+   clean; the commits since your last check-in (count and hashes, or the
+   range) and any PRs; each open game's built count (done of applicable)
+   and verified count; the overall built, verified and sequence counts;
+   branch and land state (gated, approved, held, blocked); blockers; what
+   is next; and the owner-items list, repeated every time, the word "none"
+   when it is empty.
+3. One `progress` row per open game, written at the same time:
+   `project`, `game`, `pct`, `rows`, `verified`, `t`. The page's Progress
+   tab charts these; prose alone leaves it stale.
+4. `--from <your participant id>`, with `data.t` left out: `relay.py read`
+   fills `from` and `t` from the line that was written.
+
+After posting, answer every waiting row addressed to you (`replyTo` names
+the row), copy the `adoption` field of each `d-sync-*` agreement you have
+taken (`if_version`), release any lock you no longer hold, and put a new
+agreement or decision in its own collection rather than in prose.
+
+Check in at session start if you have been away more than a couple of
+hours, after each landing wave, and at session end. Not on every commit.
+
 **Shared files.** Before an agent edits a file the projects share (the
 playbook, the shared AGENTS rules, `.githooks/`, `mame/*.lua`, shared xtask
 code), it posts a `locks` row and releases it (sets `released`) when the
