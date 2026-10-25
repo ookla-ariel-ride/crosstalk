@@ -764,6 +764,144 @@
     return res("ownerDigest", ok, "badgeGone=" + badgeGone + " sum=" + JSON.stringify(sumText) + " goneAfterDismiss=" + goneAfterDismiss);
   });
 
+  S.push(async function ownerReplyUnlistedAndSelf() {
+    await go("timeline");
+    await addDoc("messages", "m-unlisted", { t: ago(2), from: "rogue-sender", kind: "sync", summary: "Unlisted message" });
+    await addDoc("messages", "m-self", { t: ago(1), from: "owner", kind: "owner", summary: "Owner message" });
+    $("reply-btn-m-unlisted").click(); await tick();
+    var ta = $("note"); ta.value = "Reply to unlisted"; ta.dispatchEvent(new Event("input", { bubbles: true }));
+    $("notePost").click(); await tick(80);
+    var msgs = Object.keys(__store.messages || {}).map(function (id) { return __store.messages[id]; });
+    var rUnlisted = msgs.filter(function (m) { return m && m.summary === "Reply to unlisted"; })[0];
+    var unlistedNoTo = !!rUnlisted && rUnlisted.replyTo === "m-unlisted" && rUnlisted.to === undefined;
+
+    $("reply-btn-m-self").click(); await tick();
+    ta = $("note"); ta.value = "Reply to self"; ta.dispatchEvent(new Event("input", { bubbles: true }));
+    $("notePost").click(); await tick(80);
+    msgs = Object.keys(__store.messages || {}).map(function (id) { return __store.messages[id]; });
+    var rSelf = msgs.filter(function (m) { return m && m.summary === "Reply to self"; })[0];
+    var selfNoTo = !!rSelf && rSelf.replyTo === "m-self" && rSelf.to === undefined;
+
+    var decBefore = Object.keys(__store.decisions || {}).length;
+    var k = $("noteKind"); k.value = "decision"; k.dispatchEvent(new Event("change", { bubbles: true }));
+    ta = $("note"); ta.value = "Should not orphan decision"; ta.dispatchEvent(new Event("input", { bubbles: true }));
+    __fail.messages = true;
+    $("notePost").click(); await tick(80);
+    var decAfterFail = Object.keys(__store.decisions || {}).length;
+    __fail.messages = false;
+    k = $("noteKind"); k.value = "owner"; k.dispatchEvent(new Event("change", { bubbles: true }));
+    ta = $("note"); ta.value = ""; ta.dispatchEvent(new Event("input", { bubbles: true }));
+    var noOrphan = decAfterFail === decBefore;
+    var ok = unlistedNoTo && selfNoTo && noOrphan;
+    return res("ownerReplyUnlistedAndSelf", ok,
+      "unlistedNoTo=" + unlistedNoTo + " selfNoTo=" + selfNoTo + " noOrphan=" + noOrphan + " (" + decBefore + "->" + decAfterFail + ")");
+  });
+
+  S.push(async function helpDeduplicatesRecipients() {
+    await go("timeline");
+    await addDoc("participants", "qreplybot", { name: "Q Reply Bot", kind: "tool", color: "#555555" });
+    await addDoc("messages", "hreq-dup", { t: ago(2), from: "codex", kind: "request", summary: "Dup recipient request?", to: ["bewareilive", "bewareilive"] });
+    var tc = card("hreq-dup"), timelineTo = tc && tc.querySelector(".to") ? tc.querySelector(".to").textContent : null;
+    await go("help");
+    var hc = helpCards().filter(function (x) { return x.textContent.indexOf("Dup recipient request?") !== -1; })[0];
+    var helpTo = hc && hc.querySelector(".to") ? hc.querySelector(".to").textContent : null;
+    await addDoc("messages", "hrep-dup-q", { t: ago(1), from: "qreplybot", kind: "reply", summary: "Quarantined reply", replyTo: "hreq-dup" });
+    var stillOpenAfterQuarantined = helpHas("Dup recipient request?");
+    await addDoc("messages", "hrep-dup-ok", { t: ago(1), from: "vectorcraft", kind: "reply", summary: "Approved reply", replyTo: "hreq-dup" });
+    var closedAfterApproved = !helpHas("Dup recipient request?");
+    await go("timeline");
+    var ok = timelineTo === "\u2192 BewareILive" && helpTo === "to BewareILive" && stillOpenAfterQuarantined && closedAfterApproved;
+    return res("helpDeduplicatesRecipients", ok,
+      "timelineTo=" + JSON.stringify(timelineTo) + " helpTo=" + JSON.stringify(helpTo) +
+      " stillOpenAfterQuarantined=" + stillOpenAfterQuarantined + " closedAfterApproved=" + closedAfterApproved);
+  });
+
+  S.push(async function promoteDecisionIdempotentAcrossRender() {
+    await go("timeline");
+    await addDoc("messages", "own-dec-1", { t: ago(2), from: "owner", kind: "owner", summary: "Composer decision row" });
+    await addDoc("decisions", "own-dec-1", { t: ago(2), by: "owner", project: "all", summary: "Composer decision row", source: "Crosstalk page" });
+    var b1 = $("promote-decision-own-dec-1");
+    var composerRecognized = !!b1 && b1.disabled && b1.textContent === "Recorded";
+
+    await addDoc("messages", "m-inflight-dec", { t: ago(1), from: "bewareilive", kind: "sync", summary: "Promote me" });
+    __delay = 80;
+    var b2 = $("promote-decision-m-inflight-dec");
+    if (b2) b2.click();
+    __emit("messages");
+    var b2During = $("promote-decision-m-inflight-dec");
+    var keptAcrossRender = !!b2During && b2During.disabled && b2During.textContent === "Recorded";
+    await tick(120);
+    __delay = 0;
+    var b2After = $("promote-decision-m-inflight-dec");
+    var recordedAfter = !!b2After && b2After.disabled && b2After.textContent === "Recorded";
+    var ok = composerRecognized && keptAcrossRender && recordedAfter;
+    return res("promoteDecisionIdempotentAcrossRender", ok,
+      "composerRecognized=" + composerRecognized + " keptAcrossRender=" + keptAcrossRender + " recordedAfter=" + recordedAfter);
+  });
+
+  S.push(async function ownerDigestMalformedRows() {
+    var KEY = "crosstalk.lastVisit";
+    await go("agreements");
+    var past = Date.now();
+    while (Date.now() <= past) {}
+    try { localStorage.setItem(KEY, String(past)); } catch (e) {}
+    var t1 = Date.now();
+    var t1Iso = new Date(t1).toISOString();
+    await addDoc("messages", "dig-anon", { t: t1Iso, from: "", kind: "sync", summary: "Blank sender" });
+    await addDoc("progress", "dig-nan", { t: t1Iso, project: "bewareilive", game: "joust", pct: NaN });
+    await addDoc("progress", "dig-inf", { t: t1Iso, project: "bewareilive", game: "tempest", pct: Infinity });
+    await addDoc("progress", "dig-good", { t: t1Iso, project: "bewareilive", game: "robotron", pct: 70 });
+    while (Date.now() <= t1) {}
+    await go("timeline");
+    var sum1 = $("digest-summary") ? $("digest-summary").textContent : "";
+    var anonOk = /\(\? 1\)/.test(sum1);
+    var finiteOk = /robotron 70%/.test(sum1) && !/NaN|Infinity/.test(sum1);
+
+    var t2 = Date.now() + 10;
+    var t2Iso = new Date(t2).toISOString();
+    await addDoc("progress", "dig-nogame", { t: t2Iso, project: "bewareilive", game: "", pct: 80 });
+    await addDoc("progress", "dig-nan2", { t: t2Iso, project: "bewareilive", game: "joust", pct: NaN });
+    await go("timeline");
+    var sum2 = $("digest-summary") ? $("digest-summary").textContent : "";
+    var notWiped = /robotron 70%/.test(sum2);
+
+    delete __store.messages["dig-anon"];
+    delete __store.progress["dig-nan"];
+    delete __store.progress["dig-inf"];
+    delete __store.progress["dig-nogame"];
+    delete __store.progress["dig-nan2"];
+    __emit("messages"); __emit("progress"); await tick();
+    if ($("digest-dismiss")) { $("digest-dismiss").click(); await tick(); }
+    var ok = anonOk && finiteOk && notWiped;
+    return res("ownerDigestMalformedRows", ok,
+      "sum1=" + JSON.stringify(sum1) + " sum2=" + JSON.stringify(sum2) + " anonOk=" + anonOk + " finiteOk=" + finiteOk + " notWiped=" + notWiped);
+  });
+
+  S.push(async function replyLockedWhilePosting() {
+    await go("timeline");
+    await addDoc("messages", "m-lock-1", { t: ago(2), from: "bewareilive", kind: "sync", summary: "First target" });
+    await addDoc("messages", "m-lock-2", { t: ago(1), from: "vectorcraft", kind: "sync", summary: "Second target" });
+    $("reply-btn-m-lock-1").click(); await tick();
+    var ta = $("note"); ta.value = "Slow reply post"; ta.dispatchEvent(new Event("input", { bubbles: true }));
+    __delay = 80;
+    $("notePost").click();
+    __emit("messages");
+    var rc = $("reply-cancel"), rb2 = $("reply-btn-m-lock-2");
+    var cancelDisabled = !!rc && rc.disabled;
+    var replyBtnDisabled = !!rb2 && rb2.disabled;
+    if (rc) rc.click();
+    if (rb2) rb2.click();
+    var bannerDuring = $("reply-banner") ? $("reply-banner").textContent : "";
+    var guardedDuring = /First target/.test(bannerDuring);
+    await tick(120);
+    __delay = 0;
+    var bannerClearedAfter = $("reply-banner") === null;
+    var ok = cancelDisabled && replyBtnDisabled && guardedDuring && bannerClearedAfter;
+    return res("replyLockedWhilePosting", ok,
+      "cancelDisabled=" + cancelDisabled + " replyBtnDisabled=" + replyBtnDisabled +
+      " guardedDuring=" + guardedDuring + " bannerClearedAfter=" + bannerClearedAfter);
+  });
+
   S.push(async function partlyLive() {
     var before = $("liveText").textContent;
     __kill("locks", "revoked"); await tick();

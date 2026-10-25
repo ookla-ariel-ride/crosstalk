@@ -262,6 +262,7 @@ td.num, td.t { font: 12px var(--mono); font-variant-numeric: tabular-nums; white
   var WIDE = window.matchMedia ? window.matchMedia("(min-width: 641px)") : null, rosterOpen = false;
   // A failed Approve keeps its message here, by participant id, so a re-render doesn't drop it.
   var approveErr = Object.create(null);
+  var promotingDecision = Object.create(null);
 
   var fmt = new Intl.DateTimeFormat("en-US", { timeZone: "America/Los_Angeles", month: "short", day: "numeric", hour: "numeric", minute: "2-digit", second: "2-digit", timeZoneName: "short" });
   var fmtShort = new Intl.DateTimeFormat("en-US", { timeZone: "America/Los_Angeles", month: "short", day: "numeric", hour: "numeric", minute: "2-digit" });
@@ -314,9 +315,13 @@ td.num, td.t { font: 12px var(--mono); font-variant-numeric: tabular-nums; white
     data.messages.forEach(function (m) { var t = ts(m.t); if (!isNaN(t) && t > visitTs) n++; });
     return n;
   }
+  function validProg(p, since) {
+    var t = ts(p.t);
+    return !isNaN(t) && t > since && typeof p.game === "string" && p.game !== "" && typeof p.pct === "number" && isFinite(p.pct);
+  }
   function hasNewProg(since) {
     if (since == null) return false;
-    return data.progress.some(function (p) { var t = ts(p.t); return !isNaN(t) && t > since && typeof p.pct === "number"; });
+    return data.progress.some(function (p) { return validProg(p, since); });
   }
   function markVisited() {
     syncVisit();
@@ -488,6 +493,15 @@ td.num, td.t { font: 12px var(--mono); font-variant-numeric: tabular-nums; white
     // Open help requests, derived over data.messages: a single-recipient or broadcast request is open
     // while no message's replyTo points at it; a multi-recipient request stays open while any listed
     // recipient has not replied. Newest first, each with its replies in order and pending recipients.
+  function toListOf(m) {
+    var seen = Object.create(null), out = [];
+    [].concat(m && m.to == null ? [] : m.to).forEach(function (x) {
+      if (x == null || x === "") return;
+      var s = String(x);
+      if (!HAS.call(seen, s)) { seen[s] = true; out.push(s); }
+    });
+    return out;
+  }
   function openRequests() {
     var byId = {}; data.messages.forEach(function (m) { byId[m._id] = m; });
     var replies = {};
@@ -498,14 +512,15 @@ td.num, td.t { font: 12px var(--mono); font-variant-numeric: tabular-nums; white
     data.messages.forEach(function (m) {
       if (m.kind !== "request") return;
       var mReplies = (replies[m._id] || []).slice().sort(byT);
-      var toList = [].concat(m.to == null ? [] : m.to).filter(function (x) { return x != null && x !== ""; }).map(String);
-      var pending;
+      var approvedReplies = mReplies.filter(function (r) { return !isQuarantined(r.from); });
+      var toList = toListOf(m);
+      var pending = toList.filter(function (pid) {
+        return !approvedReplies.some(function (r) { return String(r.from) === pid || String(r.from) === "owner"; });
+      });
       if (toList.length >= 2) {
-        pending = toList.filter(function (pid) { return !mReplies.some(function (r) { return String(r.from) === pid; }); });
         if (!pending.length) return;
       } else {
-        if (mReplies.length !== 0) return;
-        pending = toList.length === 1 ? toList.slice() : [];
+        if (approvedReplies.length !== 0) return;
       }
       out.push({ request: m, replies: mReplies, pending: pending });
     });
@@ -635,7 +650,9 @@ td.num, td.t { font: 12px var(--mono); font-variant-numeric: tabular-nums; white
       var rb = el("div", "whonote"); rb.id = "reply-banner";
       rb.appendChild(el("span", null, "Replying to " + draft.replySummary));
       var rc = el("button", "btn small", "Cancel"); rc.type = "button"; rc.id = "reply-cancel";
+      rc.disabled = draft.posting;
       rc.addEventListener("click", function () {
+        if (draft.posting) return;
         draft.replyTo = null; draft.to = null; draft.replySummary = ""; refreshComposer();
       });
       rb.appendChild(rc);
@@ -654,12 +671,15 @@ td.num, td.t { font: 12px var(--mono); font-variant-numeric: tabular-nums; white
       var msgPayload = { t: now, from: "owner", kind: "owner", summary: summary, body: text.length > summary.length ? text : "" };
       if (draft.replyTo) {
         msgPayload.replyTo = draft.replyTo;
-        if (draft.to && draft.to.length) msgPayload.to = draft.to;
+        var validTo = (draft.to || []).filter(function (p) { return p && p !== "owner" && HAS.call(people, p); });
+        if (validTo.length) msgPayload.to = validTo;
       }
-      var writes = [db.collection("messages").doc(id).set(msgPayload)];
-      if (draft.kind === "decision") writes.push(db.collection("decisions").doc(id).set({ t: now, by: "owner", summary: summary, body: text, project: "all", source: "Crosstalk page" }));
-      if (draft.kind === "waiting") writes.push(db.collection("waiting").doc(id).set({ since: now, project: "owner", summary: summary, body: text, done: null }));
-      Promise.all(writes).then(function () {
+      db.collection("messages").doc(id).set(msgPayload).then(function () {
+        var extra = [];
+        if (draft.kind === "decision") extra.push(db.collection("decisions").doc(id).set({ t: now, by: "owner", summary: summary, body: text, project: "all", source: "Crosstalk page" }));
+        if (draft.kind === "waiting") extra.push(db.collection("waiting").doc(id).set({ since: now, project: "owner", summary: summary, body: text, done: null }));
+        return Promise.all(extra);
+      }).then(function () {
         draft = { text: "", kind: "owner", id: null, posting: false, status: "Posted.", replyTo: null, to: null, replySummary: "" }; refreshComposer();
       }).catch(function (err) {
         draft.posting = false;
@@ -670,6 +690,7 @@ td.num, td.t { font: 12px var(--mono); font-variant-numeric: tabular-nums; white
     view.appendChild(box);
   }
   function refreshComposer() {
+    document.querySelectorAll(".reply-btn").forEach(function (b) { b.disabled = draft.posting; });
     var old = document.getElementById("composer"); if (!old) return;
     var hadFocus = old.contains(document.activeElement) ? document.activeElement.id : null;
     var tmp = el("div"); composer(tmp); old.replaceWith(tmp.firstChild);
@@ -677,9 +698,12 @@ td.num, td.t { font: 12px var(--mono); font-variant-numeric: tabular-nums; white
   }
   function replyBtnEl(m) {
     var b = el("button", "btn small reply-btn", "Reply"); b.type = "button"; b.id = "reply-btn-" + m._id;
+    b.disabled = draft.posting;
     b.addEventListener("click", function () {
+      if (draft.posting) return;
       draft.replyTo = m._id;
-      draft.to = m.from ? [String(m.from)] : null;
+      var fromId = m.from ? String(m.from) : "";
+      draft.to = fromId && fromId !== "owner" && HAS.call(people, fromId) ? [fromId] : null;
       draft.replySummary = (m.from ? displayName(m.from) + ": " : "") + (m.summary || m._id);
       if (tab !== "timeline") {
         markVisited();
@@ -706,23 +730,25 @@ td.num, td.t { font: 12px var(--mono); font-variant-numeric: tabular-nums; white
     var imp = isImportant(m);
     if (imp && !isReply) card.classList.add("important");
     var meta = el("div", "meta"); meta.appendChild(who(m.from));
-    var to = [].concat(m.to == null ? [] : m.to).filter(function (x) { return x != null && x !== ""; }).map(String);
+    var to = toListOf(m);
     if (to.length) meta.appendChild(el("span", "to", "\u2192 " + to.map(displayName).join(", ")));
     if (m.kind) meta.appendChild(pill(kindOf(m))); if (imp) meta.appendChild(pill("important"));
     if (quarantined) meta.appendChild(quarantinePill());
     if (canWrite && !isReply) {
       meta.appendChild(replyBtnEl(m));
       if (kindOf(m) !== "decision") {
-        var recorded = data.decisions.some(function (d) { return d._id === "d-from-" + m._id; });
+        var recorded = !!promotingDecision[m._id] || data.decisions.some(function (d) { return d._id === m._id || d._id === "d-from-" + m._id; });
         var promBtn = el("button", "btn small promote-btn", recorded ? "Recorded" : "Record as decision");
         promBtn.type = "button"; promBtn.id = "promote-decision-" + m._id;
         promBtn.disabled = recorded;
         promBtn.addEventListener("click", function () {
+          promotingDecision[m._id] = true;
           promBtn.disabled = true;
           db.collection("decisions").doc("d-from-" + m._id).set({
             t: new Date().toISOString(), by: "owner", project: "all",
             summary: m.summary || "(no summary)", body: m.body || m.summary || "", source: "Crosstalk page"
-          }).then(function () { promBtn.textContent = "Recorded"; }).catch(function () { promBtn.disabled = false; });
+          }).then(function () { promBtn.textContent = "Recorded"; })
+            .catch(function () { delete promotingDecision[m._id]; promBtn.disabled = false; renderView(true); });
         });
         meta.appendChild(promBtn);
       }
@@ -887,7 +913,7 @@ td.num, td.t { font: 12px var(--mono); font-variant-numeric: tabular-nums; white
     syncVisit();
     if (!digestDismissed && digestSince != null) {
       var newMsgs = data.messages.filter(function (m) { var t = ts(m.t); return !isNaN(t) && t > digestSince; });
-      var newProg = data.progress.filter(function (p) { var t = ts(p.t); return !isNaN(t) && t > digestSince && typeof p.pct === "number"; });
+      var newProg = data.progress.filter(function (p) { return validProg(p, digestSince); });
       if (newMsgs.length > 0 || newProg.length > 0) {
         var parts = [];
         if (newMsgs.length > 0) {
@@ -897,7 +923,7 @@ td.num, td.t { font: 12px var(--mono); font-variant-numeric: tabular-nums; white
             if (!HAS.call(bySender, f)) { bySender[f] = 0; senders.push(f); }
             bySender[f]++;
           });
-          parts.push(newMsgs.length + (newMsgs.length === 1 ? " message" : " messages") + " (" + senders.map(function (f) { return displayName(f) + " " + bySender[f]; }).join(", ") + ")");
+          parts.push(newMsgs.length + (newMsgs.length === 1 ? " message" : " messages") + " (" + senders.map(function (f) { return (f ? displayName(f) : "?") + " " + bySender[f]; }).join(", ") + ")");
         }
         if (newProg.length > 0) {
           var latestProg = Object.create(null), progGames = [];
@@ -961,7 +987,7 @@ td.num, td.t { font: 12px var(--mono); font-variant-numeric: tabular-nums; white
     if (quarantined) card.classList.add("quarantined");
     var meta = el("div", "meta");
     meta.appendChild(who(m.from));
-    var to = [].concat(m.to == null ? [] : m.to).filter(function (x) { return x != null && x !== ""; }).map(String);
+    var to = toListOf(m);
     meta.appendChild(el("span", "to", to.length ? "to " + to.map(displayName).join(" \u00b7 ") : "everyone"));
     if (pending && pending.length > 0 && replies && replies.length > 0) {
       meta.appendChild(el("span", "pill pending-to", "waiting on " + pending.map(displayName).join(" \u00b7 ")));
@@ -1259,10 +1285,9 @@ td.num, td.t { font: 12px var(--mono); font-variant-numeric: tabular-nums; white
   // fetch layer was constructed. The page tests read these.
   window.__crosstalkLayer = "none";
   window.__crosstalkFetchLayer = false;
-  visitTs = readVisit();
-  if (visitTs == null) { visitTs = serverNow(); writeVisit(visitTs); }
-  else { lastWrittenVisit = Math.round(visitTs); }
-  digestSince = visitTs;
+  var initialVisit = readVisit();
+  if (initialVisit == null) { visitTs = serverNow(); writeVisit(visitTs); }
+  else { visitTs = initialVisit; lastWrittenVisit = Math.round(visitTs); digestSince = visitTs; }
   // The sticky strip's height drives the roster's sticky offset and the tab scroll
   // padding. A ResizeObserver keeps it current without forcing layout on every render.
   (function syncStripH() {
