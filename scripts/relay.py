@@ -17,7 +17,9 @@ from crosstalk.onboard import onboard, regenerate_kit  # noqa: E402
 from crosstalk.participants import load_roster  # noqa: E402
 from crosstalk.pull import pull  # noqa: E402
 from crosstalk.replay import enrich_messages, load_all_lines, replay  # noqa: E402
+from crosstalk.requests import all_requests_for, inbox_for  # noqa: E402
 from crosstalk.serve import serve  # noqa: E402
+from crosstalk.service import SERVICE  # noqa: E402
 from crosstalk.tokens import TOKEN_FILE, Tokens, load_tokens  # noqa: E402
 
 
@@ -97,7 +99,31 @@ def cmd_read(args):
     if args.collection:
         wanted = set(args.collection)
         collections = {c: v for c, v in collections.items() if c in wanted}
-    print(json.dumps({"collections": collections}, ensure_ascii=False, sort_keys=True, indent=2))
+    print(json.dumps({"collections": collections, "service": SERVICE},
+                     ensure_ascii=False, sort_keys=True, indent=2))
+    return 0
+
+
+def cmd_inbox(args):
+    """Print the open requests addressed to a participant as JSON."""
+    roster = load_roster(ROOT / "participants.json")
+    if args.pid not in roster.participants:
+        err("unknown participant %r" % args.pid)
+        return 1
+    problems = check_all(ROOT, roster)
+    fatal = [p for p in problems if p.fatal]
+    if fatal:
+        for p in fatal:
+            err("%s:%d: %s" % (p.file, p.line, p.message))
+        return 1
+    lines = load_all_lines(ROOT, roster)
+    docs = enrich_messages(replay(lines), lines)
+    requests = all_requests_for(docs, args.pid) if args.all else inbox_for(docs, args.pid)
+    out = {"pid": args.pid, "requests": [
+        {"request": dict(doc, id=did), "replies": replies}
+        for (did, doc, replies) in requests
+    ], "service": SERVICE}
+    print(json.dumps(out, ensure_ascii=False, sort_keys=True, indent=2))
     return 0
 
 
@@ -266,6 +292,11 @@ def build_parser():
     rd.add_argument("--collection", action="append", metavar="C",
                     help="only this collection (may be given more than once)")
     rd.set_defaults(fn=cmd_read)
+
+    ib = sub.add_parser("inbox", help="print the open requests addressed to a participant")
+    ib.add_argument("pid", metavar="PID")
+    ib.add_argument("--all", action="store_true", help="include answered requests")
+    ib.set_defaults(fn=cmd_inbox)
 
     p = sub.add_parser("pull", help="record the owner's page changes")
     p.add_argument("export_dir", metavar="EXPORT_DIR")

@@ -63,7 +63,9 @@ class ReadTests(unittest.TestCase):
     def test_read_of_an_empty_log_is_an_empty_object(self):
         p = self.run_cli("read")
         self.assertEqual(p.returncode, 0, p.stderr)
-        self.assertEqual(json.loads(p.stdout), {"collections": {}})
+        out = json.loads(p.stdout)
+        self.assertEqual(out["collections"], {})
+        self.assertEqual(out["service"]["name"], "Crosstalk")
 
     def test_read_exits_1_on_a_fatal_line(self):
         self.r.write_log("codex", [line(1, "codex"), "{not json"])
@@ -86,6 +88,15 @@ class ReadTests(unittest.TestCase):
         doc = out["collections"]["messages"]["codex-0001"]
         self.assertEqual(doc["summary"], "hi")
         self.assertNotIn("data", doc)
+
+    def test_read_carries_the_service_block(self):
+        self.r.write_log("codex", [line(1, "codex", data={"kind": "reply", "summary": "hi"})])
+        p = self.run_cli("read")
+        self.assertEqual(p.returncode, 0, p.stderr)
+        svc = json.loads(p.stdout)["service"]
+        self.assertEqual(svc["name"], "Crosstalk")
+        for key in ("purpose", "capabilities", "commands", "protocol"):
+            self.assertIn(key, svc)
 
 
 if __name__ == "__main__":

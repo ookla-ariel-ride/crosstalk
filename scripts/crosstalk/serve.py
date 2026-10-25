@@ -39,6 +39,7 @@ from .logs import COLLECTIONS, append_line, check_all, check_all
 from .onboard import PALETTE, onboard
 from .participants import load_roster
 from .replay import enrich_messages, load_all_lines, replay
+from .service import SERVICE
 from .tokens import TOKEN_FILE, Result, Tokens
 
 # The collections the page reads. "participants" is the owner's roster.
@@ -415,7 +416,8 @@ class CrosstalkHandler(BaseHTTPRequestHandler):
         self._json(200, {"server_time": now_iso(),
                          "commit": repo_commit(self.state.root),
                          "roster": entries,
-                         "collections": collections})
+                         "collections": collections,
+                         "service": SERVICE})
 
     def _health(self):
         """The log's health: ok when nothing fatal, plus the fatal lines named.

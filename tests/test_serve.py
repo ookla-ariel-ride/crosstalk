@@ -57,6 +57,17 @@ class SnapshotTests(unittest.TestCase):
             self.assertEqual(sorted(body["collections"]), ["messages"])
             self.assertEqual(body["collections"]["messages"]["codex-0001"]["summary"], "hi")
 
+    def test_snapshot_carries_the_service_block(self):
+        with TempRepo() as r:
+            r.write_roster()
+            with RunningServer(r.root) as srv:
+                status, body = request(srv.url + "/api/snapshot")
+            self.assertEqual(status, 200)
+            svc = body["service"]
+            self.assertEqual(svc["name"], "Crosstalk")
+            for key in ("purpose", "capabilities", "commands", "protocol"):
+                self.assertIn(key, svc)
+
     def test_messages_are_enriched_with_writer_and_time(self):
         # Rows may omit data.from and data.t (the protocol says the line's own t
         # is the clock). The snapshot fills both from the writing line so the
