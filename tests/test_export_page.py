@@ -99,6 +99,17 @@ class ExporterTests(unittest.TestCase):
         export_page(r.root, r.root / "page.html")
         self.assertEqual((r.root / "index.html").read_bytes(), before)
 
+    def test_export_refuses_to_write_through_a_symlink(self):
+        r = self.r
+        r.write_log("codex", [line(1, "codex", data={"kind": "reply", "summary": "hi"})])
+        target = r.root / "target.html"
+        target.write_text("precious", encoding="utf-8")
+        link = r.root / "page.html"
+        link.symlink_to(target)
+        with self.assertRaises(RuntimeError):
+            export_page(r.root, link)
+        self.assertEqual(target.read_text(encoding="utf-8"), "precious")
+
     def test_export_carries_no_token_pin_or_cookie_material(self):
         r = self.r
         (r.root / "tokens.json").write_text(

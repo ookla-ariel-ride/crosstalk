@@ -188,6 +188,8 @@ def export_page(root: Path, out_path: Path, commit: Optional[str] = None,
     snapshot["commit"] = commit
     html = render_page(index.read_text(encoding="utf-8"), snapshot, commit, published)
     out_path = Path(out_path)
+    if out_path.is_symlink():
+        raise RuntimeError("refusing to write through a symlink: %s" % out_path)
     if out_path.parent and not out_path.parent.exists():
         out_path.parent.mkdir(parents=True, exist_ok=True)
     out_path.write_text(html, encoding="utf-8")
