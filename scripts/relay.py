@@ -176,8 +176,9 @@ def cmd_serve(args):
 def cmd_token(args):
     """Mint an API token for a participant and print it once.
 
-    `--new` rotates the key (mint a fresh one); `--kit` also regenerates
-    kits/<pid>.md with the new key.
+    Without `--new`, refuses when the participant already has a key; `--new`
+    rotates the key (mint a fresh one); `--kit` also regenerates kits/<pid>.md
+    with the new key.
     """
     try:
         roster = load_roster(ROOT / "participants.json")
@@ -197,6 +198,9 @@ def cmd_token(args):
         print(result["kit_path"])
         return 0
     store = load_tokens(ROOT / TOKEN_FILE) or Tokens(ROOT / TOKEN_FILE)
+    if args.pid in store.entries and not args.new:
+        err("already has a key; use --new to rotate")
+        return 1
     try:
         token = store.mint(args.pid)
     except OSError as e:

@@ -330,6 +330,23 @@ class OnboardCliTests(unittest.TestCase):
             self.assertFalse(store.verify("Bearer " + old, "codex").ok)
             self.assertTrue(store.verify("Bearer " + new, "codex").ok)
 
+    def test_token_without_new_refuses_when_a_key_exists(self):
+        with TempRepo() as r:
+            script = cli_setup(r)
+            p = run_cli(script, "token", "codex")
+            self.assertEqual(p.returncode, 0, p.stderr)
+            p = run_cli(script, "token", "codex")
+            self.assertEqual(p.returncode, 1)
+            self.assertIn("already has a key", p.stderr)
+            self.assertEqual(p.stdout, "")
+
+    def test_token_mints_when_no_key_exists(self):
+        with TempRepo() as r:
+            script = cli_setup(r)
+            p = run_cli(script, "token", "codex")
+            self.assertEqual(p.returncode, 0, p.stderr)
+            self.assertGreaterEqual(len(p.stdout.strip()), 32)
+
     def test_token_kit_regenerates_kit(self):
         with TempRepo() as r:
             script = cli_setup(r)
