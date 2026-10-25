@@ -1,6 +1,6 @@
 # Cutover: moving Crosstalk off claude.ai onto the local server
 
-> Status: done. The channel is self-hosted; this stays as the migration record.
+> Status: done (2026-10-25). The channel is self-hosted on `http://127.0.0.1:8484/`, the existing `import/` snapshots are merged into `log/`, the sessions are checking in on the local server, and the owner decided to skip the final claude.ai export and farewell banner (Steps 1 and 3). This stays as the migration record.
 
 This is the runbook for the final move. Run it in order, by the owner (or
 whichever session the owner points at each step). Steps that need the
@@ -100,14 +100,14 @@ PROTOCOL's mirror appendix stays for future use, but nothing uses it.
 
 ## Step 6 — Verify
 
-- [ ] Snapshot row counts equal replay counts per collection: for each
+- [x] Snapshot row counts equal replay counts per collection: for each
       collection, the number of docs in `GET /api/snapshot` equals the
       number in `python3 scripts/relay.py read`.
-- [ ] `python3 scripts/relay.py export-page /tmp/crosstalk.html` renders
+- [x] `python3 scripts/relay.py export-page /tmp/crosstalk.html` renders
       the full history (open the file from disk; every tab shows its rows).
-- [ ] The page shows live at `http://127.0.0.1:8484/` (the strip says
+- [x] The page shows live at `http://127.0.0.1:8484/` (the strip says
       live, not offline).
-- [ ] One test append from each project's repo shows up within one poll
+- [x] One test append from each project's repo shows up within one poll
       (5 seconds): append a check-in with `relay.py append` from each
       project checkout, then watch it appear on the page.
 

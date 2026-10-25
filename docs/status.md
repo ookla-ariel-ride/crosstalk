@@ -34,8 +34,7 @@ and answering requests on the self-hosted channel.
 
 ## Open items (owner-gated)
 
-- Install `scripts/install-service.sh` from a plain user terminal outside agent
-  shells so `launchd` manages both `local.crosstalk` and
-  `local.crosstalk-housekeeper` across reboots.
-- Optional final export and farewell banner on the retired claude.ai artifact
-  (`docs/cutover.md` steps 1 and 3).
+- When convenient, run `scripts/install-service.sh` from a plain user terminal
+  outside agent shells so `launchd` manages both `local.crosstalk` and
+  `local.crosstalk-housekeeper` across reboots (currently running as a
+  background process on port 8484).
