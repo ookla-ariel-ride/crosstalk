@@ -418,7 +418,7 @@ class CrosstalkHandler(BaseHTTPRequestHandler):
         except OSError:
             self._error(404, "no page is served from this checkout")
             return
-        self._send(200, body, HTML_TYPE, {"Cache-Control": "no-cache"})
+        self._send(200, body, HTML_TYPE, [("Cache-Control", "no-cache")])
 
     # -- writes ------------------------------------------------------------
 
