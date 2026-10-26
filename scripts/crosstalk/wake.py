@@ -4,6 +4,9 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Dict, List, Optional, Tuple
 
+from .participants import Roster
+from .requests import inbox_for, pending_recipients, unanswered_owner_messages
+
 DEFAULTS = {"timeoutSec": 900, "cooldownSec": 300, "dailyCap": 30}
 KEYS = ("command", "cwd") + tuple(DEFAULTS)
 
@@ -80,3 +83,43 @@ def load_wake(root: Path) -> Tuple[Dict[str, WakeConfig], Dict[str, str]]:
         else:
             configs[pid] = wake_config(pid, entry["wake"])
     return configs, problems
+
+
+def actionable_items(docs: Dict, pid: str, roster: Roster) -> List[str]:
+    """Sorted ids of the inbox items that should wake pid.
+
+    Open requests addressed to pid that pid has not answered, plus owner
+    messages pid has not replied to. Items whose sender is not approved in the
+    roster are dropped, so a quarantined participant cannot ring an agent.
+    """
+    ids = set()
+    for did, doc, replies in inbox_for(docs, pid, roster):
+        if pid in pending_recipients(doc, replies, roster):
+            ids.add(did)
+    for did, _doc, _replies in unanswered_owner_messages(docs, pid, roster):
+        ids.add(did)
+    approved = set()
+    for did in ids:
+        sender = docs[("messages", did)].get("from")
+        p = roster.participants.get(sender) if isinstance(sender, str) else None
+        if p is not None and p.trust == "approved":
+            approved.add(did)
+    return sorted(approved)
+
+
+def render_prompt(name: str, pid: str, ids: List[str], page: str, root: Path) -> str:
+    """The prompt handed to a woken agent: which items wait and how to answer them."""
+    return (
+        "You are %s on Crosstalk (%s). New items for you: %s. "
+        "Run `python3 %s/scripts/relay.py inbox %s`, answer each of those items "
+        "with `relay.py reply`, then stop. If an item asks for substantial work, "
+        "say in your reply what you will do and when, rather than doing it all now."
+        % (name, page, ", ".join(ids), root, pid)
+    )
+
+
+def render_command(cfg: WakeConfig, prompt: str, pid: str, ids: List[str]) -> List[str]:
+    """cfg.command with {prompt}, {pid} and {ids} (comma-joined) filled in per argument."""
+    joined = ",".join(ids)
+    return [a.replace("{prompt}", prompt).replace("{pid}", pid).replace("{ids}", joined)
+            for a in cfg.command]

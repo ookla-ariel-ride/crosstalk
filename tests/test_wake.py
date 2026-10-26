@@ -7,10 +7,13 @@ import tempfile
 import unittest
 from pathlib import Path
 
-from helpers import SPEC_ROSTER, TempRepo
+from helpers import SPEC_ROSTER, TempRepo, line
+from test_inbox import rep, req
 
 from crosstalk.participants import load_roster
-from crosstalk.wake import WakeConfig, load_wake, wake_config, wake_problem
+from crosstalk.replay import enrich_messages, load_all_lines, replay
+from crosstalk.wake import (WakeConfig, actionable_items, load_wake, render_command,
+                            render_prompt, wake_config, wake_problem)
 
 REPO = Path(__file__).resolve().parent.parent
 
@@ -95,6 +98,65 @@ class WakeConfigTests(unittest.TestCase):
             self.assertEqual(p.returncode, 0, p.stdout + p.stderr)
             self.assertIn("vectorcraft", p.stderr)
             self.assertIn("wake", p.stderr)
+
+
+class ItemTests(unittest.TestCase):
+    def setUp(self):
+        self.r = TempRepo()
+        self.r.__enter__()
+
+    def tearDown(self):
+        self.r.__exit__(None, None, None)
+
+    def items(self, pid, roster_data=None):
+        self.r.write_roster(roster_data)
+        roster = load_roster(self.r.root / "participants.json")
+        lines = load_all_lines(self.r.root)
+        docs = enrich_messages(replay(lines), lines)
+        return actionable_items(docs, pid, roster)
+
+    def owner_msg(self, id_, **extra):
+        data = {"from": "owner", "kind": "owner", "summary": "hi " + id_}
+        data.update(extra)
+        return line(1, "owner", id_=id_, data=data)
+
+    def test_owner_message_to_project(self):
+        self.r.write_log("owner", [self.owner_msg("m-1", to=["vectorcraft"])])
+        self.assertEqual(self.items("vectorcraft"), ["m-1"])
+
+    def test_reply_closes(self):
+        self.r.write_log("bewareilive", [req(1, "bewareilive", "m-1", to=["vectorcraft"])])
+        self.r.write_log("vectorcraft", [rep(1, "vectorcraft", "m-2", "m-1")])
+        self.assertEqual(self.items("vectorcraft"), [])
+
+    def test_reply_to_other_does_not_ring_requester(self):
+        self.r.write_log("bewareilive", [req(1, "bewareilive", "m-1", to=["vectorcraft"])])
+        self.r.write_log("vectorcraft", [rep(1, "vectorcraft", "m-2", "m-1")])
+        self.assertEqual(self.items("bewareilive"), [])
+
+    def test_everyone(self):
+        self.r.write_log("owner", [self.owner_msg("m-1", summary="@Everyone ship it")])
+        self.assertEqual(self.items("vectorcraft"), ["m-1"])
+        self.assertEqual(self.items("bewareilive"), ["m-1"])
+
+    def test_quarantined_sender_ignored(self):
+        data = copy.deepcopy(SPEC_ROSTER)
+        for p in data["participants"]:
+            if p["id"] == "codex":
+                p["trust"] = "quarantined"
+        self.r.write_log("codex", [req(1, "codex", "m-1", to=["vectorcraft"])])
+        self.assertEqual(self.items("vectorcraft", data), [])
+
+    def test_prompt_and_command(self):
+        cfg = WakeConfig(command=["hermes", "-p", "vc", "-z", "{prompt}", "--ids={ids}"],
+                         cwd="/", timeoutSec=1, cooldownSec=1, dailyCap=1)
+        self.assertEqual(render_command(cfg, "P", "vectorcraft", ["m-1", "m-2"]),
+                         ["hermes", "-p", "vc", "-z", "P", "--ids=m-1,m-2"])
+        text = render_prompt("VectorCraft", "vectorcraft", ["m-1", "m-2"],
+                             "http://127.0.0.1:8484/", Path("/srv/crosstalk"))
+        self.assertIn("New items for you: m-1, m-2.", text)
+        self.assertIn("relay.py inbox vectorcraft", text)
+        self.assertIn("/srv/crosstalk/scripts/relay.py", text)
 
 
 if __name__ == "__main__":
