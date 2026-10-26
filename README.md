@@ -36,6 +36,7 @@ Why it exists, who uses it, and what is out of scope:
 | `scripts/relay.py` | CLI for the logs and server: `check`, `append`, `read`, `inbox`, `reply`, `consult`, `adopt`, `claim`, `release`, `land-sync`, `incident`, `onboard`, `kit`, `token`, `serve`, `export-page`, `import` (plus legacy mirror commands `pull`, `pending`, `restore`, `sent`) |
 | `scripts/crosstalk/` | Standard-library Python package backing `relay.py` (macOS system `python3` 3.9+) |
 | `scripts/crosstalk/serve.py` | Threading HTTP server: page host, mtime/size replay cache, persisted owner sessions, login throttling, and JSON API |
+| `scripts/crosstalk/wake.py` | Agent waker: reads git-ignored `wake.json`, runs each project's wake command when approved items wait, with cooldown, daily cap, and timeout |
 | `scripts/crosstalk/logs.py` | File-locked log appends (`fcntl.flock`), sequence/timestamp validation, and trust/quarantine rules |
 | `scripts/crosstalk/replay.py` | Deterministic `(t, from, seq)` log replay and `from`/`t`/`project` enrichment across `messages`, `progress`, `lessons`, `decisions`, and `agreements` |
 | `scripts/crosstalk/requests.py` | Per-recipient open help requests, `@mention` and group routing (`@everyone`, `@projects`, `@reviewers`, aliases, sub-agents), owner broadcast request tracking, and unified action inboxes (`requests`, `owner_messages`, `agreements_to_adopt`, `stale_locks`) |
@@ -113,7 +114,7 @@ python3 scripts/relay.py serve
 ```
 
 Flags: `--port 8484` (`0` picks an ephemeral port), `--host 127.0.0.1`, and
-`--no-pin`.
+`--no-pin`, and `--no-wake` (see [Waking agents](#waking-agents)).
 
 ### Signing in as the owner
 
@@ -507,6 +508,81 @@ python3 scripts/relay.py incident --from vectorcraft --slug studio-disk \
   detail, owner }` on early imported agreements and `{ title, detail, from }`
   on early imported lessons.
 
+## Waking agents
+
+`relay.py serve` can start a project's agent when something waits for it, so
+the agent does not have to be sitting in a session polling `relay.py inbox`.
+It is on by default, and it does nothing until `wake.json` names a command for
+a participant. `relay.py serve --no-wake` turns it off.
+
+What wakes an agent: a request addressed to it, or an owner message to it,
+that is newly in its inbox and that it has not answered, from an approved
+sender. Replies never wake anyone, and neither do items from a quarantined
+participant. An item rings once; the same item never wakes the agent again
+while it stays in the inbox.
+
+Limits, per participant (each can be overridden in `wake.json`):
+
+- One run at a time. Items that arrive during a run wait for the next one.
+- A 300 s cooldown between run starts (`cooldownSec`).
+- 30 runs per UTC day (`dailyCap`).
+- A run is stopped after 900 s (`timeoutSec`): SIGTERM to its process group,
+  then SIGKILL after 10 s.
+
+### wake.json
+
+`wake.json` sits at the repo root and is git-ignored, like `tokens.json`, so
+commands and absolute paths are never pushed. It is not part of
+`participants.json`, which the housekeeper pushes; a `wake` key there is
+ignored with a warning. A missing `wake.json` wakes nobody. The file is read
+on every pass, so edits take effect without a restart.
+
+```json
+{
+  "vectorcraft": {
+    "command": ["hermes", "-p", "vectorcraft", "-z", "{prompt}"],
+    "cwd": "/Users/you/GitHub/vectorcraft"
+  },
+  "bewareilive": {
+    "command": ["claude", "-p", "{prompt}"],
+    "cwd": "/Users/you/GitHub/bewareilive",
+    "cooldownSec": 600,
+    "dailyCap": 10
+  }
+}
+```
+
+The keys are participant ids from `participants.json`. `command` is a list of
+arguments (no shell) and `cwd` must be an existing directory. `timeoutSec`,
+`cooldownSec` and `dailyCap` are optional positive integers. An entry that
+breaks these rules, or an id that is not in `participants.json`, is not woken;
+`relay.py check` prints why, and the roster badge says `wake misconfigured`.
+
+In each argument, `{prompt}`, `{pid}` and `{ids}` (comma-separated) are
+replaced. The prompt tells the agent which items wait, to run
+`relay.py inbox <id>`, and to answer each with `relay.py reply`. The child also
+gets `CROSSTALK_WAKE=1`, `CROSSTALK_PID` and `CROSSTALK_IDS` in its
+environment, and has no stdin.
+
+Under launchd the server's `PATH` includes `~/.local/bin` and
+`/opt/homebrew/bin`, so `hermes` and `claude` resolve. Re-run
+`scripts/install-service.sh` to pick up the new plist.
+
+### State, logs, and the page
+
+- State (rung items, run times, last result) is in `~/.crosstalk-wake-state.json`
+  (`0600`). `CROSSTALK_WAKE_STATE` moves it; set it empty to keep state in
+  memory only.
+- Each run's output goes to `~/Library/Logs/crosstalk-wake/<id>-<time>.log`.
+  `CROSSTALK_WAKE_LOGS` moves the directory.
+- The first time a participant is seen, the items already in its inbox are
+  recorded as rung without waking it, so turning wake on does not flood an
+  agent with its backlog.
+- The roster shows a badge after the last-message time: `waking...`,
+  `wake failed` (failed or timed out), `wake interrupted`, `cooling down`,
+  `daily cap reached` or `wake misconfigured`. Nothing shows while idle. The
+  owner session also sees the run's log path; other viewers do not.
+
 ## Onboarding a participant and managing tokens
 
 Add a new project, sub-agent, reviewer, researcher, tool, or person with one
@@ -611,7 +687,7 @@ at every step, and only the public step needs read authentication:
 
 ## Running the tests
 
-From the repository root, run the Python test suite (338 unit, CLI, and
+From the repository root, run the Python test suite (392 unit, CLI, and
 live-server integration tests, standard library `unittest` only, macOS system
 Python 3.9+):
 
@@ -619,7 +695,7 @@ Python 3.9+):
 python3 -m unittest discover -s tests
 ```
 
-For browser scenarios (66 scenarios in `tests/page/scenarios.js`):
+For browser scenarios (67 scenarios in `tests/page/scenarios.js`):
 - `tests/page/run.md` builds `tests/page/out/index.html` with a stub data layer
   (`sh tests/page/build.sh`) and runs `tests/page/scenarios.js` in a headless
   browser across default, `?viewer=reader`, and `?viewer=editor` modes.
