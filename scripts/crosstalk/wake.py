@@ -390,7 +390,8 @@ class Waker:
         if pgid == os.getpgrp() or not _group_alive(pgid):
             return
         current = self._boot_time()
-        if boot is None or current is None or abs(boot - current) > BOOT_TOLERANCE:
+        if (isinstance(boot, bool) or not isinstance(boot, int) or current is None
+                or abs(boot - current) > BOOT_TOLERANCE):
             print("crosstalk wake: %s: not ending process group %d: it was recorded on "
                   "another boot, or the boot time is unknown" % (pid, pgid), file=sys.stderr)
             return

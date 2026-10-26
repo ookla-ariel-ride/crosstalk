@@ -681,6 +681,27 @@ class WakerTests(unittest.TestCase):
         w = self.waker(boot_time=lambda: 1120)
         self.assert_left_alone(orphan, w)
 
+    def test_non_integer_recorded_boot_is_unknown(self):
+        for bad in ("1000", [1000], {"a": 1}, True, 1000.0):
+            orphan = self.hung_orphan()
+            self.crashed_run(orphan.pid, boot=bad, lstart=proc_start(orphan.pid))
+            w = self.waker(boot_time=lambda: 1000)
+            self.assert_left_alone(orphan, w)
+            w.stop()
+            orphan.kill()
+            orphan.wait()
+
+    def test_boot_tolerance_boundary(self):
+        orphan = self.hung_orphan()
+        self.crashed_run(orphan.pid, boot=1000, lstart=proc_start(orphan.pid))
+        first = self.waker(boot_time=lambda: 1005, kill_grace=0.5)
+        self.assertIsNotNone(orphan.wait(timeout=5))  # exactly 5 s: same boot
+        first.stop()
+        orphan = self.hung_orphan()
+        self.crashed_run(orphan.pid, boot=1000, lstart=proc_start(orphan.pid))
+        w = self.waker(boot_time=lambda: 1006)
+        self.assert_left_alone(orphan, w)  # 6 s: another boot
+
     def test_readers_use_absolute_paths_and_fixed_locale(self):
         with mock.patch("crosstalk.wake.subprocess.run") as run:
             run.return_value = mock.Mock(stdout=b"{ sec = 5, usec = 0 }")
