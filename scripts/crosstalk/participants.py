@@ -52,6 +52,7 @@ class Participant:
     parent: Optional[str] = None
     checkInMin: Optional[int] = None
     trust: str = "quarantined"
+    wake: Optional[dict] = None  # raw value; crosstalk.wake validates it
 
 
 @dataclass
@@ -146,7 +147,8 @@ def _parse(entry: dict, index: int) -> Participant:
     color = _check_color(pid, "color", entry.get("color"), PANEL_LIGHT)
     color_dark = _check_color(pid, "colorDark", entry.get("colorDark"), PANEL_DARK)
     return Participant(id=pid, name=entry["name"], kind=kind, color=color, colorDark=color_dark,
-                       repo=entry.get("repo"), parent=parent, checkInMin=check, trust=trust)
+                       repo=entry.get("repo"), parent=parent, checkInMin=check, trust=trust,
+                       wake=entry.get("wake"))
 
 
 def load_roster(path: Path) -> Roster:

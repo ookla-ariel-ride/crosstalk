@@ -30,6 +30,7 @@ from crosstalk.requests import (  # noqa: E402
 from crosstalk.serve import serve  # noqa: E402
 from crosstalk.service import SERVICE  # noqa: E402
 from crosstalk.tokens import TOKEN_FILE, Tokens, load_tokens  # noqa: E402
+from crosstalk.wake import load_wake  # noqa: E402
 
 
 MISSING_SHOWN = 10
@@ -49,6 +50,13 @@ def run_check(stream):
             fatal += 1
         print("%s%s:%d: %s" % ("" if p.fatal else "warning: ", p.file, p.line, p.message),
               file=stream)
+    # A bad wake config only stops that participant being woken, so it is not fatal.
+    try:
+        _, wake_problems = load_wake(ROOT)
+    except (OSError, ValueError):
+        wake_problems = {}
+    for msg in wake_problems.values():
+        err("warning: %s" % msg)
     return fatal, problems
 
 
