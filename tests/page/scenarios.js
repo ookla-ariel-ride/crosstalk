@@ -1172,6 +1172,171 @@
       " afterTwo=" + stillOpenAfterTwo + " closedAfterThree=" + closedAfterAllThree);
   });
 
+  // ---------- Threads: a root card with its replies folded under it ----------
+  function topCard(id) { return document.querySelector('#log > article[data-id="' + id + '"]'); }
+  function threadBox(id) { return $("thread-" + id); }
+  function threadIds(id) { var b = threadBox(id); return b ? [].slice.call(b.querySelectorAll(":scope > .reply")).map(function (r) { return r.dataset.id; }) : null; }
+  function footText(id) { var b = $("thread-toggle-" + id); return b ? b.textContent : null; }
+
+  // Replies (and replies to replies) fold into the root's thread; the root shows a footer, a reply-less card none.
+  // hist-* is the history thread stub.js seeds before the page loads.
+  S.push(async function threadGrouping() {
+    await go("timeline");
+    var once = document.querySelectorAll('#log > article[data-id="hist-r"]').length === 1;
+    var noneTop = !topCard("hist-a") && !topCard("hist-b") && !topCard("hist-s1");
+    var f = footText("hist-r"), f1 = footText("hist-s");
+    var plain = card("gemini-1"), plainFoot = plain && plain.querySelector(".thread-foot");
+    var ok = once && noneTop && /^2 replies \u00b7 last from Codex 1[01] min ago \u00b7 Show replies$/.test(f) &&
+      /^1 reply \u00b7 last from Owner 1[56] min ago \u00b7 Show replies$/.test(f1) && !!plain && !plainFoot;
+    return res("threadGrouping", ok, "once=" + once + " noneTop=" + noneTop + " foot=" + JSON.stringify(f) + " foot1=" + JSON.stringify(f1) + " plainFoot=" + !!plainFoot);
+  });
+
+  // Threads start collapsed; the footer toggles them, and the state survives a snapshot re-render. Replying from
+  // inside an open thread keeps it open and never marks it "new reply" (the viewer's own reply). A search the
+  // root matches doesn't reset the stored choice.
+  S.push(async function threadToggle() {
+    await go("timeline");
+    var startClosed = !threadBox("hist-r") && $("thread-toggle-hist-r").getAttribute("aria-expanded") === "false";
+    $("thread-toggle-hist-r").click(); await tick();
+    var ids = threadIds("hist-r");
+    __emit("messages"); await tick();
+    var keptOpen = JSON.stringify(threadIds("hist-r")) === JSON.stringify(["hist-a", "hist-b"]) && /Hide replies$/.test(footText("hist-r"));
+    var b = threadBox("hist-r"), rb = b && b.querySelector("#reply-btn-hist-b");
+    var re = b && b.querySelector('[data-id="hist-b"] .re'), reText = re ? re.textContent : null;
+    var bannerOk = false, posted = null;
+    if (rb) {
+      rb.click(); await tick();
+      var banner = $("reply-banner"); bannerOk = !!banner && /Answer to the answer/.test(banner.textContent);
+      var ta = $("note"); ta.value = "Own reply in a thread"; ta.dispatchEvent(new Event("input", { bubbles: true }));
+      $("notePost").click(); await tick(80);
+      posted = Object.keys(__store.messages).map(function (id) { return __store.messages[id]; }).filter(function (m) { return m.summary === "Own reply in a thread"; })[0];
+    }
+    __emit("messages"); await tick();
+    var c = topCard("hist-r");
+    var ownOk = !!posted && posted.replyTo === "hist-b" && !!threadBox("hist-r") && /^3 replies \u00b7 last from Owner /.test(footText("hist-r")) &&
+      !(c && c.querySelector(".pill.new-reply"));
+    await search("History root");
+    var searchKept = !!threadBox("hist-r");
+    await search("");
+    $("thread-toggle-hist-r").click(); await tick();
+    __emit("messages"); await tick();
+    var keptClosed = !threadBox("hist-r");
+    var ok = startClosed && JSON.stringify(ids) === JSON.stringify(["hist-a", "hist-b"]) && keptOpen && !!rb && bannerOk &&
+      reText === "\u21a9 Replying to Owner: History answer" && ownOk && searchKept && keptClosed;
+    return res("threadToggle", ok, "startClosed=" + startClosed + " ids=" + JSON.stringify(ids) + " keptOpen=" + keptOpen + " replyBtn=" + !!rb +
+      " banner=" + bannerOk + " re=" + JSON.stringify(reText) + " ownReply=" + ownOk + " foot=" + JSON.stringify(footText("hist-r")) +
+      " searchKept=" + searchKept + " keptClosed=" + keptClosed);
+  });
+
+  // A new reply bumps an old thread to the top, under today's separator, marked "new reply" and expanded;
+  // a user collapse beats the auto-expand.
+  S.push(async function threadBump() {
+    await go("timeline");
+    await addDoc("messages", "th-old", { t: ago(60 * 30), from: "codex", kind: "sync", summary: "Old thread" });
+    __emit("messages"); await tick();
+    await addDoc("messages", "th-new", { t: new Date().toISOString(), from: "vectorcraft", kind: "sync", summary: "Fresh reply", replyTo: "th-old" });
+    var first = document.querySelector("#log > article"), firstId = first && first.dataset.id;
+    var day = document.querySelector("#log > .day"), dayText = day ? day.textContent : null;
+    var today = new Intl.DateTimeFormat("en-US", { timeZone: "America/Los_Angeles", weekday: "long", month: "long", day: "numeric" }).format(new Date());
+    var c = topCard("th-old"), mark = c && c.querySelector(".pill.new-reply");
+    var opened = JSON.stringify(threadIds("th-old")) === JSON.stringify(["th-new"]);
+    __emit("messages"); await tick();
+    var stillOpen = !!threadBox("th-old");
+    $("thread-toggle-th-old").click(); await tick();
+    __emit("messages"); await tick();
+    var userClosed = !threadBox("th-old");
+    var ok = firstId === "th-old" && dayText === today && !!mark && mark.textContent === "new reply" && opened && stillOpen && userClosed;
+    return res("threadBump", ok, "first=" + firstId + " day=" + JSON.stringify(dayText) + " today=" + JSON.stringify(today) + " mark=" + !!mark +
+      " opened=" + opened + " stillOpen=" + stillOpen + " userClosed=" + userClosed);
+  });
+
+  // An important or decision reply sits in its thread and also as its own feed card with its "Replying to" line.
+  S.push(async function threadImportantTwice() {
+    await go("timeline");
+    __store.messages = Object.assign({}, __store.messages, {
+      "th-i": { t: ago(9), from: "codex", kind: "sync", summary: "Root with an alert" },
+      "th-ia": { t: ago(8), from: "vectorcraft", kind: "alert", summary: "Alert in a thread", replyTo: "th-i" },
+      "th-id": { t: ago(7), from: "bewareilive", kind: "decision", summary: "Decision in a thread", replyTo: "th-i" },
+      "th-ip": { t: ago(6), from: "bewareilive", kind: "sync", summary: "Plain reply", replyTo: "th-i" }
+    });
+    __emit("messages"); await tick();
+    var ta = topCard("th-ia"), td = topCard("th-id"), tp = topCard("th-ip");
+    var re = ta && ta.querySelector(".re"), reText = re ? re.textContent : null;
+    if (!threadBox("th-i")) { $("thread-toggle-th-i").click(); await tick(); }
+    var ids = threadIds("th-i");
+    var uniq = document.querySelectorAll("#reply-btn-th-ia").length === 1 && document.querySelectorAll("#star-th-ia").length === 1;
+    $("thread-toggle-th-i").click(); await tick();
+    var ok = !!ta && !!td && !tp && reText === "\u21a9 Replying to Codex: Root with an alert" &&
+      JSON.stringify(ids) === JSON.stringify(["th-ia", "th-id", "th-ip"]) && uniq;
+    return res("threadImportantTwice", ok, "alertTop=" + !!ta + " decisionTop=" + !!td + " plainTop=" + !!tp + " re=" + JSON.stringify(reText) +
+      " ids=" + JSON.stringify(ids) + " uniqueIds=" + uniq);
+  });
+
+  // Search, a kind chip or a person matching only a reply shows its (collapsed) thread expanded.
+  S.push(async function threadFilterReply() {
+    await go("timeline");
+    function opened() { return !!topCard("hist-s") && JSON.stringify(threadIds("hist-s")) === JSON.stringify(["hist-s1"]); }
+    var closed = !threadBox("hist-s");
+    await search("zebra-needle");
+    var bySearch = opened();
+    await search("");
+    await chip("lesson");
+    var byKind = opened();
+    await chip("all");
+    $("who-owner").click(); await tick();
+    var byWho = opened();
+    $("who-owner").click(); await tick();
+    var closedAgain = !threadBox("hist-s");
+    var ok = closed && bySearch && byKind && byWho && closedAgain;
+    return res("threadFilterReply", ok, "closed=" + closed + " search=" + bySearch + " kind=" + byKind + " who=" + byWho + " closedAgain=" + closedAgain);
+  });
+
+  // A replyTo cycle renders (no hang); its messages stand alone with their "Replying to" lines.
+  // A 60-deep reply chain, deepest first in the store, still folds into one thread.
+  S.push(async function threadCycle() {
+    await go("timeline");
+    var chain = {};
+    for (var k = 59; k >= 0; k--) chain["th-L" + k] = { t: ago(3), from: "codex", kind: "sync", summary: "Chain " + k, replyTo: k ? "th-L" + (k - 1) : undefined };
+    __store.messages = Object.assign({}, __store.messages, chain, {
+      "th-c1": { t: ago(3), from: "codex", kind: "sync", summary: "Cycle one", replyTo: "th-c2" },
+      "th-c2": { t: ago(3), from: "vectorcraft", kind: "sync", summary: "Cycle two", replyTo: "th-c1" },
+      "th-c3": { t: ago(3), from: "bewareilive", kind: "sync", summary: "Into the cycle", replyTo: "th-c1" }
+    });
+    __emit("messages"); await tick();
+    var chainFoot = footText("th-L0"), chainTop = document.querySelectorAll('#log > article[data-id^="th-L"]').length;
+    var a = topCard("th-c1"), b = topCard("th-c2"), c = topCard("th-c3");
+    var lines = [a, b, c].map(function (x) { var r = x && x.querySelector(".re"); return r ? r.textContent : null; });
+    var ok = !!a && !!b && !!c && lines[0] === "\u21a9 Replying to VectorCraft: Cycle two" && lines[1] === "\u21a9 Replying to Codex: Cycle one" &&
+      lines[2] === "\u21a9 Replying to Codex: Cycle one" && /^59 replies /.test(chainFoot) && chainTop === 1;
+    return res("threadCycle", ok, "cards=" + [!!a, !!b, !!c].join(",") + " re=" + JSON.stringify(lines) + " chain=" + JSON.stringify(chainFoot) + " chainTop=" + chainTop);
+  });
+
+  // Ids that name Object.prototype members ("constructor", "toString", "__proto__") are plain ids: a reply to one
+  // that isn't loaded stands alone, and a message whose id is "constructor" is an ordinary root.
+  S.push(async function threadProtoKeys() {
+    await go("timeline");
+    await addDoc("messages", "th-pk0", { t: ago(2), from: "codex", kind: "sync", summary: "Reply to constructor", replyTo: "constructor" });
+    var alone = !!topCard("th-pk0") && !topCard("th-pk0").querySelector(".re");
+    __store.messages = Object.assign({}, __store.messages, {
+      "constructor": { t: ago(3), from: "codex", kind: "sync", summary: "Root called constructor" },
+      "th-pk1": { t: ago(2), from: "codex", kind: "sync", summary: "Reply to toString", replyTo: "toString" },
+      "th-pk2": { t: ago(2), from: "codex", kind: "sync", summary: "Reply to proto", replyTo: "__proto__" }
+    });
+    __emit("messages"); await tick();
+    var root = topCard("constructor"), f = footText("constructor");
+    var ok = alone && !!root && /^1 reply /.test(f || "") && !topCard("th-pk0") && !!topCard("th-pk1") && !!topCard("th-pk2");
+    return res("threadProtoKeys", ok, "aloneFirst=" + alone + " root=" + !!root + " foot=" + JSON.stringify(f) + " pk1=" + !!topCard("th-pk1") + " pk2=" + !!topCard("th-pk2"));
+  });
+
+  // A reply whose parent isn't loaded stays a standalone card, with no thread footer.
+  S.push(async function threadOrphan() {
+    await go("timeline");
+    await addDoc("messages", "th-o", { t: ago(2), from: "codex", kind: "sync", summary: "Orphan reply", replyTo: "no-such-message" });
+    var c = topCard("th-o");
+    var ok = !!c && !c.querySelector(".re") && !c.querySelector(".thread-foot");
+    return res("threadOrphan", ok, "card=" + !!c + " re=" + !!(c && c.querySelector(".re")) + " foot=" + !!(c && c.querySelector(".thread-foot")));
+  });
+
   // The roster badge for a project's agent wake: one text per status, nothing for idle or no entry.
   S.push(async function wakeBadges() {
     await go("timeline");

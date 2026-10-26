@@ -4,6 +4,19 @@
 // __seed({collection: {id: data}}) fills __store; build.sh calls it with participants.json before the page subscribes.
 window.__store = {}; window.__subs = {}; window.__fail = {}; window.__delay = 0; window.__errs = {};
 window.__seed = function (obj) { Object.keys(obj || {}).forEach(function (c) { __store[c] = Object.assign(__store[c] || {}, obj[c]); }); };
+// History the page already holds on its first snapshot, so it doesn't count as new: two reply threads (one with a
+// reply to a reply). A stale "last visit" from an earlier run would make these replies new, so it is cleared.
+try { localStorage.removeItem("crosstalk.lastVisit"); } catch (e) {}
+(function () {
+  function ago(min) { return new Date(Date.now() - min * 60000).toISOString(); }
+  __seed({ messages: {
+    "hist-r": { t: ago(30), from: "codex", kind: "sync", summary: "History root" },
+    "hist-a": { t: ago(20), from: "owner", kind: "sync", summary: "History answer", replyTo: "hist-r" },
+    "hist-b": { t: ago(10), from: "codex", kind: "sync", summary: "Answer to the answer", replyTo: "hist-a" },
+    "hist-s": { t: ago(25), from: "codex", kind: "sync", summary: "Single root" },
+    "hist-s1": { t: ago(15), from: "owner", kind: "lesson", summary: "zebra-needle found", replyTo: "hist-s" }
+  } });
+})();
 function snapFor(c){ var docs = Object.keys(__store[c]||{}).map(function(id){ return { id:id, data:function(){ return __store[c][id]; } }; }); return { docs: docs }; }
 window.__emit = function(c){ (__subs[c]||[]).forEach(function(s){ s.cb(snapFor(c)); }); };
 window.__kill = function(c, code){ (__subs[c]||[]).forEach(function(s){ s.err({code:code,message:code}); }); __subs[c]=[]; };

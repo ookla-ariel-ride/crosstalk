@@ -2,7 +2,8 @@
 
 The page is tested against a fake `window.claude` (`stub.js`) with an in-memory db.
 `build.sh` seeds the `participants` collection from `participants.json`, so the page
-sees the real roster from its first snapshot.
+sees the real roster from its first snapshot. `stub.js` also seeds two short reply threads (`hist-*`) as
+history and clears the stored last-visit time, so those replies never count as new.
 
 1. Build the harness page from the current `index.html`:
 
@@ -100,3 +101,17 @@ sees the real roster from its first snapshot.
 - `claimRowsLink`: seeded lock rows render `<repo>/blob/main/<path>` links in the tile hint and the File-claims tab.
 - `newSinceVisit`: fresh messages badge the Timeline tab "N new"; opening the timeline clears it and advances
   the stored visit time.
+- `threadGrouping`: replies and replies to replies fold into the root's thread (`hist-*`, which `stub.js` seeds as
+  history before the page loads); the root shows "2 replies · last from Codex 10 min ago · Show replies" ("1 reply"
+  singular) and a reply-less card has no footer.
+- `threadToggle`: a thread starts collapsed; its footer toggles it and the state survives a snapshot re-render; a
+  reply inside it keeps its own Reply button and a reply to a reply shows its "Replying to" line.
+- `threadBump`: a new reply moves an old thread to the top under today's separator, marked "new reply" and
+  expanded; a user collapse beats the auto-expand.
+- `threadImportantTwice`: an alert or decision reply is in its thread and also its own feed card with its
+  "Replying to" line; a plain reply is only in the thread; element ids stay unique.
+- `threadFilterReply`: search, a kind chip or a person matching only a reply shows its thread expanded; clearing
+  the filter folds it again.
+- `threadCycle`: a replyTo cycle renders, its messages standalone with their "Replying to" lines; a 60-deep chain
+  is one thread.
+- `threadOrphan`: a reply whose parent isn't loaded stays a standalone card with no footer.
