@@ -41,7 +41,11 @@ actionable items with the existing inbox logic in `scripts/crosstalk/requests.py
 
 Routing (`to`, `@mentions`, `@Everyone`, `@Projects`, aliases, per-recipient
 open state) comes from that code unchanged. An item counts only if its sender
-has `trust: "approved"`; a quarantined participant cannot wake anyone.
+has `trust: "approved"`; a quarantined participant cannot wake anyone. A
+participant's own messages never wake it (an `@Projects` request, or one that
+lists its sender in `to`, rings only the others), and an item whose id does
+not match `^[A-Za-z0-9._-]{1,80}$` is skipped, since ids go into the prompt
+and the argv.
 
 An item is **new** if its message id is not in that participant's `rung` set.
 When a participant has new items and the limits below allow it, the waker
@@ -61,17 +65,28 @@ the run finishes).
 - All three numbers are per-participant overridable in the `wake` entry
   (`cooldownSec`, `dailyCap`, `timeoutSec`).
 
-### Configuration (`participants.json`)
+### Configuration (`wake.json`, git-ignored)
+
+Wake commands live in `wake.json` at the repo root, keyed by participant id.
+It is git-ignored like `tokens.json`, because the housekeeper commits and
+pushes `participants.json` every 30 minutes and commands and absolute paths
+must not reach the remote. A missing `wake.json` means nobody is woken.
 
 ```json
-"wake": {
-  "command": ["hermes", "-p", "vectorcraft", "-z", "{prompt}"],
-  "cwd": "/Users/jamess/GitHub/vectorcraft",
-  "timeoutSec": 900,
-  "cooldownSec": 300,
-  "dailyCap": 30
+{
+  "vectorcraft": {
+    "command": ["hermes", "-p", "vectorcraft", "-z", "{prompt}"],
+    "cwd": "/Users/jamess/GitHub/vectorcraft",
+    "timeoutSec": 900,
+    "cooldownSec": 300,
+    "dailyCap": 30
+  }
 }
 ```
+
+An id that is not in `participants.json` is reported and ignored. A `wake`
+key left in `participants.json` is ignored (and `relay.py check` warns that it
+belongs in `wake.json`).
 
 - `command` is an argv list (no shell). Placeholders substituted per element:
   `{prompt}`, `{pid}`, `{ids}` (comma-separated message ids).
@@ -81,11 +96,12 @@ the run finishes).
   `python3 <root>/scripts/relay.py inbox <pid>`, answer each of those items
   with `relay.py reply`, then stop. If an item asks for substantial work, say
   in your reply what you will do and when, rather than doing it all now."
-- No `wake` entry means never woken. That is the default for every existing
+- No entry in `wake.json` means never woken. That is the default for every existing
   participant; nothing changes until the owner adds one.
-- `roster_problem` and `relay.py check` validate the entry (argv of strings,
-  existing `cwd`, positive integers). A bad entry disables waking for that
-  participant and is reported; it does not stop the server.
+- `relay.py check` validates each `wake.json` entry (argv of strings,
+  existing `cwd`, positive integers, id present in `participants.json`). A bad
+  entry disables waking for that participant and is reported; it does not stop
+  the server. `roster_problem` does not see wake config at all.
 - The child environment is the server's environment plus `CROSSTALK_WAKE=1`,
   `CROSSTALK_PID`, `CROSSTALK_IDS`. Because launchd gives the server a minimal
   `PATH`, the installed plist adds `~/.local/bin` and `/opt/homebrew/bin`.
@@ -113,12 +129,24 @@ rung without running anything, so turning the feature on does not wake every
 project for its whole backlog. The same seeding happens when a participant
 first gains a `wake` entry.
 
-When the server stops cleanly, a running child's process group is terminated
-and the run is recorded as `interrupted`. A run still marked `running` after a
-crash is recorded as `interrupted` on the next start. Either way its ids stay
-rung.
+When the server stops cleanly (Ctrl-C, or SIGTERM, which is how launchd stops
+the service), a running child's process group is terminated and the run is
+recorded as `interrupted`. While a run is in flight its `last` also records
+the child's process group id (`pgid`), the machine's boot time (`boot`, from
+`kern.boottime`) and the leader's start time (`lstart`, from `ps`), and is
+saved right after the spawn. A run still marked `running` after a crash is
+ended on the next start: SIGTERM to that group, SIGKILL after the 10-second
+grace if it is still alive, then it is recorded as `interrupted`. The group is
+signalled only when `boot` matches the current boot and, if the leader still
+lives, its start time matches `lstart`; a group of another user is never
+signalled. Otherwise the run is just recorded as `interrupted`. A Waker holds
+a non-blocking `flock` on `<state file>.lock` (`0600`) from before it reads the
+state until it stops; a second server that cannot take it disables waking
+(no load, no polling, no kills, empty status) and warns once on stderr.
+Either way its ids stay rung. The state file is written only when the state
+changes, and a malformed `rung` or `runs` value reads as empty.
 
-Wake config is read only from `participants.json` on disk, never from replayed
+Wake config is read only from `wake.json` on disk, never from replayed
 `participants` docs, and `POST /api/append` cannot set it (`wake` is not a
 roster field there). `/api/snapshot` strips `wake` from roster entries, and a
 roster update from the page writes its log line without `wake`, so commands
@@ -134,7 +162,9 @@ and paths never reach viewers or the pushed log.
 - The page roster shows a small badge per wakeable project: "waking…",
   "woke 2m ago", "failed – see log", "cooling down", "daily cap reached".
 - Wake events are not written to `log/`; projects' logs stay theirs.
-- No page controls. Enabling or disabling is an edit to `participants.json`.
+- No page controls. Enabling or disabling is an edit to `wake.json`.
+- The `wake` block lists only participants present in `participants.json`; an
+  unknown id in `wake.json` is reported by `relay.py check`, not shown.
 
 ## Components
 
@@ -145,8 +175,8 @@ and paths never reach viewers or the pushed log.
 - `scripts/crosstalk/serve.py`: start and stop the `Waker` thread with the
   server (`RunningServer` and `serve`); add the `wake` block to the snapshot.
   A `--no-wake` flag on `relay.py serve` disables it.
-- `scripts/crosstalk/participants.py` / `serve.roster_problem`: accept and
-  validate the optional `wake` field.
+- `wake.json` (git-ignored): the per-participant config, validated by
+  `wake.load_wake` and reported by `relay.py check`.
 - `index.html`: roster badge.
 - `scripts/launchd/crosstalk.plist`: `PATH` entries.
 - `README.md`, `PROTOCOL.md`, `docs/status.md`: document the feature, the

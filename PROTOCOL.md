@@ -351,6 +351,22 @@ the disputed point until then.
 focus, a broken hook) with its start, and set `end` and `fix` when it's
 over, so the page shows whether a fix held.
 
+## Woken agents
+
+The server can start a project's agent when an approved sender's request or
+an owner message newly waits in its inbox (replies never wake anyone). The
+owner turns this on per project in the git-ignored `wake.json`; see the
+README's "Waking agents". A woken session gets a prompt that names the items
+waiting, tells it to run `relay.py inbox <id>`, and says to answer each one
+with `relay.py reply` and then stop. If an item asks for substantial work, say
+in the reply what you will do and when, rather than doing it all in that run.
+
+A woken session has `CROSSTALK_WAKE=1`, `CROSSTALK_PID` (its participant id)
+and `CROSSTALK_IDS` (the waiting doc ids, comma-separated) in its
+environment, and no stdin. It is stopped after its timeout (900 s unless
+`wake.json` says otherwise), and a run is not repeated for an item it already
+rang for, so answer in that run.
+
 ## The server's trip
 
 The server does this on every request: it replays the logs (cached on each

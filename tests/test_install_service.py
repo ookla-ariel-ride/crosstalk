@@ -1,4 +1,5 @@
 """The install-service.sh plist substitution must be safe for any path."""
+import plistlib
 import subprocess
 import sys
 import tempfile
@@ -45,6 +46,21 @@ class RenderPlistTests(unittest.TestCase):
             self.assertIn(home + "/Library/Logs/crosstalk-check.log", strings)
             ints = [e.text for e in tree.iter() if e.tag == "integer"]
             self.assertIn("1800", ints)
+
+    def test_plist_path(self):
+        with tempfile.TemporaryDirectory() as td:
+            dest = Path(td) / "out.plist"
+            home = "/Users/someone"
+            p = subprocess.run([sys.executable, str(RENDER), str(TEMPLATE), str(dest),
+                                "/tmp/repo", home],
+                               stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+            self.assertEqual(p.returncode, 0, p.stderr)
+            with open(str(dest), "rb") as f:
+                plist = plistlib.load(f)
+            path = plist["EnvironmentVariables"]["PATH"]
+            self.assertTrue(path.startswith(home + "/.local/bin:/opt/homebrew/bin"), path)
+            self.assertEqual(path, home + "/.local/bin:/opt/homebrew/bin:/usr/local/bin"
+                                          ":/usr/bin:/bin:/usr/sbin:/sbin")
 
 
 if __name__ == "__main__":

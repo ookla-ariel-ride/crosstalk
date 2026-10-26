@@ -1172,6 +1172,37 @@
       " afterTwo=" + stillOpenAfterTwo + " closedAfterThree=" + closedAfterAllThree);
   });
 
+  // The roster badge for a project's agent wake: one text per status, nothing for idle or no entry.
+  S.push(async function wakeBadges() {
+    await go("timeline");
+    // Enough roster entries for every status, whatever an earlier scenario left in the store.
+    var extra = {};
+    for (var n = 0; n < 9; n++) extra["wakeproj" + n] = { name: "WakeProj" + n, kind: "project", trust: "approved" };
+    __store.participants = Object.assign({}, __store.participants, extra); __emit("participants"); await tick();
+    var ids = Object.keys(extra);
+    var want = [["running", "waking\u2026"], ["ok", /^woke \S+$/], ["failed", "wake failed"], ["timed-out", "wake failed"], ["interrupted", "wake interrupted"],
+      ["cooling-down", "cooling down"], ["capped", "daily cap reached"], ["misconfigured", "wake misconfigured"], ["idle", null]];
+    if (ids.length < want.length) return res("wakeBadges", false, "only " + ids.length + " roster ids");
+    var map = {}, bad = [];
+    want.forEach(function (w, i) { map[ids[i]] = { status: w[0], since: new Date(Date.now() - 120000).toISOString(), ids: [], log: w[0] === "failed" ? "/tmp/wake.log" : undefined }; });
+    __setWake(map); await tick();
+    want.forEach(function (w, i) {
+      var b = $("wake-" + ids[i]);
+      if (w[1] === null) { if (b) bad.push(w[0] + " has badge"); return; }
+      if (!b) { bad.push(w[0] + " missing"); return; }
+      var t = b.textContent;
+      if (!(w[1] instanceof RegExp ? w[1].test(t) : t === w[1])) bad.push(w[0] + " text=" + t);
+      if (!/wake-/.test(b.className) || b.className.indexOf("wake-" + w[0]) < 0) bad.push(w[0] + " class=" + b.className);
+      if (!b.title) bad.push(w[0] + " no title");
+    });
+    var failedB = $("wake-" + ids[2]);
+    if (failedB && failedB.title.indexOf("/tmp/wake.log") < 0) bad.push("log missing from title");
+    __setWake({}); await tick();
+    var left = document.querySelectorAll('[id^="wake-"]').length;
+    if (left) bad.push(left + " badges left after clear");
+    return res("wakeBadges", !bad.length, bad.join("; "));
+  });
+
   S.push(async function partlyLive() {
     var before = $("liveText").textContent;
     __kill("locks", "revoked"); await tick();
