@@ -663,8 +663,51 @@ class WakerTests(unittest.TestCase):
         # After a reboot the recorded pgid may now name an unrelated group.
         orphan = self.hung_orphan()
         self.crashed_run(orphan.pid, boot=1, lstart=proc_start(orphan.pid))
-        w = self.waker(boot_time=lambda: 2)
+        w = self.waker(boot_time=lambda: 121)
         self.assert_left_alone(orphan, w)
+
+    def test_boot_time_tolerance(self):
+        # kern.boottime can shift by a second or two after a clock correction.
+        orphan = self.hung_orphan()
+        self.crashed_run(orphan.pid, boot=1000, lstart=proc_start(orphan.pid))
+        w = self.waker(boot_time=lambda: 1002, kill_grace=0.5)
+        self.assertIsNotNone(orphan.wait(timeout=5))  # same boot: ended
+        w.poll_once()
+        self.assertEqual(w.status()["vectorcraft"]["status"], "interrupted")
+
+    def test_boot_time_far_apart_is_another_boot(self):
+        orphan = self.hung_orphan()
+        self.crashed_run(orphan.pid, boot=1000, lstart=proc_start(orphan.pid))
+        w = self.waker(boot_time=lambda: 1120)
+        self.assert_left_alone(orphan, w)
+
+    def test_readers_use_absolute_paths_and_fixed_locale(self):
+        with mock.patch("crosstalk.wake.subprocess.run") as run:
+            run.return_value = mock.Mock(stdout=b"{ sec = 5, usec = 0 }")
+            boot_time()
+            proc_start(1)
+        (b_args, b_kw), (p_args, p_kw) = run.call_args_list[0], run.call_args_list[1]
+        self.assertEqual(b_args[0][0], "/usr/sbin/sysctl")
+        self.assertEqual(p_args[0][0], "/bin/ps")
+        for kw in (b_kw, p_kw):
+            self.assertEqual(kw["env"]["LC_ALL"], "C")
+            self.assertEqual(kw["env"]["LANG"], "C")
+
+    def test_foreign_leader_refusal_is_logged(self):
+        self.crashed_run(4242, boot=boot_time(), lstart="x")
+        with mock.patch("crosstalk.wake._probe_group", return_value=None), \
+                mock.patch("crosstalk.wake._kill", side_effect=PermissionError), \
+                mock.patch("sys.stderr") as err:
+            self.waker()
+        text = "".join(str(c.args[0]) for c in err.write.call_args_list)
+        self.assertIn("not ending process group 4242", text)
+
+    def test_init_failure_releases_lock(self):
+        with mock.patch.object(Waker, "_load", side_effect=RuntimeError("boom")):
+            with self.assertRaises(RuntimeError):
+                self.waker()
+        w = self.waker()
+        self.assertFalse(w.disabled)
 
     def test_crashed_run_without_boot_is_left_alone(self):
         orphan = self.hung_orphan()
@@ -693,12 +736,13 @@ class WakerTests(unittest.TestCase):
 
     def test_foreign_group_is_not_waited_on(self):
         self.crashed_run(4242, boot=boot_time(), lstart="x")
-        with mock.patch("crosstalk.wake.os.killpg", side_effect=PermissionError) as kp, \
-                mock.patch("crosstalk.wake.os.kill", side_effect=PermissionError):
+        with mock.patch("crosstalk.wake._probe_group", side_effect=PermissionError) as pg, \
+                mock.patch("crosstalk.wake._killpg") as kp, \
+                mock.patch("crosstalk.wake._kill", side_effect=PermissionError):
             began = time.monotonic()
             w = self.waker(kill_grace=5)
             self.assertLess(time.monotonic() - began, 2)
-        sent = [c.args[1] for c in kp.call_args_list]
+        sent = [c.args[1] for c in kp.call_args_list + pg.call_args_list]
         self.assertEqual([s for s in sent if s != 0], [])
         w.poll_once()
         self.assertEqual(w.status()["vectorcraft"]["status"], "interrupted")
