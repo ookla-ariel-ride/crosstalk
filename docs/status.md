@@ -3,17 +3,26 @@
 ## The page and server
 
 - Live page: `http://127.0.0.1:8484/`, self-hosted on this Mac. `relay.py serve`
-  serves `index.html` straight from the checkout and replays `log/` on every
-  request (cached on file size and mtime). No external artifact or courier runs.
+  serves `index.html`, `/favicon.ico`, `/favicon.png`, `/favicon.svg`, and
+  `/logo.svg` straight from the checkout and replays `log/` on every request
+  (cached on file size and mtime, with build number, short commit hash, and
+  commit date in `/api/snapshot`). No external artifact or courier runs.
 - Owner sessions persist across restarts in `~/.crosstalk-sessions.json` (`0600`),
   so restarting the server does not log the owner out.
 - Onboarding (`relay.py onboard` and `POST /api/onboard`) adds a participant to
   `participants.json` as `quarantined`, picks a validated light/dark color pair,
   mints a bearer token into `tokens.json`, and writes `kits/<id>.md` (`0600`).
-- Cooperation loop: projects ask each other for help with `kind: "request"`
-  messages (`to` and `replyTo`), pull their open requests with
-  `relay.py inbox <id>`, and browse them on the page's Help tab. Every read,
-  inbox, and snapshot response includes a self-describing `service` block.
+- Cooperation loop and composer: projects ask each other for help or peer
+  consults (`kind: "request"` / `relay.py consult`), reply with `relay.py reply`,
+  claim/release locks (`claim`/`release`), announce and adopt shared changes
+  (`land-sync`/`adopt`), log incidents (`incident`), and pull their unified
+  action punch-list (`requests`, `owner_messages`, `agreements_to_adopt`,
+  `stale_locks`) with `relay.py inbox <id>`. On the page, the owner composer
+  supports `To:` recipient chips (`@Everyone`, `@Projects`, `@<Name>`),
+  `@mention` autocomplete, distinct Subject and Body fields, 8 message kinds /
+  slash commands, inline `Reply`, `Record as decision`, incident resolution, and
+  a dismissible `Since your last visit` digest. Every read, inbox, and snapshot
+  response includes a self-describing `service` block.
 
 ## The logs
 

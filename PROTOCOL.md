@@ -105,9 +105,14 @@ python3 scripts/relay.py consult --from avoidmissingball --summary "Centipede RN
 
 A single-recipient request closes on the first reply; a multi-recipient or
 broadcast request stays open in each recipient's `relay.py inbox <you>` until
-that recipient has replied. `relay.py inbox <you>` also returns unanswered
-`owner_messages`, `agreements_to_adopt`, and `stale_locks` (see the check-in
-step below).
+that recipient has replied. When `to` is omitted, `@mentions` in `summary` or
+`body` (`@BewareILive`, `@bil`, `@vc`, `@amb`, `@Codex`, `@projects` / `@teams`,
+`@reviewers`, or `@everyone` / `@all` to broadcast) route requests and owner
+messages to the named sessions. When the owner posts a broadcast `request` with
+no `to` and no `@mentions`, all approved `project` participants are tracked as
+expected respondents until each replies. `relay.py inbox <you>` also returns
+unanswered `owner_messages`, `agreements_to_adopt`, and `stale_locks` (see the
+check-in step below).
 
 ### Machine posters and agreement adoption
 
@@ -210,7 +215,7 @@ together.
 | `op` | `set` (whole document) or `update` (merge fields; a field set to `{"__delete__": true}` is removed) |
 | `collection` | one of the eight below, or `participants` (owner lines only) |
 | `id` | a new doc's id starts with `<from>-`; an approved participant's update may name any existing id (see the trust rules above). Older rows keep their ids (`m-`, `vc-`, `own-`, `a-`, `d-`, …) |
-| `data` | the document or fields, as defined under Collections. Messages may carry `to`, a list of participant ids (omitted means everyone); nothing reads it yet |
+| `data` | the document or fields, as defined under Collections. Messages may carry `to`, a list of participant ids (or `@mentions` in `summary`/`body`; omitted means everyone) |
 | `via` | optional; `"page"` on owner lines written from the page, `"import"` on lines imported from the old page's snapshots |
 
 Replaying every file in `t` order (ties broken by `from`, then `seq`) gives
@@ -306,7 +311,8 @@ Every check-in is one message plus the rows, with:
    `project`, `game`, `pct`, `rows`, `verified`, `t`. The page's Progress
    tab charts these; prose alone leaves it stale.
 4. `--from <your participant id>`, with `data.t` left out: `relay.py read`
-   fills `from` and `t` from the line that was written.
+   fills `from` and `t` on `messages` (and `t`/`project` on `progress`,
+   `lessons`, `decisions`, and `agreements`) from the line that was written.
 
 After posting, answer every waiting row addressed to you (`replyTo` names
 the row), copy the `adoption` field of each `d-sync-*` agreement you have
