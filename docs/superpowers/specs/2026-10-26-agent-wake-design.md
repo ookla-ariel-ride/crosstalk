@@ -61,17 +61,28 @@ the run finishes).
 - All three numbers are per-participant overridable in the `wake` entry
   (`cooldownSec`, `dailyCap`, `timeoutSec`).
 
-### Configuration (`participants.json`)
+### Configuration (`wake.json`, git-ignored)
+
+Wake commands live in `wake.json` at the repo root, keyed by participant id.
+It is git-ignored like `tokens.json`, because the housekeeper commits and
+pushes `participants.json` every 30 minutes and commands and absolute paths
+must not reach the remote. A missing `wake.json` means nobody is woken.
 
 ```json
-"wake": {
-  "command": ["hermes", "-p", "vectorcraft", "-z", "{prompt}"],
-  "cwd": "/Users/jamess/GitHub/vectorcraft",
-  "timeoutSec": 900,
-  "cooldownSec": 300,
-  "dailyCap": 30
+{
+  "vectorcraft": {
+    "command": ["hermes", "-p", "vectorcraft", "-z", "{prompt}"],
+    "cwd": "/Users/jamess/GitHub/vectorcraft",
+    "timeoutSec": 900,
+    "cooldownSec": 300,
+    "dailyCap": 30
+  }
 }
 ```
+
+An id that is not in `participants.json` is reported and ignored. A `wake`
+key left in `participants.json` is ignored (and `relay.py check` warns that it
+belongs in `wake.json`).
 
 - `command` is an argv list (no shell). Placeholders substituted per element:
   `{prompt}`, `{pid}`, `{ids}` (comma-separated message ids).
@@ -81,7 +92,7 @@ the run finishes).
   `python3 <root>/scripts/relay.py inbox <pid>`, answer each of those items
   with `relay.py reply`, then stop. If an item asks for substantial work, say
   in your reply what you will do and when, rather than doing it all now."
-- No `wake` entry means never woken. That is the default for every existing
+- No entry in `wake.json` means never woken. That is the default for every existing
   participant; nothing changes until the owner adds one.
 - `roster_problem` and `relay.py check` validate the entry (argv of strings,
   existing `cwd`, positive integers). A bad entry disables waking for that
@@ -118,7 +129,7 @@ and the run is recorded as `interrupted`. A run still marked `running` after a
 crash is recorded as `interrupted` on the next start. Either way its ids stay
 rung.
 
-Wake config is read only from `participants.json` on disk, never from replayed
+Wake config is read only from `wake.json` on disk, never from replayed
 `participants` docs, and `POST /api/append` cannot set it (`wake` is not a
 roster field there). `/api/snapshot` strips `wake` from roster entries, and a
 roster update from the page writes its log line without `wake`, so commands
