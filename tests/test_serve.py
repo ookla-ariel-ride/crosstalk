@@ -750,8 +750,11 @@ class OwnerTests(unittest.TestCase):
             r.write_roster()
             code = ("import sys; sys.path.insert(0, %r); from crosstalk.serve import serve; "
                     "serve(%r, port=0)" % (scripts, str(r.root)))
+            # Keep the real ~/.crosstalk-* files (and the wake lock) out of it.
+            env = dict(os.environ, CROSSTALK_WAKE_STATE="", CROSSTALK_SESSIONS="",
+                       CROSSTALK_WAKE_LOGS=str(r.root / "wake-logs"))
             proc = subprocess.Popen([sys.executable, "-u", "-c", code], stdout=subprocess.PIPE,
-                                    stderr=subprocess.PIPE, universal_newlines=True)
+                                    stderr=subprocess.PIPE, universal_newlines=True, env=env)
             try:
                 ready, _w, _x = select.select([proc.stdout], [], [], 30)
                 self.assertTrue(ready, "the server printed nothing")
