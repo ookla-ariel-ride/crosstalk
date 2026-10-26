@@ -42,6 +42,7 @@ from .participants import load_roster
 from .replay import enrich_messages, load_all_lines, replay
 from .service import SERVICE
 from .tokens import TOKEN_FILE, Result, Tokens
+from . import ownerpin
 from .wake import Waker
 
 # The collections the page reads. "participants" is the owner's roster.
@@ -620,8 +621,11 @@ class CrosstalkHandler(BaseHTTPRequestHandler):
     # -- the owner's session ------------------------------------------------
 
     def _check_pin(self, pin) -> bool:
-        """The startup PIN: right, still valid, and not used yet."""
+        """The permanent PIN (owner-pin.json), or the startup PIN: right,
+        still valid, and not used yet."""
         state = self.state
+        if ownerpin.check_pin(state.root, pin):
+            return True
         if not isinstance(pin, str) or not state.pin or state.pin_used:
             return False
         if state.pin_expires < time.time():

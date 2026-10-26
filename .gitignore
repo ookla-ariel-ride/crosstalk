@@ -6,3 +6,5 @@ tokens.json
 wake.json
 kits/
 log/.onboard.lock
+owner-pin.json
+owner-pin.json.tmp

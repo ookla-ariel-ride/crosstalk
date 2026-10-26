@@ -15,6 +15,7 @@ from crosstalk.exporter import export_page  # noqa: E402
 from crosstalk.importer import import_snapshots, merge_snapshots  # noqa: E402
 from crosstalk.logs import append_line, check_all, message_problems  # noqa: E402
 from crosstalk.onboard import onboard, regenerate_kit  # noqa: E402
+from crosstalk.ownerpin import clear_pin, set_pin  # noqa: E402
 from crosstalk.participants import load_roster  # noqa: E402
 from crosstalk.posters import claim_file, land_sync, post_incident, release_file  # noqa: E402
 from crosstalk.pull import pull  # noqa: E402
@@ -252,6 +253,24 @@ def cmd_sent(args):
 def cmd_serve(args):
     """Run the page host and API server in the foreground until killed."""
     serve(ROOT, host=args.host, port=args.port, no_pin=args.no_pin, wake=not args.no_wake)
+    return 0
+
+
+def cmd_set_pin(args):
+    """Set (or with --clear, remove) the owner's permanent six-digit login PIN."""
+    if args.clear:
+        print("removed" if clear_pin(ROOT) else "no permanent PIN was set")
+        return 0
+    pin = args.pin
+    if pin is None:
+        import getpass
+        pin = getpass.getpass("New six-digit PIN: ")
+    try:
+        path = set_pin(ROOT, pin.strip())
+    except ValueError as e:
+        err(str(e))
+        return 1
+    print("permanent PIN saved (hashed) in %s" % path.name)
     return 0
 
 
@@ -559,6 +578,10 @@ def build_parser():
     ad.add_argument("--summary")
     ad.set_defaults(fn=cmd_adopt)
 
+    sp = sub.add_parser("set-pin", help="set the owner's permanent six-digit login PIN (stored hashed)")
+    sp.add_argument("pin", nargs="?", metavar="PIN", help="six digits; prompts when left out")
+    sp.add_argument("--clear", action="store_true", help="remove the permanent PIN")
+    sp.set_defaults(fn=cmd_set_pin)
     sv = sub.add_parser("serve", help="run the page host and API server")
     sv.add_argument("--port", type=int, default=8484,
                     help="port to bind (default 8484; 0 = ephemeral)")
