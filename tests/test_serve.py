@@ -1167,5 +1167,87 @@ class WakeServeTests(unittest.TestCase):
         self.assertEqual(sorted(snap["wake"]), ["vectorcraft"])
 
 
+class ServeSignalTests(unittest.TestCase):
+    """`relay.py serve` under launchd is stopped with SIGTERM: it must shut down
+    as cleanly as on Ctrl-C, ending a running agent and recording it."""
+
+    def setUp(self):
+        self.r = TempRepo()
+        self.r.__enter__()
+        self.tmp = Path(tempfile.mkdtemp(prefix="crosstalk-serve-sigterm-"))
+        (self.tmp / "work").mkdir()
+        self.state = self.tmp / "state.json"
+        self.out = self.tmp / "calls.jsonl"
+        self.r.write_roster()
+        (self.r.root / "wake.json").write_text(json.dumps({"vectorcraft": {
+            "command": [sys.executable, FAKE, "{pid}", "{ids}"],
+            "cwd": str(self.tmp / "work")}}), encoding="utf-8")
+        self.proc = None
+        self.child = None
+
+    def tearDown(self):
+        if self.proc is not None and self.proc.poll() is None:
+            self.proc.kill()
+            self.proc.wait()
+        if self.child is not None:
+            try:
+                os.killpg(self.child, 9)
+            except OSError:
+                pass
+        self.r.__exit__(None, None, None)
+        shutil.rmtree(str(self.tmp), ignore_errors=True)
+
+    def wait_for(self, what, pred, timeout=20.0):
+        deadline = time.time() + timeout
+        while time.time() < deadline:
+            value = pred()
+            if value:
+                return value
+            time.sleep(0.05)
+        self.fail("timed out waiting for " + what)
+
+    def saved_last(self):
+        try:
+            return json.loads(self.state.read_text())["vectorcraft"]["last"]
+        except (OSError, ValueError, KeyError):
+            return None
+
+    def test_sigterm_ends_running_agent_and_records_interrupted(self):
+        import signal
+        scripts = str(Path(__file__).resolve().parent.parent / "scripts")
+        code = ("import sys; sys.path.insert(0, %r)\n"
+                "from crosstalk.serve import serve\n"
+                "serve(%r, port=0, no_pin=True, sessions='')\n" % (scripts, str(self.r.root)))
+        env = dict(os.environ, CROSSTALK_WAKE_STATE=str(self.state),
+                   CROSSTALK_WAKE_LOGS=str(self.tmp / "logs"), CROSSTALK_SESSIONS="",
+                   FAKE_AGENT_OUT=str(self.out), FAKE_AGENT_MODE="sleep:30")
+        self.proc = subprocess.Popen([sys.executable, "-c", code], env=env, cwd=str(self.tmp),
+                                     stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL,
+                                     stderr=subprocess.PIPE)
+        # The first pass seeds (the file appears); then a new message rings.
+        self.wait_for("seeding", lambda: self.state.exists())
+        self.r.write_log("owner", [line(1, "owner", id_="owner-0001",
+                                        data={"from": "owner", "kind": "owner",
+                                              "summary": "please look"})])
+        last = self.wait_for("a running agent",
+                             lambda: (self.saved_last() or {}).get("status") == "running"
+                             and self.saved_last())
+        self.child = last["pgid"]
+        self.wait_for("the agent to start", lambda: self.out.exists())
+        os.kill(self.proc.pid, signal.SIGTERM)
+        try:
+            self.proc.wait(timeout=20)
+        except subprocess.TimeoutExpired:
+            self.fail("serve did not exit on SIGTERM")
+        stderr = self.proc.stderr.read().decode("utf-8", "replace")
+        self.proc.stderr.close()
+        self.assertEqual(self.proc.returncode, 128 + signal.SIGTERM, stderr)
+        with self.assertRaises(ProcessLookupError):
+            os.killpg(self.child, 0)
+        last = self.saved_last()
+        self.assertEqual(last["status"], "interrupted", stderr)
+        self.assertNotIn("pgid", last)
+
+
 if __name__ == "__main__":
     unittest.main()

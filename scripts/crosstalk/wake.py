@@ -6,6 +6,7 @@ pushed repo; participants.json, which the housekeeper pushes, never carries it.
 """
 import json
 import os
+import re
 import signal
 import subprocess
 import sys
@@ -24,6 +25,8 @@ from .requests import inbox_for, pending_recipients, unanswered_owner_messages
 WAKE_FILE = "wake.json"
 DEFAULTS = {"timeoutSec": 900, "cooldownSec": 300, "dailyCap": 30}
 KEYS = ("command", "cwd") + tuple(DEFAULTS)
+# Ids go into the prompt and argv, so only plain ones can ring an agent.
+SAFE_ID_RE = re.compile(r"^[A-Za-z0-9._-]{1,80}$")
 
 
 @dataclass
@@ -128,7 +131,10 @@ def actionable_items(docs: Dict, pid: str, roster: Roster) -> List[str]:
 
     Open requests addressed to pid that pid has not answered, plus owner
     messages pid has not replied to. Items whose sender is not approved in the
-    roster are dropped, so a quarantined participant cannot ring an agent.
+    roster are dropped, so a quarantined participant cannot ring an agent; so
+    are pid's own messages (an @Projects request, or one listing itself in
+    `to`, must not wake its sender), and items whose id is not a plain
+    SAFE_ID_RE id, since ids are written into the prompt and the argv.
     """
     ids = set()
     for did, doc, replies in inbox_for(docs, pid, roster):
@@ -136,13 +142,17 @@ def actionable_items(docs: Dict, pid: str, roster: Roster) -> List[str]:
             ids.add(did)
     for did, _doc, _replies in unanswered_owner_messages(docs, pid, roster):
         ids.add(did)
-    approved = set()
+    out = set()
     for did in ids:
+        if not isinstance(did, str) or not SAFE_ID_RE.fullmatch(did):
+            continue
         sender = docs[("messages", did)].get("from")
+        if sender == pid:
+            continue
         p = roster.participants.get(sender) if isinstance(sender, str) else None
         if p is not None and p.trust == "approved":
-            approved.add(did)
-    return sorted(approved)
+            out.add(did)
+    return sorted(out)
 
 
 def render_prompt(name: str, pid: str, ids: List[str], page: str, root: Path) -> str:
@@ -225,6 +235,7 @@ class Waker:
         self._lock = threading.RLock()
         self._stop = threading.Event()
         self._thread = None  # type: Optional[threading.Thread]
+        self._saved = None  # type: Optional[str]  # the text last written
         self._state = self._load()  # type: Dict[str, dict]
         self._running = {}  # type: Dict[str, dict]
         self._view = {}  # type: Dict[str, dict]
@@ -249,21 +260,53 @@ class Waker:
         for pid, st in raw.items():
             if not isinstance(st, dict):
                 continue
-            rung = [x for x in st.get("rung", []) if isinstance(x, str)]
-            runs = [x for x in st.get("runs", []) if isinstance(x, str)]
+            # A hand-edited file must not crash-loop the server: anything but a
+            # list counts as empty.
+            rung = st.get("rung")
+            runs = st.get("runs")
+            rung = [x for x in rung if isinstance(x, str)] if isinstance(rung, list) else []
+            runs = [x for x in runs if isinstance(x, str)] if isinstance(runs, list) else []
             last = st.get("last") if isinstance(st.get("last"), dict) else None
             if last is not None and last.get("status") == "running":
+                # The server died without stopping this run (a crash, or a
+                # signal it could not handle). Its child has its own session
+                # and may still be running: end it before anything can start
+                # a second run beside it.
                 last = dict(last, status="interrupted")
+                self._kill_orphan(pid, last.pop("pgid", None))
+            elif last is not None:
+                last = dict(last)
+                last.pop("pgid", None)
             state[pid] = {"rung": rung, "runs": runs, "last": last}
         return state
 
+    def _kill_orphan(self, pid: str, pgid) -> None:
+        """SIGTERM the recorded process group, then SIGKILL it after the grace."""
+        if isinstance(pgid, bool) or not isinstance(pgid, int) or pgid <= 1:
+            return
+        if pgid == os.getpgrp() or not _group_alive(pgid):
+            return
+        print("crosstalk wake: %s: ending process group %d left running by a previous server"
+              % (pid, pgid), file=sys.stderr)
+        _killpg(pgid, signal.SIGTERM)
+        deadline = time.monotonic() + self.kill_grace
+        while time.monotonic() < deadline:
+            if not _group_alive(pgid):
+                return
+            time.sleep(0.05)
+        _killpg(pgid, signal.SIGKILL)
+
     def _save(self) -> None:
+        """Write the state file, unless it already holds exactly this state."""
         if self.state_path is None:
             return
+        text = json.dumps(self._state, indent=2, sort_keys=True) + "\n"
+        if text == self._saved:
+            return
         try:
-            atomic_write_text(self.state_path,
-                              json.dumps(self._state, indent=2, sort_keys=True) + "\n")
+            atomic_write_text(self.state_path, text)
             os.chmod(str(self.state_path), 0o600)
+            self._saved = text
         except OSError as e:
             print("crosstalk wake: cannot save state %s: %s" % (self.state_path, e),
                   file=sys.stderr)
@@ -290,7 +333,7 @@ class Waker:
         self._view[pid] = new
 
     def status(self) -> Dict[str, dict]:
-        """{pid: {status, since, ids, log}} for each wakeable or misconfigured pid."""
+        """{pid: {status, since, ids, log}} for each roster pid with a wake.json entry."""
         with self._lock:
             return {pid: dict(self._view[pid], ids=list(self._view[pid]["ids"]))
                     for pid in self._shown if pid in self._view}
@@ -301,6 +344,7 @@ class Waker:
         run = self._running.pop(pid)
         last = self._state.setdefault(pid, {"rung": [], "runs": [], "last": None})["last"] or {}
         last.update(status=status, ended=_iso(self.clock()), exit=code)
+        last.pop("pgid", None)
         self._state[pid]["last"] = last
         self._set(pid, status, ids=run["ids"], log=run["log"])
 
@@ -375,6 +419,9 @@ class Waker:
                     logged = False
                 failed(msg, logged)
                 return
+        # The child leads its own process group; recorded so that a server
+        # that dies without cleanup can end it on the next start.
+        st["last"]["pgid"] = proc.pid
         self._running[pid] = {"proc": proc, "started": now, "timeout": cfg.timeoutSec,
                               "term_at": None, "killed": False, "ids": list(ids),
                               "log": str(log)}
@@ -383,7 +430,7 @@ class Waker:
     # the pass
 
     def poll_once(self) -> None:
-        """One pass: reap, reload config and log, ring where allowed, save."""
+        """One pass: reap, reload config and log, ring where allowed, save if changed."""
         with self._lock:
             changed = self._reap()
             try:
@@ -397,7 +444,10 @@ class Waker:
                 return
             now = self.clock()
             today = _day(now)
-            self._shown = sorted(set(configs) | set(problems))
+            # An id in wake.json but not in participants.json is never woken and
+            # never shown (relay.py check reports it).
+            self._shown = sorted(p for p in set(configs) | set(problems)
+                                 if p in roster.participants)
             for pid in list(self._state):
                 if pid not in configs and pid not in problems and pid not in self._running:
                     del self._state[pid]

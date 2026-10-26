@@ -22,6 +22,7 @@ import hmac
 import json
 import os
 import secrets
+import signal
 import socket
 import subprocess
 import sys
@@ -978,6 +979,10 @@ def serve(root, host: str = "127.0.0.1", port: int = 8484, no_pin: bool = False,
     Its state lives in ~/.crosstalk-wake-state.json (`CROSSTALK_WAKE_STATE`;
     empty keeps it in memory) and run logs in ~/Library/Logs/crosstalk-wake
     (`CROSSTALK_WAKE_LOGS`).
+
+    SIGTERM (how launchd stops the service) shuts down like Ctrl-C: the waker
+    ends a running agent and records it interrupted, then the process exits
+    with status 143 (128 + SIGTERM).
     """
     if sessions is None:
         sessions = os.environ.get("CROSSTALK_SESSIONS", DEFAULT_SESSIONS) or None
@@ -990,10 +995,36 @@ def serve(root, host: str = "127.0.0.1", port: int = 8484, no_pin: bool = False,
     if server.pin:
         print("Login PIN: %s  (one login, ten minutes)" % server.pin, flush=True)
     print("Crosstalk is serving %s on %s" % (root, server.url), flush=True)
+
+    class Terminated(Exception):
+        pass
+
+    def on_sigterm(_signum, _frame):
+        raise Terminated()
+
+    # Python's default SIGTERM ends the process without running `finally`,
+    # which would orphan a running agent (it has its own session).
+    main = threading.current_thread() is threading.main_thread()
+    old_term = signal.signal(signal.SIGTERM, on_sigterm) if main else None
+    terminated = False
     try:
         while True:
             time.sleep(3600)
     except KeyboardInterrupt:
         pass
+    except Terminated:
+        terminated = True
     finally:
-        server.close()
+        # A second SIGTERM or Ctrl-C must not cut the cleanup short.
+        if main:
+            old_int = signal.signal(signal.SIGINT, signal.SIG_IGN)
+            signal.signal(signal.SIGTERM, signal.SIG_IGN)
+        try:
+            server.close()
+        finally:
+            if main:
+                # None: a handler not set from Python; fall back to the default.
+                signal.signal(signal.SIGINT, old_int if old_int is not None else signal.SIG_DFL)
+                signal.signal(signal.SIGTERM, old_term if old_term is not None else signal.SIG_DFL)
+    if terminated:
+        sys.exit(128 + signal.SIGTERM)
