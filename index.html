@@ -144,7 +144,7 @@ a { color: inherit; }
 .msg.reply-to { margin-left: 28px; }
 .msg.reply-to::before { content: ""; position: absolute; left: -16px; top: 6px; bottom: 6px; border-left: 2px solid var(--rule); }
 .msg.quarantined, .card.quarantined { opacity: .55; }
-.msg .re { font: 12px/1.35 var(--mono); color: var(--muted); margin: 4px 0 2px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.msg .re, .reply .re { font: 12px/1.35 var(--mono); color: var(--muted); margin: 4px 0 2px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .msg.important { border-width: 2px; border-color: var(--muted); border-top: 5px solid var(--who, var(--muted)); border-left: 3px solid var(--who, var(--muted)); padding-left: 15px; }
 .msg.important .summary { font-size: 16px; }
 .pill.important { background: var(--bad); color: var(--panel); }
@@ -183,6 +183,14 @@ a.lock-blob { text-decoration: none; }
 a.lock-blob:hover { text-decoration: underline; }
 .replies { margin-top: 10px; display: grid; gap: 8px; border-left: 2px solid var(--rule); padding-left: 10px; }
 .reply .summary { font-size: 14px; margin: 2px 0; }
+/* A thread: the footer under its root card, and its replies as smaller cards in the sender's color. */
+.thread-foot { display: flex; flex-wrap: wrap; gap: 6px 10px; align-items: center; margin-top: 8px; }
+.thread-toggle { background: none; border: 0; padding: 0; font: 12px var(--mono); color: var(--muted); cursor: pointer; text-align: left; }
+.thread-toggle:hover { color: var(--fg); text-decoration: underline; }
+.thread-toggle .ago { font: inherit; color: inherit; }
+.pill.new-reply { background: var(--own); color: var(--panel); text-transform: none; }
+.replies.thread .reply { min-width: 0; background: var(--bg); border: 1px solid var(--rule); border-top: 2px solid var(--who, var(--muted)); border-radius: 6px; padding: 6px 10px 8px; }
+.replies.thread .stamp time { font-size: 13px; }
 .positions { display: grid; grid-template-columns: repeat(auto-fit, minmax(160px, 1fr)); gap: 8px; margin-top: 8px; }
 .positions > div { background: var(--bg); border: 1px solid var(--rule); border-radius: 6px; padding: 8px; min-width: 0; font-size: 13px; }
 .positions .resolve { margin-top: 6px; }
@@ -305,6 +313,9 @@ td.num, td.t { font: 12px var(--mono); font-variant-numeric: tabular-nums; white
   // A failed Approve keeps its message here, by participant id, so a re-render doesn't drop it.
   var approveErr = Object.create(null);
   var promotingDecision = Object.create(null);
+  // Threads: the user's open/closed choice per thread key, replies that arrived live, and replies acknowledged
+  // by toggling their thread. All in memory for the page session. THREAD_DEPTH caps a replyTo walk.
+  var threadOpen = Object.create(null), liveReply = Object.create(null), ackReply = Object.create(null), THREAD_DEPTH = 500;
 
   var fmt = new Intl.DateTimeFormat("en-US", { timeZone: "America/Los_Angeles", month: "short", day: "numeric", hour: "numeric", minute: "2-digit", second: "2-digit", timeZoneName: "short" });
   var fmtShort = new Intl.DateTimeFormat("en-US", { timeZone: "America/Los_Angeles", month: "short", day: "numeric", hour: "numeric", minute: "2-digit" });
@@ -656,8 +667,8 @@ td.num, td.t { font: 12px var(--mono); font-variant-numeric: tabular-nums; white
     return out;
   }
   function openRequests() {
-    var byId = {}; data.messages.forEach(function (m) { byId[m._id] = m; });
-    var replies = {};
+    var byId = Object.create(null); data.messages.forEach(function (m) { byId[m._id] = m; });
+    var replies = Object.create(null);
     data.messages.forEach(function (m) {
       if (m.replyTo && byId[m.replyTo]) (replies[m.replyTo] = replies[m.replyTo] || []).push(m);
     });
@@ -1130,8 +1141,8 @@ td.num, td.t { font: 12px var(--mono); font-variant-numeric: tabular-nums; white
     var tmp = el("div"); composer(tmp); old.replaceWith(tmp.firstChild);
     restoreFocus(f);
   }
-  function replyBtnEl(m) {
-    var b = el("button", "btn small reply-btn", "Reply"); b.type = "button"; b.id = "reply-btn-" + m._id;
+  function replyBtnEl(m, noId) {
+    var b = el("button", "btn small reply-btn", "Reply"); b.type = "button"; if (!noId) b.id = "reply-btn-" + m._id;
     b.disabled = draft.posting;
     b.addEventListener("click", function () {
       if (draft.posting) return;
@@ -1153,10 +1164,18 @@ td.num, td.t { font: 12px var(--mono); font-variant-numeric: tabular-nums; white
     });
     return b;
   }
-  function msgCard(m, isReply, parent) {
+  function starEl(m, imp) {
+    var star = el("button", "star", imp ? "\u2605" : "\u2606"); star.type = "button"; star.id = "star-" + m._id;
+    star.setAttribute("aria-pressed", String(imp)); star.setAttribute("aria-label", imp ? "Unmark important" : "Mark important");
+    star.addEventListener("click", function () { star.disabled = true; db.collection("messages").doc(m._id).update({ important: !imp }).catch(function () { star.disabled = false; }); });
+    return star;
+  }
+  // isReply: a smaller card inside a thread, with Reply and star only. `dup` marks a thread copy of a reply
+  // that also has its own feed card, which keeps the element ids (reply-btn-<id>, star-<id>) and the star.
+  function msgCard(m, isReply, parent, dup) {
     var from = String(m.from == null ? "" : m.from);
     var card = el(isReply ? "div" : "article", isReply ? "reply" : "msg" + (from === "owner" ? " own" : "") + (parent ? " reply-to" : ""));
-    card.dataset.from = from;
+    card.dataset.from = from; card.dataset.id = m._id;
     card.style.setProperty("--who", colorOf(from));
     var quarantined = isQuarantined(from);
     if (quarantined) card.classList.add("quarantined");
@@ -1187,10 +1206,10 @@ td.num, td.t { font: 12px var(--mono); font-variant-numeric: tabular-nums; white
         });
         meta.appendChild(promBtn);
       }
-      var star = el("button", "star", imp ? "\u2605" : "\u2606"); star.type = "button"; star.id = "star-" + m._id;
-      star.setAttribute("aria-pressed", String(imp)); star.setAttribute("aria-label", imp ? "Unmark important" : "Mark important");
-      star.addEventListener("click", function () { star.disabled = true; db.collection("messages").doc(m._id).update({ important: !imp }).catch(function () { star.disabled = false; }); });
-      meta.appendChild(star);
+      meta.appendChild(starEl(m, imp));
+    } else if (canWrite) {
+      meta.appendChild(replyBtnEl(m, dup));
+      if (!dup) meta.appendChild(starEl(m, imp));
     }
     card.appendChild(meta);
     if (parent) card.appendChild(el("div", "re", "↩ Replying to " + (parent.from ? displayName(parent.from) : "") + ": " + (parent.summary || "")));
@@ -1357,7 +1376,7 @@ td.num, td.t { font: 12px var(--mono); font-variant-numeric: tabular-nums; white
     grid.appendChild(rosterEl());
     composer(feed);
     toolbar(feed, true);
-    feed.appendChild(el("p", "order", "Newest first. A reply names the message it answers. New messages appear at the top and flash briefly. Pick a name under People to see only their messages."));
+    feed.appendChild(el("p", "order", "Newest activity first. Replies fold under the message they answer; a new reply brings its thread to the top. New messages flash briefly. Pick a name under People to see only their messages."));
     if (whoFilter) {
       var note = el("div", "whonote"); note.appendChild(el("span", null, "Showing only " + displayName(whoFilter) + "'s messages."));
       var clr = el("button", "btn small", "Show everyone"); clr.type = "button"; clr.id = "who-clear";
@@ -1406,29 +1425,105 @@ td.num, td.t { font: 12px var(--mono); font-variant-numeric: tabular-nums; white
       }
     }
     var log = el("div", "log"); log.id = "log";
-    var byId = {}; data.messages.forEach(function (m) { byId[m._id] = m; });
-    // Replies keep their own cards; a parent also shows when a reply to it matches the filter or search.
-    var replies = {};
-    data.messages.forEach(function (m) { if (m.replyTo && byId[m.replyTo]) (replies[m.replyTo] = replies[m.replyTo] || []).push(m); });
-    var top = data.messages;
-    var shown = top.filter(function (m) {
-      var kids = replies[m._id] || [];
-      var kindOk = kindFilter === "all" || (kindFilter === "important" ? isImportant(m) || kids.some(isImportant) : kindOf(m) === kindFilter || kids.some(function (r) { return kindOf(r) === kindFilter; }));
-      var whoOk = !whoFilter || String(m.from == null ? "" : m.from) === whoFilter;
-      return kindOk && whoOk && (matches(m) || kids.some(matches));
-    }).sort(byT).reverse();
-    if (!shown.length) {
+    var byId = Object.create(null); data.messages.forEach(function (m) { byId[m._id] = m; });
+    // A thread is a root and every reply that leads back to it. A reply whose parent isn't loaded is a root of its
+    // own; one caught in a replyTo cycle (or a chain past THREAD_DEPTH) has no root and stands alone.
+    var rootMemo = Object.create(null);
+    function rootOf(m) {
+      var seen = Object.create(null), path = [], cur = m;
+      while (cur) {
+        if (HAS.call(rootMemo, cur._id)) { cur = rootMemo[cur._id]; break; }
+        if (!(cur.replyTo && byId[cur.replyTo])) break;
+        // A cycle has no root for anything on the path; past the depth cap, only this walk gives up.
+        if (seen[cur._id]) { cur = null; break; }
+        if (path.length > THREAD_DEPTH) return null;
+        seen[cur._id] = true; path.push(cur._id); cur = byId[cur.replyTo];
+      }
+      path.forEach(function (id) { rootMemo[id] = cur; });
+      return cur;
+    }
+    var threads = Object.create(null), items = [];
+    data.messages.forEach(function (m) {
+      var r = rootOf(m);
+      if (r === m) threads[m._id] = threads[m._id] || [];
+      else if (r) {
+        (threads[r._id] = threads[r._id] || []).push(m);
+        // An important or decision reply also gets its own feed card at its own time.
+        if (isImportant(m) || kindOf(m) === "decision") items.push({ m: m, t: ts(m.t), parent: byId[m.replyTo], dup: true });
+      } else items.push({ m: m, t: ts(m.t), parent: byId[m.replyTo] });
+    });
+    var filtering = kindFilter !== "all" || !!whoFilter || !!query;
+    function msgOk(m) {
+      var kindOk = kindFilter === "all" || (kindFilter === "important" ? isImportant(m) : kindOf(m) === kindFilter);
+      return kindOk && (!whoFilter || String(m.from == null ? "" : m.from) === whoFilter) && matches(m);
+    }
+    items = items.filter(function (x) { return msgOk(x.m); });
+    // A reply with its own feed card in view keeps its element ids there; its thread copy goes without.
+    var ownCard = Object.create(null); items.forEach(function (x) { if (x.dup) ownCard[x.m._id] = true; });
+    data.messages.forEach(function (m) {
+      var kids = threads[m._id];
+      if (!kids) return;
+      kids.sort(byT);
+      var rootOk = msgOk(m), kidOk = kids.some(msgOk);
+      if (!rootOk && !kidOk) return;
+      var last = kids.length ? kids[kids.length - 1] : null, t = ts(m.t);
+      kids.forEach(function (r) { var rt = ts(r.t); if (!isNaN(rt) && !(rt <= t)) t = rt; });
+      items.push({ m: m, t: t, kids: kids, last: last, inReplies: filtering && !rootOk && kidOk });
+    });
+    // Newest activity first; an undated entry sorts to the top, as before.
+    items.sort(function (a, b) { return (isNaN(a.t) ? Infinity : a.t) - (isNaN(b.t) ? Infinity : b.t); }).reverse();
+    if (!items.length) {
       log.appendChild(el("div", "empty", loaded.messages ? (data.messages.length ? "No messages match." : "No messages logged yet. Each message between the sessions shows up here.") : "Loading messages…"));
     }
     var lastDay = null;
-    shown.forEach(function (m) {
-      var t = ts(m.t), day = isNaN(t) ? "" : fmtDay.format(new Date(t));
+    items.forEach(function (x) {
+      var day = isNaN(x.t) ? "" : fmtDay.format(new Date(x.t));
       if (day && day !== lastDay) { log.appendChild(el("div", "day", day)); lastDay = day; }
-      log.appendChild(msgCard(m, false, m.replyTo ? byId[m.replyTo] : null));
+      if (!x.kids || !x.kids.length) { log.appendChild(msgCard(x.m, false, x.parent || null)); return; }
+      log.appendChild(threadCard(x, byId, ownCard));
     });
     feed.appendChild(log);
     grid.appendChild(feed);
     view.appendChild(grid);
+  }
+
+  // A thread's root card with a footer ("2 replies · last from X 5 min ago · Show replies") that folds its replies
+  // in and out beneath it. A user's choice is kept per thread root for the page session and always wins. Without
+  // one, a thread opens when it has a reply the viewer hasn't seen (it arrived live, or since the last visit) or
+  // when a filter or search matches only inside its replies. The viewer's own replies (the owner, who posts as
+  // "owner") are never new. Toggling a thread acknowledges its current replies.
+  function threadCard(x, byId, ownCard) {
+    var m = x.m, kids = x.kids, rid = m._id;
+    var others = kids.filter(function (r) { return !(canWrite && String(r.from) === "owner"); });
+    others.forEach(function (r) { if (seenBy.messages && !seenBy.messages[r._id]) liveReply[r._id] = true; });
+    var unseen = others.some(function (r) { var t = ts(r.t); return !ackReply[r._id] && (liveReply[r._id] || (digestSince != null && !isNaN(t) && t > digestSince)); });
+    var open = HAS.call(threadOpen, rid) ? threadOpen[rid] : unseen || x.inReplies;
+    var card = msgCard(m, false, null);
+    if (others.some(function (r) { return seenBy.messages && !seenBy.messages[r._id]; })) card.classList.add("fresh");
+    var foot = el("div", "thread-foot");
+    var b = el("button", "thread-toggle"); b.type = "button"; b.id = "thread-toggle-" + rid;
+    b.setAttribute("aria-expanded", String(open)); b.setAttribute("aria-controls", "thread-" + rid);
+    var last = x.last;
+    b.appendChild(document.createTextNode(kids.length + (kids.length === 1 ? " reply" : " replies") + " \u00b7 last from " + (last.from ? displayName(last.from) : "?") + " "));
+    b.appendChild(agoEl(last.t));
+    b.appendChild(document.createTextNode(" \u00b7 " + (open ? "Hide replies" : "Show replies")));
+    b.addEventListener("click", function () {
+      threadOpen[rid] = !open;
+      kids.forEach(function (r) { ackReply[r._id] = true; });
+      renderView(true);
+    });
+    foot.appendChild(b);
+    if (unseen) foot.appendChild(el("span", "pill new-reply", "new reply"));
+    card.appendChild(foot);
+    if (open) {
+      var box = el("div", "replies thread"); box.id = "thread-" + rid;
+      kids.forEach(function (r) {
+        var p = byId[r.replyTo];
+        box.appendChild(msgCard(r, true, p && p !== m ? p : null, !!ownCard[r._id]));
+      });
+      card.appendChild(box);
+    }
+    return card;
   }
 
   /* ---------- help ---------- */
@@ -2208,7 +2303,7 @@ td.num, td.t { font: 12px var(--mono); font-variant-numeric: tabular-nums; white
         subState[c] = "ok"; attempt = 0;
         renderAll();
         // A collection's first delivery is history, not news: only later arrivals flash.
-        seenBy[c] = seenBy[c] || {};
+        seenBy[c] = seenBy[c] || Object.create(null);
         data[c].forEach(function (x) { seenBy[c][x._id] = true; });
       }, function (e) {
         var code = e && e.code, retry = TERMINAL.indexOf(code) === -1 && attempt < 5;
