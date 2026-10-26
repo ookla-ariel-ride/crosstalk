@@ -243,7 +243,7 @@ def cmd_sent(args):
 
 def cmd_serve(args):
     """Run the page host and API server in the foreground until killed."""
-    serve(ROOT, host=args.host, port=args.port, no_pin=args.no_pin)
+    serve(ROOT, host=args.host, port=args.port, no_pin=args.no_pin, wake=not args.no_wake)
     return 0
 
 
@@ -558,6 +558,8 @@ def build_parser():
                     help="address to bind (default 127.0.0.1)")
     sv.add_argument("--no-pin", action="store_true",
                     help="do not print a startup login PIN")
+    sv.add_argument("--no-wake", action="store_true",
+                    help="do not wake participants' agents for new inbox items")
     sv.set_defaults(fn=cmd_serve)
     return ap
 
