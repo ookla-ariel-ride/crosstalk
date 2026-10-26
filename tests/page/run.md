@@ -105,7 +105,8 @@ history and clears the stored last-visit time, so those replies never count as n
   history before the page loads); the root shows "2 replies · last from Codex 10 min ago · Show replies" ("1 reply"
   singular) and a reply-less card has no footer.
 - `threadToggle`: a thread starts collapsed; its footer toggles it and the state survives a snapshot re-render; a
-  reply inside it keeps its own Reply button and a reply to a reply shows its "Replying to" line.
+  reply inside it keeps its own Reply button and a reply to a reply shows its "Replying to" line; posting a reply
+  from inside the open thread keeps it open with no "new reply" marker; a search the root matches keeps it open.
 - `threadBump`: a new reply moves an old thread to the top under today's separator, marked "new reply" and
   expanded; a user collapse beats the auto-expand.
 - `threadImportantTwice`: an alert or decision reply is in its thread and also its own feed card with its
@@ -114,4 +115,6 @@ history and clears the stored last-visit time, so those replies never count as n
   the filter folds it again.
 - `threadCycle`: a replyTo cycle renders, its messages standalone with their "Replying to" lines; a 60-deep chain
   is one thread.
+- `threadProtoKeys`: a reply to "constructor", "toString" or "__proto__" (not loaded) stays standalone, and a message
+  whose id is "constructor" is an ordinary thread root.
 - `threadOrphan`: a reply whose parent isn't loaded stays a standalone card with no footer.
