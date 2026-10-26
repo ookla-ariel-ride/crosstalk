@@ -113,8 +113,16 @@ rung without running anything, so turning the feature on does not wake every
 project for its whole backlog. The same seeding happens when a participant
 first gains a `wake` entry.
 
-A run in progress when the server stops is recorded as `interrupted` on the
-next start; its ids stay rung.
+When the server stops cleanly, a running child's process group is terminated
+and the run is recorded as `interrupted`. A run still marked `running` after a
+crash is recorded as `interrupted` on the next start. Either way its ids stay
+rung.
+
+Wake config is read only from `participants.json` on disk, never from replayed
+`participants` docs, and `POST /api/append` cannot set it (`wake` is not a
+roster field there). `/api/snapshot` strips `wake` from roster entries, and a
+roster update from the page writes its log line without `wake`, so commands
+and paths never reach viewers or the pushed log.
 
 ### Visibility
 
