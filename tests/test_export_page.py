@@ -136,6 +136,25 @@ class ExporterTests(unittest.TestCase):
         for marker in ("Authorization", "Bearer ", "Set-Cookie", "Cookie:"):
             self.assertNotIn(marker, html)
 
+    def test_export_strips_wake_from_the_roster(self):
+        r = self.r
+        data = json.loads((r.root / "participants.json").read_text(encoding="utf-8"))
+        secret_cwd = str(r.root / "secret-agent-cwd")
+        (r.root / "secret-agent-cwd").mkdir()
+        for p in data["participants"]:
+            if p["id"] == "vectorcraft":
+                p["wake"] = {"command": ["secret-agent-cmd"], "cwd": secret_cwd}
+        r.write_roster(data)
+        snap = build_snapshot(r.root)
+        entry = [p for p in snap["roster"]["participants"] if p["id"] == "vectorcraft"][0]
+        self.assertNotIn("wake", entry)
+        self.assertEqual(entry["name"], "VectorCraft")
+        out = r.root / "page.html"
+        export_page(r.root, out)
+        html = out.read_text(encoding="utf-8")
+        self.assertNotIn("secret-agent-cmd", html)
+        self.assertNotIn("secret-agent-cwd", html)
+
     def test_export_refuses_a_log_with_a_fatal_line(self):
         r = self.r
         r.write_log("codex", [line(1, "codex"), "{not json"])

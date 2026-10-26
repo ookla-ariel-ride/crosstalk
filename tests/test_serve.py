@@ -1039,11 +1039,18 @@ class WakeServeTests(unittest.TestCase):
                                            "FAKE_AGENT_MODE": "ok"})
         env.start()
         self.addCleanup(env.stop)
+        self.wake_entry = {"command": [sys.executable, FAKE, "{pid}", "{ids}"],
+                           "cwd": str(self.cwd)}
+        self.r.write_roster()
+        (self.r.root / "wake.json").write_text(json.dumps({"vectorcraft": self.wake_entry}),
+                                               encoding="utf-8")
+
+    def stray_wake(self):
+        """A `wake` key left in participants.json: ignored, and never served or logged."""
         data = copy.deepcopy(SPEC_ROSTER)
         for p in data["participants"]:
             if p["id"] == "vectorcraft":
-                p["wake"] = {"command": [sys.executable, FAKE, "{pid}", "{ids}"],
-                             "cwd": str(self.cwd)}
+                p["wake"] = dict(self.wake_entry)
         self.r.write_roster(data)
 
     def tearDown(self):
@@ -1098,6 +1105,7 @@ class WakeServeTests(unittest.TestCase):
         self.assertEqual(snap["wake"], {})
 
     def test_snapshot_roster_hides_wake(self):
+        self.stray_wake()
         with self.server() as srv:
             _code, anon = request(srv.url + "/api/snapshot")
             _code, owned = request(srv.url + "/api/snapshot",
@@ -1122,6 +1130,7 @@ class WakeServeTests(unittest.TestCase):
         self.assertEqual(body["error"], "unknown roster field: wake")
 
     def test_roster_update_keeps_wake_out_of_log(self):
+        self.stray_wake()
         with self.server(wake=False) as srv:
             status, body = request(srv.url + "/api/append", "POST",
                                    {"from": "owner", "op": "update", "collection": "participants",
@@ -1138,6 +1147,14 @@ class WakeServeTests(unittest.TestCase):
                  if x.strip()]
         self.assertEqual(lines[-1]["data"]["name"], "VectorCraft II")
         self.assertNotIn("wake", lines[-1]["data"])
+
+    def test_participants_json_wake_is_not_used(self):
+        self.stray_wake()
+        (self.r.root / "wake.json").unlink()
+        with self.server() as srv:
+            time.sleep(0.6)  # a few polls
+            _code, snap = request(srv.url + "/api/snapshot")
+        self.assertEqual(snap["wake"], {})
 
     def test_log_doc_wake_ignored(self):
         self.r.write_log("owner", [line(1, "owner", collection="participants", id_="codex",

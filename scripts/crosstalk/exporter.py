@@ -63,7 +63,10 @@ def build_snapshot(root: Path) -> dict:
         collections.setdefault(coll, {})[did] = fields
     return {
         "server_time": published_now(),
-        "roster": {"participants": raw.get("participants", [])},
+        # Wake config never travels in the page (it belongs in git-ignored wake.json).
+        "roster": {"participants": [
+            {k: v for k, v in p.items() if k != "wake"} if isinstance(p, dict) else p
+            for p in raw.get("participants", [])]},
         "collections": collections,
     }
 

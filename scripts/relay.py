@@ -30,7 +30,7 @@ from crosstalk.requests import (  # noqa: E402
 from crosstalk.serve import serve  # noqa: E402
 from crosstalk.service import SERVICE  # noqa: E402
 from crosstalk.tokens import TOKEN_FILE, Tokens, load_tokens  # noqa: E402
-from crosstalk.wake import load_wake  # noqa: E402
+from crosstalk.wake import load_wake, roster_wake_keys  # noqa: E402
 
 
 MISSING_SHOWN = 10
@@ -53,10 +53,18 @@ def run_check(stream):
     # A bad wake config only stops that participant being woken, so it is not fatal.
     try:
         _, wake_problems = load_wake(ROOT)
-    except (OSError, ValueError):
-        wake_problems = {}
+    except (OSError, ValueError) as e:
+        wake_problems = {"": "wake.json: %s" % e}
     for msg in wake_problems.values():
         err("warning: %s" % msg)
+    # Wake config in participants.json is ignored: that file is pushed.
+    try:
+        stray = roster_wake_keys(ROOT)
+    except (OSError, ValueError):
+        stray = []
+    for pid in stray:
+        err("warning: participant %s: wake belongs in wake.json, not participants.json; "
+            "ignored" % pid)
     return fatal, problems
 
 

@@ -17,7 +17,8 @@ from test_inbox import rep, req
 from crosstalk.participants import load_roster
 from crosstalk.replay import enrich_messages, load_all_lines, replay
 from crosstalk.wake import (WakeConfig, Waker, actionable_items, load_wake, render_command,
-                            render_prompt, wake_config, wake_problem)
+                            render_prompt, roster_wake_keys, wake_config,
+                            wake_problem)
 from unittest import mock
 
 REPO = Path(__file__).resolve().parent.parent
@@ -67,42 +68,86 @@ class WakeConfigTests(unittest.TestCase):
             self.assertIn("vectorcraft", msg)
             self.assertIsNone(wake_config("vectorcraft", raw), raw)
 
-    def test_load_roster_tolerates_bad_wake(self):
-        data = copy.deepcopy(SPEC_ROSTER)
-        for p in data["participants"]:
-            if p["id"] == "vectorcraft":
-                p["wake"] = {"command": []}
-            if p["id"] == "codex":
-                p["wake"] = {"command": ["echo"], "cwd": self.tmp}
+    def write_wake(self, r, data):
+        (r.root / "wake.json").write_text(json.dumps(data), encoding="utf-8")
+
+    def test_load_wake_reads_wake_json(self):
         with TempRepo() as r:
-            r.write_roster(data)
-            roster = load_roster(r.root / "participants.json")
-            self.assertEqual(roster.participants["vectorcraft"].wake, {"command": []})
+            r.write_roster()
+            self.write_wake(r, {"vectorcraft": {"command": []},
+                                "codex": {"command": ["echo"], "cwd": self.tmp}})
             configs, problems = load_wake(r.root)
             self.assertEqual(list(problems), ["vectorcraft"])
             self.assertIn("vectorcraft", problems["vectorcraft"])
             self.assertEqual(list(configs), ["codex"])
+            self.assertEqual(configs["codex"].command, ["echo"])
 
-    def test_load_wake_unreadable(self):
+    def test_missing_wake_json_wakes_nobody(self):
         with TempRepo() as r:
-            with self.assertRaises((ValueError, OSError)):
-                load_wake(r.root)
+            r.write_roster()
+            self.assertEqual(load_wake(r.root), ({}, {}))
 
-    def test_check_reports_wake_problem(self):
+    def test_invalid_wake_json_raises(self):
+        with TempRepo() as r:
+            r.write_roster()
+            for text in ("{", "[]", '"x"'):
+                (r.root / "wake.json").write_text(text, encoding="utf-8")
+                with self.assertRaises(ValueError, msg=text):
+                    load_wake(r.root)
+
+    def test_unknown_pid_in_wake_json_is_a_problem(self):
+        with TempRepo() as r:
+            r.write_roster()
+            self.write_wake(r, {"ghost": {"command": ["echo"], "cwd": self.tmp}})
+            configs, problems = load_wake(r.root)
+            self.assertEqual(configs, {})
+            self.assertEqual(list(problems), ["ghost"])
+            self.assertIn("participants.json", problems["ghost"])
+
+    def test_wake_key_in_participants_json_is_ignored(self):
         data = copy.deepcopy(SPEC_ROSTER)
         for p in data["participants"]:
             if p["id"] == "vectorcraft":
-                p["wake"] = {"command": []}
+                p["wake"] = {"command": ["echo"], "cwd": self.tmp}
         with TempRepo() as r:
             r.write_roster(data)
-            shutil.copytree(str(REPO / "scripts"), str(r.root / "scripts"),
-                            ignore=shutil.ignore_patterns("__pycache__"))
-            p = subprocess.run([sys.executable, str(r.root / "scripts" / "relay.py"), "check"],
-                               stdout=subprocess.PIPE, stderr=subprocess.PIPE,
-                               universal_newlines=True, cwd="/")
+            roster = load_roster(r.root / "participants.json")
+            self.assertFalse(hasattr(roster.participants["vectorcraft"], "wake"))
+            self.assertEqual(load_wake(r.root), ({}, {}))
+            self.assertEqual(roster_wake_keys(r.root), ["vectorcraft"])
+
+    def test_wake_json_is_git_ignored(self):
+        lines = (REPO / ".gitignore").read_text(encoding="utf-8").splitlines()
+        self.assertIn("wake.json", lines)
+        p = subprocess.run(["git", "-C", str(REPO), "check-ignore", "-q", "wake.json"])
+        self.assertEqual(p.returncode, 0)
+
+    def run_check(self, r):
+        shutil.copytree(str(REPO / "scripts"), str(r.root / "scripts"),
+                        ignore=shutil.ignore_patterns("__pycache__"))
+        return subprocess.run([sys.executable, str(r.root / "scripts" / "relay.py"), "check"],
+                              stdout=subprocess.PIPE, stderr=subprocess.PIPE,
+                              universal_newlines=True, cwd="/")
+
+    def test_check_reports_wake_problem(self):
+        with TempRepo() as r:
+            r.write_roster()
+            self.write_wake(r, {"vectorcraft": {"command": []}})
+            p = self.run_check(r)
             self.assertEqual(p.returncode, 0, p.stdout + p.stderr)
             self.assertIn("vectorcraft", p.stderr)
             self.assertIn("wake", p.stderr)
+
+    def test_check_warns_wake_in_participants_json(self):
+        data = copy.deepcopy(SPEC_ROSTER)
+        for p in data["participants"]:
+            if p["id"] == "vectorcraft":
+                p["wake"] = {"command": ["echo"], "cwd": self.tmp}
+        with TempRepo() as r:
+            r.write_roster(data)
+            p = self.run_check(r)
+            self.assertEqual(p.returncode, 0, p.stdout + p.stderr)
+            self.assertIn("warning: participant vectorcraft: wake belongs in wake.json", p.stderr)
 
 
 class ItemTests(unittest.TestCase):
@@ -209,14 +254,17 @@ class WakerTests(unittest.TestCase):
     # helpers
 
     def roster(self, wakes):
-        """wakes: pid -> dict of wake overrides (merged onto the fake-agent default)."""
-        data = copy.deepcopy(SPEC_ROSTER)
-        for p in data["participants"]:
-            if p["id"] in wakes:
-                w = {"command": [sys.executable, FAKE, "{pid}", "{ids}"], "cwd": str(self.cwd)}
-                w.update(wakes[p["id"]])
-                p["wake"] = w
-        self.r.write_roster(data)
+        """wakes: pid -> dict of wake overrides (merged onto the fake-agent default).
+
+        The roster is SPEC_ROSTER; the wake entries go to wake.json.
+        """
+        self.r.write_roster()
+        data = {}
+        for pid, over in wakes.items():
+            w = {"command": [sys.executable, FAKE, "{pid}", "{ids}"], "cwd": str(self.cwd)}
+            w.update(over)
+            data[pid] = w
+        (self.r.root / "wake.json").write_text(json.dumps(data), encoding="utf-8")
 
     def owner(self, *msgs):
         for m in msgs:
@@ -540,6 +588,54 @@ class WakerTests(unittest.TestCase):
         w = self.waker()
         w.poll_once()
         self.assertEqual(w.status()["vectorcraft"]["status"], "interrupted")
+
+    def test_unknown_pid_is_not_woken(self):
+        self.roster({"ghost": {}})
+        w = self.waker()
+        w.poll_once()
+        self.owner(owner_msg("m-1"))
+        w.poll_once()
+        self.wait_reaped(w)
+        self.assertEqual(self.calls(), [])
+        self.assertEqual(w.status()["ghost"]["status"], "misconfigured")
+
+    def test_missing_wake_json_wakes_nobody(self):
+        (self.r.root / "wake.json").unlink()
+        w = self.waker()
+        w.poll_once()
+        self.owner(owner_msg("m-1", to=["vectorcraft"]))
+        w.poll_once()
+        self.wait_reaped(w)
+        self.assertEqual(self.calls(), [])
+        self.assertEqual(w.status(), {})
+
+    def test_wake_in_participants_json_is_not_woken(self):
+        data = copy.deepcopy(SPEC_ROSTER)
+        for p in data["participants"]:
+            if p["id"] == "vectorcraft":
+                p["wake"] = {"command": [sys.executable, FAKE], "cwd": str(self.cwd)}
+        self.r.write_roster(data)
+        (self.r.root / "wake.json").unlink()
+        w = self.waker()
+        w.poll_once()
+        self.owner(owner_msg("m-1", to=["vectorcraft"]))
+        w.poll_once()
+        self.wait_reaped(w)
+        self.assertEqual(self.calls(), [])
+        self.assertEqual(w.status(), {})
+
+    def test_invalid_wake_json_skips_pass(self):
+        w = self.waker()
+        w.poll_once()
+        good = (self.r.root / "wake.json").read_text()
+        (self.r.root / "wake.json").write_text("{")
+        w.poll_once()
+        self.assertEqual(w.status()["vectorcraft"]["status"], "idle")
+        (self.r.root / "wake.json").write_text(good)
+        self.owner(owner_msg("m-1", to=["vectorcraft"]))
+        w.poll_once()
+        self.wait_reaped(w)
+        self.assertEqual([c["env"]["CROSSTALK_IDS"] for c in self.calls()], ["m-1"])
 
     def test_invalid_roster_skips_pass(self):
         w = self.waker()

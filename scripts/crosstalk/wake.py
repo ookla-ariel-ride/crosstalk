@@ -1,4 +1,9 @@
-"""Per-participant wake config: the command that wakes a project's agent."""
+"""Per-participant wake config: the command that wakes a project's agent.
+
+The config lives in wake.json at the repo root, keyed by participant id. It is
+git-ignored (like tokens.json), so commands and absolute paths never reach the
+pushed repo; participants.json, which the housekeeper pushes, never carries it.
+"""
 import json
 import os
 import signal
@@ -16,6 +21,7 @@ from .courier import atomic_write_text
 from .participants import Roster, load_roster
 from .requests import inbox_for, pending_recipients, unanswered_owner_messages
 
+WAKE_FILE = "wake.json"
 DEFAULTS = {"timeoutSec": 900, "cooldownSec": 300, "dailyCap": 30}
 KEYS = ("command", "cwd") + tuple(DEFAULTS)
 
@@ -66,9 +72,44 @@ def wake_config(pid: str, raw) -> Optional[WakeConfig]:
 
 
 def load_wake(root: Path) -> Tuple[Dict[str, WakeConfig], Dict[str, str]]:
-    """Read root/participants.json: (valid configs by pid, problems by pid).
+    """Read root/wake.json: (valid configs by pid, problems by pid).
 
-    Raises ValueError or OSError when the file is unreadable.
+    A missing wake.json wakes nobody: ({}, {}). A pid that is not in
+    participants.json is a problem and is never woken. Raises ValueError when
+    wake.json is not a JSON object, and ValueError or OSError when it or
+    participants.json cannot be read.
+    """
+    path = Path(root) / WAKE_FILE
+    try:
+        text = path.read_text(encoding="utf-8")
+    except FileNotFoundError:
+        return {}, {}
+    try:
+        raw = json.loads(text)
+    except json.JSONDecodeError as e:
+        raise ValueError("%s: invalid JSON: %s" % (path, e))
+    if not isinstance(raw, dict):
+        raise ValueError("%s: expected an object keyed by participant id" % path)
+    known = load_roster(Path(root) / "participants.json").participants
+    configs = {}  # type: Dict[str, WakeConfig]
+    problems = {}  # type: Dict[str, str]
+    for pid, value in raw.items():
+        if pid not in known:
+            problems[pid] = ("participant %s: in %s but not in participants.json; ignored"
+                             % (pid, WAKE_FILE))
+            continue
+        problem = wake_problem(pid, value)
+        if problem:
+            problems[pid] = problem
+        else:
+            configs[pid] = wake_config(pid, value)
+    return configs, problems
+
+
+def roster_wake_keys(root: Path) -> List[str]:
+    """Ids whose participants.json entry still has a `wake` key (ignored there).
+
+    Raises ValueError or OSError when participants.json cannot be read.
     """
     path = Path(root) / "participants.json"
     try:
@@ -77,21 +118,9 @@ def load_wake(root: Path) -> Tuple[Dict[str, WakeConfig], Dict[str, str]]:
         raise ValueError("%s: invalid JSON: %s" % (path, e))
     entries = raw.get("participants") if isinstance(raw, dict) else None
     if not isinstance(entries, list):
-        raise ValueError("%s: expected an object with a participants list" % path)
-    configs = {}  # type: Dict[str, WakeConfig]
-    problems = {}  # type: Dict[str, str]
-    for entry in entries:
-        if not isinstance(entry, dict) or not isinstance(entry.get("id"), str):
-            continue
-        pid = entry["id"]
-        if entry.get("wake") is None:
-            continue
-        problem = wake_problem(pid, entry["wake"])
-        if problem:
-            problems[pid] = problem
-        else:
-            configs[pid] = wake_config(pid, entry["wake"])
-    return configs, problems
+        return []
+    return [e["id"] for e in entries
+            if isinstance(e, dict) and isinstance(e.get("id"), str) and "wake" in e]
 
 
 def actionable_items(docs: Dict, pid: str, roster: Roster) -> List[str]:
