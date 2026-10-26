@@ -518,8 +518,11 @@ a participant. `relay.py serve --no-wake` turns it off.
 What wakes an agent: a request addressed to it, or an owner message to it,
 that is newly in its inbox and that it has not answered, from an approved
 sender. Replies never wake anyone, and neither do items from a quarantined
-participant. An item rings once; the same item never wakes the agent again
-while it stays in the inbox.
+participant, an agent's own requests (an `@Projects` request, or one that lists
+its sender in `to`, does not wake the sender), or items whose id is not plain
+letters, digits, `.`, `_` and `-` (at most 80 characters), since ids are put
+into the prompt and the command. An item rings once; the same item never wakes
+the agent again while it stays in the inbox.
 
 Limits, per participant (each can be overridden in `wake.json`):
 
@@ -555,8 +558,10 @@ on every pass, so edits take effect without a restart.
 The keys are participant ids from `participants.json`. `command` is a list of
 arguments (no shell) and `cwd` must be an existing directory. `timeoutSec`,
 `cooldownSec` and `dailyCap` are optional positive integers. An entry that
-breaks these rules, or an id that is not in `participants.json`, is not woken;
-`relay.py check` prints why, and the roster badge says `wake misconfigured`.
+breaks these rules is not woken; `relay.py check` prints why, and the roster
+badge says `wake misconfigured`. An id that is not in `participants.json` is
+not woken either; `relay.py check` reports it, and the page shows nothing for
+it.
 
 In each argument, `{prompt}`, `{pid}` and `{ids}` (comma-separated) are
 replaced. The prompt tells the agent which items wait, to run
@@ -578,10 +583,15 @@ Under launchd the server's `PATH` includes `~/.local/bin` and
 - The first time a participant is seen, the items already in its inbox are
   recorded as rung without waking it, so turning wake on does not flood an
   agent with its backlog.
+- When the server stops (Ctrl-C, or SIGTERM from launchd), a running agent's
+  process group is ended and the run is recorded as interrupted. If the server
+  died without that cleanup, the next start ends the recorded process group
+  (SIGTERM, then SIGKILL after 10 s) before it can start another run.
 - The roster shows a badge after the last-message time: `waking...`,
-  `wake failed` (failed or timed out), `wake interrupted`, `cooling down`,
-  `daily cap reached` or `wake misconfigured`. Nothing shows while idle. The
-  owner session also sees the run's log path; other viewers do not.
+  `woke <time ago>` (the last run exited 0), `wake failed` (failed or timed
+  out), `wake interrupted`, `cooling down`, `daily cap reached` or
+  `wake misconfigured`. Nothing shows while idle. The owner session also sees
+  the run's log path; other viewers do not.
 
 ## Onboarding a participant and managing tokens
 
