@@ -162,6 +162,17 @@ def _killpg(pid: int, sig: int) -> None:
         pass
 
 
+def _group_alive(pgid: int) -> bool:
+    """True while any process is left in the process group pgid."""
+    try:
+        os.killpg(pgid, 0)
+    except ProcessLookupError:
+        return False
+    except PermissionError:
+        return True
+    return True
+
+
 class Waker:
     """Polls the log and wakes each configured participant's agent for new items.
 
@@ -269,20 +280,26 @@ class Waker:
         now = self.clock()
         for pid in list(self._running):
             run = self._running[pid]
-            code = run["proc"].poll()
-            if code is not None:
-                if run["term_at"] is not None:
-                    self._finish(pid, "timed-out", code)
-                else:
+            pgid = run["proc"].pid
+            if run["term_at"] is None:
+                code = run["proc"].poll()
+                if code is not None:
                     self._finish(pid, "ok" if code == 0 else "failed", code)
-                changed = True
-            elif run["term_at"] is None and now >= run["started"] + run["timeout"]:
-                _killpg(run["proc"].pid, signal.SIGTERM)
-                run["term_at"] = now
-            elif (run["term_at"] is not None and not run["killed"]
-                  and now >= run["term_at"] + self.kill_grace):
-                _killpg(run["proc"].pid, signal.SIGKILL)
+                    changed = True
+                elif now >= run["started"] + run["timeout"]:
+                    _killpg(pgid, signal.SIGTERM)
+                    run["term_at"] = now
+                continue
+            # Timed out and sent SIGTERM. The run ends once the whole group is
+            # gone, or after the grace when the group gets SIGKILL whether or
+            # not the leader has already exited.
+            if not run["killed"] and now >= run["term_at"] + self.kill_grace:
+                _killpg(pgid, signal.SIGKILL)
                 run["killed"] = True
+            code = run["proc"].poll()
+            if code is not None and (run["killed"] or not _group_alive(pgid)):
+                self._finish(pid, "timed-out", code)
+                changed = True
         return changed
 
     def _spawn(self, pid: str, cfg: WakeConfig, ids: List[str], roster: Roster) -> None:
@@ -291,7 +308,6 @@ class Waker:
         st = self._state[pid]
         st["rung"] = sorted(set(st["rung"]) | set(ids))
         st["runs"].append(started)
-        self.log_dir.mkdir(parents=True, exist_ok=True)
         log = self.log_dir / ("%s-%s.log" % (pid, datetime.fromtimestamp(now, timezone.utc)
                                               .strftime("%Y%m%dT%H%M%SZ")))
         p = roster.participants.get(pid)
@@ -301,15 +317,34 @@ class Waker:
                    CROSSTALK_IDS=",".join(ids))
         st["last"] = {"status": "running", "started": started, "ended": None, "exit": None,
                       "ids": list(ids), "log": str(log)}
-        with open(str(log), "ab") as f:
+
+        def failed(msg: str, logged: bool) -> None:
+            if not logged:
+                print("crosstalk wake: %s: %s" % (pid, msg), file=sys.stderr)
+            where = str(log) if logged else None
+            st["last"].update(status="failed", ended=started, exit=None, log=where)
+            self._set(pid, "failed", ids=ids, log=where, keep_log=False)
+
+        try:
+            self.log_dir.mkdir(parents=True, exist_ok=True)
+            f = open(str(log), "ab")
+        except OSError as e:
+            failed("cannot open run log %s: %s" % (log, e), logged=False)
+            return
+        with f:
             try:
                 proc = subprocess.Popen(argv, cwd=cfg.cwd, env=env, stdout=f,
                                         stderr=subprocess.STDOUT, stdin=subprocess.DEVNULL,
                                         start_new_session=True)
-            except (FileNotFoundError, PermissionError, NotADirectoryError) as e:
-                f.write(("crosstalk wake: cannot start %r: %s\n" % (argv[0], e)).encode("utf-8"))
-                st["last"].update(status="failed", ended=started, exit=None)
-                self._set(pid, "failed", ids=ids, log=str(log))
+            except OSError as e:
+                msg = "cannot start %r: %s" % (argv[0], e)
+                try:
+                    f.write(("crosstalk wake: %s\n" % msg).encode("utf-8"))
+                    f.flush()
+                    logged = True
+                except OSError:
+                    logged = False
+                failed(msg, logged)
                 return
         self._running[pid] = {"proc": proc, "started": now, "timeout": cfg.timeoutSec,
                               "term_at": None, "killed": False, "ids": list(ids),
@@ -398,17 +433,24 @@ class Waker:
             self._thread.join()
             self._thread = None
         with self._lock:
-            if not self._running:
-                return
-            for run in self._running.values():
-                _killpg(run["proc"].pid, signal.SIGTERM)
-            deadline = time.monotonic() + self.kill_grace
-            for run in self._running.values():
-                try:
-                    run["proc"].wait(timeout=max(0.0, deadline - time.monotonic()))
-                except subprocess.TimeoutExpired:
-                    _killpg(run["proc"].pid, signal.SIGKILL)
-                    run["proc"].wait()
-            for pid in list(self._running):
-                self._finish(pid, "interrupted", self._running[pid]["proc"].returncode)
+            procs = [(pid, run["proc"]) for pid, run in self._running.items()]
+        if not procs:
+            return
+        # Signal and wait without the lock, so status() stays responsive.
+        for _pid, proc in procs:
+            _killpg(proc.pid, signal.SIGTERM)
+        deadline = time.monotonic() + self.kill_grace
+        while time.monotonic() < deadline:
+            left = [proc for _pid, proc in procs
+                    if proc.poll() is None or _group_alive(proc.pid)]
+            if not left:
+                break
+            time.sleep(0.05)
+        for _pid, proc in procs:
+            _killpg(proc.pid, signal.SIGKILL)  # the whole group, leader or not
+            proc.wait()
+        with self._lock:
+            for pid, proc in procs:
+                if pid in self._running:
+                    self._finish(pid, "interrupted", proc.returncode)
             self._save()

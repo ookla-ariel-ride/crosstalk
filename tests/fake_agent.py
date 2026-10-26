@@ -2,7 +2,9 @@
 
 Appends one JSON line {argv, cwd, env: {CROSSTALK_*}} to $FAKE_AGENT_OUT, then
 behaves per $FAKE_AGENT_MODE: ok (exit 0), fail (exit 3), sleep:<s> (sleep,
-then exit 0), hang (ignore SIGTERM, sleep forever).
+then exit 0), hang (ignore SIGTERM, sleep forever), fork-hang (fork a child
+that ignores SIGTERM and appends {"grandchild": pid} to the out file once it
+does; the leader sleeps and dies on SIGTERM).
 """
 import json
 import os
@@ -26,6 +28,16 @@ def main():
         sys.exit(0)
     if mode == "hang":
         signal.signal(signal.SIGTERM, signal.SIG_IGN)
+        while True:
+            time.sleep(60)
+    if mode == "fork-hang":
+        child = os.fork()
+        if child == 0:
+            signal.signal(signal.SIGTERM, signal.SIG_IGN)
+            with open(out, "a", encoding="utf-8") as f:
+                f.write(json.dumps({"grandchild": os.getpid()}) + "\n")
+            while True:
+                time.sleep(60)
         while True:
             time.sleep(60)
     sys.exit(0)

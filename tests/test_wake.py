@@ -186,6 +186,7 @@ class WakerTests(unittest.TestCase):
         self.logs = self.tmp / "logs"
         self.now = [T0]
         self.wakers = []
+        self.grandchildren = []
         env = mock.patch.dict(os.environ, {"FAKE_AGENT_OUT": str(self.out),
                                            "FAKE_AGENT_MODE": "ok"})
         env.start()
@@ -197,6 +198,11 @@ class WakerTests(unittest.TestCase):
         for w in self.wakers:
             w.kill_grace = 0.5
             w.stop()
+        for pid in self.grandchildren:
+            try:
+                os.kill(pid, 9)
+            except OSError:
+                pass
         self.r.__exit__(None, None, None)
         shutil.rmtree(str(self.tmp), ignore_errors=True)
 
@@ -229,10 +235,33 @@ class WakerTests(unittest.TestCase):
         self.wakers.append(w)
         return w
 
-    def calls(self):
+    def records(self):
         if not self.out.exists():
             return []
         return [json.loads(x) for x in self.out.read_text().splitlines() if x]
+
+    def calls(self):
+        return [r for r in self.records() if "argv" in r]
+
+    def grandchild(self):
+        deadline = time.time() + 10
+        while time.time() < deadline:
+            found = [r["grandchild"] for r in self.records() if "grandchild" in r]
+            if found:
+                self.grandchildren.append(found[0])
+                return found[0]
+            time.sleep(0.05)
+        self.fail("no grandchild recorded")
+
+    def assert_gone(self, pid):
+        deadline = time.time() + 5
+        while time.time() < deadline:
+            try:
+                os.kill(pid, 0)
+            except OSError:
+                return
+            time.sleep(0.05)
+        self.fail("process %d still alive" % pid)
 
     def wait_reaped(self, w):
         deadline = time.time() + 10
@@ -385,6 +414,71 @@ class WakerTests(unittest.TestCase):
         self.assertEqual(w.status()["vectorcraft"]["status"], "timed-out")
         with self.assertRaises(OSError):
             os.kill(child, 0)
+
+    def test_timeout_kills_whole_group_when_leader_exits(self):
+        self.roster({"vectorcraft": {"timeoutSec": 1}})
+        os.environ["FAKE_AGENT_MODE"] = "fork-hang"
+        w = self.waker(kill_grace=0.5)
+        w.poll_once()
+        self.owner(owner_msg("m-1", to=["vectorcraft"]))
+        w.poll_once()
+        gc = self.grandchild()
+        self.tick(2)
+        w.poll_once()  # SIGTERM: the leader dies, the grandchild ignores it
+        time.sleep(0.3)
+        w.poll_once()
+        self.assertEqual(w.status()["vectorcraft"]["status"], "running")
+        os.kill(gc, 0)  # still alive inside the grace
+        self.tick(1)
+        w.poll_once()  # SIGKILL to the group
+        self.wait_reaped(w)
+        self.assertEqual(w.status()["vectorcraft"]["status"], "timed-out")
+        self.assert_gone(gc)
+
+    def test_stop_kills_whole_group_when_leader_exits(self):
+        os.environ["FAKE_AGENT_MODE"] = "fork-hang"
+        w = self.waker(kill_grace=0.5)
+        w.poll_once()
+        self.owner(owner_msg("m-1", to=["vectorcraft"]))
+        w.poll_once()
+        gc = self.grandchild()
+        w.stop()
+        self.assertEqual(w.status()["vectorcraft"]["status"], "interrupted")
+        self.assert_gone(gc)
+
+    def test_exec_format_error_is_failed_and_others_still_ring(self):
+        script = self.tmp / "noshebang"
+        script.write_text("echo hi\n")
+        script.chmod(0o755)
+        self.roster({"bewareilive": {"command": [str(script)]}, "vectorcraft": {}})
+        w = self.waker()
+        w.poll_once()
+        self.owner(owner_msg("m-all", summary="@Everyone ship it"))
+        w.poll_once()
+        st = w.status()
+        self.assertEqual(st["bewareilive"]["status"], "failed")
+        self.assertIn(str(script), Path(st["bewareilive"]["log"]).read_text())
+        self.assertEqual(st["vectorcraft"]["status"], "running")  # same pass
+        self.wait_reaped(w)
+        self.assertEqual([c["env"]["CROSSTALK_PID"] for c in self.calls()], ["vectorcraft"])
+        saved = json.loads(self.state.read_text())
+        self.assertEqual(saved["bewareilive"]["last"]["status"], "failed")
+        self.assertIsNone(saved["bewareilive"]["last"]["exit"])
+        self.assertEqual(saved["vectorcraft"]["last"]["status"], "ok")
+
+    def test_unwritable_log_dir_is_failed(self):
+        self.logs = self.tmp / "logs-is-a-file"
+        self.logs.write_text("x")
+        w = self.waker()
+        w.poll_once()
+        self.owner(owner_msg("m-1", to=["vectorcraft"]))
+        w.poll_once()
+        self.assertEqual(w.status()["vectorcraft"]["status"], "failed")
+        self.assertEqual(self.calls(), [])
+        saved = json.loads(self.state.read_text())
+        self.assertEqual(saved["vectorcraft"]["last"]["status"], "failed")
+        self.assertIsNone(saved["vectorcraft"]["last"]["exit"])
+        self.assertEqual(saved["vectorcraft"]["rung"], ["m-1"])
 
     def test_failure_and_missing_command(self):
         self.roster({"vectorcraft": {}, "bewareilive": {"command": ["/no/such/bin"]}})
