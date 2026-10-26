@@ -123,6 +123,12 @@ for one login within ten minutes). Open `http://127.0.0.1:8484/`, click Sign in
 in the top-right header bar, and enter either the startup PIN or the owner
 token (`python3 scripts/relay.py token owner`).
 
+To skip the startup PIN, set a permanent six-digit PIN with
+`python3 scripts/relay.py set-pin` (it prompts; `--clear` removes it). It is
+stored hashed in the git-ignored `owner-pin.json`, works for any number of
+logins, never expires, and takes effect without a restart. Failed logins are
+still throttled.
+
 Signing in sets an `HttpOnly; SameSite=Strict` cookie good for 12 hours. Owner
 sessions persist across server restarts in `~/.crosstalk-sessions.json` (mode
 `0600`, outside the repository so the housekeeper never commits it; override

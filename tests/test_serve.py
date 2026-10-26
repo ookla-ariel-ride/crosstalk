@@ -580,6 +580,58 @@ class OwnerTests(unittest.TestCase):
                 status, _body, cookie2 = self.login(srv, {"pin": srv.pin})
                 self.assertEqual(status, 401)
 
+    def test_the_permanent_pin_logs_in_again_and_again(self):
+        from crosstalk import ownerpin
+        with TempRepo() as r:
+            r.write_roster()
+            ownerpin.set_pin(r.root, "819797")
+            stored = (r.root / "owner-pin.json").read_text(encoding="utf-8")
+            self.assertNotIn("819797", stored)
+            self.assertEqual(os.stat(r.root / "owner-pin.json").st_mode & 0o777, 0o600)
+            with self.server(r, no_pin=True) as srv:
+                srv.state.pin_expires = 0.0
+                for _ in range(3):
+                    status, _body, cookie = self.login(srv, {"pin": "819797"})
+                    self.assertEqual(status, 200)
+                    self.assertIn("HttpOnly", cookie)
+                status, _body, _cookie = self.login(srv, {"pin": "819798"})
+                self.assertEqual(status, 401)
+
+    def test_a_permanent_pin_change_or_removal_applies_without_restart(self):
+        from crosstalk import ownerpin
+        with TempRepo() as r:
+            r.write_roster()
+            ownerpin.set_pin(r.root, "111111")
+            with self.server(r, no_pin=True) as srv:
+                ownerpin.set_pin(r.root, "222222")
+                self.assertEqual(self.login(srv, {"pin": "111111"})[0], 401)
+                self.assertEqual(self.login(srv, {"pin": "222222"})[0], 200)
+                ownerpin.clear_pin(r.root)
+                self.assertEqual(self.login(srv, {"pin": "222222"})[0], 401)
+
+    def test_the_startup_pin_still_works_beside_a_permanent_one(self):
+        from crosstalk import ownerpin
+        with TempRepo() as r:
+            r.write_roster()
+            ownerpin.set_pin(r.root, "819797")
+            with self.server(r) as srv:
+                self.assertEqual(self.login(srv, {"pin": srv.pin})[0], 200)
+
+    def test_permanent_pin_rules(self):
+        from crosstalk import ownerpin
+        with TempRepo() as r:
+            for bad in ["12345", "1234567", "abcdef", "", " 81979"]:
+                with self.assertRaises(ValueError):
+                    ownerpin.set_pin(r.root, bad)
+            self.assertFalse(ownerpin.check_pin(r.root, "819797"))  # no file
+            (r.root / "owner-pin.json").write_text("{not json", encoding="utf-8")
+            self.assertFalse(ownerpin.check_pin(r.root, "819797"))
+            (r.root / "owner-pin.json").write_text('{"scheme": "pbkdf2_sha256", "iterations": true, "salt": "00", "hash": "00"}', encoding="utf-8")
+            self.assertFalse(ownerpin.check_pin(r.root, "819797"))
+            ownerpin.set_pin(r.root, "819797")
+            self.assertFalse(ownerpin.check_pin(r.root, None))
+            self.assertFalse(ownerpin.check_pin(r.root, 819797))
+
     def test_login_is_throttled_after_five_failures(self):
         with TempRepo() as r:
             r.write_roster()
