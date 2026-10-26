@@ -4,6 +4,7 @@ The config lives in wake.json at the repo root, keyed by participant id. It is
 git-ignored (like tokens.json), so commands and absolute paths never reach the
 pushed repo; participants.json, which the housekeeper pushes, never carries it.
 """
+import fcntl
 import json
 import os
 import re
@@ -201,15 +202,54 @@ def _killpg(pid: int, sig: int) -> None:
         pass
 
 
+BOOT_RE = re.compile(r"\bsec\s*=\s*(\d+)")
+
+
+def boot_time() -> Optional[int]:
+    """The machine's boot time in epoch seconds (macOS kern.boottime), or None."""
+    try:
+        out = subprocess.run(["sysctl", "-n", "kern.boottime"], stdout=subprocess.PIPE,
+                             stderr=subprocess.DEVNULL, timeout=5, check=True).stdout
+        m = BOOT_RE.search(out.decode("utf-8", "replace"))
+        return int(m.group(1)) if m else None
+    except (OSError, ValueError, subprocess.SubprocessError):
+        return None
+
+
+def proc_start(pid: int) -> Optional[str]:
+    """The start time `ps` reports for pid (lstart), or None when it cannot be read."""
+    try:
+        out = subprocess.run(["ps", "-o", "lstart=", "-p", str(int(pid))],
+                             stdout=subprocess.PIPE, stderr=subprocess.DEVNULL,
+                             timeout=5).stdout
+        text = out.decode("utf-8", "replace").strip()
+        return text or None
+    except (OSError, ValueError, subprocess.SubprocessError):
+        return None
+
+
 def _group_alive(pgid: int) -> bool:
-    """True while any process is left in the process group pgid."""
+    """True while any process we may signal is left in the process group pgid.
+
+    A group we may not signal (PermissionError) belongs to another user: it is
+    not ours, so it counts as gone and is never waited on or signalled.
+    """
     try:
         os.killpg(pgid, 0)
-    except ProcessLookupError:
+    except (ProcessLookupError, PermissionError):
         return False
-    except PermissionError:
-        return True
     return True
+
+
+def _pid_state(pid: int) -> str:
+    """'alive', 'gone', or 'foreign' (exists but belongs to another user)."""
+    try:
+        os.kill(pid, 0)
+    except ProcessLookupError:
+        return "gone"
+    except PermissionError:
+        return "foreign"
+    return "alive"
 
 
 class Waker:
@@ -224,7 +264,9 @@ class Waker:
     def __init__(self, root: Path, snapshot: Callable[[], Tuple[Dict, Dict]],
                  state_path: Optional[Path], log_dir: Path,
                  clock: Callable[[], float] = time.time, poll_sec: float = 5.0,
-                 kill_grace: float = 10.0):
+                 kill_grace: float = 10.0,
+                 boot_time: Callable[[], Optional[int]] = boot_time,
+                 proc_start: Callable[[int], Optional[str]] = proc_start):
         self.root = Path(root)
         self.snapshot = snapshot
         self.state_path = Path(state_path) if state_path is not None else None
@@ -236,7 +278,13 @@ class Waker:
         self._stop = threading.Event()
         self._thread = None  # type: Optional[threading.Thread]
         self._saved = None  # type: Optional[str]  # the text last written
-        self._state = self._load()  # type: Dict[str, dict]
+        self._boot_time = boot_time
+        self._proc_start = proc_start
+        self._lock_fd = None  # type: Optional[int]
+        # One Waker per state file: a second server (say one run by hand
+        # beside the service) must not kill the first's agents or double-run.
+        self.disabled = not self._take_lock()
+        self._state = {} if self.disabled else self._load()  # type: Dict[str, dict]
         self._running = {}  # type: Dict[str, dict]
         self._view = {}  # type: Dict[str, dict]
         self._shown = []  # type: List[str]
@@ -244,6 +292,35 @@ class Waker:
             self._view[pid] = self._view_of_last(st.get("last"))
 
     # persistence
+
+    def _take_lock(self) -> bool:
+        """Lock <state_path>.lock; False (with a warning) when that is not possible."""
+        if self.state_path is None:
+            return True
+        lock = str(self.state_path) + ".lock"
+        try:
+            fd = os.open(lock, os.O_RDWR | os.O_CREAT, 0o600)
+        except OSError as e:
+            print("crosstalk wake: disabled: cannot open lock %s: %s" % (lock, e),
+                  file=sys.stderr)
+            return False
+        try:
+            fcntl.flock(fd, fcntl.LOCK_EX | fcntl.LOCK_NB)
+        except OSError as e:
+            os.close(fd)
+            print("crosstalk wake: disabled: another server holds the lock %s (%s); "
+                  "this one wakes no agents" % (lock, e), file=sys.stderr)
+            return False
+        self._lock_fd = fd
+        return True
+
+    def _release_lock(self) -> None:
+        fd, self._lock_fd = self._lock_fd, None
+        if fd is not None:
+            try:
+                fcntl.flock(fd, fcntl.LOCK_UN)
+            finally:
+                os.close(fd)
 
     def _load(self) -> Dict[str, dict]:
         if self.state_path is None or not self.state_path.exists():
@@ -273,19 +350,42 @@ class Waker:
                 # and may still be running: end it before anything can start
                 # a second run beside it.
                 last = dict(last, status="interrupted")
-                self._kill_orphan(pid, last.pop("pgid", None))
+                self._kill_orphan(pid, last.pop("pgid", None), last.pop("boot", None),
+                                  last.pop("lstart", None))
             elif last is not None:
                 last = dict(last)
-                last.pop("pgid", None)
+                for key in ("pgid", "boot", "lstart"):
+                    last.pop(key, None)
             state[pid] = {"rung": rung, "runs": runs, "last": last}
         return state
 
-    def _kill_orphan(self, pid: str, pgid) -> None:
-        """SIGTERM the recorded process group, then SIGKILL it after the grace."""
+    def _kill_orphan(self, pid: str, pgid, boot, lstart) -> None:
+        """SIGTERM the recorded process group, then SIGKILL it after the grace.
+
+        Only when it is provably the same group: recorded on this boot (a
+        pgid from before a reboot may name anything now), and, while its
+        leader lives, led by a process with the recorded start time (the pid
+        may have been reused). A group whose leader is gone keeps its pgid
+        reserved while any member lives, so it is still ours on the same boot.
+        """
         if isinstance(pgid, bool) or not isinstance(pgid, int) or pgid <= 1:
             return
         if pgid == os.getpgrp() or not _group_alive(pgid):
             return
+        current = self._boot_time()
+        if boot is None or current is None or boot != current:
+            print("crosstalk wake: %s: not ending process group %d: it was recorded on "
+                  "another boot, or the boot time is unknown" % (pid, pgid), file=sys.stderr)
+            return
+        leader = _pid_state(pgid)
+        if leader == "foreign":
+            return
+        if leader == "alive":
+            now_start = self._proc_start(pgid)
+            if lstart is None or now_start is None or now_start != lstart:
+                print("crosstalk wake: %s: not ending process group %d: its leader is not "
+                      "the process that was started" % (pid, pgid), file=sys.stderr)
+                return
         print("crosstalk wake: %s: ending process group %d left running by a previous server"
               % (pid, pgid), file=sys.stderr)
         _killpg(pgid, signal.SIGTERM)
@@ -334,6 +434,8 @@ class Waker:
 
     def status(self) -> Dict[str, dict]:
         """{pid: {status, since, ids, log}} for each roster pid with a wake.json entry."""
+        if self.disabled:
+            return {}
         with self._lock:
             return {pid: dict(self._view[pid], ids=list(self._view[pid]["ids"]))
                     for pid in self._shown if pid in self._view}
@@ -344,7 +446,8 @@ class Waker:
         run = self._running.pop(pid)
         last = self._state.setdefault(pid, {"rung": [], "runs": [], "last": None})["last"] or {}
         last.update(status=status, ended=_iso(self.clock()), exit=code)
-        last.pop("pgid", None)
+        for key in ("pgid", "boot", "lstart"):
+            last.pop(key, None)
         self._state[pid]["last"] = last
         self._set(pid, status, ids=run["ids"], log=run["log"])
 
@@ -421,16 +524,22 @@ class Waker:
                 return
         # The child leads its own process group; recorded so that a server
         # that dies without cleanup can end it on the next start.
-        st["last"]["pgid"] = proc.pid
+        # boot and lstart let that start tell this group from a later one
+        # that happens to get the same number.
+        st["last"].update(pgid=proc.pid, boot=self._boot_time(),
+                          lstart=self._proc_start(proc.pid))
         self._running[pid] = {"proc": proc, "started": now, "timeout": cfg.timeoutSec,
                               "term_at": None, "killed": False, "ids": list(ids),
                               "log": str(log)}
         self._set(pid, "running", ids=ids, log=str(log))
+        self._save()  # so a crash right after this spawn still knows the group
 
     # the pass
 
     def poll_once(self) -> None:
         """One pass: reap, reload config and log, ring where allowed, save if changed."""
+        if self.disabled:
+            return
         with self._lock:
             changed = self._reap()
             try:
@@ -498,15 +607,21 @@ class Waker:
             self._stop.wait(self.poll_sec)
 
     def start(self) -> None:
-        """Run poll_once every poll_sec on a daemon thread."""
-        if self._thread is not None:
+        """Run poll_once every poll_sec on a daemon thread (not when disabled)."""
+        if self._thread is not None or self.disabled:
             return
         self._stop.clear()
         self._thread = threading.Thread(target=self._loop, name="crosstalk-waker", daemon=True)
         self._thread.start()
 
     def stop(self) -> None:
-        """Stop polling; terminate running children and record them interrupted."""
+        """Stop polling; terminate running children, record them interrupted, unlock."""
+        try:
+            self._stop_children()
+        finally:
+            self._release_lock()
+
+    def _stop_children(self) -> None:
         self._stop.set()
         if self._thread is not None:
             self._thread.join()

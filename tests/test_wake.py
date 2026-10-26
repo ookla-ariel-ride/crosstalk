@@ -16,9 +16,9 @@ from test_inbox import rep, req
 
 from crosstalk.participants import load_roster
 from crosstalk.replay import enrich_messages, load_all_lines, replay
-from crosstalk.wake import (WakeConfig, Waker, actionable_items, load_wake, render_command,
-                            render_prompt, roster_wake_keys, wake_config,
-                            wake_problem)
+from crosstalk.wake import (WakeConfig, Waker, actionable_items, boot_time, load_wake,
+                            proc_start, render_command, render_prompt, roster_wake_keys,
+                            wake_config, wake_problem)
 from unittest import mock
 
 REPO = Path(__file__).resolve().parent.parent
@@ -585,6 +585,7 @@ class WakerTests(unittest.TestCase):
         self.owner(owner_msg("m-1", to=["vectorcraft"]))
         w.poll_once()
         self.wait_reaped(w)
+        w.stop()  # a restart: the old server is gone
         self.tick(1000)
         w2 = self.waker()
         w2.poll_once()
@@ -622,20 +623,115 @@ class WakerTests(unittest.TestCase):
         w.poll_once()
         self.assertEqual(w.status()["vectorcraft"]["status"], "interrupted")
 
-    def test_running_after_crash_kills_recorded_group(self):
-        # An orphan from a server that died without cleanup: own session,
-        # ignores SIGTERM. The next start must kill its group before it can
-        # start a second run beside it.
+    def hung_orphan(self):
+        """A fake agent left by a server that died: own session, ignores SIGTERM."""
         env = dict(os.environ, FAKE_AGENT_MODE="hang")
         orphan = subprocess.Popen([sys.executable, FAKE], env=env, start_new_session=True,
                                   stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL,
                                   stderr=subprocess.DEVNULL)
         self.addCleanup(lambda: (orphan.poll() is None and orphan.kill(), orphan.wait()))
         self.wait_calls(1)  # SIGTERM is ignored from here on
+        return orphan
+
+    def crashed_run(self, pgid, **extra):
+        last = {"status": "running", "started": "2026-10-26T11:00:00Z", "ended": None,
+                "exit": None, "ids": ["m-0"], "log": None, "pgid": pgid}
+        last.update(extra)
         self.state.write_text(json.dumps({"vectorcraft": {
-            "rung": ["m-0"], "runs": [], "last": {
-                "status": "running", "started": "2026-10-26T11:00:00Z", "ended": None,
-                "exit": None, "ids": ["m-0"], "log": None, "pgid": orphan.pid}}}))
+            "rung": ["m-0"], "runs": [], "last": last}}))
+
+    def assert_left_alone(self, orphan, w):
+        self.assertIsNone(orphan.poll())
+        w.poll_once()
+        self.assertIsNone(orphan.poll())
+        self.assertEqual(w.status()["vectorcraft"]["status"], "interrupted")
+        saved = json.loads(self.state.read_text())
+        self.assertEqual(saved["vectorcraft"]["last"]["status"], "interrupted")
+        self.assertNotIn("pgid", saved["vectorcraft"]["last"])
+
+    def test_boot_and_start_readers(self):
+        self.assertIsInstance(boot_time(), int)
+        self.assertTrue(proc_start(os.getpid()))
+        with mock.patch("crosstalk.wake.subprocess.run", side_effect=OSError("no")):
+            self.assertIsNone(boot_time())
+            self.assertIsNone(proc_start(os.getpid()))
+        dead = subprocess.Popen([sys.executable, "-c", "pass"])
+        dead.wait()
+        self.assertIsNone(proc_start(dead.pid))
+
+    def test_crashed_run_on_another_boot_is_left_alone(self):
+        # After a reboot the recorded pgid may now name an unrelated group.
+        orphan = self.hung_orphan()
+        self.crashed_run(orphan.pid, boot=1, lstart=proc_start(orphan.pid))
+        w = self.waker(boot_time=lambda: 2)
+        self.assert_left_alone(orphan, w)
+
+    def test_crashed_run_without_boot_is_left_alone(self):
+        orphan = self.hung_orphan()
+        self.crashed_run(orphan.pid, lstart=proc_start(orphan.pid))
+        w = self.waker()
+        self.assert_left_alone(orphan, w)
+
+    def test_crashed_run_when_boot_unreadable_is_left_alone(self):
+        orphan = self.hung_orphan()
+        self.crashed_run(orphan.pid, boot=boot_time(), lstart=proc_start(orphan.pid))
+        w = self.waker(boot_time=lambda: None)
+        self.assert_left_alone(orphan, w)
+
+    def test_crashed_run_with_reused_leader_pid_is_left_alone(self):
+        # Same boot, but the leader pid now belongs to a process started later.
+        orphan = self.hung_orphan()
+        self.crashed_run(orphan.pid, boot=boot_time(), lstart="Thu Jan  1 00:00:00 1970")
+        w = self.waker()
+        self.assert_left_alone(orphan, w)
+
+    def test_crashed_run_with_unreadable_lstart_is_left_alone(self):
+        orphan = self.hung_orphan()
+        self.crashed_run(orphan.pid, boot=boot_time(), lstart=proc_start(orphan.pid))
+        w = self.waker(proc_start=lambda pid: None)
+        self.assert_left_alone(orphan, w)
+
+    def test_foreign_group_is_not_waited_on(self):
+        self.crashed_run(4242, boot=boot_time(), lstart="x")
+        with mock.patch("crosstalk.wake.os.killpg", side_effect=PermissionError) as kp, \
+                mock.patch("crosstalk.wake.os.kill", side_effect=PermissionError):
+            began = time.monotonic()
+            w = self.waker(kill_grace=5)
+            self.assertLess(time.monotonic() - began, 2)
+        sent = [c.args[1] for c in kp.call_args_list]
+        self.assertEqual([s for s in sent if s != 0], [])
+        w.poll_once()
+        self.assertEqual(w.status()["vectorcraft"]["status"], "interrupted")
+
+    def test_crashed_run_whose_leader_died_kills_the_group(self):
+        # The leader is gone but its group lives on the same boot: the pgid
+        # cannot have been reused while the group exists.
+        os.environ["FAKE_AGENT_MODE"] = "fork-hang"
+        leader = subprocess.Popen([sys.executable, FAKE], start_new_session=True,
+                                  stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL,
+                                  stderr=subprocess.DEVNULL)
+        self.addCleanup(lambda: (leader.poll() is None and leader.kill(), leader.wait()))
+        gc = self.grandchild()
+        lstart = proc_start(leader.pid)
+        leader.kill()
+        leader.wait()
+        self.crashed_run(leader.pid, boot=boot_time(), lstart=lstart)
+        self.waker(kill_grace=0.5)
+        deadline = time.time() + 5
+        while time.time() < deadline:
+            try:
+                os.kill(gc, 0)
+            except ProcessLookupError:
+                break
+            time.sleep(0.05)
+        with self.assertRaises(ProcessLookupError):
+            os.kill(gc, 0)
+
+    def test_running_after_crash_kills_recorded_group(self):
+        # Same boot, same leader start time: the next start must kill the
+        # group before it can start a second run beside it.
+        orphan = self.hung_orphan()
+        self.crashed_run(orphan.pid, boot=boot_time(), lstart=proc_start(orphan.pid))
         w = self.waker(kill_grace=0.5)
         self.assertEqual(orphan.wait(timeout=5), -9)
         w.poll_once()
@@ -654,9 +750,65 @@ class WakerTests(unittest.TestCase):
         saved = json.loads(self.state.read_text())
         self.assertEqual(saved["vectorcraft"]["last"]["status"], "running")
         self.assertEqual(saved["vectorcraft"]["last"]["pgid"], child)
+        self.assertEqual(saved["vectorcraft"]["last"]["boot"], boot_time())
+        self.assertEqual(saved["vectorcraft"]["last"]["lstart"], proc_start(child))
         w.stop()
         saved = json.loads(self.state.read_text())
         self.assertNotIn("pgid", saved["vectorcraft"]["last"])
+
+    def test_pgid_saved_at_spawn(self):
+        os.environ["FAKE_AGENT_MODE"] = "sleep:30"
+        w = self.waker()
+        w.poll_once()
+        self.owner(owner_msg("m-1", to=["vectorcraft"]))
+        with mock.patch.object(Waker, "_save", autospec=True,
+                               side_effect=lambda self_: None) as save:
+            w.poll_once()
+        # _save is called from _spawn, not only at the end of the pass.
+        self.assertGreaterEqual(save.call_count, 2)
+
+    def test_second_waker_on_same_state_is_disabled(self):
+        os.environ["FAKE_AGENT_MODE"] = "sleep:30"
+        w1 = self.waker()
+        w1.poll_once()
+        self.owner(owner_msg("m-1", to=["vectorcraft"]))
+        w1.poll_once()
+        child = w1._running["vectorcraft"]["proc"]
+        with mock.patch("sys.stderr") as err:
+            w2 = self.waker(kill_grace=0.2)
+        self.assertTrue(w2.disabled)
+        self.assertTrue(any("lock" in str(c) for c in err.write.call_args_list))
+        self.assertEqual(w2.status(), {})
+        w2.poll_once()
+        w2.start()
+        self.assertIsNone(w2._thread)
+        time.sleep(0.3)
+        self.assertIsNone(child.poll())
+        self.assertEqual(w2.status(), {})
+        self.assertEqual(json.loads(self.state.read_text())["vectorcraft"]["last"]["status"],
+                         "running")
+        w2.stop()
+        # The first keeps working, and its lock is untouched by w2.stop().
+        self.assertFalse(w1.disabled)
+        w1.poll_once()
+        self.assertEqual(w1.status()["vectorcraft"]["status"], "running")
+        w3 = self.waker()
+        self.assertTrue(w3.disabled)
+        w1.stop()
+        self.assertIsNotNone(child.poll())
+        w4 = self.waker()
+        self.assertFalse(w4.disabled)
+        w4.poll_once()
+        self.assertEqual(w4.status()["vectorcraft"]["status"], "interrupted")
+        lock = Path(str(self.state) + ".lock")
+        self.assertEqual(stat.S_IMODE(lock.stat().st_mode), 0o600)
+
+    def test_in_memory_waker_takes_no_lock(self):
+        a = Waker(self.r.root, lambda: ({}, {}), None, self.logs)
+        b = Waker(self.r.root, lambda: ({}, {}), None, self.logs)
+        self.wakers += [a, b]
+        self.assertFalse(a.disabled)
+        self.assertFalse(b.disabled)
 
     def test_bad_rung_and_runs_in_state_are_empty(self):
         for bad in (None, 5, "m-1", {"m-1": 1}):
@@ -668,6 +820,7 @@ class WakerTests(unittest.TestCase):
             saved = json.loads(self.state.read_text())
             self.assertEqual(saved["vectorcraft"]["rung"], [], bad)
             self.assertEqual(saved["vectorcraft"]["runs"], [], bad)
+            w.stop()
 
     def test_idle_passes_do_not_rewrite_state(self):
         from crosstalk import courier

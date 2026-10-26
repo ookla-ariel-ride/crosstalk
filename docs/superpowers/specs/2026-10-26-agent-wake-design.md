@@ -132,9 +132,17 @@ first gains a `wake` entry.
 When the server stops cleanly (Ctrl-C, or SIGTERM, which is how launchd stops
 the service), a running child's process group is terminated and the run is
 recorded as `interrupted`. While a run is in flight its `last` also records
-the child's process group id (`pgid`). A run still marked `running` after a
-crash is ended on the next start: SIGTERM to that group, SIGKILL after the
-10-second grace if it is still alive, then it is recorded as `interrupted`.
+the child's process group id (`pgid`), the machine's boot time (`boot`, from
+`kern.boottime`) and the leader's start time (`lstart`, from `ps`), and is
+saved right after the spawn. A run still marked `running` after a crash is
+ended on the next start: SIGTERM to that group, SIGKILL after the 10-second
+grace if it is still alive, then it is recorded as `interrupted`. The group is
+signalled only when `boot` matches the current boot and, if the leader still
+lives, its start time matches `lstart`; a group of another user is never
+signalled. Otherwise the run is just recorded as `interrupted`. A Waker holds
+a non-blocking `flock` on `<state file>.lock` (`0600`) from before it reads the
+state until it stops; a second server that cannot take it disables waking
+(no load, no polling, no kills, empty status) and warns once on stderr.
 Either way its ids stay rung. The state file is written only when the state
 changes, and a malformed `rung` or `runs` value reads as empty.
 

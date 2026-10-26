@@ -577,7 +577,9 @@ Under launchd the server's `PATH` includes `~/.local/bin` and
 
 - State (rung items, run times, last result) is in `~/.crosstalk-wake-state.json`
   (`0600`). `CROSSTALK_WAKE_STATE` moves it; set it empty to keep state in
-  memory only.
+  memory only. Only one server at a time wakes agents from a state file: it
+  holds a lock on `<state file>.lock`, and a second server (say one run by hand
+  beside the service) prints a warning and wakes nobody.
 - Each run's output goes to `~/Library/Logs/crosstalk-wake/<id>-<time>.log`.
   `CROSSTALK_WAKE_LOGS` moves the directory.
 - The first time a participant is seen, the items already in its inbox are
@@ -586,7 +588,10 @@ Under launchd the server's `PATH` includes `~/.local/bin` and
 - When the server stops (Ctrl-C, or SIGTERM from launchd), a running agent's
   process group is ended and the run is recorded as interrupted. If the server
   died without that cleanup, the next start ends the recorded process group
-  (SIGTERM, then SIGKILL after 10 s) before it can start another run.
+  (SIGTERM, then SIGKILL after 10 s) before it can start another run. It does
+  so only if the group was recorded since the current boot and its leader, if
+  still alive, has the recorded start time; otherwise the group is left alone,
+  since after a reboot its number may belong to an unrelated program.
 - The roster shows a badge after the last-message time: `waking...`,
   `woke <time ago>` (the last run exited 0), `wake failed` (failed or timed
   out), `wake interrupted`, `cooling down`, `daily cap reached` or
