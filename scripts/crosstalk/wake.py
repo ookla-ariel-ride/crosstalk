@@ -195,12 +195,24 @@ def _day(t: float) -> str:
     return datetime.fromtimestamp(t, timezone.utc).strftime("%Y-%m-%d")
 
 
+def _kill(pid: int, sig: int) -> None:
+    os.kill(pid, sig)
+
+
+def _probe_group(pgid: int, sig: int) -> None:
+    os.killpg(pgid, sig)
+
+
 def _killpg(pid: int, sig: int) -> None:
     try:
-        os.killpg(pid, sig)
+        _probe_group(pid, sig)
     except (ProcessLookupError, PermissionError):
         pass
 
+
+# Fixed locale so the lstart text is the same whatever the server's locale.
+TOOL_ENV = dict(os.environ, LC_ALL="C", LANG="C")
+BOOT_TOLERANCE = 5  # seconds; kern.boottime can shift after clock corrections
 
 BOOT_RE = re.compile(r"\bsec\s*=\s*(\d+)")
 
@@ -208,7 +220,8 @@ BOOT_RE = re.compile(r"\bsec\s*=\s*(\d+)")
 def boot_time() -> Optional[int]:
     """The machine's boot time in epoch seconds (macOS kern.boottime), or None."""
     try:
-        out = subprocess.run(["sysctl", "-n", "kern.boottime"], stdout=subprocess.PIPE,
+        out = subprocess.run(["/usr/sbin/sysctl", "-n", "kern.boottime"], stdout=subprocess.PIPE,
+                             env=TOOL_ENV,
                              stderr=subprocess.DEVNULL, timeout=5, check=True).stdout
         m = BOOT_RE.search(out.decode("utf-8", "replace"))
         return int(m.group(1)) if m else None
@@ -219,8 +232,8 @@ def boot_time() -> Optional[int]:
 def proc_start(pid: int) -> Optional[str]:
     """The start time `ps` reports for pid (lstart), or None when it cannot be read."""
     try:
-        out = subprocess.run(["ps", "-o", "lstart=", "-p", str(int(pid))],
-                             stdout=subprocess.PIPE, stderr=subprocess.DEVNULL,
+        out = subprocess.run(["/bin/ps", "-o", "lstart=", "-p", str(int(pid))],
+                             env=TOOL_ENV, stdout=subprocess.PIPE, stderr=subprocess.DEVNULL,
                              timeout=5).stdout
         text = out.decode("utf-8", "replace").strip()
         return text or None
@@ -235,7 +248,7 @@ def _group_alive(pgid: int) -> bool:
     not ours, so it counts as gone and is never waited on or signalled.
     """
     try:
-        os.killpg(pgid, 0)
+        _probe_group(pgid, 0)
     except (ProcessLookupError, PermissionError):
         return False
     return True
@@ -244,7 +257,7 @@ def _group_alive(pgid: int) -> bool:
 def _pid_state(pid: int) -> str:
     """'alive', 'gone', or 'foreign' (exists but belongs to another user)."""
     try:
-        os.kill(pid, 0)
+        _kill(pid, 0)
     except ProcessLookupError:
         return "gone"
     except PermissionError:
@@ -284,12 +297,16 @@ class Waker:
         # One Waker per state file: a second server (say one run by hand
         # beside the service) must not kill the first's agents or double-run.
         self.disabled = not self._take_lock()
-        self._state = {} if self.disabled else self._load()  # type: Dict[str, dict]
-        self._running = {}  # type: Dict[str, dict]
-        self._view = {}  # type: Dict[str, dict]
-        self._shown = []  # type: List[str]
-        for pid, st in self._state.items():
-            self._view[pid] = self._view_of_last(st.get("last"))
+        try:
+            self._state = {} if self.disabled else self._load()  # type: Dict[str, dict]
+            self._running = {}  # type: Dict[str, dict]
+            self._view = {}  # type: Dict[str, dict]
+            self._shown = []  # type: List[str]
+            for pid, st in self._state.items():
+                self._view[pid] = self._view_of_last(st.get("last"))
+        except BaseException:
+            self._release_lock()
+            raise
 
     # persistence
 
@@ -373,12 +390,15 @@ class Waker:
         if pgid == os.getpgrp() or not _group_alive(pgid):
             return
         current = self._boot_time()
-        if boot is None or current is None or boot != current:
+        if (isinstance(boot, bool) or not isinstance(boot, int) or current is None
+                or abs(boot - current) > BOOT_TOLERANCE):
             print("crosstalk wake: %s: not ending process group %d: it was recorded on "
                   "another boot, or the boot time is unknown" % (pid, pgid), file=sys.stderr)
             return
         leader = _pid_state(pgid)
         if leader == "foreign":
+            print("crosstalk wake: %s: not ending process group %d: its leader belongs to "
+                  "another user" % (pid, pgid), file=sys.stderr)
             return
         if leader == "alive":
             now_start = self._proc_start(pgid)
