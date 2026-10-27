@@ -742,6 +742,78 @@
     return res("helpPerRecipient", ok, "initial=" + initialListed + " still=" + stillListed + " waiting=" + JSON.stringify(waitingText) + " hasReply=" + hasReply + " dropped=" + droppedAfterAll);
   });
 
+  // The Help tab follows relay.py inbox (requests.open_requests): who counts as having answered.
+  function helpWaiting(summary) {
+    var c = helpCards().filter(function (x) { return x.textContent.indexOf(summary) !== -1; })[0];
+    var p = c && c.querySelector(".pill.pending-to");
+    return c ? (p ? p.textContent : "") : null;
+  }
+  async function dropParticipant(id) { delete __store.participants[id]; __emit("participants"); await tick(); }
+
+  // A quarantined recipient never holds a request open: it isn't waited on.
+  S.push(async function helpQuarantinedRecipientIgnored() {
+    await go("help");
+    await addDoc("participants", "hq-recip", { name: "HQ recip", kind: "tool", color: "#555555" });
+    await addDoc("messages", "hreq-qr", { t: ago(1), from: "codex", kind: "request", summary: "Quarantined recipient?", to: ["bewareilive", "hq-recip"] });
+    var before = helpWaiting("Quarantined recipient?");
+    await addDoc("messages", "hrep-qr", { t: ago(1), from: "bewareilive", kind: "reply", summary: "BIL done", replyTo: "hreq-qr" });
+    var after = helpWaiting("Quarantined recipient?");
+    await dropParticipant("hq-recip");
+    await go("timeline");
+    return res("helpQuarantinedRecipientIgnored", before === "" && after === null, "before=" + JSON.stringify(before) + " after=" + JSON.stringify(after));
+  });
+
+  // @projects in the text means the approved projects, not a quarantined one.
+  S.push(async function helpProjectsMentionApprovedOnly() {
+    await go("help");
+    await addDoc("participants", "hq-proj", { name: "HQ proj", kind: "project", color: "#555555" });
+    await addDoc("messages", "hreq-pm", { t: ago(1), from: "codex", kind: "request", summary: "Projects mention?", body: "@projects please check" });
+    var before = helpWaiting("Projects mention?");
+    await addDoc("messages", "hrep-pm-1", { t: ago(1), from: "bewareilive", kind: "reply", summary: "BIL ok", replyTo: "hreq-pm" });
+    await addDoc("messages", "hrep-pm-2", { t: ago(1), from: "vectorcraft", kind: "reply", summary: "VC ok", replyTo: "hreq-pm" });
+    await addDoc("messages", "hrep-pm-3", { t: ago(1), from: "avoidmissingball", kind: "reply", summary: "AMB ok", replyTo: "hreq-pm" });
+    var after = helpWaiting("Projects mention?");
+    await dropParticipant("hq-proj");
+    await go("timeline");
+    return res("helpProjectsMentionApprovedOnly", before === "" && after === null, "before=" + JSON.stringify(before) + " after=" + JSON.stringify(after));
+  });
+
+  // The owner replying to a project's multi-recipient request doesn't answer for the recipients.
+  S.push(async function helpOwnerReplyNotForAll() {
+    await go("help");
+    await addDoc("messages", "hreq-or", { t: ago(1), from: "codex", kind: "request", summary: "Owner answers?", to: ["bewareilive", "vectorcraft"] });
+    await addDoc("messages", "hrep-or", { t: ago(1), from: "owner", kind: "owner", summary: "My view", replyTo: "hreq-or" });
+    var w = helpWaiting("Owner answers?");
+    await go("timeline");
+    return res("helpOwnerReplyNotForAll", w === "waiting on BewareILive · VectorCraft", "waiting=" + JSON.stringify(w));
+  });
+
+  // A sub-agent's reply doesn't count as its parent project answering.
+  S.push(async function helpSubAgentReplyNotParent() {
+    await go("help");
+    await addDoc("participants", "hq-parent.helper", { name: "helper", kind: "agent", parent: "bewareilive", color: "#8a4b12", trust: "approved" });
+    await addDoc("messages", "hreq-sa", { t: ago(1), from: "codex", kind: "request", summary: "Sub-agent answers?", to: ["bewareilive", "vectorcraft"] });
+    await addDoc("messages", "hrep-sa-1", { t: ago(1), from: "hq-parent.helper", kind: "reply", summary: "Helper view", replyTo: "hreq-sa" });
+    await addDoc("messages", "hrep-sa-2", { t: ago(1), from: "vectorcraft", kind: "reply", summary: "VC view", replyTo: "hreq-sa" });
+    var w = helpWaiting("Sub-agent answers?");
+    await dropParticipant("hq-parent.helper");
+    await go("timeline");
+    return res("helpSubAgentReplyNotParent", w === "waiting on BewareILive", "waiting=" + JSON.stringify(w));
+  });
+
+  // A single-recipient request waits for that recipient or the owner, not a bystander.
+  S.push(async function helpSingleRecipientBystander() {
+    await go("help");
+    await addDoc("messages", "hreq-sr", { t: ago(1), from: "vectorcraft", kind: "request", summary: "Bystander answers?", to: ["bewareilive"] });
+    await addDoc("messages", "hrep-sr-1", { t: ago(1), from: "codex", kind: "reply", summary: "Codex view", replyTo: "hreq-sr" });
+    var afterBystander = helpWaiting("Bystander answers?");
+    await addDoc("messages", "hrep-sr-2", { t: ago(1), from: "owner", kind: "owner", summary: "Owner view", replyTo: "hreq-sr" });
+    var afterOwner = helpWaiting("Bystander answers?");
+    await go("timeline");
+    return res("helpSingleRecipientBystander", afterBystander === "waiting on BewareILive" && afterOwner === null,
+      "afterBystander=" + JSON.stringify(afterBystander) + " afterOwner=" + JSON.stringify(afterOwner));
+  });
+
   S.push(async function ownerDigest() {
     var KEY = "crosstalk.lastVisit";
     await go("agreements");
@@ -807,7 +879,7 @@
     var helpTo = hc && hc.querySelector(".to") ? hc.querySelector(".to").textContent : null;
     await addDoc("messages", "hrep-dup-q", { t: ago(1), from: "qreplybot", kind: "reply", summary: "Quarantined reply", replyTo: "hreq-dup" });
     var stillOpenAfterQuarantined = helpHas("Dup recipient request?");
-    await addDoc("messages", "hrep-dup-ok", { t: ago(1), from: "vectorcraft", kind: "reply", summary: "Approved reply", replyTo: "hreq-dup" });
+    await addDoc("messages", "hrep-dup-ok", { t: ago(1), from: "bewareilive", kind: "reply", summary: "Approved reply", replyTo: "hreq-dup" });
     var closedAfterApproved = !helpHas("Dup recipient request?");
     await go("timeline");
     var ok = timelineTo === "\u2192 BewareILive" && helpTo === "to BewareILive" && stillOpenAfterQuarantined && closedAfterApproved;
