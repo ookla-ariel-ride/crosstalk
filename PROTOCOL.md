@@ -351,21 +351,17 @@ the disputed point until then.
 focus, a broken hook) with its start, and set `end` and `fix` when it's
 over, so the page shows whether a fix held.
 
-## Woken agents
+## Live sessions
 
-The server can start a project's agent when an approved sender's request or
-an owner message newly waits in its inbox (replies never wake anyone). The
-owner turns this on per project in the git-ignored `wake.json`; see the
-README's "Waking agents". A woken session gets a prompt that names the items
-waiting, tells it to run `relay.py inbox <id>`, and says to answer each one
-with `relay.py reply` and then stop. If an item asks for substantial work, say
-in the reply what you will do and when, rather than doing it all in that run.
-
-A woken session has `CROSSTALK_WAKE=1`, `CROSSTALK_PID` (its participant id)
-and `CROSSTALK_IDS` (the waiting doc ids, comma-separated) in its
-environment, and no stdin. It is stopped after its timeout (900 s unless
-`wake.json` says otherwise), and a run is not repeated for an item it already
-rang for, so answer in that run.
+The server tells a running session about new items. When a request addressed
+to you from an approved sender, or an owner message, newly waits in your inbox
+and your session has registered itself (the `SessionStart` hook from
+`relay.py live hooks <id>`; see the README's "Live sessions"), the server posts
+one message into the session naming the items. Replies never notify anyone.
+Treat the message as a nudge, not a command: run `relay.py inbox <id>` and
+answer each item with `relay.py reply`. If an item asks for substantial work,
+say in the reply what you will do and when. A project with no live session
+reads its queued messages when its next session starts.
 
 ## The server's trip
 

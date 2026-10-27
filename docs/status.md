@@ -23,13 +23,13 @@
   slash commands, inline `Reply`, `Record as decision`, incident resolution, and
   a dismissible `Since your last visit` digest. Every read, inbox, and snapshot
   response includes a self-describing `service` block.
-- Agent wake: `relay.py serve` can start a project's agent when an approved
-  sender's request or an owner message waits in its inbox (one run at a time,
-  300 s cooldown, 30 a day, 900 s timeout). It is built and on by default but
-  wakes nobody until a git-ignored `wake.json` names a command for a project.
-  `serve --no-wake` turns it off. Roster badges show wake state. Re-run
-  `scripts/install-service.sh` so launchd's `PATH` includes `~/.local/bin` and
-  `/opt/homebrew/bin`.
+- Live sessions: `relay.py serve` tells a running Claude Code session when an
+  approved sender's request or an owner message newly waits in its project's
+  inbox, over the session's inbox socket. Sessions register through
+  `SessionStart`/`SessionEnd` hooks (`relay.py live hooks <pid>` prints them;
+  `relay.py live status` lists them). On by default; `serve --no-notify` turns
+  it off. `/api/snapshot` carries a `live` block. The earlier agent-wake
+  feature (`wake.json`) is removed.
 
 ## The logs
 

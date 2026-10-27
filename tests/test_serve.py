@@ -1,5 +1,6 @@
 import json
 import os
+import re
 import select
 import shutil
 import copy
@@ -16,7 +17,9 @@ from pathlib import Path
 from unittest import mock
 
 from helpers import SPEC_ROSTER, RunningServer, TempRepo, line
+from test_notify import FakeSession
 
+from crosstalk import live
 from crosstalk.logs import append_line, check_all
 from crosstalk.participants import load_roster
 from crosstalk.serve import CrosstalkHandler, repo_build_info, repo_commit
@@ -802,9 +805,9 @@ class OwnerTests(unittest.TestCase):
             r.write_roster()
             code = ("import sys; sys.path.insert(0, %r); from crosstalk.serve import serve; "
                     "serve(%r, port=0)" % (scripts, str(r.root)))
-            # Keep the real ~/.crosstalk-* files (and the wake lock) out of it.
-            env = dict(os.environ, CROSSTALK_WAKE_STATE="", CROSSTALK_SESSIONS="",
-                       CROSSTALK_WAKE_LOGS=str(r.root / "wake-logs"))
+            # Keep the real ~/.crosstalk-* files (and the notifier lock) out of it.
+            env = dict(os.environ, CROSSTALK_NOTIFY_STATE="", CROSSTALK_SESSIONS="",
+                       CROSSTALK_LIVE_DIR=str(r.root / "live"))
             proc = subprocess.Popen([sys.executable, "-u", "-c", code], stdout=subprocess.PIPE,
                                     stderr=subprocess.PIPE, universal_newlines=True, env=env)
             try:
@@ -1075,49 +1078,39 @@ class RobustnessTests(unittest.TestCase):
                     CrosstalkHandler.timeout = old
 
 
-FAKE = str(Path(__file__).resolve().parent / "fake_agent.py")
-
-
-class WakeServeTests(unittest.TestCase):
-    """The waker runs inside serve; its status shows in the snapshot, its config never does."""
+class NotifyServeTests(unittest.TestCase):
+    """The notifier runs inside serve; its status shows in the snapshot, its token never does."""
 
     OWNER_TOKEN = "the-owner-token"
+    SESSION_TOKEN = "tok-secret-123"
 
     def setUp(self):
         self.r = TempRepo()
         self.r.__enter__()
-        self.tmp = Path(tempfile.mkdtemp(prefix="crosstalk-serve-wake-"))
-        self.cwd = self.tmp / "work"
-        self.cwd.mkdir()
-        self.out = self.tmp / "calls.jsonl"
-        env = mock.patch.dict(os.environ, {"FAKE_AGENT_OUT": str(self.out),
-                                           "FAKE_AGENT_MODE": "ok"})
+        self.r.write_roster()
+        self.tmp = Path(tempfile.mkdtemp(prefix="crosstalk-serve-notify-"))
+        self.socks = tempfile.mkdtemp(dir="/tmp", prefix="cc-socks-")
+        env = mock.patch.dict(os.environ, {"CROSSTALK_LIVE_DIR": str(self.tmp / "live")})
         env.start()
         self.addCleanup(env.stop)
-        self.wake_entry = {"command": [sys.executable, FAKE, "{pid}", "{ids}"],
-                           "cwd": str(self.cwd)}
-        self.r.write_roster()
-        (self.r.root / "wake.json").write_text(json.dumps({"vectorcraft": self.wake_entry}),
-                                               encoding="utf-8")
-
-    def stray_wake(self):
-        """A `wake` key left in participants.json: ignored, and never served or logged."""
-        data = copy.deepcopy(SPEC_ROSTER)
-        for p in data["participants"]:
-            if p["id"] == "vectorcraft":
-                p["wake"] = dict(self.wake_entry)
-        self.r.write_roster(data)
+        res = mock.patch.object(live, "SOCKET_DIR_RES", list(live.SOCKET_DIR_RES) + [
+            re.compile("^" + re.escape(self.socks) + "$")])
+        res.start()
+        self.addCleanup(res.stop)
+        self.fakes = []
 
     def tearDown(self):
-        self.r.__exit__(None, None, None)
+        for f in self.fakes:
+            f.close()
+        shutil.rmtree(self.socks, ignore_errors=True)
         shutil.rmtree(str(self.tmp), ignore_errors=True)
+        self.r.__exit__(None, None, None)
 
     def server(self, **kwargs):
         kwargs.setdefault("tokens", {"owner": token_hash(self.OWNER_TOKEN)})
-        kwargs.setdefault("wake", True)
-        kwargs.setdefault("wake_state", self.tmp / "state.json")
-        kwargs.setdefault("wake_logs", self.tmp / "logs")
-        kwargs.setdefault("wake_poll_sec", 0.2)
+        kwargs.setdefault("notify", True)
+        kwargs.setdefault("notify_state", self.tmp / "state.json")
+        kwargs.setdefault("notify_poll_sec", 0.1)
         return RunningServer(self.r.root, **kwargs)
 
     def owner_cookie(self, srv):
@@ -1126,133 +1119,16 @@ class WakeServeTests(unittest.TestCase):
         self.assertEqual(status, 200)
         return headers.get("Set-Cookie", "").split(";")[0]
 
-    def wait_wake(self, srv, pid, status, headers=None, timeout=10.0):
-        deadline = time.time() + timeout
-        snap = None
-        while time.time() < deadline:
-            _code, snap = request(srv.url + "/api/snapshot", headers=headers)
-            if snap.get("wake", {}).get(pid, {}).get("status") == status:
-                return snap
-            time.sleep(0.1)
-        self.fail("wake.%s never reached %r; last snapshot wake: %r"
-                  % (pid, status, (snap or {}).get("wake")))
+    def session(self, sid="s1", pid="vectorcraft"):
+        fake = FakeSession(os.path.join(self.socks, sid + ".sock"))
+        self.fakes.append(fake)
+        env = {"CLAUDE_CODE_MESSAGING_SOCKET": fake.path,
+               "CLAUDE_CODE_MESSAGING_TOKEN": self.SESSION_TOKEN}
+        path = live.register(self.r.root, pid, env, json.dumps({"session_id": sid}), time.time())
+        self.assertIsNotNone(path)
+        return fake
 
-    def test_snapshot_wake_block(self):
-        with self.server() as srv:
-            # Seeding first, so the new message below is not swallowed as backlog.
-            self.wait_wake(srv, "vectorcraft", "idle")
-            self.r.write_log("owner", [line(1, "owner", id_="owner-0001",
-                                            data={"from": "owner", "kind": "owner",
-                                                  "summary": "please look"})])
-            snap = self.wait_wake(srv, "vectorcraft", "ok")
-            block = snap["wake"]["vectorcraft"]
-            self.assertEqual(block["ids"], ["owner-0001"])
-            self.assertIn("since", block)
-            self.assertNotIn("log", block)
-            cookie = self.owner_cookie(srv)
-            _code, owned = request(srv.url + "/api/snapshot", headers={"Cookie": cookie})
-            self.assertIn("log", owned["wake"]["vectorcraft"])
-            self.assertTrue(owned["wake"]["vectorcraft"]["log"].startswith(str(self.tmp / "logs")))
-
-    def test_snapshot_without_waker_has_empty_wake_block(self):
-        with RunningServer(self.r.root) as srv:
-            _code, snap = request(srv.url + "/api/snapshot")
-        self.assertEqual(snap["wake"], {})
-
-    def test_snapshot_roster_hides_wake(self):
-        self.stray_wake()
-        with self.server() as srv:
-            _code, anon = request(srv.url + "/api/snapshot")
-            _code, owned = request(srv.url + "/api/snapshot",
-                                   headers={"Cookie": self.owner_cookie(srv)})
-        self.assertIn("vectorcraft", anon["roster"])
-        self.assertNotIn("wake", anon["roster"]["vectorcraft"])
-        self.assertNotIn("wake", owned["roster"]["vectorcraft"])
-        self.assertNotIn(str(self.cwd), json.dumps(anon))
-        # The roster of record keeps it.
-        on_disk = json.loads((self.r.root / "participants.json").read_text(encoding="utf-8"))
-        entry = [p for p in on_disk["participants"] if p["id"] == "vectorcraft"][0]
-        self.assertIn("wake", entry)
-
-    def test_append_rejects_wake_field(self):
-        with self.server(wake=False) as srv:
-            status, body = request(srv.url + "/api/append", "POST",
-                                   {"from": "owner", "op": "update", "collection": "participants",
-                                    "id": "vectorcraft",
-                                    "data": {"wake": {"command": ["true"], "cwd": "/"}}},
-                                   {"Cookie": self.owner_cookie(srv)})
-        self.assertEqual(status, 400)
-        self.assertEqual(body["error"], "unknown roster field: wake")
-
-    def test_roster_update_keeps_wake_out_of_log(self):
-        self.stray_wake()
-        with self.server(wake=False) as srv:
-            status, body = request(srv.url + "/api/append", "POST",
-                                   {"from": "owner", "op": "update", "collection": "participants",
-                                    "id": "vectorcraft", "data": {"name": "VectorCraft II"}},
-                                   {"Cookie": self.owner_cookie(srv)})
-            self.assertEqual(status, 201)
-            self.assertNotIn("wake", body["data"])
-        on_disk = json.loads((self.r.root / "participants.json").read_text(encoding="utf-8"))
-        entry = [p for p in on_disk["participants"] if p["id"] == "vectorcraft"][0]
-        self.assertEqual(entry["name"], "VectorCraft II")
-        self.assertEqual(entry["wake"]["cwd"], str(self.cwd))
-        lines = [json.loads(x) for x in
-                 (self.r.root / "log" / "owner.jsonl").read_text(encoding="utf-8").splitlines()
-                 if x.strip()]
-        self.assertEqual(lines[-1]["data"]["name"], "VectorCraft II")
-        self.assertNotIn("wake", lines[-1]["data"])
-
-    def test_participants_json_wake_is_not_used(self):
-        self.stray_wake()
-        (self.r.root / "wake.json").unlink()
-        with self.server() as srv:
-            time.sleep(0.6)  # a few polls
-            _code, snap = request(srv.url + "/api/snapshot")
-        self.assertEqual(snap["wake"], {})
-
-    def test_log_doc_wake_ignored(self):
-        self.r.write_log("owner", [line(1, "owner", collection="participants", id_="codex",
-                                        op="update",
-                                        data={"wake": {"command": [sys.executable, FAKE],
-                                                       "cwd": str(self.cwd)}})])
-        with self.server() as srv:
-            snap = self.wait_wake(srv, "vectorcraft", "idle")
-        self.assertNotIn("codex", snap["wake"])
-        self.assertEqual(sorted(snap["wake"]), ["vectorcraft"])
-
-
-class ServeSignalTests(unittest.TestCase):
-    """`relay.py serve` under launchd is stopped with SIGTERM: it must shut down
-    as cleanly as on Ctrl-C, ending a running agent and recording it."""
-
-    def setUp(self):
-        self.r = TempRepo()
-        self.r.__enter__()
-        self.tmp = Path(tempfile.mkdtemp(prefix="crosstalk-serve-sigterm-"))
-        (self.tmp / "work").mkdir()
-        self.state = self.tmp / "state.json"
-        self.out = self.tmp / "calls.jsonl"
-        self.r.write_roster()
-        (self.r.root / "wake.json").write_text(json.dumps({"vectorcraft": {
-            "command": [sys.executable, FAKE, "{pid}", "{ids}"],
-            "cwd": str(self.tmp / "work")}}), encoding="utf-8")
-        self.proc = None
-        self.child = None
-
-    def tearDown(self):
-        if self.proc is not None and self.proc.poll() is None:
-            self.proc.kill()
-            self.proc.wait()
-        if self.child is not None:
-            try:
-                os.killpg(self.child, 9)
-            except OSError:
-                pass
-        self.r.__exit__(None, None, None)
-        shutil.rmtree(str(self.tmp), ignore_errors=True)
-
-    def wait_for(self, what, pred, timeout=20.0):
+    def wait_for(self, what, pred, timeout=10.0):
         deadline = time.time() + timeout
         while time.time() < deadline:
             value = pred()
@@ -1261,34 +1137,134 @@ class ServeSignalTests(unittest.TestCase):
             time.sleep(0.05)
         self.fail("timed out waiting for " + what)
 
-    def saved_last(self):
-        try:
-            return json.loads(self.state.read_text())["vectorcraft"]["last"]
-        except (OSError, ValueError, KeyError):
-            return None
+    def test_snapshot_has_live_block_and_no_wake(self):
+        with self.server() as srv:
+            _code, snap = request(srv.url + "/api/snapshot")
+        self.assertEqual(snap["live"], {})
+        self.assertNotIn("wake", snap)
 
-    def test_sigterm_ends_running_agent_and_records_interrupted(self):
+    def test_owner_message_reaches_a_registered_session(self):
+        fake = self.session()
+        with self.server() as srv:
+            # Let the first pass seed, so the message below is not swallowed as backlog.
+            self.wait_for("the session in the live block",
+                          lambda: request(srv.url + "/api/snapshot")[1]["live"])
+            status, _body = request(srv.url + "/api/append", "POST",
+                                    {"from": "owner", "op": "set", "collection": "messages",
+                                     "id": "own-1",
+                                     "data": {"from": "owner", "kind": "owner",
+                                              "summary": "please look"}},
+                                    {"Cookie": self.owner_cookie(srv)})
+            self.assertEqual(status, 201, _body)
+            self.wait_for("the session to be told", fake.drain)
+            snap = self.wait_for("a told status",
+                                 lambda: (request(srv.url + "/api/snapshot")[1]["live"]
+                                          .get("vectorcraft", {}).get("last")))
+        self.assertEqual(snap["status"], "told")
+        self.assertIn("own-1", json.dumps(fake.lines))
+
+    def test_live_block_shape_and_no_token(self):
+        self.session()
+        with self.server() as srv:
+            block = self.wait_for("the session in the live block",
+                                  lambda: request(srv.url + "/api/snapshot")[1]["live"])
+            body = json.dumps(request(srv.url + "/api/snapshot",
+                                      headers={"Cookie": self.owner_cookie(srv)})[1])
+        self.assertEqual(block["vectorcraft"]["sessions"], 1)
+        self.assertNotIn(self.SESSION_TOKEN, body)
+        self.assertNotIn(self.socks, body)
+
+    def test_notify_off_leaves_live_empty_and_starts_no_thread(self):
+        self.session()
+        before = {t.name for t in threading.enumerate()}
+        with self.server(notify=False) as srv:
+            time.sleep(0.4)
+            _code, snap = request(srv.url + "/api/snapshot")
+            started = {t.name for t in threading.enumerate()} - before
+            self.assertIsNone(srv.state.notifier)
+        self.assertEqual(snap["live"], {})
+        self.assertFalse([n for n in started if "notif" in n.lower()], started)
+
+    def test_snapshot_roster_hides_stale_wake_key(self):
+        data = copy.deepcopy(SPEC_ROSTER)
+        for p in data["participants"]:
+            if p["id"] == "vectorcraft":
+                p["wake"] = {"command": ["secret-agent-cmd"], "cwd": "/secret/dir"}
+        self.r.write_roster(data)
+        with self.server(notify=False) as srv:
+            _code, snap = request(srv.url + "/api/snapshot")
+        self.assertIn("vectorcraft", snap["roster"])
+        self.assertNotIn("wake", snap["roster"]["vectorcraft"])
+        self.assertNotIn("/secret/dir", json.dumps(snap))
+
+    def test_append_rejects_wake_field(self):
+        with self.server(notify=False) as srv:
+            status, body = request(srv.url + "/api/append", "POST",
+                                   {"from": "owner", "op": "update", "collection": "participants",
+                                    "id": "vectorcraft",
+                                    "data": {"wake": {"command": ["true"], "cwd": "/"}}},
+                                   {"Cookie": self.owner_cookie(srv)})
+        self.assertEqual(status, 400)
+        self.assertEqual(body["error"], "unknown roster field: wake")
+
+    def test_roster_update_keeps_stale_wake_out_of_log(self):
+        data = copy.deepcopy(SPEC_ROSTER)
+        for p in data["participants"]:
+            if p["id"] == "vectorcraft":
+                p["wake"] = {"command": ["secret-agent-cmd"], "cwd": "/secret/dir"}
+        self.r.write_roster(data)
+        with self.server(notify=False) as srv:
+            status, body = request(srv.url + "/api/append", "POST",
+                                   {"from": "owner", "op": "update", "collection": "participants",
+                                    "id": "vectorcraft", "data": {"name": "VectorCraft II"}},
+                                   {"Cookie": self.owner_cookie(srv)})
+            self.assertEqual(status, 201)
+            self.assertNotIn("wake", body["data"])
+        lines = [json.loads(x) for x in
+                 (self.r.root / "log" / "owner.jsonl").read_text(encoding="utf-8").splitlines()
+                 if x.strip()]
+        self.assertNotIn("wake", lines[-1]["data"])
+
+
+class ServeSignalTests(unittest.TestCase):
+    """`relay.py serve` under launchd is stopped with SIGTERM: it must shut down
+    as cleanly as on Ctrl-C, stopping the notifier, and exit 143."""
+
+    def setUp(self):
+        self.r = TempRepo()
+        self.r.__enter__()
+        self.tmp = Path(tempfile.mkdtemp(prefix="crosstalk-serve-sigterm-"))
+        self.r.write_roster()
+        self.proc = None
+
+    def tearDown(self):
+        if self.proc is not None and self.proc.poll() is None:
+            self.proc.kill()
+            self.proc.wait()
+        self.r.__exit__(None, None, None)
+        shutil.rmtree(str(self.tmp), ignore_errors=True)
+
+    def test_sigterm_stops_serve_and_exits_143(self):
         import signal
         scripts = str(Path(__file__).resolve().parent.parent / "scripts")
+        state = self.tmp / "state.json"
         code = ("import sys; sys.path.insert(0, %r)\n"
                 "from crosstalk.serve import serve\n"
                 "serve(%r, port=0, no_pin=True, sessions='')\n" % (scripts, str(self.r.root)))
-        env = dict(os.environ, CROSSTALK_WAKE_STATE=str(self.state),
-                   CROSSTALK_WAKE_LOGS=str(self.tmp / "logs"), CROSSTALK_SESSIONS="",
-                   FAKE_AGENT_OUT=str(self.out), FAKE_AGENT_MODE="sleep:30")
+        env = dict(os.environ, CROSSTALK_NOTIFY_STATE=str(state), CROSSTALK_SESSIONS="",
+                   CROSSTALK_LIVE_DIR=str(self.tmp / "live"))
         self.proc = subprocess.Popen([sys.executable, "-c", code], env=env, cwd=str(self.tmp),
-                                     stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL,
+                                     stdin=subprocess.DEVNULL, stdout=subprocess.PIPE,
                                      stderr=subprocess.PIPE)
-        # The first pass seeds (the file appears); then a new message rings.
-        self.wait_for("seeding", lambda: self.state.exists())
-        self.r.write_log("owner", [line(1, "owner", id_="owner-0001",
-                                        data={"from": "owner", "kind": "owner",
-                                              "summary": "please look"})])
-        last = self.wait_for("a running agent",
-                             lambda: (self.saved_last() or {}).get("status") == "running"
-                             and self.saved_last())
-        self.child = last["pgid"]
-        self.wait_for("the agent to start", lambda: self.out.exists())
+        # Wait until it is serving, and the notifier holds its state lock.
+        ready, _w, _x = select.select([self.proc.stdout], [], [], 30)
+        self.assertTrue(ready, "the server printed nothing")
+        self.proc.stdout.readline()
+        deadline = time.time() + 20
+        lock = Path(str(state) + ".lock")
+        while time.time() < deadline and not lock.exists():
+            time.sleep(0.05)
+        self.assertTrue(lock.exists(), "the notifier never started")
         os.kill(self.proc.pid, signal.SIGTERM)
         try:
             self.proc.wait(timeout=20)
@@ -1296,12 +1272,8 @@ class ServeSignalTests(unittest.TestCase):
             self.fail("serve did not exit on SIGTERM")
         stderr = self.proc.stderr.read().decode("utf-8", "replace")
         self.proc.stderr.close()
+        self.proc.stdout.close()
         self.assertEqual(self.proc.returncode, 128 + signal.SIGTERM, stderr)
-        with self.assertRaises(ProcessLookupError):
-            os.killpg(self.child, 0)
-        last = self.saved_last()
-        self.assertEqual(last["status"], "interrupted", stderr)
-        self.assertNotIn("pgid", last)
 
 
 if __name__ == "__main__":
