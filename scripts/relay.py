@@ -2,7 +2,9 @@
 """Command line for the Crosstalk log: check, append, import, pull, pending, restore, sent, token, onboard, kit, serve."""
 import argparse
 import json
+import os
 import sys
+import time
 from pathlib import Path
 from typing import Dict
 
@@ -13,6 +15,7 @@ from crosstalk.consults import adopt_agreement, post_consult, post_reply  # noqa
 from crosstalk.courier import pending, restore, sent  # noqa: E402
 from crosstalk.exporter import export_page  # noqa: E402
 from crosstalk.importer import import_snapshots, merge_snapshots  # noqa: E402
+from crosstalk import live as live_mod  # noqa: E402
 from crosstalk.logs import append_line, check_all, message_problems  # noqa: E402
 from crosstalk.onboard import onboard, regenerate_kit  # noqa: E402
 from crosstalk.ownerpin import clear_pin, set_pin  # noqa: E402
@@ -253,6 +256,31 @@ def cmd_sent(args):
 def cmd_serve(args):
     """Run the page host and API server in the foreground until killed."""
     serve(ROOT, host=args.host, port=args.port, no_pin=args.no_pin, wake=not args.no_wake)
+    return 0
+
+
+def cmd_live(args):
+    """live register|unregister|status|hooks. register/unregister never fail a session."""
+    if args.live_cmd == "register":
+        try:
+            live_mod.register(ROOT, args.pid, os.environ, sys.stdin.read(), time.time())
+        except Exception as e:  # a broken setup must never block a session
+            err("live: register failed: %s" % e.__class__.__name__)
+        return 0
+    if args.live_cmd == "unregister":
+        try:
+            live_mod.unregister(args.pid, sys.stdin.read())
+        except Exception as e:
+            err("live: unregister failed: %s" % e.__class__.__name__)
+        return 0
+    if args.live_cmd == "hooks":
+        print(live_mod.hooks_json(ROOT, args.pid))
+        return 0
+    regs, problems = live_mod.load_registrations(ROOT)
+    for r in regs:
+        print("%s  %s  registered %s" % (r.pid, r.session_id, r.registered))
+    for p in problems:
+        err("live: ignored " + p)
     return 0
 
 
@@ -582,6 +610,15 @@ def build_parser():
     sp.add_argument("pin", nargs="?", metavar="PIN", help="six digits; prompts when left out")
     sp.add_argument("--clear", action="store_true", help="remove the permanent PIN")
     sp.set_defaults(fn=cmd_set_pin)
+    lv = sub.add_parser("live", help="register running Claude Code sessions for live messages")
+    lsub = lv.add_subparsers(dest="live_cmd", required=True)
+    for name, h in (("register", "SessionStart hook: record this session's inbox socket"),
+                    ("unregister", "SessionEnd hook: forget this session"),
+                    ("hooks", "print the hook JSON to paste into settings.local.json")):
+        lp = lsub.add_parser(name, help=h)
+        lp.add_argument("pid", metavar="PARTICIPANT")
+    lsub.add_parser("status", help="list live registrations (never the token)")
+    lv.set_defaults(fn=cmd_live)
     sv = sub.add_parser("serve", help="run the page host and API server")
     sv.add_argument("--port", type=int, default=8484,
                     help="port to bind (default 8484; 0 = ephemeral)")
