@@ -1497,7 +1497,10 @@ td.num, td.t { font: 12px var(--mono); font-variant-numeric: tabular-nums; white
     var others = kids.filter(function (r) { return !(canWrite && String(r.from) === "owner"); });
     others.forEach(function (r) { if (seenBy.messages && !seenBy.messages[r._id]) liveReply[r._id] = true; });
     var unseen = others.some(function (r) { var t = ts(r.t); return !ackReply[r._id] && (liveReply[r._id] || (digestSince != null && !isNaN(t) && t > digestSince)); });
-    var open = HAS.call(threadOpen, rid) ? threadOpen[rid] : unseen || x.inReplies;
+    // Only replies that arrive while the page is open open a thread by themselves;
+    // replies since the last visit just carry the "new reply" tag.
+    var arrived = others.some(function (r) { return !ackReply[r._id] && liveReply[r._id]; });
+    var open = HAS.call(threadOpen, rid) ? threadOpen[rid] : arrived || x.inReplies;
     var card = msgCard(m, false, null);
     if (others.some(function (r) { return seenBy.messages && !seenBy.messages[r._id]; })) card.classList.add("fresh");
     var foot = el("div", "thread-foot");

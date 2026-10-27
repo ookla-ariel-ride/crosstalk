@@ -107,6 +107,8 @@ history and clears the stored last-visit time, so those replies never count as n
 - `threadToggle`: a thread starts collapsed; its footer toggles it and the state survives a snapshot re-render; a
   reply inside it keeps its own Reply button and a reply to a reply shows its "Replying to" line; posting a reply
   from inside the open thread keeps it open with no "new reply" marker; a search the root matches keeps it open.
+- `threadSinceVisitClosed`: a reply newer than the stored last visit that was there at load tags its thread
+  "new reply" but leaves it closed.
 - `threadBump`: a new reply moves an old thread to the top under today's separator, marked "new reply" and
   expanded; a user collapse beats the auto-expand.
 - `threadImportantTwice`: an alert or decision reply is in its thread and also its own feed card with its

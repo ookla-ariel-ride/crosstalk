@@ -1191,6 +1191,22 @@
     return res("threadGrouping", ok, "once=" + once + " noneTop=" + noneTop + " foot=" + JSON.stringify(f) + " foot1=" + JSON.stringify(f1) + " plainFoot=" + !!plainFoot);
   });
 
+  // A reply newer than the last visit that was already there when the page loaded carries the "new reply" tag but
+  // its thread stays closed; only a reply that arrives while the page is open (threadBump) opens it. The stored
+  // last visit is set to just before hist-b (10 min old), which the page picks up on the next render.
+  S.push(async function threadSinceVisitClosed() {
+    await go("timeline");
+    var KEY = "crosstalk.lastVisit", prev = localStorage.getItem(KEY);
+    localStorage.setItem(KEY, String(Date.now() - 12 * 60000));
+    __emit("messages"); await tick();
+    var c = topCard("hist-r"), mark = c && c.querySelector(".pill.new-reply");
+    var closed = !threadBox("hist-r") && $("thread-toggle-hist-r").getAttribute("aria-expanded") === "false";
+    var first = document.querySelector("#log > article"), firstId = first && first.dataset.id;
+    if (prev == null) localStorage.removeItem(KEY); else localStorage.setItem(KEY, prev);
+    var ok = !!mark && mark.textContent === "new reply" && closed;
+    return res("threadSinceVisitClosed", ok, "mark=" + !!mark + " closed=" + closed + " first=" + firstId);
+  });
+
   // Threads start collapsed; the footer toggles them, and the state survives a snapshot re-render. Replying from
   // inside an open thread keeps it open and never marks it "new reply" (the viewer's own reply). A search the
   // root matches doesn't reset the stored choice.
