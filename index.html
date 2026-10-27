@@ -544,13 +544,18 @@ td.num, td.t { font: 12px var(--mono); font-variant-numeric: tabular-nums; white
     amb: "avoidmissingball", avoidmissingball: "avoidmissingball",
     codex: "codex"
   };
+  // A group's approved members, or every member when none is approved yet (as requests.extract_mentions does).
+  function approvedFirst(ids) {
+    var ok = ids.filter(function (id) { return !isQuarantined(id); });
+    return ok.length ? ok : ids;
+  }
   function projectIds() {
     var ids = Object.keys(people).filter(function (id) { return id !== "owner" && person(id).kind === "project"; }).sort(byName);
-    return ids.length ? ids : ["avoidmissingball", "bewareilive", "vectorcraft"];
+    return ids.length ? approvedFirst(ids) : ["avoidmissingball", "bewareilive", "vectorcraft"];
   }
   function reviewerIds() {
     var ids = Object.keys(people).filter(function (id) { var k = person(id).kind; return id !== "owner" && (k === "reviewer" || k === "researcher"); }).sort(byName);
-    return ids.length ? ids : ["codex"];
+    return ids.length ? approvedFirst(ids) : ["codex"];
   }
   function resolveMentionToken(raw) {
     var tok = String(raw == null ? "" : raw).replace(/[.,;:!?)\]]+$/, "");
@@ -675,26 +680,25 @@ td.num, td.t { font: 12px var(--mono); font-variant-numeric: tabular-nums; white
     var out = [];
     data.messages.forEach(function (m) {
       if (m.kind !== "request") return;
+      // The same rule as requests.open_requests in relay.py, so the Help tab and `relay.py inbox` agree.
       var mReplies = (replies[m._id] || []).slice().sort(byT);
-      var approvedReplies = mReplies.filter(function (r) { return !isQuarantined(r.from); });
+      var repliedBy = Object.create(null);
+      mReplies.forEach(function (r) { if (!isQuarantined(r.from)) repliedBy[String(r.from || "")] = true; });
       var toList = toListOf(m);
-      if (!toList.length) {
+      if (m.to == null) {
         toList = extractMentionsFromText((m.summary || "") + "\n" + (m.body || "")).ids;
+        if (!toList.length && String(m.from) === "owner") {
+          toList = Object.keys(people).filter(function (id) { return person(id).kind === "project" && !isQuarantined(id); }).sort(byName);
+        }
       }
-      if (!toList.length && String(m.from) === "owner") {
-        var projs = Object.keys(people).filter(function (id) { return person(id).kind === "project" && !isQuarantined(id); }).sort(byName);
-        if (projs.length) toList = projs;
-      }
-      var pending = toList.filter(function (pid) {
-        return !approvedReplies.some(function (r) {
-          var rf = String(r.from || "");
-          return rf === pid || person(rf).parent === pid || (String(m.from) !== "owner" && rf === "owner");
-        });
-      });
+      // Waiting on the approved recipients that haven't replied; a quarantined one is never waited on.
+      var pending = toList.filter(function (pid) { return !isQuarantined(pid) && !repliedBy[pid]; });
       if (toList.length >= 2) {
         if (!pending.length) return;
-      } else {
-        if (approvedReplies.length !== 0) return;
+      } else if (toList.length === 1) {
+        if (repliedBy[toList[0]] || repliedBy.owner) return;
+      } else if (Object.keys(repliedBy).length) {
+        return;
       }
       out.push({ request: m, replies: mReplies, pending: pending });
     });
@@ -2150,7 +2154,7 @@ td.num, td.t { font: 12px var(--mono); font-variant-numeric: tabular-nums; white
       var form = el("form", "signin"); form.id = "signin-form";
       var lab = el("label", null, "Owner sign-in"); lab.htmlFor = "signin-pin";
       var input = el("input"); input.type = "password"; input.id = "signin-pin";
-      input.placeholder = "Startup PIN or owner token"; input.setAttribute("aria-label", "Startup PIN or owner token");
+      input.placeholder = "PIN or owner token"; input.setAttribute("aria-label", "Your PIN, the startup PIN, or the owner token");
       var btn = el("button", "btn", "Sign in"); btn.type = "submit"; btn.id = "signin-submit";
       var st = el("span", "status-msg", ""); st.id = "signin-status"; st.setAttribute("role", "status");
       form.appendChild(lab); form.appendChild(input); form.appendChild(btn); form.appendChild(st);

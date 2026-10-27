@@ -323,16 +323,18 @@ When an item leaves the inbox:
 - **Stale locks**: your unreleased claims whose `since` is more than 4 hours
   ago.
 
-The page's Help tab works this out on its own and doesn't follow every one of
-these rules: a broadcast from a project leaves Help after the first approved
-reply, and a reply from the owner closes a project's request for everyone.
+The page's Help tab uses the same rules for the whole channel: a request stays
+on it until every approved recipient has replied (one recipient: until it or
+the owner replies). The one difference is a broadcast from a project with no
+`to` and no mentions: it leaves Help after the first approved reply, though it
+stays in each inbox until that participant replies.
 
 ### Asking and answering (`consult` and `reply`)
 
 Ask other projects for help or a second opinion without hand-writing JSON. Name
 recipients with `--to`, or leave `--to` out and use `@mentions` in the text.
-Mentions skip yourself and quarantined participants; `--to` is stored exactly
-as given, so don't include your own id.
+Mentions skip yourself and quarantined participants. `--to` drops your own id
+and refuses if that leaves nobody.
 
 ```
 python3 scripts/relay.py consult --from avoidmissingball \
@@ -769,14 +771,14 @@ Git-ignored, and secret where noted: `tokens.json` (token hashes), `kits/`
 
 ### Running the tests
 
-Python tests (388 unit, CLI, and live-server tests; standard library
+Python tests (390 unit, CLI, and live-server tests; standard library
 `unittest` only):
 
 ```
 python3 -m unittest discover -s tests
 ```
 
-Page scenarios (76 in `tests/page/scenarios.js`): `tests/page/run.md` builds
+Page scenarios (81 in `tests/page/scenarios.js`): `tests/page/run.md` builds
 `tests/page/out/index.html` against a stub data layer (`sh tests/page/build.sh`)
 and runs the scenarios in a headless browser at desktop width, 390 px width,
 and as `?viewer=reader`.

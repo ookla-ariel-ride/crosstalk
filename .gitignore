@@ -7,3 +7,4 @@ kits/
 log/.onboard.lock
 owner-pin.json
 owner-pin.json.tmp
+.claude/worktrees/

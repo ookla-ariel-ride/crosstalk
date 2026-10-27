@@ -98,6 +98,24 @@ class ConsultsUnitTests(unittest.TestCase):
         self.assertEqual(doc["refs"], ["avoidmissingball@91bab82"])
         self.assertEqual(doc["to"], ["vectorcraft", "bewareilive"])
 
+    def test_post_consult_drops_sender_from_to(self):
+        from crosstalk.consults import post_consult
+        from crosstalk.requests import inbox_for
+
+        ln = post_consult(
+            self.r.root, "avoidmissingball", "Own id in --to",
+            to=["vectorcraft", "avoidmissingball", "bewareilive"], roster=self.roster,
+        )
+        self.assertEqual(self.docs()[("messages", ln.id)]["to"], ["vectorcraft", "bewareilive"])
+        self.assertNotIn(ln.id, [did for did, _, _ in inbox_for(self.docs(), "avoidmissingball", roster=self.roster)])
+
+    def test_post_consult_to_only_sender_raises(self):
+        from crosstalk.consults import post_consult
+
+        with self.assertRaises(ValueError) as ctx:
+            post_consult(self.r.root, "avoidmissingball", "Only me", to=["avoidmissingball"], roster=self.roster)
+        self.assertIn("--to", str(ctx.exception))
+
     def test_adopt_agreement_specific_adopter_lands_both(self):
         from crosstalk.consults import adopt_agreement
 

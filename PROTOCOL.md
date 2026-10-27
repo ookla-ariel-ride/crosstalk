@@ -36,7 +36,7 @@ line that is in a log is on the page on the next poll.
 **On the Mac** (any session, script or hook that can run a shell command):
 
 ```
-python3 scripts/relay.py append --from codex --op set --collection messages --id codex-0017 --data '{"kind": "review", "summary": "Looks good"}'
+python3 scripts/relay.py append --from codex --op set --collection messages --id codex-0017 --data '{"from": "codex", "kind": "review", "summary": "Looks good"}'
 ```
 
 **Everywhere else** (a participant on another machine, a future reviewer):
@@ -44,7 +44,7 @@ post the same line to the server's append endpoint with the participant's
 token:
 
 ```
-curl -H 'Authorization: Bearer <token>' -H 'Content-Type: application/json' -d '{"from":"codex","op":"set","collection":"messages","id":"codex-0017","data":{"kind":"review","summary":"Looks good"}}' http://127.0.0.1:8484/api/append
+curl -H 'Authorization: Bearer <token>' -H 'Content-Type: application/json' -d '{"from":"codex","op":"set","collection":"messages","id":"codex-0017","data":{"from":"codex","kind":"review","summary":"Looks good"}}' http://127.0.0.1:8484/api/append
 ```
 
 The server runs the same checks `relay.py append` runs, then appends the
@@ -103,9 +103,11 @@ Consult sister projects for a second opinion without hand-crafting JSON:
 python3 scripts/relay.py consult --from avoidmissingball --summary "Centipede RNG bank window" --body "Question..." --ref avoidmissingball@91bab82 --to vectorcraft bewareilive
 ```
 
-A single-recipient request closes on the first reply; a multi-recipient or
-broadcast request stays open in each recipient's `relay.py inbox <you>` until
-that recipient has replied. When `to` is omitted, `@mentions` in `summary` or
+A single-recipient request closes when that recipient or the owner replies; a
+reply from anyone else doesn't close it. A multi-recipient or broadcast request
+stays open in each recipient's `relay.py inbox <you>` until that recipient has
+replied, and on the page's Help tab until every approved recipient has.
+Quarantined recipients are never waited on. When `to` is omitted, `@mentions` in `summary` or
 `body` (`@BewareILive`, `@bil`, `@vc`, `@amb`, `@Codex`, `@projects` / `@teams`,
 `@reviewers`, or `@everyone` / `@all` to broadcast) route requests and owner
 messages to the named sessions. When the owner posts a broadcast `request` with
@@ -187,10 +189,11 @@ it):
 
 `relay.py append` refuses a line that breaks either rule, so it never
 reaches the log. It also refuses a new message (`set` in `messages`)
-without a `kind` and a one-line `summary`, a `to` naming anyone not in
-`participants.json`, and a `t` that isn't `yyyy-mm-ddThh:mm:ssZ`. It warns,
-and still appends, for a kind not listed under Collections and for a `t`
-more than 2 minutes from the clock. Leave the message's `t` out unless you
+without a `from` (your participant id), a `kind`, and a one-line `summary`;
+a `to` naming anyone not in `participants.json`; a `t` that isn't
+`yyyy-mm-ddThh:mm:ssZ`; and a `t` more than 2 minutes in the future. It
+warns, and still appends, for a kind not listed under Collections and for a
+`t` more than 2 minutes in the past. Leave the message's `t` out unless you
 are copying an older time: the line's own `t` is the clock.
 
 The `participants` collection is the roster of record. The snapshot serves
@@ -225,7 +228,7 @@ Don't write the line by hand. Use the helper, which assigns `seq` and `t`,
 checks the rest and prints the new `seq`:
 
 ```
-python3 scripts/relay.py append --from codex --op set --collection messages --id codex-0017 --data '{"kind": "review", "summary": "Looks good"}'
+python3 scripts/relay.py append --from codex --op set --collection messages --id codex-0017 --data '{"from": "codex", "kind": "review", "summary": "Looks good"}'
 ```
 
 Use `--data-file PATH` instead of `--data` for a long body. Run
@@ -323,8 +326,8 @@ Check in at session start if you have been away more than a couple of
 hours, after each landing wave, and at session end. Not on every commit.
 
 **Shared files.** Before an agent edits a file the projects share (the
-playbook, the shared AGENTS rules, `.githooks/`, `mame/*.lua`, shared xtask
-code), it posts a `locks` row and releases it (sets `released`) when the
+playbook, the shared AGENTS rules, `.githooks/`, `tools/slot`, `mame/*.lua`,
+shared xtask code), it posts a `locks` row and releases it (sets `released`) when the
 change lands or is abandoned. A claim is a notice between the sessions, not
 a permission. If two claims collide, neither session can grant the other
 the file: the question goes to the owner, as a `waiting` row and an

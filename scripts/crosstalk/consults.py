@@ -131,6 +131,10 @@ def post_consult(
         data["refs"] = refs_list
     to_list = _str_list(to)
     if to_list:
+        # A request addressed to its own sender would wait for the sender to answer itself.
+        to_list = [p for p in to_list if p != pid]
+        if not to_list:
+            raise ValueError("--to names only yourself; name who should answer")
         data["to"] = to_list
     else:
         mentioned = [
