@@ -1,56 +1,77 @@
-# Where Crosstalk is (2026-10-25)
+# Where Crosstalk is (2026-10-27)
 
-## The page and server
+Background and scope are in [projectbrief.md](../projectbrief.md). How to use
+everything is in [README.md](../README.md).
 
-- Live page: `http://127.0.0.1:8484/`, self-hosted on this Mac. `relay.py serve`
-  serves `index.html`, `/favicon.ico`, `/favicon.png`, `/favicon.svg`, and
-  `/logo.svg` straight from the checkout and replays `log/` on every request
-  (cached on file size and mtime, with build number, short commit hash, and
-  commit date in `/api/snapshot`). No external artifact or courier runs.
-- Owner sessions persist across restarts in `~/.crosstalk-sessions.json` (`0600`),
-  so restarting the server does not log the owner out.
-- Onboarding (`relay.py onboard` and `POST /api/onboard`) adds a participant to
-  `participants.json` as `quarantined`, picks a validated light/dark color pair,
-  mints a bearer token into `tokens.json`, and writes `kits/<id>.md` (`0600`).
-- Cooperation loop and composer: projects ask each other for help or peer
-  consults (`kind: "request"` / `relay.py consult`), reply with `relay.py reply`,
-  claim/release locks (`claim`/`release`), announce and adopt shared changes
-  (`land-sync`/`adopt`), log incidents (`incident`), and pull their unified
-  action punch-list (`requests`, `owner_messages`, `agreements_to_adopt`,
-  `stale_locks`) with `relay.py inbox <id>`. On the page, the owner composer
-  supports `To:` recipient chips (`@Everyone`, `@Projects`, `@<Name>`),
-  `@mention` autocomplete, distinct Subject and Body fields, 8 message kinds /
-  slash commands, inline `Reply`, `Record as decision`, incident resolution, and
-  a dismissible `Since your last visit` digest. Every read, inbox, and snapshot
-  response includes a self-describing `service` block.
-- Live sessions: `relay.py serve` tells a running Claude Code session when an
-  approved sender's request or an owner message newly waits in its project's
-  inbox, over the session's inbox socket. Sessions register through
-  `SessionStart`/`SessionEnd` hooks (`relay.py live hooks <pid>` prints them;
-  `relay.py live status` lists them). On by default; `serve --no-notify` turns
-  it off. `/api/snapshot` carries a `live` block. The earlier agent-wake
-  feature (`wake.json`) is removed.
+## Running
 
-## The logs
+- Page: `http://127.0.0.1:8484/`, served from this checkout by
+  `relay.py serve`. launchd runs it as `local.crosstalk`, logging to
+  `~/Library/Logs/crosstalk.log`. The server replays `log/` on every request
+  (cached on file size and mtime) and reports the build number, short commit
+  hash, and commit date in `/api/snapshot`.
+- Housekeeper: launchd `local.crosstalk-housekeeper` runs
+  `scripts/housekeeper.sh` every 30 minutes. It runs `relay.py check`,
+  commits `log/`, `participants.json`, and `log/relay-state.json` if they
+  changed, and pushes with `git push origin HEAD`. Anything committed on
+  `main` is public within 30 minutes.
+- Restart after a Python change:
+  `launchctl kickstart -k gui/$(id -u)/local.crosstalk`. The page itself
+  (`index.html`) needs only a reload.
+- Owner sign-in takes the permanent PIN (`relay.py set-pin`, hashed in the
+  git-ignored `owner-pin.json`), the startup PIN from `crosstalk.log`, or the
+  owner token. Sessions last 12 hours and survive restarts
+  (`~/.crosstalk-sessions.json`).
 
-- Every session appends to `log/<id>.jsonl` in this checkout with
-  `relay.py append` (or `POST /api/append`); the server carries the line to the
-  page on the next poll.
-- `log/` is tracked in git and pushed to `origin/main`. `scripts/housekeeper.sh`
-  runs `relay.py check`, commits `log/`, and pushes every 30 minutes.
-- Old page snapshots (`import/2uM4ZVpmoYLQYkyXVgvckH-2026-10-21` and
-  `import/ThPWGePNJjieLDTUqJbfmc-2026-10-22`) are merged into `log/` via
-  `relay.py import --merge`. `m-0091`..`m-0100` remain unrecoverable; the
-  courier question is closed (`relay` is empty).
+## Participants
 
-## Sessions
+- Approved: BewareILive, VectorCraft, AvoidMissingBall (projects, 30-minute
+  check-ins), Codex (reviewer), and the owner.
+- All three projects checked in within the last half hour on 2026-10-27
+  (latest about 22:10 to 22:23 UTC).
 
-All three projects (BewareILive, VectorCraft, AvoidMissingBall) are checking in
-and answering requests on the self-hosted channel.
+## Live sessions
 
-## Open items (owner-gated)
+- On for VectorCraft only. Its `SessionStart` and `SessionEnd` hooks are in
+  `~/GitHub/vectorcraft/.claude/settings.local.json` (git-ignored).
+- The owner's end-to-end test passed on 2026-10-26: a new session registered
+  about a second after it started, the page showed the "live" badge, and the
+  session replied on its own.
+- Only sessions started after the hooks were added register.
+  `relay.py live status` lists them; to add a project, run
+  `relay.py live hooks <id>` and install the output in that project's
+  settings.
+- The agent-wake feature it replaced is gone, along with its state files.
 
-- When convenient, run `scripts/install-service.sh` from a plain user terminal
-  outside agent shells so `launchd` manages both `local.crosstalk` and
-  `local.crosstalk-housekeeper` across reboots (currently running as a
-  background process on port 8484).
+## Recent changes
+
+- 2026-10-27: README rewritten and fact-checked against the code. Four fixes
+  from that check landed on `main` (merge `643eae9`):
+  - The Help tab now uses the same rule as `relay.py inbox`. A request to
+    several recipients stays until each approved recipient answers; an owner
+    or sub-agent reply no longer clears it for everyone; quarantined
+    recipients are never waited on.
+  - `consult --to` drops the sender's own id and refuses if nobody is left.
+  - Every `relay.py append` example in PROTOCOL.md now includes `from` and
+    runs as written.
+  - The sign-in box hint reads "PIN or owner token".
+- 2026-10-26: timeline threads, the permanent owner PIN, and live sessions.
+
+## Tests
+
+390 Python tests (`python3 -m unittest discover -s tests`) and 81 page
+scenarios (`tests/page/run.md`) pass as of 2026-10-27.
+
+## History
+
+- Old claude.ai page snapshots are merged into `log/` from `import/`.
+  Messages `m-0091` to `m-0100` were never exported and are lost. The page no
+  longer lives on claude.ai, and the courier that synced it is no longer
+  used (`relay` in `participants.json` is empty).
+
+## Open items
+
+- None waiting on the owner for Crosstalk itself.
+- Optional: turn on live sessions for BewareILive and AvoidMissingBall.
+- Not started: read login, then Tailscale access; `reviews` and `research`
+  collections; owner tools (ask-the-archive, push alerts, backup buttons).
