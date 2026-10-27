@@ -125,9 +125,9 @@ a { color: inherit; }
 .rp[aria-pressed="true"] { background: var(--fg); color: var(--bg); }
 .rp .nm { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .rp .since { font: 11px var(--mono); color: var(--muted); }
-.rp[aria-pressed="true"] .since, .rp[aria-pressed="true"] .live { color: inherit; }
-.live { font: 11px var(--mono); color: var(--muted); margin-left: 6px; }
-.live-failed { color: var(--warn); }
+.rp[aria-pressed="true"] .since, .rp[aria-pressed="true"] .live-badge { color: inherit; }
+.live-badge { font: 11px var(--mono); color: var(--muted); margin-left: 6px; }
+.live-badge-failed { color: var(--warn); }
 .cdot { flex: none; width: 8px; height: 8px; border-radius: 50%; }
 .cdot.ok { background: var(--ok); } .cdot.warn { background: var(--warn); } .cdot.bad { background: var(--bad); }
 .rx { display: flex; flex-wrap: wrap; gap: 4px 6px; align-items: center; padding: 2px 0 4px 9px; }
@@ -1296,7 +1296,7 @@ td.num, td.t { font: 12px var(--mono); font-variant-numeric: tabular-nums; white
     var l = HAS.call(liveStatus, id) ? liveStatus[id] : null;
     if (!l || !(l.sessions > 0)) return null;
     var failed = !!(l.last && l.last.status === "failed");
-    var span = el("span", failed ? "live live-failed" : "live", failed ? "couldn't reach session" : "live"); span.id = "live-" + id;
+    var span = el("span", failed ? "live-badge live-badge-failed" : "live-badge", failed ? "couldn't reach session" : "live"); span.id = "live-" + id;
     var tip = [l.sessions + (l.sessions === 1 ? " live session" : " live sessions")];
     if (l.since) tip.push("since " + l.since);
     if (l.last && l.last.at) tip.push("last message " + (failed ? "failed " : "told ") + l.last.at);

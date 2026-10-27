@@ -1346,17 +1346,21 @@
     var bad = [], v = $("live-vectorcraft"), w = $("live-bewareilive"), a = $("live-avoidmissingball");
     if (!v) bad.push("vectorcraft missing");
     else {
+      if (!v.classList.contains("live-badge")) bad.push("vectorcraft no live-badge class");
       if (v.textContent !== "live") bad.push("vectorcraft text=" + v.textContent);
-      if (v.classList.contains("live-failed")) bad.push("vectorcraft has live-failed");
+      if (v.classList.contains("live-badge-failed")) bad.push("vectorcraft has live-badge-failed");
       if (!$("who-vectorcraft").contains(v)) bad.push("vectorcraft badge outside its row");
     }
     if (!w) bad.push("bewareilive missing");
     else {
       if (w.textContent !== "couldn't reach session") bad.push("bewareilive text=" + w.textContent);
-      if (!w.classList.contains("live-failed")) bad.push("bewareilive no live-failed class");
+      if (!w.classList.contains("live-badge-failed")) bad.push("bewareilive no live-badge-failed class");
       if (!w.title) bad.push("bewareilive no title");
     }
+    if (!$("who-avoidmissingball")) bad.push("avoidmissingball row missing");
     if (a) bad.push("avoidmissingball has badge");
+    var fs = getComputedStyle($("live")).fontSize, tv = getComputedStyle($("live").closest(".val")).fontSize;
+    if (fs === "11px" || fs !== tv) bad.push("feed #live font-size=" + fs + " tile val=" + tv);
     var wake = document.querySelectorAll('[id^="wake-"]').length;
     if (wake) bad.push(wake + " wake- elements");
     __setLive({}); await tick();

@@ -437,6 +437,21 @@ class RenderAndSendTests(unittest.TestCase):
                               [{"_id": "m-1", "from": "ghost", "summary": "yo"}], Path("/r"))
         self.assertIn("- message from ghost: yo (m-1)", text)
 
+    def test_render_caps_item_lines(self):
+        items = [{"_id": "m-%d" % i, "from": "ghost", "summary": "s%d" % i} for i in range(13)]
+        text = render_message("VectorCraft", "vectorcraft", items, Path("/r"))
+        lines = text.split("\n")
+        self.assertIn("13 new items", lines[0])
+        self.assertEqual(len([l for l in lines if l.startswith("- m") or l.startswith("- message")]), 10)
+        self.assertEqual(lines[11], "- and 3 more")
+        self.assertTrue(lines[12].startswith("Run `python3 /r/scripts/relay.py inbox"))
+        self.assertNotIn("m-10", text)
+
+    def test_render_exactly_ten_has_no_more_line(self):
+        items = [{"_id": "m-%d" % i, "from": "ghost", "summary": "s"} for i in range(10)]
+        self.assertNotIn("and ", render_message("V", "v", items, Path("/r")).split("Run")[0].split("\n")[-1])
+        self.assertNotIn("more", render_message("V", "v", items, Path("/r")))
+
     def test_send_to_missing_socket_is_gone(self):
         d = tempfile.mkdtemp(dir="/tmp", prefix="cc-socks-")
         try:

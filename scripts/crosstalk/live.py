@@ -55,8 +55,8 @@ def socket_problem(path) -> Optional[str]:
         return "socket is outside Claude Code's socket directories"
     try:
         st = os.stat(path)
-    except OSError as e:
-        return "socket not usable: %s" % e.strerror
+    except (OSError, ValueError) as e:
+        return "socket not usable: %s" % (getattr(e, "strerror", None) or e.__class__.__name__)
     if not stat.S_ISSOCK(st.st_mode):
         return "socket path is not a socket"
     if st.st_uid != os.getuid():
@@ -153,6 +153,27 @@ def unregister(pid: str, stdin_text: str) -> bool:
         return False
 
 
+def _load_one(root: Path, f: Path):
+    """A Registration for file `f`, or a string saying why it is invalid."""
+    try:
+        doc = json.loads(f.read_text(encoding="utf-8"))
+    except (OSError, ValueError) as e:
+        return "unreadable (%s)" % e.__class__.__name__
+    if not isinstance(doc, dict):
+        return "unreadable (ValueError)"
+    pid, sid = doc.get("pid"), doc.get("session_id")
+    if not _known_pid(root, pid):
+        return "unknown participant"
+    if not isinstance(sid, str) or not SESSION_ID_RE.fullmatch(sid):
+        return "bad session_id"
+    if f.name != "%s--%s.json" % (pid, sid):
+        return "file name does not match contents"
+    why = socket_problem(doc.get("socket")) or token_problem(doc.get("token"))
+    if why:
+        return why
+    return Registration(pid, sid, doc["socket"], doc["token"], str(doc.get("registered", "")), f)
+
+
 def load_registrations(root: Path) -> Tuple[List[Registration], List[str]]:
     """Valid registrations, plus one problem string per invalid file (never with a token)."""
     d = live_dir()
@@ -163,27 +184,14 @@ def load_registrations(root: Path) -> Tuple[List[Registration], List[str]]:
         return regs, problems
     for f in files:
         try:
-            doc = json.loads(f.read_text(encoding="utf-8"))
-            if not isinstance(doc, dict):
-                raise ValueError("not an object")
-        except (OSError, ValueError) as e:
+            reg = _load_one(root, f)
+        except Exception as e:  # one bad file must never take the others down
             problems.append("%s: unreadable (%s)" % (f.name, e.__class__.__name__))
             continue
-        pid, sid = doc.get("pid"), doc.get("session_id")
-        why = None
-        if not _known_pid(root, pid):
-            why = "unknown participant"
-        elif not isinstance(sid, str) or not SESSION_ID_RE.fullmatch(sid):
-            why = "bad session_id"
-        elif f.name != "%s--%s.json" % (pid, sid):
-            why = "file name does not match contents"
+        if isinstance(reg, str):
+            problems.append("%s: %s" % (f.name, reg))
         else:
-            why = socket_problem(doc.get("socket")) or token_problem(doc.get("token"))
-        if why:
-            problems.append("%s: %s" % (f.name, why))
-            continue
-        regs.append(Registration(pid, sid, doc["socket"], doc["token"],
-                                 str(doc.get("registered", "")), f))
+            regs.append(reg)
     return regs, problems
 
 

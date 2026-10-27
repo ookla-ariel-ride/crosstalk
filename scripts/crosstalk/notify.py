@@ -26,6 +26,8 @@ from .courier import atomic_write_text
 from .participants import Roster, load_roster
 from .requests import inbox_for, pending_recipients, unanswered_owner_messages
 
+MAX_ITEM_LINES = 10  # the session reads the full inbox; the message only previews it
+
 # Ids go into the message text, so only plain ones are told.
 SAFE_ID_RE = re.compile(r"^[A-Za-z0-9._-]{1,80}$")
 SUMMARY_MAX = 160
@@ -84,13 +86,15 @@ def render_message(name: str, pid: str, items: List[dict], root: Path) -> str:
     """
     n = len(items)
     lines = ["Crosstalk: %d new item%s for %s." % (n, "" if n == 1 else "s", pid)]
-    for it in items:
+    for it in items[:MAX_ITEM_LINES]:
         kind = it.get("kind") if isinstance(it.get("kind"), str) and it.get("kind") else "message"
         kind = KIND_LABELS.get(kind, kind)
         sender = it.get("from_name") or it.get("from") or "unknown"
         lines.append("- %s from %s: %s (%s)" % (_one_line(kind, 40), _one_line(sender, 80),
                                                _one_line(it.get("summary"), SUMMARY_MAX),
                                                it["_id"]))
+    if n > MAX_ITEM_LINES:
+        lines.append("- and %d more" % (n - MAX_ITEM_LINES))
     lines.append("Run `python3 %s/scripts/relay.py inbox %s` and answer each\n"
                  "with `relay.py reply`. If one asks for substantial work, say in your reply\n"
                  "what you will do and when." % (root, pid))

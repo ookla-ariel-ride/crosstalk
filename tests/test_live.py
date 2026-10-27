@@ -140,6 +140,34 @@ class LoadTests(LiveCase):
         for p in problems:
             self.assertNotIn(TOKEN, p)
 
+    def test_surrogate_socket_is_one_bad_file(self):
+        good = {"pid": "vectorcraft", "session_id": "ok", "socket": self.sock,
+                "token": TOKEN, "registered": "2026-10-26T00:00:00Z"}
+        self.write_file("vectorcraft--ok.json", good)
+        self.write_file("vectorcraft--sur.json",
+                        '{"pid":"vectorcraft","session_id":"sur","socket":"/tmp/cc-socks-1/\\ud800","token":"t"}')
+        regs, problems = live.load_registrations(self.root)
+        self.assertEqual([r.session_id for r in regs], ["ok"])
+        self.assertEqual(len(problems), 1, problems)
+        self.assertIn("vectorcraft--sur.json", problems[0])
+
+    def test_unexpected_error_in_one_file_is_contained(self):
+        self.write_file("vectorcraft--ok.json", {"pid": "vectorcraft", "session_id": "ok",
+                        "socket": self.sock, "token": TOKEN})
+        self.write_file("vectorcraft--boom.json", {"pid": "vectorcraft", "session_id": "boom",
+                        "socket": self.sock, "token": TOKEN})
+        real = live.token_problem
+
+        def flaky(t):
+            raise RuntimeError("boom")
+        live.token_problem = flaky
+        try:
+            regs, problems = live.load_registrations(self.root)
+        finally:
+            live.token_problem = real
+        self.assertEqual(regs, [])
+        self.assertEqual(len(problems), 2, problems)
+
     def test_load_missing_dir(self):
         self.assertEqual(live.load_registrations(self.root), ([], []))
 
@@ -186,6 +214,13 @@ class CliTests(LiveCase):
         finally:
             s.close()
             shutil.rmtree(d, ignore_errors=True)
+
+    def test_status_survives_surrogate_registration(self):
+        self.write_file("vectorcraft--sur.json",
+                        '{"pid":"vectorcraft","session_id":"sur","socket":"/tmp/cc-socks-1/\\ud800","token":"t"}')
+        r = self.run_relay("live", "status", env={"CROSSTALK_LIVE_DIR": self.live})
+        self.assertEqual(r.returncode, 0, r.stderr)
+        self.assertNotIn("Traceback", r.stderr)
 
     def test_hooks_json_has_absolute_paths(self):
         doc = json.loads(live.hooks_json(self.root, "vectorcraft"))

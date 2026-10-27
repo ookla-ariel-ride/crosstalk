@@ -546,6 +546,17 @@ starting; the problem goes to stderr. A project may have several live
 sessions, and each is told. `relay.py live status` lists the registrations
 (never the token). `CROSSTALK_LIVE_DIR` moves the directory.
 
+Notes:
+
+- Run `relay.py live hooks <pid>` from the main checkout. The printed command
+  embeds that checkout's absolute path, so one run from a scratch worktree
+  would point the hooks at the wrong place.
+- A session whose socket refuses a connection is dropped until it restarts:
+  start a new session to register it again.
+- Only one server per state file runs the notifier. A development
+  `relay.py serve` from another checkout should use `--no-notify` or its own
+  `CROSSTALK_NOTIFY_STATE`.
+
 ### What a session receives
 
 Every 5 seconds the server works out each registered participant's actionable
