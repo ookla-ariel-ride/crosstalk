@@ -63,7 +63,7 @@ def build_snapshot(root: Path) -> dict:
         collections.setdefault(coll, {})[did] = fields
     return {
         "server_time": published_now(),
-        # Wake config never travels in the page (it belongs in git-ignored wake.json).
+        # A stale `wake` key (removed agent-wake feature) never travels in the page.
         "roster": {"participants": [
             {k: v for k, v in p.items() if k != "wake"} if isinstance(p, dict) else p
             for p in raw.get("participants", [])]},

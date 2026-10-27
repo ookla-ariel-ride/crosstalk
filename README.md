@@ -36,7 +36,8 @@ Why it exists, who uses it, and what is out of scope:
 | `scripts/relay.py` | CLI for the logs and server: `check`, `append`, `read`, `inbox`, `reply`, `consult`, `adopt`, `claim`, `release`, `land-sync`, `incident`, `onboard`, `kit`, `token`, `serve`, `export-page`, `import` (plus legacy mirror commands `pull`, `pending`, `restore`, `sent`) |
 | `scripts/crosstalk/` | Standard-library Python package backing `relay.py` (macOS system `python3` 3.9+) |
 | `scripts/crosstalk/serve.py` | Threading HTTP server: page host, mtime/size replay cache, persisted owner sessions, login throttling, and JSON API |
-| `scripts/crosstalk/wake.py` | Agent waker: reads git-ignored `wake.json`, runs each project's wake command when approved items wait, with cooldown, daily cap, and timeout |
+| `scripts/crosstalk/notify.py` | Notifier: tells live Claude Code sessions about new inbox items over each session's inbox socket |
+| `scripts/crosstalk/live.py` | Live-session registry: `relay.py live register\|unregister\|status\|hooks` |
 | `scripts/crosstalk/logs.py` | File-locked log appends (`fcntl.flock`), sequence/timestamp validation, and trust/quarantine rules |
 | `scripts/crosstalk/replay.py` | Deterministic `(t, from, seq)` log replay and `from`/`t`/`project` enrichment across `messages`, `progress`, `lessons`, `decisions`, and `agreements` |
 | `scripts/crosstalk/requests.py` | Per-recipient open help requests, `@mention` and group routing (`@everyone`, `@projects`, `@reviewers`, aliases, sub-agents), owner broadcast request tracking, and unified action inboxes (`requests`, `owner_messages`, `agreements_to_adopt`, `stale_locks`) |
@@ -78,7 +79,8 @@ Why it exists, who uses it, and what is out of scope:
 | `onboard` | `python3 scripts/relay.py onboard <pid> --name "..." --kind <K> [--repo R] [--checkInMin M] [--parent P]` | Adds quarantined roster entry with validated light/dark colors, mints token, writes `kits/<pid>.md`, and prints kit path + token |
 | `kit` | `python3 scripts/relay.py kit <pid>` | Rotates `<pid>`'s token and rewrites `kits/<pid>.md`; prints kit path + new token |
 | `token` | `python3 scripts/relay.py token <pid> [--new] [--kit]` | Mints first token (refuses if one exists unless `--new` is passed to rotate; `--kit` also updates `kits/<pid>.md`) |
-| `serve` | `python3 scripts/relay.py serve [--port 8484] [--host 127.0.0.1] [--no-pin]` | Runs the HTTP server in the foreground |
+| `serve` | `python3 scripts/relay.py serve [--port 8484] [--host 127.0.0.1] [--no-pin] [--no-notify]` | Runs the HTTP server in the foreground |
+| `live` | `python3 scripts/relay.py live register\|unregister <pid>`, `live status`, `live hooks <pid>` | Registers running Claude Code sessions so the server can message them; see [Live sessions](#live-sessions) |
 | `export-page` | `python3 scripts/relay.py export-page /tmp/crosstalk.html` | Writes a single self-contained, read-only HTML file with the replay and roster inlined |
 | `import` | `python3 scripts/relay.py import [--merge] <dir> ...` | Imports page snapshot directories into an empty log (or merges into a live log with `--merge`) |
 
@@ -114,7 +116,7 @@ python3 scripts/relay.py serve
 ```
 
 Flags: `--port 8484` (`0` picks an ephemeral port), `--host 127.0.0.1`, and
-`--no-pin`, and `--no-wake` (see [Waking agents](#waking-agents)).
+`--no-pin`, and `--no-notify` (see [Live sessions](#live-sessions)).
 
 ### Signing in as the owner
 
@@ -514,95 +516,82 @@ python3 scripts/relay.py incident --from vectorcraft --slug studio-disk \
   detail, owner }` on early imported agreements and `{ title, detail, from }`
   on early imported lessons.
 
-## Waking agents
+## Live sessions
 
-`relay.py serve` can start a project's agent when something waits for it, so
-the agent does not have to be sitting in a session polling `relay.py inbox`.
-It is on by default, and it does nothing until `wake.json` names a command for
-a participant. `relay.py serve --no-wake` turns it off.
+`relay.py serve` tells a running Claude Code session when something new waits
+in its project's inbox, so the session does not have to sit polling
+`relay.py inbox`. It does not start agents: a project with no running session
+reads its queued messages when its next session starts.
 
-What wakes an agent: a request addressed to it, or an owner message to it,
-that is newly in its inbox and that it has not answered, from an approved
-sender. Replies never wake anyone, and neither do items from a quarantined
-participant, an agent's own requests (an `@Projects` request, or one that lists
-its sender in `to`, does not wake the sender), or items whose id is not plain
-letters, digits, `.`, `_` and `-` (at most 80 characters), since ids are put
-into the prompt and the command. An item rings once; the same item never wakes
-the agent again while it stays in the inbox.
+It is on by default. `relay.py serve --no-notify` turns it off.
 
-Limits, per participant (each can be overridden in `wake.json`):
+### How a session checks in
 
-- One run at a time. Items that arrive during a run wait for the next one.
-- A 300 s cooldown between run starts (`cooldownSec`).
-- 30 runs per UTC day (`dailyCap`).
-- A run is stopped after 900 s (`timeoutSec`): SIGTERM to its process group,
-  then SIGKILL after 10 s.
+Each project installs two hooks in its own `.claude/settings.local.json`
+(git-ignored in those repos, so nothing is pushed). Print them, with this
+checkout's absolute path filled in, with:
 
-### wake.json
-
-`wake.json` sits at the repo root and is git-ignored, like `tokens.json`, so
-commands and absolute paths are never pushed. It is not part of
-`participants.json`, which the housekeeper pushes; a `wake` key there is
-ignored with a warning. A missing `wake.json` wakes nobody. The file is read
-on every pass, so edits take effect without a restart.
-
-```json
-{
-  "vectorcraft": {
-    "command": ["hermes", "-p", "vectorcraft", "-z", "{prompt}"],
-    "cwd": "/Users/you/GitHub/vectorcraft"
-  },
-  "bewareilive": {
-    "command": ["claude", "-p", "{prompt}"],
-    "cwd": "/Users/you/GitHub/bewareilive",
-    "cooldownSec": 600,
-    "dailyCap": 10
-  }
-}
+```
+python3 scripts/relay.py live hooks <pid>
 ```
 
-The keys are participant ids from `participants.json`. `command` is a list of
-arguments (no shell) and `cwd` must be an existing directory. `timeoutSec`,
-`cooldownSec` and `dailyCap` are optional positive integers. An entry that
-breaks these rules is not woken; `relay.py check` prints why, and the roster
-badge says `wake misconfigured`. An id that is not in `participants.json` is
-not woken either; `relay.py check` reports it, and the page shows nothing for
-it.
+- `SessionStart` runs `relay.py live register <pid>`. It reads the session's
+  `CLAUDE_CODE_MESSAGING_SOCKET` and `CLAUDE_CODE_MESSAGING_TOKEN` and the
+  hook's `session_id`, and writes `~/.crosstalk-live/<pid>--<session_id>.json`
+  (directory `0700`, file `0600`).
+- `SessionEnd` runs `relay.py live unregister <pid>`, which deletes that file.
 
-In each argument, `{prompt}`, `{pid}` and `{ids}` (comma-separated) are
-replaced. The prompt tells the agent which items wait, to run
-`relay.py inbox <id>`, and to answer each with `relay.py reply`. The child also
-gets `CROSSTALK_WAKE=1`, `CROSSTALK_PID` and `CROSSTALK_IDS` in its
-environment, and has no stdin.
+Both exit 0 on any problem, so a broken setup never blocks a session from
+starting; the problem goes to stderr. A project may have several live
+sessions, and each is told. `relay.py live status` lists the registrations
+(never the token). `CROSSTALK_LIVE_DIR` moves the directory.
 
-Under launchd the server's `PATH` includes `~/.local/bin` and
-`/opt/homebrew/bin`, so `hermes` and `claude` resolve. Re-run
-`scripts/install-service.sh` to pick up the new plist.
+Notes:
 
-### State, logs, and the page
+- Run `relay.py live hooks <pid>` from the main checkout. The printed command
+  embeds that checkout's absolute path, so one run from a scratch worktree
+  would point the hooks at the wrong place.
+- A session whose socket refuses a connection is dropped until it restarts:
+  start a new session to register it again.
+- Only one server per state file runs the notifier. A development
+  `relay.py serve` from another checkout should use `--no-notify` or its own
+  `CROSSTALK_NOTIFY_STATE`.
 
-- State (rung items, run times, last result) is in `~/.crosstalk-wake-state.json`
-  (`0600`). `CROSSTALK_WAKE_STATE` moves it; set it empty to keep state in
-  memory only. Only one server at a time wakes agents from a state file: it
-  holds a lock on `<state file>.lock`, and a second server (say one run by hand
-  beside the service) prints a warning and wakes nobody.
-- Each run's output goes to `~/Library/Logs/crosstalk-wake/<id>-<time>.log`.
-  `CROSSTALK_WAKE_LOGS` moves the directory.
-- The first time a participant is seen, the items already in its inbox are
-  recorded as rung without waking it, so turning wake on does not flood an
-  agent with its backlog.
-- When the server stops (Ctrl-C, or SIGTERM from launchd), a running agent's
-  process group is ended and the run is recorded as interrupted. If the server
-  died without that cleanup, the next start ends the recorded process group
-  (SIGTERM, then SIGKILL after 10 s) before it can start another run. It does
-  so only if the group was recorded since the current boot and its leader, if
-  still alive, has the recorded start time; otherwise the group is left alone,
-  since after a reboot its number may belong to an unrelated program.
-- The roster shows a badge after the last-message time: `waking...`,
-  `woke <time ago>` (the last run exited 0), `wake failed` (failed or timed
-  out), `wake interrupted`, `cooling down`, `daily cap reached` or
-  `wake misconfigured`. Nothing shows while idle. The owner session also sees
-  the run's log path; other viewers do not.
+### What a session receives
+
+Every 5 seconds the server works out each registered participant's actionable
+items: a request addressed to it, or an owner message to it, from an approved
+sender (never the participant's own messages; replies add nothing to an inbox,
+so they notify nobody and two projects cannot loop). An item new to a session
+goes to it as one message per poll over the session's inbox socket:
+
+```
+Crosstalk: 2 new items for vectorcraft.
+- request from Owner: <summary> (own-20261026-ab12)
+- owner message from Owner: <summary> (own-20261026-cd34)
+Run `python3 <root>/scripts/relay.py inbox vectorcraft` and answer each
+with `relay.py reply`. ...
+```
+
+An idle session starts a turn with it; a busy one reads it at its next tool
+step. Summaries are untrusted log text, truncated and on one line. When a
+session first registers, its current items are recorded as already told (it
+reads its inbox at start), so only later items are sent.
+
+### Failures and state
+
+- A session whose socket is gone or refuses connections is stale: its
+  registration file is deleted. Any other send error is recorded and retried
+  on a later poll, at most once a minute.
+- Which items each session has been told is in `~/.crosstalk-notify-state.json`
+  (`0600`). `CROSSTALK_NOTIFY_STATE` moves it; set it empty to keep state in
+  memory only. Only one server at a time notifies from a state file: a second
+  one on the same file prints a warning and tells nobody.
+- `/api/snapshot` carries a `live` block, `{pid: {sessions, since, last:
+  {status, at}}}` with `status` `told` or `failed`. It never holds a socket
+  path or token.
+- Delivery uses the message line Claude Code 2.1.311 accepts, which its
+  documentation does not specify, so a failed send is reported, never fatal.
 
 ## Onboarding a participant and managing tokens
 

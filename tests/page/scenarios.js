@@ -1353,35 +1353,36 @@
     return res("threadOrphan", ok, "card=" + !!c + " re=" + !!(c && c.querySelector(".re")) + " foot=" + !!(c && c.querySelector(".thread-foot")));
   });
 
-  // The roster badge for a project's agent wake: one text per status, nothing for idle or no entry.
-  S.push(async function wakeBadges() {
+  // The roster badge for a project with a live session: "live" when the last message was told, a warning when it failed, nothing otherwise.
+  S.push(async function liveBadges() {
     await go("timeline");
-    // Enough roster entries for every status, whatever an earlier scenario left in the store.
-    var extra = {};
-    for (var n = 0; n < 9; n++) extra["wakeproj" + n] = { name: "WakeProj" + n, kind: "project", trust: "approved" };
-    __store.participants = Object.assign({}, __store.participants, extra); __emit("participants"); await tick();
-    var ids = Object.keys(extra);
-    var want = [["running", "waking\u2026"], ["ok", /^woke \S+$/], ["failed", "wake failed"], ["timed-out", "wake failed"], ["interrupted", "wake interrupted"],
-      ["cooling-down", "cooling down"], ["capped", "daily cap reached"], ["misconfigured", "wake misconfigured"], ["idle", null]];
-    if (ids.length < want.length) return res("wakeBadges", false, "only " + ids.length + " roster ids");
-    var map = {}, bad = [];
-    want.forEach(function (w, i) { map[ids[i]] = { status: w[0], since: new Date(Date.now() - 120000).toISOString(), ids: [], log: w[0] === "failed" ? "/tmp/wake.log" : undefined }; });
-    __setWake(map); await tick();
-    want.forEach(function (w, i) {
-      var b = $("wake-" + ids[i]);
-      if (w[1] === null) { if (b) bad.push(w[0] + " has badge"); return; }
-      if (!b) { bad.push(w[0] + " missing"); return; }
-      var t = b.textContent;
-      if (!(w[1] instanceof RegExp ? w[1].test(t) : t === w[1])) bad.push(w[0] + " text=" + t);
-      if (!/wake-/.test(b.className) || b.className.indexOf("wake-" + w[0]) < 0) bad.push(w[0] + " class=" + b.className);
-      if (!b.title) bad.push(w[0] + " no title");
-    });
-    var failedB = $("wake-" + ids[2]);
-    if (failedB && failedB.title.indexOf("/tmp/wake.log") < 0) bad.push("log missing from title");
-    __setWake({}); await tick();
-    var left = document.querySelectorAll('[id^="wake-"]').length;
+    var since = new Date(Date.now() - 120000).toISOString();
+    __setLive({ vectorcraft: { sessions: 1, since: since, last: { status: "told", at: since } },
+      bewareilive: { sessions: 1, since: since, last: { status: "failed", at: since } } }); await tick();
+    var bad = [], v = $("live-vectorcraft"), w = $("live-bewareilive"), a = $("live-avoidmissingball");
+    if (!v) bad.push("vectorcraft missing");
+    else {
+      if (!v.classList.contains("live-badge")) bad.push("vectorcraft no live-badge class");
+      if (v.textContent !== "live") bad.push("vectorcraft text=" + v.textContent);
+      if (v.classList.contains("live-badge-failed")) bad.push("vectorcraft has live-badge-failed");
+      if (!$("who-vectorcraft").contains(v)) bad.push("vectorcraft badge outside its row");
+    }
+    if (!w) bad.push("bewareilive missing");
+    else {
+      if (w.textContent !== "couldn't reach session") bad.push("bewareilive text=" + w.textContent);
+      if (!w.classList.contains("live-badge-failed")) bad.push("bewareilive no live-badge-failed class");
+      if (!w.title) bad.push("bewareilive no title");
+    }
+    if (!$("who-avoidmissingball")) bad.push("avoidmissingball row missing");
+    if (a) bad.push("avoidmissingball has badge");
+    var fs = getComputedStyle($("live")).fontSize, tv = getComputedStyle($("live").closest(".val")).fontSize;
+    if (fs === "11px" || fs !== tv) bad.push("feed #live font-size=" + fs + " tile val=" + tv);
+    var wake = document.querySelectorAll('[id^="wake-"]').length;
+    if (wake) bad.push(wake + " wake- elements");
+    __setLive({}); await tick();
+    var left = document.querySelectorAll('[id^="live-"]').length;
     if (left) bad.push(left + " badges left after clear");
-    return res("wakeBadges", !bad.length, bad.join("; "));
+    return res("liveBadges", !bad.length, bad.join("; "));
   });
 
   S.push(async function partlyLive() {

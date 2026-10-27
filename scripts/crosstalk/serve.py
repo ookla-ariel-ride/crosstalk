@@ -43,7 +43,7 @@ from .replay import enrich_messages, load_all_lines, replay
 from .service import SERVICE
 from .tokens import TOKEN_FILE, Result, Tokens
 from . import ownerpin
-from .wake import Waker
+from .notify import Notifier
 
 # The collections the page reads. "participants" is the owner's roster.
 KNOWN_COLLECTIONS = tuple(COLLECTIONS) + ("participants",)
@@ -64,8 +64,8 @@ SESSION_TTL = 12 * 60 * 60.0
 # refuse further logins until the window clears.
 LOGIN_WINDOW = 10 * 60.0
 LOGIN_MAX_FAILURES = 5
-# The fields of a roster entry the owner may write. `wake` is not one: wake
-# config is edited in participants.json only, never over the API.
+# The fields of a roster entry the owner may write. A stale `wake` key (from the
+# removed agent-wake feature) is not one, so the API rejects it.
 ROSTER_FIELDS = ("name", "kind", "color", "colorDark", "checkInMin", "trust", "repo", "parent")
 
 
@@ -355,7 +355,7 @@ class ServerState:
         self.pin_used = False
         self.login_failures = []  # type: List[float]
         self.login_lock = threading.Lock()
-        self.waker = None  # type: Optional[Waker]
+        self.notifier = None  # type: Optional[Notifier]
 
     def make_pin(self) -> str:
         """The one-time startup PIN: six digits, good for ten minutes."""
@@ -477,22 +477,19 @@ class CrosstalkHandler(BaseHTTPRequestHandler):
         collections = {}  # type: Dict[str, Dict[str, dict]]
         for (collection, doc_id), fields in docs.items():
             collections.setdefault(collection, {})[doc_id] = fields
-        # Wake commands and paths never reach a viewer: the roster entries lose
-        # `wake`, and a run's log path is shown to the owner session alone.
+        # The agent-wake feature is gone, but an old participants.json may still
+        # hold a `wake` command and path: strip it so a stale key never leaks.
         roster = {pid: {k: v for k, v in entry.items() if k != "wake"}
                   for pid, entry in entries.items()}
-        waker = self.state.waker
-        wake = waker.status() if waker is not None else {}
-        if not self._owner_session():
-            for block in wake.values():
-                block.pop("log", None)
+        notifier = self.state.notifier
+        live = notifier.status() if notifier is not None else {}
         info = repo_build_info(self.state.root)
         self._json(200, {"server_time": now_iso(),
                          "commit": info["commit"],
                          "build_number": info["build_number"],
                          "commit_date": info["commit_date"],
                          "roster": roster,
-                         "wake": wake,
+                         "live": live,
                          "collections": collections,
                          "service": SERVICE})
 
@@ -839,7 +836,8 @@ class CrosstalkHandler(BaseHTTPRequestHandler):
             if problem:
                 self._error(400, problem)
                 return
-            # The file keeps `wake`; the log line (pushed with the repo) does not.
+            # A stale `wake` key stays in the file but must not enter the log line
+            # (pushed with the repo).
             logged = {k: v for k, v in merged.items() if k != "wake"}
             try:
                 roster = load_roster(path)
@@ -859,31 +857,27 @@ class CrosstalkHandler(BaseHTTPRequestHandler):
         self._line(201, ln)
 
 
-DEFAULT_WAKE_LOGS = Path.home() / "Library" / "Logs" / "crosstalk-wake"
-
-
 class RunningServer:
     """The server in a thread: `with RunningServer(root) as srv: ...`.
 
-    With `wake`, a Waker polls the log on its own thread and wakes each
-    configured participant's agent; its state persists at `wake_state`
-    (None keeps it in memory) and each run's output goes under `wake_logs`.
+    With `notify`, a Notifier polls the log on its own thread and tells live
+    Claude Code sessions about new inbox items; its state persists at
+    `notify_state` (None keeps it in memory).
     """
 
     def __init__(self, root, port: int = 0, host: str = "127.0.0.1", tokens=None,
-                 no_pin: bool = False, sessions=None, wake: bool = False,
-                 wake_state=None, wake_logs=None, wake_poll_sec: float = 5.0):
+                 no_pin: bool = False, sessions=None, notify: bool = False,
+                 notify_state=None, notify_poll_sec: float = 5.0):
         self.root = Path(root)
         self.host = host
         self.port = port
         self.tokens = tokens
         self.no_pin = no_pin
         self.sessions = sessions
-        self.wake = wake
-        self.wake_state = wake_state
-        self.wake_logs = wake_logs
-        self.wake_poll_sec = wake_poll_sec
-        self._waker = None  # type: Optional[Waker]
+        self.notify = notify
+        self.notify_state = notify_state
+        self.notify_poll_sec = notify_poll_sec
+        self._notifier = None  # type: Optional[Notifier]
         self._httpd = None
         self._thread = None
 
@@ -902,20 +896,19 @@ class RunningServer:
         self._thread = threading.Thread(target=httpd.serve_forever, kwargs={"poll_interval": 0.05})
         self._thread.daemon = True
         self._thread.start()
-        if self.wake:
+        if self.notify:
             state = httpd.state  # type: ignore[attr-defined]
-            logs = self.wake_logs if self.wake_logs is not None else DEFAULT_WAKE_LOGS
-            state.waker = Waker(self.root, state.cache.snapshot, self.wake_state, logs,
-                                poll_sec=self.wake_poll_sec)
-            self._waker = state.waker
-            self._waker.start()
+            state.notifier = Notifier(self.root, state.cache.snapshot, self.notify_state,
+                                      poll_sec=self.notify_poll_sec)
+            self._notifier = state.notifier
+            self._notifier.start()
         return self
 
     def close(self) -> None:
-        # The waker first: its children are terminated and recorded interrupted.
-        waker, self._waker = self._waker, None
-        if waker is not None:
-            waker.stop()
+        # The notifier first, so it stops polling before the server goes away.
+        notifier, self._notifier = self._notifier, None
+        if notifier is not None:
+            notifier.stop()
         httpd, self._httpd = self._httpd, None
         thread, self._thread = self._thread, None
         if httpd is not None:
@@ -950,27 +943,27 @@ class RunningServer:
 
 
 def start(root, port: int = 0, host: str = "127.0.0.1", tokens=None,
-          no_pin: bool = False, sessions=None, wake: bool = False,
-          wake_state=None, wake_logs=None, wake_poll_sec: float = 5.0) -> RunningServer:
+          no_pin: bool = False, sessions=None, notify: bool = False,
+          notify_state=None, notify_poll_sec: float = 5.0) -> RunningServer:
     """Start a server over `root` and return it (a context manager).
 
     Port 0 asks the OS for an ephemeral port, which the tests use.
     `sessions` is the path where owner sessions persist across restarts;
-    None keeps them in memory only (the tests' default). `wake` runs the
-    agent waker (off by default here).
+    None keeps them in memory only (the tests' default). `notify` runs the
+    live-session notifier (off by default here).
     """
     return RunningServer(root, port=port, host=host, tokens=tokens,
-                         no_pin=no_pin, sessions=sessions, wake=wake,
-                         wake_state=wake_state, wake_logs=wake_logs,
-                         wake_poll_sec=wake_poll_sec).start_server()
+                         no_pin=no_pin, sessions=sessions, notify=notify,
+                         notify_state=notify_state,
+                         notify_poll_sec=notify_poll_sec).start_server()
 
 
 DEFAULT_SESSIONS = Path.home() / ".crosstalk-sessions.json"
-DEFAULT_WAKE_STATE = Path.home() / ".crosstalk-wake-state.json"
+DEFAULT_NOTIFY_STATE = Path.home() / ".crosstalk-notify-state.json"
 
 
 def serve(root, host: str = "127.0.0.1", port: int = 8484, no_pin: bool = False,
-          tokens=None, sessions=None, wake: bool = True) -> None:
+          tokens=None, sessions=None, notify: bool = True) -> None:
     """Run the server in the foreground and print the one-time startup PIN.
 
     The PIN is how the owner logs in on the page; it is good for one login
@@ -979,22 +972,21 @@ def serve(root, host: str = "127.0.0.1", port: int = 8484, no_pin: bool = False,
     restart no longer logs the owner out. `CROSSTALK_SESSIONS` overrides
     the path; an empty value keeps sessions in memory only.
 
-    `wake` (on by default; `--no-wake` turns it off) runs the agent waker.
-    Its state lives in ~/.crosstalk-wake-state.json (`CROSSTALK_WAKE_STATE`;
-    empty keeps it in memory) and run logs in ~/Library/Logs/crosstalk-wake
-    (`CROSSTALK_WAKE_LOGS`).
+    `notify` (on by default; `--no-notify` turns it off) runs the notifier
+    that tells live Claude Code sessions about new inbox items. Its state
+    lives in ~/.crosstalk-notify-state.json (`CROSSTALK_NOTIFY_STATE`; empty
+    keeps it in memory).
 
-    SIGTERM (how launchd stops the service) shuts down like Ctrl-C: the waker
-    ends a running agent and records it interrupted, then the process exits
-    with status 143 (128 + SIGTERM).
+    SIGTERM (how launchd stops the service) shuts down like Ctrl-C: the
+    notifier stops cleanly, then the process exits with status 143
+    (128 + SIGTERM).
     """
     if sessions is None:
         sessions = os.environ.get("CROSSTALK_SESSIONS", DEFAULT_SESSIONS) or None
-    wake_state = os.environ.get("CROSSTALK_WAKE_STATE", DEFAULT_WAKE_STATE) or None
-    wake_logs = os.environ.get("CROSSTALK_WAKE_LOGS", DEFAULT_WAKE_LOGS) or None
+    notify_state = os.environ.get("CROSSTALK_NOTIFY_STATE", DEFAULT_NOTIFY_STATE) or None
     server = RunningServer(root, port=port, host=host, tokens=tokens,
-                           no_pin=no_pin, sessions=sessions, wake=wake,
-                           wake_state=wake_state, wake_logs=wake_logs)
+                           no_pin=no_pin, sessions=sessions, notify=notify,
+                           notify_state=notify_state)
     server.start_server()
     if server.pin:
         print("Login PIN: %s  (one login, ten minutes)" % server.pin, flush=True)
@@ -1007,7 +999,7 @@ def serve(root, host: str = "127.0.0.1", port: int = 8484, no_pin: bool = False,
         raise Terminated()
 
     # Python's default SIGTERM ends the process without running `finally`,
-    # which would orphan a running agent (it has its own session).
+    # which would skip the notifier's clean stop.
     main = threading.current_thread() is threading.main_thread()
     old_term = signal.signal(signal.SIGTERM, on_sigterm) if main else None
     terminated = False
