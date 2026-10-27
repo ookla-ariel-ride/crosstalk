@@ -275,7 +275,8 @@ class Notifier:
     # view
 
     def status(self) -> Dict[str, dict]:
-        """{pid: {sessions, since, last}} for each pid with a live session (no token or socket)."""
+        """{pid: {sessions, since, last}} per pid with a live session; last is the newest
+        failure if any session failed, else the newest told. No token or socket."""
         if self.disabled:
             return {}
         with self._lock:
@@ -292,8 +293,13 @@ class Notifier:
             v["sessions"] += 1
             if reg.registered and (v["since"] is None or reg.registered < v["since"]):
                 v["since"] = reg.registered
+            # Any failed session wins (newest failure), so a sibling's success
+            # cannot hide "couldn't reach session"; otherwise the newest told.
             last = self._state[key].get("last")
-            if last and (v["last"] is None or last["at"] >= v["last"]["at"]):
+            cur = v["last"]
+            if last and (cur is None
+                         or (last["status"] == "failed") > (cur["status"] == "failed")
+                         or (last["status"] == cur["status"] and last["at"] >= cur["at"])):
                 v["last"] = dict(last)
         self._view = view
 
@@ -316,10 +322,16 @@ class Notifier:
                 if p not in self._reported and "socket not usable" not in p:
                     self._reported.add(p)
                     _warn("ignoring registration " + p)
-            keys = {"%s--%s" % (r.pid, r.session_id) for r in regs}
-            for key in list(self._state):
-                if key not in keys:
-                    del self._state[key]
+            # Drop state only when the registration file is gone: a file that is
+            # briefly invalid (roster mid-write, stat error) keeps its pending items.
+            try:
+                files = {f.name[:-len(".json")] for f in live.live_dir().glob("*--*.json")}
+            except OSError:
+                files = None
+            if files is not None:
+                for key in list(self._state):
+                    if key not in files:
+                        del self._state[key]
             now = self.clock()
             for reg in regs:
                 key = "%s--%s" % (reg.pid, reg.session_id)

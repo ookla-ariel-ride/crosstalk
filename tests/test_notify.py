@@ -364,6 +364,56 @@ class NotifierTests(unittest.TestCase):
         self.assertNotIn(self.socks, dumped)
         self.assertNotIn(TOKEN, self.state.read_text())
 
+    def test_pending_items_survive_a_pass_with_invalid_registration(self):
+        self.session("s1")
+        calls = []
+        fail = [True]
+
+        def send(sock, token, text, timeout=5.0):
+            calls.append(text)
+            if fail[0]:
+                raise OSError(errno.EIO, "I/O error")
+        n = self.notifier(send=send)
+        n.poll_once()
+        self.append("owner", owner_msg("m-1", to=["vectorcraft"]),
+                    owner_msg("m-2", to=["vectorcraft"]))
+        n.poll_once()
+        self.assertEqual(len(calls), 1)
+        # The roster briefly lacks vectorcraft: its registration is invalid for one pass.
+        full = json.loads((self.root / "participants.json").read_text())
+        short = dict(full, participants=[p for p in full["participants"]
+                                         if p["id"] != "vectorcraft"])
+        self.r.write_roster(short)
+        self.now[0] = T0 + 61
+        n.poll_once()
+        self.assertIn("vectorcraft--s1", json.loads(self.state.read_text()))
+        self.r.write_roster(full)
+        fail[0] = False
+        self.now[0] = T0 + 62
+        n.poll_once()
+        self.assertEqual(len(calls), 2)
+        self.assertIn("(m-1)", calls[1])
+        self.assertIn("(m-2)", calls[1])
+
+    def test_status_last_failed_if_any_session_failed(self):
+        good = self.session("s1")
+        bad = self.session("s2")
+
+        def send(sock, token, text, timeout=5.0):
+            if sock == bad.path:
+                raise OSError(errno.EIO, "I/O error")
+            send_to_session(sock, token, text, timeout)
+        n = self.notifier(send=send)
+        n.poll_once()
+        self.append("owner", owner_msg("m-1", to=["vectorcraft"]))
+        n.poll_once()  # s1 told, s2 failed, same time
+        self.assertEqual(n.status()["vectorcraft"]["last"], {"status": "failed", "at": iso(T0)})
+        self.now[0] = T0 + 10
+        self.append("owner", owner_msg("m-2", to=["vectorcraft"]))
+        n.poll_once()  # s1 told later; s2 waiting to retry
+        self.assertEqual(len(good.drain()), 2)
+        self.assertEqual(n.status()["vectorcraft"]["last"], {"status": "failed", "at": iso(T0)})
+
     def test_state_file_private_and_stale_keys_dropped(self):
         fake = self.session("s1")
         n = self.notifier()
