@@ -125,9 +125,9 @@ a { color: inherit; }
 .rp[aria-pressed="true"] { background: var(--fg); color: var(--bg); }
 .rp .nm { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .rp .since { font: 11px var(--mono); color: var(--muted); }
-.rp[aria-pressed="true"] .since, .rp[aria-pressed="true"] .wake { color: inherit; }
-.wake { font: 11px var(--mono); color: var(--muted); margin-left: 6px; }
-.wake-failed, .wake-timed-out, .wake-misconfigured { color: var(--warn); }
+.rp[aria-pressed="true"] .since, .rp[aria-pressed="true"] .live { color: inherit; }
+.live { font: 11px var(--mono); color: var(--muted); margin-left: 6px; }
+.live-failed { color: var(--warn); }
 .cdot { flex: none; width: 8px; height: 8px; border-radius: 50%; }
 .cdot.ok { background: var(--ok); } .cdot.warn { background: var(--warn); } .cdot.bad { background: var(--bad); }
 .rx { display: flex; flex-wrap: wrap; gap: 4px 6px; align-items: center; padding: 2px 0 4px 9px; }
@@ -288,7 +288,7 @@ td.num, td.t { font: 12px var(--mono); font-variant-numeric: tabular-nums; white
   ];
   var STATUSES = ["proposed", "agreed", "building", "landed-builder", "ready-to-adopt", "landed-both", "held", "dropped"];
   var data = {}; COLS.forEach(function (c) { data[c] = []; });
-  var people = Object.create(null), seenBy = {}, tab = "timeline", kindFilter = "all", whoFilter = null, wakeStatus = {}, query = "", queryRaw = "", db = null, canWrite = false, loaded = {}, offline = false;
+  var people = Object.create(null), seenBy = {}, tab = "timeline", kindFilter = "all", whoFilter = null, liveStatus = {}, query = "", queryRaw = "", db = null, canWrite = false, loaded = {}, offline = false;
   // subState[c]: undefined while connecting, "ok" once live, "retry" while resubscribing, "dead" when it can't recover.
   var subState = {};
   // The fetch layer's live state: the snapshot's commit/server_time, the health
@@ -1291,23 +1291,19 @@ td.num, td.t { font: 12px var(--mono); font-variant-numeric: tabular-nums; white
     games.sort();
     return games.map(function (g) { return g + " " + latest[g].r.pct + "%"; }).join(" \u00b7 ");
   }
-  // The wake badge for a project's agent, after the last-message time: nothing when idle or unknown.
-  var WAKE_TEXT = { running: "waking\u2026", failed: "wake failed", "timed-out": "wake failed", interrupted: "wake interrupted",
-    "cooling-down": "cooling down", capped: "daily cap reached", misconfigured: "wake misconfigured" };
-  function wakeBadge(id, now) {
-    var w = HAS.call(wakeStatus, id) ? wakeStatus[id] : null;
-    if (!w || !w.status || w.status === "idle") return null;
-    var t = w.since ? ts(w.since) : NaN, text = WAKE_TEXT[w.status];
-    if (w.status === "ok") text = "woke " + (isNaN(t) ? "" : compactAgo(now - t));
-    if (!text) return null;
-    var span = el("span", "wake wake-" + w.status, text.trim()); span.id = "wake-" + id;
-    var tip = [];
-    if (w.since) tip.push("since " + w.since);
-    if (w.log) tip.push(w.log);
-    span.title = tip.join(" \u00b7 ") || w.status;
+  // The live badge for a project with a session listening: "live", or a warning when the last message could not be delivered.
+  function liveBadge(id) {
+    var l = HAS.call(liveStatus, id) ? liveStatus[id] : null;
+    if (!l || !(l.sessions > 0)) return null;
+    var failed = !!(l.last && l.last.status === "failed");
+    var span = el("span", failed ? "live live-failed" : "live", failed ? "couldn't reach session" : "live"); span.id = "live-" + id;
+    var tip = [l.sessions + (l.sessions === 1 ? " live session" : " live sessions")];
+    if (l.since) tip.push("since " + l.since);
+    if (l.last && l.last.at) tip.push("last message " + (failed ? "failed " : "told ") + l.last.at);
+    span.title = tip.join(" \u00b7 ");
     return span;
   }
-  function setWake(map) { wakeStatus = map || {}; refreshRoster(); }
+  function setLiveSessions(map) { liveStatus = map || {}; refreshRoster(); }
   // A nested sub-agent shows its own name; anyone else shows the full display name ("Parent \u203a name" for an agent).
   function rosterEntry(id, now, st, kids, nested) {
     var p = person(id), li = el("li", "rentry"), c = colorOf(id); li.dataset.id = id;
@@ -1326,7 +1322,7 @@ td.num, td.t { font: 12px var(--mono); font-variant-numeric: tabular-nums; white
     b.appendChild(el("span", "nm", nested ? p.name : displayName(id)));
     var r = st[id];
     if (r && !isNaN(r.msg)) { var since = el("span", "since", compactAgo(now - r.msg)); since.title = "last message " + agoText(r.msg); b.appendChild(since); }
-    var wb = wakeBadge(id, now); if (wb) b.appendChild(wb);
+    var lb = liveBadge(id); if (lb) b.appendChild(lb);
     b.addEventListener("click", function () { whoFilter = whoFilter === id ? null : id; renderView(true); });
     li.appendChild(b);
     var repo = repoFor(id);
@@ -1873,7 +1869,7 @@ td.num, td.t { font: 12px var(--mono); font-variant-numeric: tabular-nums; white
     return "Viewing as " + (me.isOwner ? "the owner" : me.canEdit ? "an editor" : "a viewer (read only)");
   }
   // Read-only helpers for the page tests.
-  window.__crosstalk = Object.freeze({ dotState: dotState, viewerText: viewerText, spanText: spanText, colorOf: colorOf, canonicalGameName: canonicalGameName, parseMentions: parseMentions, extractMentionsFromText: extractMentionsFromText, setWake: setWake, setBuildMeta: function (m) { Object.assign(meta, m || {}); renderBuild(); } });
+  window.__crosstalk = Object.freeze({ dotState: dotState, viewerText: viewerText, spanText: spanText, colorOf: colorOf, canonicalGameName: canonicalGameName, parseMentions: parseMentions, extractMentionsFromText: extractMentionsFromText, setLiveSessions: setLiveSessions, setBuildMeta: function (m) { Object.assign(meta, m || {}); renderBuild(); } });
   // Which data layer is active ("seam" | "fetch" | "none"), and whether the
   // fetch layer was constructed. The page tests read these.
   window.__crosstalkLayer = "none";
@@ -1908,7 +1904,7 @@ td.num, td.t { font: 12px var(--mono); font-variant-numeric: tabular-nums; white
     var subs = {};  // collection -> {cb, err}
     var lastSnap = null;  // merged collections
     var lastSnapJson = null;
-    var lastWakeJson = null;
+    var lastLiveJson = null;
     var lastColJson = {};
     var pollTimer = null;
     var POLL_MS = 5000;
@@ -1976,8 +1972,8 @@ td.num, td.t { font: 12px var(--mono); font-variant-numeric: tabular-nums; white
         .then(function (r) { if (!r.ok) throw new Error("snapshot " + r.status); return r.json(); })
         .then(function (snap) {
           lastSnap = mergeRoster(snap);
-          var wakeJson = JSON.stringify(snap.wake || {});
-          if (wakeJson !== lastWakeJson) { lastWakeJson = wakeJson; setWake(snap.wake || {}); }
+          var liveJson = JSON.stringify(snap.live || {});
+          if (liveJson !== lastLiveJson) { lastLiveJson = liveJson; setLiveSessions(snap.live || {}); }
           lastServerTime = snap.server_time;
           meta.commit = snap.commit || null;
           meta.buildNumber = typeof snap.build_number === "number" ? snap.build_number : null;

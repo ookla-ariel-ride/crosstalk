@@ -54,5 +54,5 @@ window.claude = { use: async function(n){ if(n==="db") return db;
   return null; } };
 // The seam the page prefers: the same db/user objects, exposed directly.
 window.__crosstalkDataLayer = { db: db, user: user };
-// __setWake({pid: {status, since, ids, log}}) feeds the page's wake badges, as /api/snapshot's `wake` block does.
-window.__setWake = function (map) { window.__crosstalk.setWake(map); };
+// __setLive({pid: {sessions, since, last: {status, at}}}) feeds the page's live badges, as /api/snapshot's `live` block does.
+window.__setLive = function (map) { window.__crosstalk.setLiveSessions(map); };
