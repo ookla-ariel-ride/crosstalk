@@ -1457,6 +1457,131 @@
     return res("liveBadges", !bad.length, bad.join("; "));
   });
 
+  // ---------- Timeline filters: several people, sent by/to, and the Show toggles ----------
+  function shownIds() { return [].slice.call(document.querySelectorAll("#log > article")).map(function (a) { return a.dataset.id; }); }
+  function shows(id) { return shownIds().indexOf(id) !== -1; }
+  function pressed(id) { var b = $(id); return !!b && b.getAttribute("aria-pressed") === "true"; }
+  function whoNote() { var c = $("who-clear"), n = c && c.closest(".whonote"); return n ? n.querySelector("span").textContent : null; }
+  async function press(id) { $(id).click(); await tick(); }
+  async function clearFilters() { if ($("who-clear")) await press("who-clear"); if (!pressed("who-mode-from") && $("who-mode-from")) await press("who-mode-from"); }
+
+  // Each click on a roster name adds or removes it; the note names everyone picked; Clear drops them all.
+  S.push(async function filterSeveralPeople() {
+    await go("timeline");
+    await addDoc("messages", "fp-bil", { t: ago(2), from: "bewareilive", kind: "sync", summary: "FP from BIL" });
+    await addDoc("messages", "fp-vc", { t: ago(2), from: "vectorcraft", kind: "sync", summary: "FP from VC" });
+    await addDoc("messages", "fp-amb", { t: ago(2), from: "avoidmissingball", kind: "sync", summary: "FP from AMB" });
+    await press("who-bewareilive"); await press("who-vectorcraft");
+    var both = pressed("who-bewareilive") && pressed("who-vectorcraft");
+    // Anyone else's card is a thread shown for a picked person's reply (an earlier scenario may have closed it by hand).
+    function picks(f) { return f === "bewareilive" || f === "bewareilive.verifier" || f === "vectorcraft"; }
+    var all = Object.keys(__store.messages).map(function (k) { return __store.messages[k]; });
+    var cards = [].slice.call(document.querySelectorAll("#log > article.msg"));
+    var onlyTwo = cards.length > 0 && cards.every(function (a) {
+      if (picks(a.dataset.from)) return true;
+      return !!$("thread-toggle-" + a.dataset.id) && all.some(function (m) { return m.replyTo === a.dataset.id && picks(m.from); });
+    });
+    var picked = shows("fp-bil") && shows("fp-vc") && !shows("fp-amb");
+    var note = whoNote();
+    await press("who-vectorcraft");
+    var dropped = !pressed("who-vectorcraft") && pressed("who-bewareilive") && !shows("fp-vc") && shows("fp-bil");
+    await press("who-vectorcraft");
+    await press("who-clear");
+    var cleared = !pressed("who-bewareilive") && !pressed("who-vectorcraft") && shows("fp-amb") && !$("who-clear");
+    var ok = both && onlyTwo && picked && note === "Showing messages sent by BewareILive, VectorCraft." && dropped && cleared;
+    return res("filterSeveralPeople", ok, "both=" + both + " onlyTwo=" + onlyTwo + " picked=" + picked + " note=" + JSON.stringify(note) +
+      " dropped=" + dropped + " cleared=" + cleared);
+  });
+
+  // Picking a project brings its sub-agents; picking a sub-agent alone shows only it.
+  S.push(async function filterIncludesSubAgents() {
+    await go("timeline");
+    await addDoc("messages", "fs-bil", { t: ago(2), from: "bewareilive", kind: "sync", summary: "FS from BIL" });
+    await addDoc("messages", "fs-ver", { t: ago(2), from: "bewareilive.verifier", kind: "sync", summary: "FS from verifier" });
+    await press("who-bewareilive");
+    var withKid = shows("fs-bil") && shows("fs-ver");
+    await press("who-bewareilive"); await press("who-bewareilive.verifier");
+    var kidOnly = shows("fs-ver") && !shows("fs-bil");
+    await clearFilters();
+    return res("filterIncludesSubAgents", withKid && kidOnly, "withKid=" + withKid + " kidOnly=" + kidOnly);
+  });
+
+  // Sent to: the message's `to` list or an @mention; a bare broadcast is sent to nobody in particular.
+  // Either: sent by or to. The Help tab follows the same people filter.
+  S.push(async function filterSentTo() {
+    await go("timeline");
+    await addDoc("messages", "ft-to", { t: ago(2), from: "vectorcraft", kind: "request", to: ["codex"], summary: "FT addressed to Codex" });
+    await addDoc("messages", "ft-at", { t: ago(2), from: "bewareilive", kind: "sync", summary: "FT mention", body: "Thanks @codex for the review" });
+    await addDoc("messages", "ft-by", { t: ago(2), from: "codex", kind: "sync", summary: "FT from Codex" });
+    await addDoc("messages", "ft-all", { t: ago(2), from: "vectorcraft", kind: "sync", summary: "FT broadcast" });
+    var hasSwitch = !!$("who-mode-from") && !!$("who-mode-to") && !!$("who-mode-either") && pressed("who-mode-from");
+    await press("who-codex");
+    var by = shows("ft-by") && !shows("ft-to") && !shows("ft-at");
+    await press("who-mode-to");
+    var to = shows("ft-to") && shows("ft-at") && !shows("ft-by") && !shows("ft-all") && pressed("who-mode-to") && pressed("who-codex");
+    var toNote = whoNote();
+    await go("help");
+    var helpTo = helpHas("FT addressed to Codex");
+    await go("timeline");
+    await press("who-mode-either");
+    var either = shows("ft-to") && shows("ft-at") && shows("ft-by") && !shows("ft-all");
+    var eitherNote = whoNote();
+    await clearFilters();
+    var ok = hasSwitch && by && to && toNote === "Showing messages sent to Codex." && helpTo && either && eitherNote === "Showing messages sent by or to Codex.";
+    return res("filterSentTo", ok, "switch=" + hasSwitch + " by=" + by + " to=" + to + " toNote=" + JSON.stringify(toNote) + " helpTo=" + helpTo +
+      " either=" + either + " eitherNote=" + JSON.stringify(eitherNote));
+  });
+
+  // Has replies: only threads with at least one reply.
+  S.push(async function filterHasReplies() {
+    await go("timeline");
+    await addDoc("messages", "fr-root", { t: ago(3), from: "vectorcraft", kind: "sync", summary: "FR root" });
+    await addDoc("messages", "fr-reply", { t: ago(2), from: "bewareilive", kind: "reply", replyTo: "fr-root", summary: "FR reply" });
+    await addDoc("messages", "fr-lone", { t: ago(2), from: "vectorcraft", kind: "sync", summary: "FR lone" });
+    var off = !pressed("f-replies") && shows("fr-lone");
+    await press("f-replies");
+    var ids = shownIds(), allThreads = ids.length > 0 && ids.every(function (id) { return !!$("thread-toggle-" + id); });
+    var on = pressed("f-replies") && shows("fr-root") && !shows("fr-lone") && allThreads;
+    var note = whoNote();
+    await press("f-replies");
+    var back = !pressed("f-replies") && shows("fr-lone");
+    var ok = off && on && note === "Showing threads with replies." && back;
+    return res("filterHasReplies", ok, "off=" + off + " on=" + on + " allThreads=" + allThreads + " note=" + JSON.stringify(note) + " back=" + back);
+  });
+
+  // Unanswered: a request still waiting on someone, by the Help tab's rule.
+  S.push(async function filterUnanswered() {
+    await go("timeline");
+    await addDoc("messages", "fu-open", { t: ago(3), from: "vectorcraft", kind: "request", to: ["bewareilive"], summary: "FU still open" });
+    await addDoc("messages", "fu-done", { t: ago(3), from: "vectorcraft", kind: "request", to: ["bewareilive"], summary: "FU answered" });
+    await addDoc("messages", "fu-ans", { t: ago(2), from: "bewareilive", kind: "reply", replyTo: "fu-done", summary: "FU the answer" });
+    await addDoc("messages", "fu-note", { t: ago(2), from: "vectorcraft", kind: "sync", summary: "FU plain sync" });
+    await press("f-open");
+    var on = pressed("f-open") && shows("fu-open") && !shows("fu-done") && !shows("fu-note");
+    var note = whoNote();
+    await press("f-replies");
+    var combined = !shows("fu-open") && !shows("fu-done");
+    await press("f-replies"); await press("f-open");
+    var back = shows("fu-note") && shows("fu-done");
+    var ok = on && note === "Showing questions still waiting on someone." && combined && back;
+    return res("filterUnanswered", ok, "on=" + on + " note=" + JSON.stringify(note) + " combined=" + combined + " back=" + back);
+  });
+
+  // Starred: only messages marked important by hand, not alerts that are important by kind.
+  S.push(async function filterStarred() {
+    await go("timeline");
+    await addDoc("messages", "fst-star", { t: ago(2), from: "vectorcraft", kind: "sync", important: true, summary: "FST starred" });
+    await addDoc("messages", "fst-alert", { t: ago(2), from: "vectorcraft", kind: "alert", summary: "FST alert" });
+    await press("f-starred");
+    var on = pressed("f-starred") && shows("fst-star") && !shows("fst-alert");
+    await press("who-avoidmissingball");
+    var note = whoNote(), both = !shows("fst-star");
+    await press("who-clear");
+    var cleared = !pressed("f-starred") && !pressed("who-avoidmissingball") && shows("fst-alert");
+    var ok = on && note === "Showing starred messages sent by AvoidMissingBall." && both && cleared;
+    return res("filterStarred", ok, "on=" + on + " note=" + JSON.stringify(note) + " both=" + both + " cleared=" + cleared);
+  });
+
   S.push(async function partlyLive() {
     var before = $("liveText").textContent;
     __kill("locks", "revoked"); await tick();

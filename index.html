@@ -85,6 +85,8 @@ a { color: inherit; }
 .chips { display: flex; flex-wrap: wrap; gap: 6px; }
 .chips button { font: 500 12px var(--mono); padding: 4px 10px; border-radius: 999px; cursor: pointer; border: 1px solid var(--rule); background: var(--panel); }
 .chips button[aria-pressed="true"] { background: var(--fg); color: var(--bg); border-color: var(--fg); }
+.whomode { margin: 2px 0 10px; }
+.whomode button { padding: 3px 8px; font-size: 11px; }
 
 /* composer */
 .composer { background: var(--own-soft); border: 1px solid var(--rule); border-left: 4px solid var(--own); border-radius: 8px; padding: 12px; margin-bottom: 16px; display: grid; gap: 8px; position: relative; }
@@ -288,7 +290,7 @@ td.num, td.t { font: 12px var(--mono); font-variant-numeric: tabular-nums; white
   ];
   var STATUSES = ["proposed", "agreed", "building", "landed-builder", "ready-to-adopt", "landed-both", "held", "dropped"];
   var data = {}; COLS.forEach(function (c) { data[c] = []; });
-  var people = Object.create(null), seenBy = {}, tab = "timeline", kindFilter = "all", whoFilter = null, liveStatus = {}, query = "", queryRaw = "", db = null, canWrite = false, loaded = {}, offline = false;
+  var people = Object.create(null), seenBy = {}, tab = "timeline", kindFilter = "all", whoPicked = [], whoMode = "from", showReplies = false, showOpen = false, showStarred = false, liveStatus = {}, query = "", queryRaw = "", db = null, canWrite = false, loaded = {}, offline = false;
   // subState[c]: undefined while connecting, "ok" once live, "retry" while resubscribing, "dead" when it can't recover.
   var subState = {};
   // The fetch layer's live state: the snapshot's commit/server_time, the health
@@ -657,6 +659,52 @@ td.num, td.t { font: 12px var(--mono); font-variant-numeric: tabular-nums; white
   // `hold` is the hold. A `status` of "held" from before the flag existed counts too.
   function isHeld(a) { return a.hold === true || a.status === "held"; }
   function isImportant(m) { var k = kindOf(m); return m.important === true || (m.important !== false && (k === "alert" || k === "disagreement" || k === "owner")); }
+  // The people filter: a picked id matches itself and its sub-agents (anyone whose parent chain reaches it).
+  function whoMatches(id) {
+    var cur = String(id == null ? "" : id), seen = Object.create(null);
+    while (cur && !seen[cur]) {
+      if (whoPicked.indexOf(cur) !== -1) return true;
+      seen[cur] = true; cur = HAS.call(people, cur) ? String(person(cur).parent || "") : "";
+    }
+    return false;
+  }
+  // Who a message is sent to: its `to` list plus anyone @mentioned. A bare broadcast is sent to nobody in particular.
+  function recipientsOf(m) {
+    var out = toListOf(m);
+    extractMentionsFromText((m.summary || "") + "\n" + (m.body || "")).ids.forEach(function (id) { if (out.indexOf(id) === -1) out.push(id); });
+    return out;
+  }
+  function peopleOk(m) {
+    if (!whoPicked.length) return true;
+    var by = whoMatches(m.from);
+    if (whoMode === "from") return by;
+    var to = recipientsOf(m).some(whoMatches);
+    return whoMode === "to" ? to : by || to;
+  }
+  function togglePicked(id) {
+    var i = whoPicked.indexOf(id);
+    if (i === -1) whoPicked.push(id); else whoPicked.splice(i, 1);
+  }
+  // "Showing starred messages sent by BewareILive, VectorCraft." Null when no filter is on. The Help tab passes
+  // withShow false: only the people filter applies there.
+  function filterNoteText(noun, withShow) {
+    var rep = withShow && showReplies, open = withShow && showOpen, star = withShow && showStarred;
+    if (!whoPicked.length && !rep && !open && !star) return null;
+    var bits = [];
+    if (rep) bits.push("with replies");
+    if (open) bits.push("still waiting on someone");
+    var t = "Showing " + (star ? "starred " : "") + (open ? "questions" : rep ? "threads" : noun) + (bits.length ? " " + bits.join(" and ") : "");
+    if (whoPicked.length) t += " " + (whoMode === "from" ? "sent by" : whoMode === "to" ? "sent to" : "sent by or to") + " " + whoPicked.map(displayName).join(", ");
+    return t + ".";
+  }
+  function filterNote(parent, noun, withShow) {
+    var text = filterNoteText(noun, withShow);
+    if (!text) return;
+    var note = el("div", "whonote"); note.appendChild(el("span", null, text));
+    var clr = el("button", "btn small", "Clear filters"); clr.type = "button"; clr.id = "who-clear";
+    clr.addEventListener("click", function () { whoPicked = []; showReplies = showOpen = showStarred = false; renderView(true); });
+    note.appendChild(clr); parent.appendChild(note);
+  }
   function byT(a, b) { var ta = ts(a.t || a.updated || a.date), tb = ts(b.t || b.updated || b.date); return (isNaN(ta) ? Infinity : ta) - (isNaN(tb) ? Infinity : tb); }
 
     // Open help requests, derived over data.messages: a single-recipient or broadcast request is open
@@ -805,6 +853,17 @@ td.num, td.t { font: 12px var(--mono); font-variant-numeric: tabular-nums; white
         chips.appendChild(b);
       });
       bar.appendChild(chips);
+      var show = el("div", "chips"); show.setAttribute("role", "group"); show.setAttribute("aria-label", "Show only");
+      [["replies", "Has replies"], ["open", "Unanswered"], ["starred", "Starred"]].forEach(function (f) {
+        var on = f[0] === "replies" ? showReplies : f[0] === "open" ? showOpen : showStarred;
+        var b = el("button", null, f[1]); b.type = "button"; b.id = "f-" + f[0]; b.setAttribute("aria-pressed", String(on));
+        b.addEventListener("click", function () {
+          if (f[0] === "replies") showReplies = !showReplies; else if (f[0] === "open") showOpen = !showOpen; else showStarred = !showStarred;
+          renderView(true);
+        });
+        show.appendChild(b);
+      });
+      bar.appendChild(show);
     }
     view.appendChild(bar);
   }
@@ -1255,6 +1314,13 @@ td.num, td.t { font: 12px var(--mono); font-variant-numeric: tabular-nums; white
     d.appendChild(el("summary", null, "People"));
     d.open = isWide() || rosterOpen;
     d.addEventListener("toggle", function () { if (!isWide()) rosterOpen = d.open; });
+    var mode = el("div", "chips whomode"); mode.setAttribute("role", "group"); mode.setAttribute("aria-label", "Filter picked people by");
+    [["from", "Sent by"], ["to", "Sent to"], ["either", "Either"]].forEach(function (o) {
+      var b = el("button", null, o[1]); b.type = "button"; b.id = "who-mode-" + o[0]; b.setAttribute("aria-pressed", String(whoMode === o[0]));
+      b.addEventListener("click", function () { whoMode = o[0]; renderView(true); });
+      mode.appendChild(b);
+    });
+    d.appendChild(mode);
     var now = Date.now(), st = msgStats(), groups = { projects: [], reviewers: [], tools: [], unlisted: [] }, kids = Object.create(null);
     Object.keys(people).sort(byName).forEach(function (id) {
       var p = person(id);
@@ -1312,8 +1378,9 @@ td.num, td.t { font: 12px var(--mono); font-variant-numeric: tabular-nums; white
   function rosterEntry(id, now, st, kids, nested) {
     var p = person(id), li = el("li", "rentry"), c = colorOf(id); li.dataset.id = id;
     var b = el("button", "rp"); b.type = "button"; b.id = "who-" + id;
-    b.setAttribute("aria-pressed", String(whoFilter === id));
-    b.title = whoFilter === id ? "Show everyone's messages" : "Show only " + displayName(id) + "'s messages";
+    var picked = whoPicked.indexOf(id) !== -1;
+    b.setAttribute("aria-pressed", String(picked));
+    b.title = picked ? "Remove " + displayName(id) + " from the filter" : "Add " + displayName(id) + " to the filter";
     b.style.setProperty("--who", c);
     var ds = dotState(p, now);
     if (ds) {
@@ -1327,7 +1394,7 @@ td.num, td.t { font: 12px var(--mono); font-variant-numeric: tabular-nums; white
     var r = st[id];
     if (r && !isNaN(r.msg)) { var since = el("span", "since", compactAgo(now - r.msg)); since.title = "last message " + agoText(r.msg); b.appendChild(since); }
     var lb = liveBadge(id); if (lb) b.appendChild(lb);
-    b.addEventListener("click", function () { whoFilter = whoFilter === id ? null : id; renderView(true); });
+    b.addEventListener("click", function () { togglePicked(id); renderView(true); });
     li.appendChild(b);
     var repo = repoFor(id);
     if (repo) {
@@ -1376,13 +1443,8 @@ td.num, td.t { font: 12px var(--mono); font-variant-numeric: tabular-nums; white
     grid.appendChild(rosterEl());
     composer(feed);
     toolbar(feed, true);
-    feed.appendChild(el("p", "order", "Newest activity first. Replies fold under the message they answer; a new reply brings its thread to the top. New messages flash briefly. Pick a name under People to see only their messages."));
-    if (whoFilter) {
-      var note = el("div", "whonote"); note.appendChild(el("span", null, "Showing only " + displayName(whoFilter) + "'s messages."));
-      var clr = el("button", "btn small", "Show everyone"); clr.type = "button"; clr.id = "who-clear";
-      clr.addEventListener("click", function () { whoFilter = null; renderView(true); });
-      note.appendChild(clr); feed.appendChild(note);
-    }
+    feed.appendChild(el("p", "order", "Newest activity first. Replies fold under the message they answer; a new reply brings its thread to the top. New messages flash briefly. Pick names under People to see what they sent or were sent."));
+    filterNote(feed, "messages", true);
     syncVisit();
     if (!digestDismissed && digestSince != null) {
       var newMsgs = data.messages.filter(function (m) { var t = ts(m.t); return !isNaN(t) && t > digestSince; });
@@ -1452,18 +1514,23 @@ td.num, td.t { font: 12px var(--mono); font-variant-numeric: tabular-nums; white
         if (isImportant(m) || kindOf(m) === "decision") items.push({ m: m, t: ts(m.t), parent: byId[m.replyTo], dup: true });
       } else items.push({ m: m, t: ts(m.t), parent: byId[m.replyTo] });
     });
-    var filtering = kindFilter !== "all" || !!whoFilter || !!query;
+    var filtering = kindFilter !== "all" || whoPicked.length > 0 || !!query || showStarred;
     function msgOk(m) {
       var kindOk = kindFilter === "all" || (kindFilter === "important" ? isImportant(m) : kindOf(m) === kindFilter);
-      return kindOk && (!whoFilter || String(m.from == null ? "" : m.from) === whoFilter) && matches(m);
+      return kindOk && peopleOk(m) && (!showStarred || m.important === true) && matches(m);
     }
-    items = items.filter(function (x) { return msgOk(x.m); });
+    // Has replies and Unanswered look at the whole thread, so they apply to its root.
+    var openIds = Object.create(null);
+    if (showOpen) openRequests().forEach(function (r) { openIds[r.request._id] = true; });
+    function threadOk(m, kids) { return (!showReplies || (kids && kids.length > 0)) && (!showOpen || !!openIds[m._id]); }
+    items = items.filter(function (x) { return threadOk(x.m, null) && msgOk(x.m); });
     // A reply with its own feed card in view keeps its element ids there; its thread copy goes without.
     var ownCard = Object.create(null); items.forEach(function (x) { if (x.dup) ownCard[x.m._id] = true; });
     data.messages.forEach(function (m) {
       var kids = threads[m._id];
       if (!kids) return;
       kids.sort(byT);
+      if (!threadOk(m, kids)) return;
       var rootOk = msgOk(m), kidOk = kids.some(msgOk);
       if (!rootOk && !kidOk) return;
       var last = kids.length ? kids[kids.length - 1] : null, t = ts(m.t);
@@ -1571,16 +1638,8 @@ td.num, td.t { font: 12px var(--mono); font-variant-numeric: tabular-nums; white
 
   function renderHelp(view) {
     toolbar(view, false);
-    if (whoFilter) {
-      var note = el("div", "whonote"); note.appendChild(el("span", null, "Showing only " + displayName(whoFilter) + "'s messages."));
-      var clr = el("button", "btn small", "Show everyone"); clr.type = "button"; clr.id = "who-clear";
-      clr.addEventListener("click", function () { whoFilter = null; renderView(true); });
-      note.appendChild(clr); view.appendChild(note);
-    }
-    var reqs = openRequests().filter(function (r) {
-      var whoOk = !whoFilter || String(r.request.from == null ? "" : r.request.from) === whoFilter;
-      return whoOk && (matches(r.request) || r.replies.some(matches));
-    });
+    filterNote(view, "requests", false);
+    var reqs = openRequests().filter(function (r) { return peopleOk(r.request) && (matches(r.request) || r.replies.some(matches)); });
     if (!reqs.length) {
       view.appendChild(el("div", "empty", "No open requests. A project asks for help with a kind request; it stays here until someone answers it."));
       return;
