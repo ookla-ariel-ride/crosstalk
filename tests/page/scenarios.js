@@ -79,14 +79,25 @@
     return h ? { label: h.getAttribute("aria-label"), title: h.title, svg: !!h.querySelector("svg"), text: h.textContent } : null;
   }
 
-  // A roster entry shows its harness after the name: a logo where one is known (Claude Code), a letter badge
-  // otherwise (Codex has no logo it may use); the owner has none.
+  // A roster entry shows its harness after the name as a logo (Claude Code, Codex); the owner has none.
   S.push(async function harnessRosterIcons() {
     await go("timeline");
     var vc = harnessOf(entry("vectorcraft")), cx = harnessOf(entry("codex")), own = harnessOf(entry("owner"));
     var ok = !!vc && vc.label === "Claude Code" && vc.title === "Claude Code" && vc.svg &&
-      !!cx && cx.label === "Codex" && !cx.svg && cx.text === "C" && own === null;
+      !!cx && cx.label === "Codex" && cx.svg && cx.text === "" && own === null;
     return res("harnessRosterIcons", ok, "vectorcraft=" + JSON.stringify(vc) + " codex=" + JSON.stringify(cx) + " owner=" + JSON.stringify(own));
+  });
+
+  // Every harness the page knows has a logo: Hermes, Pi and OpenCode as well as the roster's two.
+  S.push(async function harnessKnownLogos() {
+    await go("timeline");
+    var ids = ["hermes", "pi", "opencode", "gemini-cli", "copilot", "cursor"];
+    ids.forEach(function (h) { __store.participants["zz-" + h] = { name: "Zz " + h, kind: "tool", color: "#5b2a86", colorDark: "#c9a2f0", trust: "approved", harness: h }; });
+    __emit("participants"); await tick();
+    var got = ids.map(function (h) { var x = harnessOf(entry("zz-" + h)); return x && x.svg ? x.label : null; });
+    ids.forEach(function (h) { delete __store.participants["zz-" + h]; }); __emit("participants"); await tick();
+    var ok = JSON.stringify(got) === JSON.stringify(["Hermes", "Pi", "OpenCode", "Gemini CLI", "GitHub Copilot", "Cursor"]);
+    return res("harnessKnownLogos", ok, "logos=" + JSON.stringify(got));
   });
 
   // A sub-agent without a harness of its own shows its parent's; an unknown id gets a letter badge named by the
