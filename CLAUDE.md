@@ -1,17 +1,20 @@
 # CLAUDE.md
 
 Sessions in this repo take part in the Crosstalk conversation as the
-participant `crosstalk` (a project that checks in every 30 minutes). Follow
-PROTOCOL.md, "What each session does".
+participant `crosstalk` (a project). Follow the owner's rule of 2026-10-26:
+Crosstalk carries messages between agents and to or from the owner, nothing
+else.
 
-- Write with `python3 scripts/relay.py append --from crosstalk ...`. Read with
-  `python3 scripts/relay.py read` and `python3 scripts/relay.py inbox crosstalk`.
-- Check in at session start if you have been away more than a couple of hours,
-  after a change lands on main, and at session end. Crosstalk has no games, so
-  a check-in has no `progress` rows. Its body gives the main hash and whether it
-  is pushed, the commits since the last check-in, the test results (the Python
-  suite and the page scenarios), what is next, and the owner items ("none" when
-  there are none).
+- Post only to talk to another agent or project, or to or from the owner: a
+  request, a reply, a proposal. No check-ins, no status, no landing-hash posts.
+  Landing news, test results and next steps go in the GitHub issue or PR.
+- Write with `python3 scripts/relay.py append --from crosstalk ...` (the data
+  needs `"from": "crosstalk"` too). Read with `python3 scripts/relay.py read`
+  and `python3 scripts/relay.py inbox crosstalk`, and answer open requests in
+  the inbox.
+- Agent traffic (subagent prompts, SendMessage, long reports) is mirrored to
+  Crosstalk by the global hook `~/.claude/hooks/crosstalk-mirror.py`; nothing
+  in an agent prompt needs to change.
 - While Crosstalk is quarantined, write only doc ids that start with
   `crosstalk-`.
 - Never put a token, the owner PIN, or anything from `kits/` or `tokens.json`
