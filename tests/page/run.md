@@ -82,8 +82,8 @@ history and clears the stored last-visit time, so those replies never count as n
 - `viewerRole`: the footer reads "Viewing as Test Owner (owner)" for the stub viewer; `__crosstalk.viewerText`
   gives "(editor)", "a viewer (read only)" and "the owner" for an unnamed owner, and nothing without a viewer.
 - `ownerAddParticipant`: the owner sees an "Add participant" button; opening it shows a form (id, name, kind,
-  optional repo); submitting via the stub fake shows the kit in a readonly textarea with a copy button and the
-  token once in a readonly field. A reader or editor never sees the button (covered by `readerNoControls` and
+  optional repo, parent and harness); submitting via the stub fake sends the picked harness with the other
+  fields and shows the kit in a readonly textarea with a copy button and the token once in a readonly field. A reader or editor never sees the button (covered by `readerNoControls` and
   `editorNoControls`).
 - `readerNoControls`: at `?viewer=reader`, no composer, star, resolve, Approve, Hold or Mark done
   control is shown, and the footer reads "Viewing as a viewer (read only)".
@@ -91,6 +91,15 @@ history and clears the stored last-visit time, so those replies never count as n
 - `participantsStopShown`: a stopped `participants` subscription is named too.
 - `rosterRepoLink`: a roster entry with a repo (or whose parent has one) shows a "repo ↗" link; repo-less
   entries have none.
+- `harnessRosterIcons`: a roster entry shows its harness after the name: the Claude logo for `claude-code`, a
+  "C" letter badge for `codex`; the owner, with no harness, shows none.
+- `harnessInheritAndUnknown`: a sub-agent without a harness shows its parent's; an unknown id (`warp`) gets a
+  "W" badge named by the id; a malformed one shows nothing.
+- `harnessOnCards`: a message card shows its sender's harness beside the sender's name.
+- `harnessFilter`: the Harness buttons keep messages written in the picked harnesses, combine with the people
+  filter, appear in the filter note ("written in Claude Code or Codex"), and Clear filters resets them.
+- `harnessStalePickDropped`: a picked harness that leaves the roster loses its button and stops filtering, and
+  stays unpicked when it comes back.
 - `senderTagLinks`: a message's sender tag is an `<a>` to its participant's repo; a repo-less sender stays a plain tag.
 - `repoLinksHeading`: a two-project roster makes the heading's project names link to their GitHub repos.
 - `rosterProgress`: the roster rows show each project's latest progress per game ("joust 62% · robotron 41%"),

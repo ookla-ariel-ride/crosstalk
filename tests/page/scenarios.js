@@ -131,11 +131,25 @@
     var note2 = whoNote();
     $("who-clear").click(); await tick();
     var cleared = $("h-codex").getAttribute("aria-pressed") === "false" && $("h-claude-code").getAttribute("aria-pressed") === "false" && !!card("hn-cx");
+    delete __store.messages["hn-cx"]; delete __store.messages["hn-vc"]; __emit("messages"); await tick();
     var ok = labels.indexOf("Claude Code") !== -1 && labels.indexOf("Codex") !== -1 && pressedCx && onlyCodex &&
       note1 === "Showing messages written in Codex." && none && vcShown &&
       note2 === "Showing messages sent by VectorCraft, written in Claude Code or Codex." && cleared;
     return res("harnessFilter", ok, "labels=" + JSON.stringify(labels) + " onlyCodex=" + onlyCodex + " note1=" + JSON.stringify(note1) +
       " none=" + none + " vcShown=" + vcShown + " note2=" + JSON.stringify(note2) + " cleared=" + cleared);
+  });
+
+  // A picked harness that leaves the roster stops filtering: its button is gone, so it can't stay on unseen.
+  S.push(async function harnessStalePickDropped() {
+    await go("timeline");
+    $("h-codex").click(); await tick();
+    var saved = __store.participants.codex;
+    __store.participants.codex = Object.assign({}, saved); delete __store.participants.codex.harness; __emit("participants"); await tick();
+    var gone = !$("h-codex"), unfiltered = shownFrom().some(function (f) { return f !== "codex"; }), noNote = whoNote() === null;
+    __store.participants.codex = saved; __emit("participants"); await tick();
+    var stillOff = $("h-codex") && $("h-codex").getAttribute("aria-pressed") === "false";
+    var ok = gone && unfiltered && noNote && !!stillOff;
+    return res("harnessStalePickDropped", ok, "gone=" + gone + " unfiltered=" + unfiltered + " noNote=" + noNote + " stillOff=" + stillOff);
   });
 
   S.push(async function threeWayPositions() {
@@ -400,7 +414,7 @@
     if (before == null) root.removeAttribute("data-theme"); else root.setAttribute("data-theme", before);
     await tick();
     var ok = light === "#1f5f8b" && dark === "#6fb2e2" && lightTag === light && darkTag === dark &&
-      h === "AvoidMissingBall · BewareILive · VectorCraft";
+      h === "AvoidMissingBall · BewareILive · Crosstalk · VectorCraft";
     return res("themedColors", ok, "light=" + light + "/" + lightTag + " dark=" + dark + "/" + darkTag + " heading=" + JSON.stringify(h));
   });
 
@@ -857,6 +871,7 @@
     await addDoc("messages", "hrep-pm-1", { t: ago(1), from: "bewareilive", kind: "reply", summary: "BIL ok", replyTo: "hreq-pm" });
     await addDoc("messages", "hrep-pm-2", { t: ago(1), from: "vectorcraft", kind: "reply", summary: "VC ok", replyTo: "hreq-pm" });
     await addDoc("messages", "hrep-pm-3", { t: ago(1), from: "avoidmissingball", kind: "reply", summary: "AMB ok", replyTo: "hreq-pm" });
+    await addDoc("messages", "hrep-pm-4", { t: ago(1), from: "crosstalk", kind: "reply", summary: "CT ok", replyTo: "hreq-pm" });
     var after = helpWaiting("Projects mention?");
     await dropParticipant("hq-proj");
     await go("timeline");
@@ -1317,12 +1332,20 @@
       summary: "AvoidMissingBall is in sync",
       replyTo: "own-bcast-req"
     });
-    var closedAfterAllThree = !helpHas("Are all the projects in sync?");
+    var openBeforeCrosstalk = helpHas("Are all the projects in sync?");
+    await addDoc("messages", "own-bcast-rep-ct", {
+      t: ago(1),
+      from: "crosstalk",
+      kind: "sync",
+      summary: "Crosstalk is in sync",
+      replyTo: "own-bcast-req"
+    });
+    var closedAfterAll = !helpHas("Are all the projects in sync?");
     await go("timeline");
-    var ok = listedInitially && stillOpenAfterOne && waitingText === "waiting on AvoidMissingBall \u00b7 VectorCraft" && stillOpenAfterTwo && closedAfterAllThree;
+    var ok = listedInitially && stillOpenAfterOne && waitingText === "waiting on AvoidMissingBall \u00b7 Crosstalk \u00b7 VectorCraft" && stillOpenAfterTwo && openBeforeCrosstalk && closedAfterAll;
     return res("ownerBroadcastRequestWaitsForAllProjects", ok,
       "initial=" + listedInitially + " afterOne=" + stillOpenAfterOne + " waiting=" + JSON.stringify(waitingText) +
-      " afterTwo=" + stillOpenAfterTwo + " closedAfterThree=" + closedAfterAllThree);
+      " afterTwo=" + stillOpenAfterTwo + " openBeforeCrosstalk=" + openBeforeCrosstalk + " closedAfterAll=" + closedAfterAll);
   });
 
   // ---------- Threads: a root card with its replies folded under it ----------
