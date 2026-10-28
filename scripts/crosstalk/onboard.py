@@ -15,7 +15,7 @@ from contextlib import contextmanager
 from pathlib import Path
 from typing import Dict, Optional, Tuple
 
-from .participants import ID_RE, KINDS, NAME_BAD_RE, Roster, load_roster, repo_problem
+from .participants import ID_RE, KINDS, NAME_BAD_RE, Roster, load_roster, repo_problem, harness_problem
 from .tokens import TOKEN_FILE, Tokens, load_tokens
 
 # Deterministic palette: (light-theme color, dark-theme color), hue-matched.
@@ -76,6 +76,8 @@ def _entry_raw(p) -> dict:
         d["parent"] = p.parent
     if p.checkInMin is not None:
         d["checkInMin"] = p.checkInMin
+    if p.harness is not None:
+        d["harness"] = p.harness
     return d
 
 
@@ -242,19 +244,19 @@ def _write_kit(root: Path, pid: str, token: str, entry: dict) -> Path:
 
 
 def onboard(root, id, name, kind, repo=None, check_in_min=None, parent=None,
-            color=None, color_dark=None) -> Dict[str, str]:
+            color=None, color_dark=None, harness=None) -> Dict[str, str]:
     """Add a participant: roster entry, minted key, kit.
 
     Returns {"kit_path", "token"}. Refuses (ValueError) a duplicate id or
-    name, a bad id or kind, an agent without a parent, or colors the roster's
-    validation rejects.
+    name, a bad id, kind or harness, an agent without a parent, or colors the
+    roster's validation rejects.
     """
     root = Path(root)
     with _locked_onboard(root):
-        return _onboard(root, id, name, kind, repo, check_in_min, parent, color, color_dark)
+        return _onboard(root, id, name, kind, repo, check_in_min, parent, color, color_dark, harness)
 
 
-def _onboard(root, id, name, kind, repo, check_in_min, parent, color, color_dark):
+def _onboard(root, id, name, kind, repo, check_in_min, parent, color, color_dark, harness):
     """The onboard body, run under the exclusive flock (see _locked_onboard)."""
     roster_path = root / "participants.json"
     roster = load_roster(roster_path)
@@ -287,7 +289,7 @@ def _onboard(root, id, name, kind, repo, check_in_min, parent, color, color_dark
                                      or check_in_min < 1
                                      or check_in_min > 1440):
         raise ValueError("participant %s: bad checkInMin %r" % (id, check_in_min))
-    problem = repo_problem(id, repo)
+    problem = repo_problem(id, repo) or harness_problem(id, harness)
     if problem:
         raise ValueError(problem)
 
@@ -304,6 +306,8 @@ def _onboard(root, id, name, kind, repo, check_in_min, parent, color, color_dark
         entry["checkInMin"] = check_in_min
     if parent is not None:
         entry["parent"] = parent
+    if harness is not None:
+        entry["harness"] = harness
 
     new_raw = dict(raw)
     new_raw["participants"] = list(raw["participants"]) + [entry]

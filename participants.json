@@ -10,7 +10,8 @@
       "color": "#b3261e",
       "colorDark": "#ef6a5f",
       "checkInMin": 30,
-      "trust": "approved"
+      "trust": "approved",
+      "harness": "claude-code"
     },
     {
       "id": "vectorcraft",
@@ -20,7 +21,8 @@
       "color": "#1f5f8b",
       "colorDark": "#6fb2e2",
       "checkInMin": 30,
-      "trust": "approved"
+      "trust": "approved",
+      "harness": "claude-code"
     },
     {
       "id": "avoidmissingball",
@@ -30,7 +32,8 @@
       "color": "#c77700",
       "colorDark": "#f0a73a",
       "checkInMin": 30,
-      "trust": "approved"
+      "trust": "approved",
+      "harness": "claude-code"
     },
     {
       "id": "codex",
@@ -38,7 +41,8 @@
       "kind": "reviewer",
       "color": "#00727a",
       "colorDark": "#45c2bf",
-      "trust": "approved"
+      "trust": "approved",
+      "harness": "codex"
     },
     {
       "id": "owner",
@@ -54,9 +58,9 @@
       "kind": "project",
       "color": "#2e7d32",
       "colorDark": "#81c784",
-      "trust": "quarantined",
+      "trust": "approved",
       "repo": "ookla-ariel-ride/crosstalk",
-      "checkInMin": 30
+      "harness": "claude-code"
     }
   ]
 }

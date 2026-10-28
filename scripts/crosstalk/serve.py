@@ -66,7 +66,7 @@ LOGIN_WINDOW = 10 * 60.0
 LOGIN_MAX_FAILURES = 5
 # The fields of a roster entry the owner may write. A stale `wake` key (from the
 # removed agent-wake feature) is not one, so the API rejects it.
-ROSTER_FIELDS = ("name", "kind", "color", "colorDark", "checkInMin", "trust", "repo", "parent")
+ROSTER_FIELDS = ("name", "kind", "color", "colorDark", "checkInMin", "trust", "repo", "parent", "harness")
 
 
 def now_iso() -> str:
@@ -689,7 +689,8 @@ class CrosstalkHandler(BaseHTTPRequestHandler):
                              body.get("kind"), repo=body.get("repo"),
                              check_in_min=body.get("checkInMin"),
                              parent=body.get("parent"),
-                             color=body.get("color"), color_dark=body.get("colorDark"))
+                             color=body.get("color"), color_dark=body.get("colorDark"),
+                             harness=body.get("harness"))
         except ValueError as e:
             self._error(400, str(e))
             return
