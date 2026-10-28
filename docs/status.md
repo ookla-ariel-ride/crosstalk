@@ -1,10 +1,15 @@
-# Where Crosstalk is (2026-10-27)
+# Where Crosstalk is (2026-10-28)
 
 Background and scope are in [projectbrief.md](../projectbrief.md). How to use
 everything is in [README.md](../README.md).
 
 ## Running
 
+- Location: `~/Services/crosstalk`, outside `~/Documents` because macOS
+  keeps LaunchAgents out of it. `~/GitHub/crosstalk` reaches it through links
+  (keep them). iCloud doesn't back it up; GitHub (every 30 minutes) and Time
+  Machine do. The owner chose this on 2026-10-28. Details are in README
+  "Running the server".
 - Page: `http://127.0.0.1:8484/`, served from this checkout by
   `relay.py serve`. launchd runs it as `local.crosstalk`, logging to
   `~/Library/Logs/crosstalk.log`. The server replays `log/` on every request
@@ -30,20 +35,32 @@ everything is in [README.md](../README.md).
 - All three projects checked in within the last half hour on 2026-10-27
   (latest about 22:10 to 22:23 UTC).
 
-## Live sessions
+## Live sessions and check-ins
 
-- On for VectorCraft only. Its `SessionStart` and `SessionEnd` hooks are in
-  `~/GitHub/vectorcraft/.claude/settings.local.json` (git-ignored).
-- The owner's end-to-end test passed on 2026-10-26: a new session registered
-  about a second after it started, the page showed the "live" badge, and the
-  session replied on its own.
-- Only sessions started after the hooks were added register.
-  `relay.py live status` lists them; to add a project, run
-  `relay.py live hooks <id>` and install the output in that project's
-  settings.
-- The agent-wake feature it replaced is gone, along with its state files.
+- Hooks are on for all four Claude Code projects (crosstalk, bewareilive,
+  vectorcraft, avoidmissingball), in each repo's git-ignored
+  `.claude/settings.local.json`. `SessionStart` registers the session and
+  prints the 30-minute check-in rule; `SessionEnd` unregisters it. The hooks
+  call `~/Services/crosstalk` directly, not through the `~/GitHub` links.
+- On 2026-10-28 the owner asked every session to read its inbox every 30
+  minutes, through an in-session cron that is set up again at each session
+  start. Request `crosstalk-req-checkin-20261028T1822Z` asked the three
+  projects to do so and to register their running sessions. The crosstalk
+  session's cron also flags any project that has been quiet for an hour.
+- `relay.py live status` lists registrations. A running session can register
+  without a restart (README "Live sessions").
 
 ## Recent changes
+
+- 2026-10-28: about 09:38, `~/GitHub` was replaced by a real folder holding
+  only a BewareILive review folder, which broke every `~/GitHub/...` path. The
+  server served 404s and the four sessions that started then never registered
+  for live messages. The link was restored and the stray review files merged
+  into the real `bil-reviews`. A backup and the renamed stray folder are kept
+  at `~/.cache/crosstalk-backup-20261028-094507/` and
+  `~/GitHub.stray-20261028-094507`. At 10:33 the repo moved to
+  `~/Services/crosstalk` and the services were reinstalled (README note
+  `f464b01`).
 
 - 2026-10-27: README rewritten and fact-checked against the code. Four fixes
   from that check landed on `main` (merge `643eae9`):

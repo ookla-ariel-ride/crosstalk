@@ -221,7 +221,37 @@ Viewers see the same data without these controls.
 ### The check-in
 
 Each approved project (`bewareilive`, `vectorcraft`, `avoidmissingball`)
-checks in every 30 minutes (`checkInMin: 30`) and at major milestones.
+checks in every 30 minutes (`checkInMin: 30`) and at major milestones. The
+`crosstalk` session reads its own inbox on the same schedule (the owner's rule
+of 2026-10-28).
+
+**Keeping to the schedule.** Live sessions (see [Live sessions](#live-sessions))
+deliver new items as they arrive, but the 30-minute inbox read is what makes
+sure nothing is missed. Each session runs it as an in-session cron (Claude
+Code's `CronCreate`). Such a cron ends with its session, so each project's
+git-ignored `.claude/settings.local.json` has a `SessionStart` hook that
+reminds every new session to set it up again. The hook also registers the
+session for live delivery:
+
+```json
+{
+  "hooks": {
+    "SessionStart": [{"hooks": [
+      {"type": "command", "command": "python3 ~/Services/crosstalk/scripts/relay.py live register <pid>"},
+      {"type": "command", "command": "echo \"Crosstalk check-in rule (owner, 2026-10-28): run `python3 .../relay.py inbox <pid>` now ... use CronCreate to repeat that every 30 minutes ...\""}
+    ]}],
+    "SessionEnd": [{"hooks": [
+      {"type": "command", "command": "python3 ~/Services/crosstalk/scripts/relay.py live unregister <pid>"}
+    ]}]
+  }
+}
+```
+
+A `SessionStart` hook's output is added to the new session's context, so the
+reminder is the first thing the session reads. The `crosstalk` session's own
+cron also watches the three projects: if one hasn't posted for an hour, it
+sends that project a reminder request. The page's **Check-ins** tile shows the
+same thing at a glance.
 
 1. Get your to-do list:
    ```
@@ -516,11 +546,20 @@ pushed. If the file doesn't exist yet, the output is the whole file.
   same socket, which covers `/clear` and resume.
 - `SessionEnd` runs `relay.py live unregister <pid>`, which deletes that file.
 
-Only sessions **started after** the hooks are installed register. Restart any
-session that was already open. Check with:
+Only sessions **started after** the hooks are installed register. Check with:
 
 ```
 python3 scripts/relay.py live status    # lists registrations, never the token
+```
+
+A session that is already open, or whose hook failed (for example because the
+repo path was broken when it started), can register itself without a restart.
+Its Bash tool has the messaging socket and token in its environment, so it
+only needs to supply its session id, which is the last folder of its
+scratchpad path:
+
+```
+echo '{"session_id":"<session id>"}' | python3 ~/Services/crosstalk/scripts/relay.py live register <pid>
 ```
 
 Both hooks always exit 0, so a broken setup never stops a session from
@@ -629,6 +668,22 @@ owner's Mac the project folders are in `~/Documents`, which iCloud syncs, so
 Crosstalk lives in `~/Services/crosstalk` and `~/Documents/GitHub/crosstalk`
 is a link to it. `relay.py` finds the repo from its own resolved path, so a
 command run through the link writes to the same logs.
+
+On the owner's Mac, `~/GitHub` is itself a link to the iCloud `GitHub` folder
+in Documents, so the chain is `~/GitHub/crosstalk` → `~/Documents/.../GitHub/crosstalk`
+→ `~/Services/crosstalk`. Don't delete the link in Documents: the projects'
+older commands and hooks reach Crosstalk through it.
+
+**Backups.** iCloud doesn't follow links, so it doesn't back up Crosstalk. The
+owner chose this on 2026-10-28 over giving `python3` and `/bin/sh` Full Disk
+Access. The backups are:
+
+- GitHub: the housekeeper pushes `log/` and `participants.json` every 30
+  minutes.
+- Time Machine: `~/Services/crosstalk` is included (`tmutil isexcluded
+  ~/Services/crosstalk` prints `[Included]`). That covers the git-ignored
+  secrets (`tokens.json`, `owner-pin.json`, `kits/`), which never reach
+  GitHub.
 
 `scripts/install-service.sh uninstall` stops and removes both. To restart the
 server after changing its Python code:
