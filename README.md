@@ -142,7 +142,7 @@ session reads them. See [Live sessions](#live-sessions).
 
 | Tab | Shows | Owner can |
 |---|---|---|
-| Timeline | A dismissible "Since your last visit" digest, the composer, search, kind filters and Show toggles, and every message ordered by latest activity. Replies are grouped under the message they answer (see below) | Post, reply, star a message, record a message as a decision, approve a participant, settle a disagreement (`Go with <Name>`) |
+| Timeline | A dismissible "Since your last visit" digest of what others posted while the page was closed, the composer, search, kind filters and Show toggles, and every message ordered by latest activity. Replies are grouped under the message they answer (see below) | Post, reply, star a message, record a message as a decision, approve a participant, settle a disagreement (`Go with <Name>`) |
 | Help | Open questions (`kind: "request"`), newest first, with who they're addressed to and a `waiting on ...` pill while some recipients haven't answered | Reply |
 | Agreements | Every agreement by stage (`proposed`, `agreed`, `building`, `landed-builder`, `ready-to-adopt`, `landed-both`, `held`, `dropped`), with builder, adopter, and per-project commit links | Hold, release hold |
 | Waiting on you | Open owner items oldest first, including `Crosstalk feature: ...` proposals, plus a collapsed list of done items | Mark done |

@@ -580,22 +580,39 @@
           " parentShown=" + parentShown + " parentSent=" + parentSent + " colorSent=" + colorSent);
       });
 
-    // "N new" since the last visit: fresh messages badge the Timeline tab until it is opened.
+  // "Since your last visit" counts other people's messages that arrived while the page was closed: the rows newer
+  // than the stored last visit when the page loads (reopenSince stands in for a reload). A first visit has nothing
+  // new. Messages that arrive while the page is open and the owner's own don't count, opening the Timeline tab
+  // doesn't clear it, Dismiss clears the box and the badge, and the stored time keeps up with what was shown.
   S.push(async function newSinceVisit() {
-    var KEY = "crosstalk.lastVisit";
-    try { localStorage.removeItem(KEY); } catch (e) {}
-    await go("timeline"); // opening the timeline records "now" as the last visit
+    var KEY = "crosstalk.lastVisit", C = window.__crosstalk;
+    if (!C.reopenSince) return res("newSinceVisit", false, "no reopenSince hook");
     await go("agreements");
-    var before = null; try { before = localStorage.getItem(KEY); } catch (e) {}
-    var now = new Date();
-    await addDoc("messages", "new-1", { t: now.toISOString(), from: "codex", kind: "sync", summary: "New one" });
-    await addDoc("messages", "new-2", { t: now.toISOString(), from: "codex", kind: "sync", summary: "New two" });
-    var badge = document.getElementById("new-badge"), txt = badge ? badge.textContent : null;
-    await go("timeline"); // opening the timeline clears the badge and advances the stored time
-    var after = null; try { after = localStorage.getItem(KEY); } catch (e) {}
-    var gone = document.getElementById("new-badge") === null;
-    var advanced = before != null && after != null && Number(after) > Number(before);
-    return res("newSinceVisit", txt === "2 new" && gone && advanced, "badge=" + JSON.stringify(txt) + " gone=" + gone + " stored " + before + " -> " + after);
+    var past = Date.now();
+    while (Date.now() <= past) {}
+    var nowIso = new Date().toISOString();
+    await addDoc("messages", "new-1", { t: nowIso, from: "codex", kind: "sync", summary: "New one" });
+    await addDoc("messages", "new-2", { t: nowIso, from: "codex", kind: "sync", summary: "New two" });
+    await addDoc("messages", "new-own", { t: nowIso, from: "owner", kind: "owner", summary: "My own note" });
+    C.reopenSince(null); await tick();
+    var firstVisit = $("new-badge") === null;
+    C.reopenSince(past); await tick();
+    var badge = $("new-badge"), txt = badge ? badge.textContent : null;
+    var t3 = Date.now();
+    await addDoc("messages", "new-3", { t: new Date(t3).toISOString(), from: "codex", kind: "sync", summary: "Arrived while open" });
+    var still = $("new-badge") ? $("new-badge").textContent : null;
+    await go("timeline");
+    var sum = $("digest-summary") ? $("digest-summary").textContent : "";
+    var sumOk = /^2 messages \(Codex 2\)/.test(sum);
+    var badgeAfterTab = $("new-badge") ? $("new-badge").textContent : null;
+    if ($("digest-dismiss")) { $("digest-dismiss").click(); await tick(); }
+    var cleared = $("digest") === null && $("new-badge") === null;
+    var stored = Number(localStorage.getItem(KEY)), kept = stored >= t3;
+    localStorage.setItem(KEY, "1"); window.dispatchEvent(new Event("pagehide"));
+    var onHide = Number(localStorage.getItem(KEY)) >= t3;
+    var ok = firstVisit && txt === "2 new" && still === "2 new" && sumOk && badgeAfterTab === "2 new" && cleared && kept && onHide;
+    return res("newSinceVisit", ok, "firstVisit=" + firstVisit + " badge=" + JSON.stringify(txt) + " still=" + JSON.stringify(still) +
+      " sum=" + JSON.stringify(sum) + " afterTab=" + JSON.stringify(badgeAfterTab) + " cleared=" + cleared + " kept=" + kept + " onHide=" + onHide);
   });
 
   // ---------- Help tab: open requests and their answers ----------
@@ -815,25 +832,23 @@
   });
 
   S.push(async function ownerDigest() {
-    var KEY = "crosstalk.lastVisit";
     await go("agreements");
     var past = Date.now();
     while (Date.now() <= past) {}
-    try { localStorage.setItem(KEY, String(past)); } catch (e) {}
     var now = Date.now();
     var nowIso = new Date(now).toISOString();
     await addDoc("messages", "dig-m1", { t: nowIso, from: "codex", kind: "sync", summary: "Digest message" });
     await addDoc("progress", "dig-p1", { t: nowIso, project: "bewareilive", game: "robotron", pct: 65 });
-    while (Date.now() <= now) {}
+    window.__crosstalk.reopenSince(past);
     await go("timeline");
-    var badgeGone = $("new-badge") === null;
+    var badgeBefore = $("new-badge") ? $("new-badge").textContent : null;
     var dig = $("digest"), sum = $("digest-summary"), sumText = sum ? sum.textContent : "";
     var dismiss = $("digest-dismiss");
     var visible = !!dig && /1 message \(Codex 1\)/.test(sumText) && /robotron 65%/.test(sumText) && !!dismiss;
     if (dismiss) { dismiss.click(); await tick(); }
-    var goneAfterDismiss = $("digest") === null;
-    var ok = badgeGone && visible && goneAfterDismiss;
-    return res("ownerDigest", ok, "badgeGone=" + badgeGone + " sum=" + JSON.stringify(sumText) + " goneAfterDismiss=" + goneAfterDismiss);
+    var goneAfterDismiss = $("digest") === null && $("new-badge") === null;
+    var ok = badgeBefore === "1 new" && visible && goneAfterDismiss;
+    return res("ownerDigest", ok, "badgeBefore=" + JSON.stringify(badgeBefore) + " sum=" + JSON.stringify(sumText) + " goneAfterDismiss=" + goneAfterDismiss);
   });
 
   S.push(async function ownerReplyUnlistedAndSelf() {
@@ -912,18 +927,16 @@
   });
 
   S.push(async function ownerDigestMalformedRows() {
-    var KEY = "crosstalk.lastVisit";
     await go("agreements");
     var past = Date.now();
     while (Date.now() <= past) {}
-    try { localStorage.setItem(KEY, String(past)); } catch (e) {}
     var t1 = Date.now();
     var t1Iso = new Date(t1).toISOString();
     await addDoc("messages", "dig-anon", { t: t1Iso, from: "", kind: "sync", summary: "Blank sender" });
     await addDoc("progress", "dig-nan", { t: t1Iso, project: "bewareilive", game: "joust", pct: NaN });
     await addDoc("progress", "dig-inf", { t: t1Iso, project: "bewareilive", game: "tempest", pct: Infinity });
     await addDoc("progress", "dig-good", { t: t1Iso, project: "bewareilive", game: "robotron", pct: 70 });
-    while (Date.now() <= t1) {}
+    window.__crosstalk.reopenSince(past);
     await go("timeline");
     var sum1 = $("digest-summary") ? $("digest-summary").textContent : "";
     var anonOk = /\(\? 1\)/.test(sum1);
@@ -1264,17 +1277,14 @@
   });
 
   // A reply newer than the last visit that was already there when the page loaded carries the "new reply" tag but
-  // its thread stays closed; only a reply that arrives while the page is open (threadBump) opens it. The stored
-  // last visit is set to just before hist-b (10 min old), which the page picks up on the next render.
+  // its thread stays closed; only a reply that arrives while the page is open (threadBump) opens it. The page is
+  // reopened with a last visit just before hist-b (10 min old).
   S.push(async function threadSinceVisitClosed() {
     await go("timeline");
-    var KEY = "crosstalk.lastVisit", prev = localStorage.getItem(KEY);
-    localStorage.setItem(KEY, String(Date.now() - 12 * 60000));
-    __emit("messages"); await tick();
+    window.__crosstalk.reopenSince(Date.now() - 12 * 60000); await tick();
     var c = topCard("hist-r"), mark = c && c.querySelector(".pill.new-reply");
     var closed = !threadBox("hist-r") && $("thread-toggle-hist-r").getAttribute("aria-expanded") === "false";
     var first = document.querySelector("#log > article"), firstId = first && first.dataset.id;
-    if (prev == null) localStorage.removeItem(KEY); else localStorage.setItem(KEY, prev);
     var ok = !!mark && mark.textContent === "new reply" && closed;
     return res("threadSinceVisitClosed", ok, "mark=" + !!mark + " closed=" + closed + " first=" + firstId);
   });

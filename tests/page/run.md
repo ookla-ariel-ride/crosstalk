@@ -99,8 +99,10 @@ history and clears the stored last-visit time, so those replies never count as n
 - `importantMarker`: an alert/owner card carries `.important` with a 3px sender-colored left border.
 - `agreementsCopy`: the Open-agreements hint reads "27 open of 29".
 - `claimRowsLink`: seeded lock rows render `<repo>/blob/main/<path>` links in the tile hint and the File-claims tab.
-- `newSinceVisit`: fresh messages badge the Timeline tab "N new"; opening the timeline clears it and advances
-  the stored visit time.
+- `newSinceVisit`: other people's messages newer than the stored last visit at load badge the Timeline tab "N new"
+  (`__crosstalk.reopenSince(t)` stands in for a reload, since `stub.js` clears the stored time). A first visit,
+  the owner's own notes, and messages that arrive while the page is open don't count; opening the Timeline tab
+  doesn't clear it, Dismiss does; the stored time keeps up with each snapshot and on `pagehide`.
 - `threadGrouping`: replies and replies to replies fold into the root's thread (`hist-*`, which `stub.js` seeds as
   history before the page loads); the root shows "2 replies · last from Codex 10 min ago · Show replies" ("1 reply"
   singular) and a reply-less card has no footer.
