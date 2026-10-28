@@ -86,6 +86,7 @@ a { color: inherit; }
 .chips button { font: 500 12px var(--mono); padding: 4px 10px; border-radius: 999px; cursor: pointer; border: 1px solid var(--rule); background: var(--panel); }
 .chips button[aria-pressed="true"] { background: var(--fg); color: var(--bg); border-color: var(--fg); }
 .whomode { margin: 2px 0 10px; }
+.showlbl { font: 500 12px var(--mono); color: var(--muted); align-self: center; }
 .whomode button { padding: 3px 8px; font-size: 11px; }
 
 /* composer */
@@ -854,6 +855,7 @@ td.num, td.t { font: 12px var(--mono); font-variant-numeric: tabular-nums; white
       });
       bar.appendChild(chips);
       var show = el("div", "chips"); show.setAttribute("role", "group"); show.setAttribute("aria-label", "Show only");
+      show.appendChild(el("span", "showlbl", "Show only:"));
       [["replies", "Has replies"], ["open", "Unanswered"], ["starred", "Starred"]].forEach(function (f) {
         var on = f[0] === "replies" ? showReplies : f[0] === "open" ? showOpen : showStarred;
         var b = el("button", null, f[1]); b.type = "button"; b.id = "f-" + f[0]; b.setAttribute("aria-pressed", String(on));
@@ -1519,10 +1521,14 @@ td.num, td.t { font: 12px var(--mono); font-variant-numeric: tabular-nums; white
       var kindOk = kindFilter === "all" || (kindFilter === "important" ? isImportant(m) : kindOf(m) === kindFilter);
       return kindOk && peopleOk(m) && (!showStarred || m.important === true) && matches(m);
     }
-    // Has replies and Unanswered look at the whole thread, so they apply to its root.
+    // Has replies and Unanswered look at the whole thread: Unanswered keeps it when its root or any reply is a
+    // question still waiting on someone (a question can be posted as a reply).
     var openIds = Object.create(null);
     if (showOpen) openRequests().forEach(function (r) { openIds[r.request._id] = true; });
-    function threadOk(m, kids) { return (!showReplies || (kids && kids.length > 0)) && (!showOpen || !!openIds[m._id]); }
+    function threadOk(m, kids) {
+      return (!showReplies || (kids && kids.length > 0)) &&
+        (!showOpen || !!openIds[m._id] || (kids || []).some(function (r) { return !!openIds[r._id]; }));
+    }
     items = items.filter(function (x) { return threadOk(x.m, null) && msgOk(x.m); });
     // A reply with its own feed card in view keeps its element ids there; its thread copy goes without.
     var ownCard = Object.create(null); items.forEach(function (x) { if (x.dup) ownCard[x.m._id] = true; });
@@ -1535,7 +1541,8 @@ td.num, td.t { font: 12px var(--mono); font-variant-numeric: tabular-nums; white
       if (!rootOk && !kidOk) return;
       var last = kids.length ? kids[kids.length - 1] : null, t = ts(m.t);
       kids.forEach(function (r) { var rt = ts(r.t); if (!isNaN(rt) && !(rt <= t)) t = rt; });
-      items.push({ m: m, t: t, kids: kids, last: last, inReplies: filtering && !rootOk && kidOk });
+      var openInReply = showOpen && !openIds[m._id];
+      items.push({ m: m, t: t, kids: kids, last: last, inReplies: (filtering && !rootOk && kidOk) || openInReply });
     });
     // Newest activity first; an undated entry sorts to the top, as before.
     items.sort(function (a, b) { return (isNaN(a.t) ? Infinity : a.t) - (isNaN(b.t) ? Infinity : b.t); }).reverse();

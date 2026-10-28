@@ -128,4 +128,6 @@ history and clears the stored last-visit time, so those replies never count as n
 - `filterHasReplies`: Has replies keeps only threads with a reply.
 - `filterUnanswered`: Unanswered keeps only requests still waiting on someone, by the Help tab's rule, and
   combines with Has replies.
+- `filterNestedMatches`: a question posted as a reply counts for Unanswered (as on Help) and opens its thread; a
+  starred reply opens its thread under Starred; a reply's `to` counts for Sent to.
 - `filterStarred`: Starred keeps only hand-starred messages, not alerts; Clear filters also turns it off.

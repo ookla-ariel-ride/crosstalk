@@ -1567,6 +1567,30 @@
     return res("filterUnanswered", ok, "on=" + on + " note=" + JSON.stringify(note) + " combined=" + combined + " back=" + back);
   });
 
+  // A question posted as a reply counts for Unanswered, as it does on the Help tab, and opens its thread to it.
+  // A reply sent to someone counts as sent to them; a starred reply opens its thread under Starred.
+  S.push(async function filterNestedMatches() {
+    await go("timeline");
+    await addDoc("messages", "fn-root", { t: ago(4), from: "vectorcraft", kind: "sync", summary: "FN plain root" });
+    await addDoc("messages", "fn-ask", { t: ago(3), from: "owner", kind: "request", to: ["bewareilive"], replyTo: "fn-root", summary: "FN question in a thread" });
+    await addDoc("messages", "fn-root2", { t: ago(4), from: "avoidmissingball", kind: "sync", summary: "FN second root" });
+    await addDoc("messages", "fn-rep2", { t: ago(3), from: "codex", kind: "reply", to: ["avoidmissingball"], replyTo: "fn-root2", important: true, summary: "FN starred reply" });
+    await go("help");
+    var inHelp = helpHas("FN question in a thread");
+    await go("timeline");
+    await press("f-open");
+    var open = shows("fn-root") && JSON.stringify(threadIds("fn-root")) === JSON.stringify(["fn-ask"]);
+    await press("f-open");
+    await press("f-starred");
+    var starred = shows("fn-root2") && JSON.stringify(threadIds("fn-root2")) === JSON.stringify(["fn-rep2"]);
+    await press("f-starred");
+    await press("who-mode-to"); await press("who-avoidmissingball");
+    var sentTo = shows("fn-root2");
+    await clearFilters();
+    var ok = inHelp && open && starred && sentTo;
+    return res("filterNestedMatches", ok, "inHelp=" + inHelp + " open=" + open + " starred=" + starred + " sentTo=" + sentTo);
+  });
+
   // Starred: only messages marked important by hand, not alerts that are important by kind.
   S.push(async function filterStarred() {
     await go("timeline");

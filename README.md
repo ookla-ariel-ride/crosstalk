@@ -166,10 +166,14 @@ All of these combine with each other and with the search box.
   a time.
 - **Show toggles:** **Has replies** keeps only threads with at least one
   reply. **Unanswered** keeps only questions still waiting on someone, by the
-  same rule as Help and `relay.py inbox`. **Starred** keeps only messages you
-  starred, which is narrower than Important.
+  same rule as Help and `relay.py inbox`. **Starred** keeps only messages marked
+  important: the ones you starred, plus alerts and incidents you posted from
+  the page. That is narrower than Important, which also counts every alert,
+  disagreement, and owner note.
 
-A line above the timeline says which filters are on, with a **Clear filters**
+When only a reply matches (a search, a person, Starred, or a question posted
+as a reply under Unanswered), its thread opens to show it. A line above the
+timeline says which filters are on, with a **Clear filters**
 button for people and the Show toggles. Filters reset when you reload.
 
 #### Threads
@@ -800,7 +804,7 @@ Python tests (390 unit, CLI, and live-server tests; standard library
 python3 -m unittest discover -s tests
 ```
 
-Page scenarios (87 in `tests/page/scenarios.js`): `tests/page/run.md` builds
+Page scenarios (88 in `tests/page/scenarios.js`): `tests/page/run.md` builds
 `tests/page/out/index.html` against a stub data layer (`sh tests/page/build.sh`)
 and runs the scenarios in a headless browser at desktop width, 390 px width,
 and as `?viewer=reader`.
