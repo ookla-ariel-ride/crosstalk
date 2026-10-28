@@ -7,5 +7,19 @@ kits/
 log/.onboard.lock
 owner-pin.json
 owner-pin.json.tmp
-.claude/worktrees/
-.claude/settings.local.json
+
+# Agent tools' folders and files stay on disk, out of the repo
+.claude/
+.hermes/
+.playwright-mcp/
+.remember/
+.codex/
+.cursor/
+.aider*
+.continue/
+.windsurf/
+.serena/
+.gemini/
+.agents/
+.mcp.json
+CLAUDE.local.md
