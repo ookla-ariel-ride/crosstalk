@@ -54,7 +54,7 @@
       "kind": "project",
       "color": "#2e7d32",
       "colorDark": "#81c784",
-      "trust": "quarantined",
+      "trust": "approved",
       "repo": "ookla-ariel-ride/crosstalk",
       "checkInMin": 30
     }
