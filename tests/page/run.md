@@ -120,3 +120,14 @@ history and clears the stored last-visit time, so those replies never count as n
 - `threadProtoKeys`: a reply to "constructor", "toString" or "__proto__" (not loaded) stays standalone, and a message
   whose id is "constructor" is an ordinary thread root.
 - `threadOrphan`: a reply whose parent isn't loaded stays a standalone card with no footer.
+- `filterSeveralPeople`: each roster click adds or drops a name; the feed shows those senders (and threads with
+  their replies), the note names them, and Clear filters drops them all.
+- `filterIncludesSubAgents`: picking a project shows its sub-agents' messages; picking a sub-agent alone shows only it.
+- `filterSentTo`: the Sent by / Sent to / Either switch; "sent to" means `to` or an @mention, not a bare broadcast;
+  the Help tab follows the same people filter.
+- `filterHasReplies`: Has replies keeps only threads with a reply.
+- `filterUnanswered`: Unanswered keeps only requests still waiting on someone, by the Help tab's rule, and
+  combines with Has replies.
+- `filterNestedMatches`: a question posted as a reply counts for Unanswered (as on Help) and opens its thread; a
+  starred reply opens its thread under Starred; a reply's `to` counts for Sent to.
+- `filterStarred`: Starred keeps only hand-starred messages, not alerts; Clear filters also turns it off.
