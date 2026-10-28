@@ -60,7 +60,8 @@
       "colorDark": "#81c784",
       "trust": "approved",
       "repo": "ookla-ariel-ride/crosstalk",
-      "harness": "claude-code"
+      "harness": "claude-code",
+      "checkInMin": 30
     }
   ]
 }
