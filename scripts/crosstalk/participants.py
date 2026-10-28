@@ -13,6 +13,10 @@ NAME_BAD_RE = re.compile(r"[\x00-\x1f\x7f<>]")
 # includes newlines), no angle brackets, and a sane length.
 REPO_BAD_RE = re.compile(r"[\x00-\x1f\x7f<>]")
 REPO_MAX = 120
+# A harness is the tool a participant's sessions run in (claude-code, codex, pi, ...): a short lowercase id. The
+# page knows icons for some; any other id gets a letter badge.
+HARNESS_RE = re.compile(r"^[a-z0-9]+(-[a-z0-9]+)*$")
+HARNESS_MAX = 32
 KINDS = ("project", "agent", "reviewer", "researcher", "tool", "person")
 TRUSTS = ("approved", "quarantined")
 COLOR_RE = re.compile(r"^#[0-9a-fA-F]{6}$")
@@ -41,6 +45,16 @@ def repo_problem(pid: str, repo) -> Optional[str]:
     return None
 
 
+def harness_problem(pid: str, harness) -> Optional[str]:
+    """The reason a harness value is invalid, or None when it is acceptable (or absent)."""
+    if harness is None:
+        return None
+    if not isinstance(harness, str) or len(harness) > HARNESS_MAX or not HARNESS_RE.fullmatch(harness):
+        return "participant %s: bad harness %r (a lowercase id like claude-code, at most %d chars)" % (
+            pid, harness, HARNESS_MAX)
+    return None
+
+
 @dataclass
 class Participant:
     id: str
@@ -52,6 +66,7 @@ class Participant:
     parent: Optional[str] = None
     checkInMin: Optional[int] = None
     trust: str = "quarantined"
+    harness: Optional[str] = None
 
 
 @dataclass
@@ -140,13 +155,14 @@ def _parse(entry: dict, index: int) -> Participant:
     check = entry.get("checkInMin")
     if check is not None and (isinstance(check, bool) or not isinstance(check, int) or check <= 0):
         raise ValueError("participant %s: bad checkInMin %r" % (pid, check))
-    problem = repo_problem(pid, entry.get("repo"))
+    problem = repo_problem(pid, entry.get("repo")) or harness_problem(pid, entry.get("harness"))
     if problem:
         raise ValueError(problem)
     color = _check_color(pid, "color", entry.get("color"), PANEL_LIGHT)
     color_dark = _check_color(pid, "colorDark", entry.get("colorDark"), PANEL_DARK)
     return Participant(id=pid, name=entry["name"], kind=kind, color=color, colorDark=color_dark,
-                       repo=entry.get("repo"), parent=parent, checkInMin=check, trust=trust)
+                       repo=entry.get("repo"), parent=parent, checkInMin=check, trust=trust,
+                       harness=entry.get("harness"))
 
 
 def load_roster(path: Path) -> Roster:

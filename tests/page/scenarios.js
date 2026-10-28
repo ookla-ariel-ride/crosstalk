@@ -73,6 +73,85 @@
     return res("rosterRepoLink", ok, "bewareilive=" + (bil && bil.href) + " verifier=" + (ver && ver.href) + " codex=" + !!codex + " owner=" + !!owner);
   });
 
+  // ---------- Harness: the tool a participant's sessions run in ----------
+  function harnessOf(node) {
+    var h = node && node.querySelector(".harness");
+    return h ? { label: h.getAttribute("aria-label"), title: h.title, svg: !!h.querySelector("svg"), text: h.textContent } : null;
+  }
+
+  // A roster entry shows its harness after the name: a logo where one is known (Claude Code), a letter badge
+  // otherwise (Codex has no logo it may use); the owner has none.
+  S.push(async function harnessRosterIcons() {
+    await go("timeline");
+    var vc = harnessOf(entry("vectorcraft")), cx = harnessOf(entry("codex")), own = harnessOf(entry("owner"));
+    var ok = !!vc && vc.label === "Claude Code" && vc.title === "Claude Code" && vc.svg &&
+      !!cx && cx.label === "Codex" && !cx.svg && cx.text === "C" && own === null;
+    return res("harnessRosterIcons", ok, "vectorcraft=" + JSON.stringify(vc) + " codex=" + JSON.stringify(cx) + " owner=" + JSON.stringify(own));
+  });
+
+  // A sub-agent without a harness of its own shows its parent's; an unknown id gets a letter badge named by the
+  // id; a malformed one shows nothing.
+  S.push(async function harnessInheritAndUnknown() {
+    await go("timeline");
+    await addDoc("participants", "zz-warp", { name: "ZzWarp", kind: "tool", color: "#5b2a86", colorDark: "#c9a2f0", trust: "approved", harness: "warp" });
+    await addDoc("participants", "zz-bad", { name: "ZzBad", kind: "tool", color: "#0b6e4f", colorDark: "#5fd3a8", trust: "approved", harness: "Bad Id!" });
+    var ver = harnessOf(entry("bewareilive.verifier")), warp = harnessOf(entry("zz-warp")), bad = harnessOf(entry("zz-bad"));
+    delete __store.participants["zz-warp"]; delete __store.participants["zz-bad"]; __emit("participants"); await tick();
+    var ok = !!ver && ver.label === "Claude Code" && !!warp && warp.label === "warp" && warp.text === "W" && !warp.svg && bad === null;
+    return res("harnessInheritAndUnknown", ok, "verifier=" + JSON.stringify(ver) + " warp=" + JSON.stringify(warp) + " bad=" + JSON.stringify(bad));
+  });
+
+  // A message card shows its sender's harness beside the sender's name.
+  S.push(async function harnessOnCards() {
+    await go("timeline");
+    await addDoc("messages", "hn-cx", { t: ago(1), from: "codex", kind: "sync", summary: "Harness card codex" });
+    await addDoc("messages", "hn-vc", { t: ago(1), from: "vectorcraft", kind: "sync", summary: "Harness card vectorcraft" });
+    var cx = card("hn-cx"), vc = card("hn-vc");
+    var cxH = harnessOf(cx && cx.querySelector(".meta")), vcH = harnessOf(vc && vc.querySelector(".meta"));
+    var ok = !!cxH && cxH.label === "Codex" && !!vcH && vcH.label === "Claude Code" && vcH.svg;
+    return res("harnessOnCards", ok, "codex=" + JSON.stringify(cxH) + " vectorcraft=" + JSON.stringify(vcH));
+  });
+
+  // The Harness buttons (one per harness on the roster) keep messages written in the picked harnesses; they
+  // combine with the people filter, the note names them, and Clear filters drops them.
+  S.push(async function harnessFilter() {
+    await go("timeline");
+    var group = $("harness-filter"), cc = $("h-claude-code"), cx = $("h-codex");
+    if (!group || !cc || !cx) return res("harnessFilter", false, "group=" + !!group + " claude-code=" + !!cc + " codex=" + !!cx);
+    var labels = [].slice.call(group.querySelectorAll("button")).map(function (b) { return b.getAttribute("aria-label") || b.textContent; });
+    $("h-codex").click(); await tick();
+    var pressedCx = $("h-codex").getAttribute("aria-pressed") === "true";
+    var froms = [].slice.call(document.querySelectorAll("#log > article")).map(function (a) { return a.dataset.from; });
+    var onlyCodex = froms.length > 0 && froms.every(function (f) { return f === "codex"; });
+    var note1 = whoNote();
+    $("who-vectorcraft").click(); await tick();
+    var none = document.querySelectorAll("#log > article").length === 0;
+    $("h-claude-code").click(); await tick();
+    var vcShown = !!card("hn-vc") && !card("hn-cx");
+    var note2 = whoNote();
+    $("who-clear").click(); await tick();
+    var cleared = $("h-codex").getAttribute("aria-pressed") === "false" && $("h-claude-code").getAttribute("aria-pressed") === "false" && !!card("hn-cx");
+    delete __store.messages["hn-cx"]; delete __store.messages["hn-vc"]; __emit("messages"); await tick();
+    var ok = labels.indexOf("Claude Code") !== -1 && labels.indexOf("Codex") !== -1 && pressedCx && onlyCodex &&
+      note1 === "Showing messages written in Codex." && none && vcShown &&
+      note2 === "Showing messages sent by VectorCraft, written in Claude Code or Codex." && cleared;
+    return res("harnessFilter", ok, "labels=" + JSON.stringify(labels) + " onlyCodex=" + onlyCodex + " note1=" + JSON.stringify(note1) +
+      " none=" + none + " vcShown=" + vcShown + " note2=" + JSON.stringify(note2) + " cleared=" + cleared);
+  });
+
+  // A picked harness that leaves the roster stops filtering: its button is gone, so it can't stay on unseen.
+  S.push(async function harnessStalePickDropped() {
+    await go("timeline");
+    $("h-codex").click(); await tick();
+    var saved = __store.participants.codex;
+    __store.participants.codex = Object.assign({}, saved); delete __store.participants.codex.harness; __emit("participants"); await tick();
+    var gone = !$("h-codex"), unfiltered = shownFrom().some(function (f) { return f !== "codex"; }), noNote = whoNote() === null;
+    __store.participants.codex = saved; __emit("participants"); await tick();
+    var stillOff = $("h-codex") && $("h-codex").getAttribute("aria-pressed") === "false";
+    var ok = gone && unfiltered && noNote && !!stillOff;
+    return res("harnessStalePickDropped", ok, "gone=" + gone + " unfiltered=" + unfiltered + " noNote=" + noNote + " stillOff=" + stillOff);
+  });
+
   S.push(async function threeWayPositions() {
     await addDoc("messages", "dis-1", { t: T0, from: "bewareilive", kind: "disagreement", summary: "Three views",
       positions: { bewareilive: "Do A", vectorcraft: "Do B", codex: "Do C" } });
@@ -335,7 +414,7 @@
     if (before == null) root.removeAttribute("data-theme"); else root.setAttribute("data-theme", before);
     await tick();
     var ok = light === "#1f5f8b" && dark === "#6fb2e2" && lightTag === light && darkTag === dark &&
-      h === "AvoidMissingBall · BewareILive · VectorCraft";
+      h === "AvoidMissingBall · BewareILive · Crosstalk · VectorCraft";
     return res("themedColors", ok, "light=" + light + "/" + lightTag + " dark=" + dark + "/" + darkTag + " heading=" + JSON.stringify(h));
   });
 
@@ -565,6 +644,8 @@
         await tick();
         var parentShown = parentRow && parentRow.style.display !== "none";
         $("onboard-parent").value = "bewareilive";
+        var harnessSel = $("onboard-harness");
+        if (harnessSel) harnessSel.value = "hermes";
         __onboardResult = { token: "fake-token-123", kit: "kit for fake-token-123" };
         $("onboard-submit").click(); await tick(80);
         var kit = $("onboard-kit"), tok = $("onboard-token"), copy = $("onboard-copy");
@@ -573,11 +654,12 @@
         var tokenFields = document.querySelectorAll("#onboard-token").length;
         var parentSent = window.__lastOnboardFields && window.__lastOnboardFields.parent === "bewareilive";
         var colorSent = window.__lastOnboardFields && window.__lastOnboardFields.color === "#aa3366" && window.__lastOnboardFields.colorDark === "#dd88bb";
-        var ok = kitOk && tokOk && !!copy && tokenFields === 1 && parentHiddenInitially && parentShown && parentSent && colorSent;
+        var harnessSent = !!harnessSel && window.__lastOnboardFields && window.__lastOnboardFields.harness === "hermes";
+        var ok = kitOk && tokOk && !!copy && tokenFields === 1 && parentHiddenInitially && parentShown && parentSent && colorSent && harnessSent;
         return res("ownerAddParticipant", ok,
           "kit=" + (kit && JSON.stringify(kit.value)) + " token=" + (tok && JSON.stringify(tok.value)) +
           " copy=" + !!copy + " tokenFields=" + tokenFields + " parentHiddenInitially=" + parentHiddenInitially +
-          " parentShown=" + parentShown + " parentSent=" + parentSent + " colorSent=" + colorSent);
+          " parentShown=" + parentShown + " parentSent=" + parentSent + " colorSent=" + colorSent + " harnessSent=" + harnessSent);
       });
 
   // "Since your last visit" counts other people's messages that arrived while the page was closed: the rows newer
@@ -789,6 +871,7 @@
     await addDoc("messages", "hrep-pm-1", { t: ago(1), from: "bewareilive", kind: "reply", summary: "BIL ok", replyTo: "hreq-pm" });
     await addDoc("messages", "hrep-pm-2", { t: ago(1), from: "vectorcraft", kind: "reply", summary: "VC ok", replyTo: "hreq-pm" });
     await addDoc("messages", "hrep-pm-3", { t: ago(1), from: "avoidmissingball", kind: "reply", summary: "AMB ok", replyTo: "hreq-pm" });
+    await addDoc("messages", "hrep-pm-4", { t: ago(1), from: "crosstalk", kind: "reply", summary: "CT ok", replyTo: "hreq-pm" });
     var after = helpWaiting("Projects mention?");
     await dropParticipant("hq-proj");
     await go("timeline");
@@ -1249,12 +1332,20 @@
       summary: "AvoidMissingBall is in sync",
       replyTo: "own-bcast-req"
     });
-    var closedAfterAllThree = !helpHas("Are all the projects in sync?");
+    var openBeforeCrosstalk = helpHas("Are all the projects in sync?");
+    await addDoc("messages", "own-bcast-rep-ct", {
+      t: ago(1),
+      from: "crosstalk",
+      kind: "sync",
+      summary: "Crosstalk is in sync",
+      replyTo: "own-bcast-req"
+    });
+    var closedAfterAll = !helpHas("Are all the projects in sync?");
     await go("timeline");
-    var ok = listedInitially && stillOpenAfterOne && waitingText === "waiting on AvoidMissingBall \u00b7 VectorCraft" && stillOpenAfterTwo && closedAfterAllThree;
+    var ok = listedInitially && stillOpenAfterOne && waitingText === "waiting on AvoidMissingBall \u00b7 Crosstalk \u00b7 VectorCraft" && stillOpenAfterTwo && openBeforeCrosstalk && closedAfterAll;
     return res("ownerBroadcastRequestWaitsForAllProjects", ok,
       "initial=" + listedInitially + " afterOne=" + stillOpenAfterOne + " waiting=" + JSON.stringify(waitingText) +
-      " afterTwo=" + stillOpenAfterTwo + " closedAfterThree=" + closedAfterAllThree);
+      " afterTwo=" + stillOpenAfterTwo + " openBeforeCrosstalk=" + openBeforeCrosstalk + " closedAfterAll=" + closedAfterAll);
   });
 
   // ---------- Threads: a root card with its replies folded under it ----------

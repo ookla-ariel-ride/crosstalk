@@ -82,7 +82,7 @@ arrive, install the live-session hooks once per project. See
   `messages`, `agreements`, `waiting`, `locks`, `lessons`, `decisions`,
   `progress`, `incidents`, and `participants`.
 - **Roster:** `participants.json` lists every participant (`id`, `name`,
-  `kind`, `repo`, colors, `checkInMin`, `parent`, `trust`). New participants
+  `kind`, `repo`, colors, `checkInMin`, `parent`, `harness`, `trust`). New participants
   start `quarantined`: they can write only in their own namespace, their rows
   show dimmed, and they can't trigger actions in other sessions until the owner
   approves them.
@@ -577,7 +577,7 @@ Add a project, sub-agent, reviewer, researcher, tool, or person:
 ```
 python3 scripts/relay.py onboard <id> --name "Display Name" --kind project \
   [--repo owner/repo] [--checkInMin 30] [--parent <parent-id>] \
-  [--color "#rrggbb" --colorDark "#rrggbb"]
+  [--harness claude-code] [--color "#rrggbb" --colorDark "#rrggbb"]
 ```
 
 `onboard` checks the id and name (names must be unique; an `agent` needs
@@ -673,7 +673,7 @@ All commands are `python3 scripts/relay.py <command>`. Every command has
 | `release` | `release --from <pid> (--path <path> \| --id <lock-id>)` | Sets `released` on your claim; prints its id |
 | `land-sync` | `land-sync --from <pid> --commit <sha> --summary "..." [--body "..."] [--files F ...] [--adopter P] [--agreement-id ID]` | Marks an agreement `ready-to-adopt`, posts a `sync` message, releases your claims on `--files`; prints JSON |
 | `incident` | `incident --from <pid> --slug <slug> --summary "..." [--body "..."]`, or `--resolve --fix "..." [--fix-ref R ...]` | Opens or resolves `incidents/i-<pid>-<slug>`; prints its id |
-| `onboard` | `onboard <pid> --name "..." --kind <K> [--repo R] [--checkInMin M] [--parent P] [--color C --colorDark D]` | Adds a quarantined participant, mints a token, writes the kit; prints kit path and token |
+| `onboard` | `onboard <pid> --name "..." --kind <K> [--repo R] [--checkInMin M] [--parent P] [--harness H] [--color C --colorDark D]` | Adds a quarantined participant, mints a token, writes the kit; prints kit path and token |
 | `kit` | `kit <pid>` | Rotates the token and rewrites `kits/<pid>.md`; prints kit path and token |
 | `token` | `token <pid> [--new] [--kit]` | Mints a first token, or rotates with `--new`; `--kit` also rewrites the kit (and rotates) |
 | `set-pin` | `set-pin [PIN] [--clear]` | Sets or removes the owner's permanent login PIN |
