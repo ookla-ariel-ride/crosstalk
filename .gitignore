@@ -23,3 +23,12 @@ owner-pin.json.tmp
 .agents/
 .mcp.json
 CLAUDE.local.md
+
+# Secrets and local noise
+.env
+.env.*
+*.pem
+*.key
+*.p12
+*.log
+.DS_Store

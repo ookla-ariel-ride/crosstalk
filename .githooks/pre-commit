@@ -1,0 +1,16 @@
+#!/bin/bash
+# Refuse a commit whose staged changes contain a secret (gitleaks). Fails
+# closed: without gitleaks no commit is made, so a missing tool can't let a
+# key through. Install: brew install gitleaks. `git commit --no-verify` skips
+# this; don't. Same check as VectorCraft, BewareILive and AvoidMissingBall.
+# launchd runs the housekeeper with a bare PATH, so add Homebrew's bins.
+PATH="/opt/homebrew/bin:/usr/local/bin:$PATH"
+if ! command -v gitleaks >/dev/null 2>&1; then
+  echo "pre-commit: gitleaks is not installed (brew install gitleaks); commit refused" >&2
+  exit 1
+fi
+if ! gitleaks git --pre-commit --staged --redact --no-banner --log-level warn .; then
+  echo "pre-commit: gitleaks found a secret in the staged changes; commit refused" >&2
+  echo "  Remove it from the files (and rotate it if it was ever real)." >&2
+  exit 1
+fi

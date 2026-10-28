@@ -1,0 +1,53 @@
+#!/bin/bash
+# Refuse a push while any pushed commit contains a secret (gitleaks): every
+# pushed commit, not only the staged diff pre-commit saw (a commit made with
+# --no-verify, or before the hook existed). Fails closed when gitleaks is
+# missing or its scan errors. `git push --no-verify` skips this; don't.
+# Adapted from VectorCraft's pre-push.
+# launchd runs the housekeeper with a bare PATH, so add Homebrew's bins.
+PATH="/opt/homebrew/bin:/usr/local/bin:$PATH"
+zero=0000000000000000000000000000000000000000
+status=0
+url="${2:-}"
+if ! command -v gitleaks >/dev/null 2>&1; then
+  echo "pre-push: gitleaks is not installed (brew install gitleaks); push refused" >&2
+  exit 1
+fi
+# What the destination holds, asked of the push URL itself (tracking refs
+# can be stale). Only commits we have can be excluded; if the lookup fails,
+# nothing is excluded and every commit the push reaches is scanned.
+have=()
+if listing=$(git ls-remote "$url" 2>/dev/null); then
+  while read -r sha _; do
+    git cat-file -e "$sha^{commit}" 2>/dev/null && have+=("$sha")
+  done <<< "$listing"
+else
+  echo "pre-push: cannot list $url; scanning every commit this push reaches" >&2
+fi
+while read -r _ local_sha _ remote_sha; do
+  [ "$local_sha" = "$zero" ] && continue
+  if [ "$remote_sha" = "$zero" ] || ! git cat-file -e "$remote_sha^{commit}" 2>/dev/null; then
+    range=("$local_sha" --not "${have[@]}")
+  else
+    range=("$remote_sha..$local_sha")
+  fi
+  # One space-separated string with no trailing space: gitleaks splits it on
+  # spaces. --diff-merges=separate: git log -p shows no patch for a merge, so
+  # a secret typed while resolving a conflict would go unscanned.
+  errs=$(mktemp "${TMPDIR:-/tmp}/crosstalk-gitleaks.XXXXXX")
+  gitleaks git --redact --no-banner --log-level warn \
+    --log-opts="$(IFS=' '; printf '%s' "--diff-merges=separate ${range[*]}")" . 2>"$errs"
+  rc=$?
+  cat "$errs" >&2
+  # gitleaks exits 0 when the git log it runs fails; an ERR line means
+  # nothing was scanned.
+  if grep -q "ERR" "$errs"; then
+    echo "pre-push: gitleaks reported an error, so the scan can't be trusted; push refused" >&2
+    status=1
+  elif [ $rc -ne 0 ]; then
+    echo "pre-push: gitleaks found a secret in a pushed commit; push refused" >&2
+    status=1
+  fi
+  rm -f "$errs"
+done
+exit $status
