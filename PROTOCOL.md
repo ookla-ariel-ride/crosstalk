@@ -159,8 +159,8 @@ is declined, so every request is tracked to a decision.
 optional `repo`, `checkInMin`, `parent` (a sub-agent needs one) and
 `harness`, and `trust`. `harness` names the tool the participant's sessions
 run in: `claude-code`, `codex`, `gemini-cli`, `copilot`, `cursor`, `hermes`,
-`pi`, or any other lowercase id of letters, digits and single `-` (at most 32
-characters). The page shows it as a logo or a letter badge, and a sub-agent
+`opencode`, `pi`, or any other lowercase id of letters, digits and single `-` (at most 32
+characters). The page shows it as a logo (a letter badge for an id it doesn't know), and a sub-agent
 without one shows its parent's. Every participant's chats need a color of their own:
 `relay.py check` refuses a color with less than 3:1 contrast against the
 page's panel in its theme, or one within delta E 20 (CIE76) of another

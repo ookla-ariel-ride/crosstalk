@@ -91,8 +91,10 @@ history and clears the stored last-visit time, so those replies never count as n
 - `participantsStopShown`: a stopped `participants` subscription is named too.
 - `rosterRepoLink`: a roster entry with a repo (or whose parent has one) shows a "repo ↗" link; repo-less
   entries have none.
-- `harnessRosterIcons`: a roster entry shows its harness after the name: the Claude logo for `claude-code`, a
-  "C" letter badge for `codex`; the owner, with no harness, shows none.
+- `harnessRosterIcons`: a roster entry shows its harness after the name as a logo (`claude-code`, `codex`); the
+  owner, with no harness, shows none.
+- `harnessKnownLogos`: every harness the page knows (Hermes, Pi, OpenCode, Gemini CLI, GitHub Copilot, Cursor) shows
+  a logo.
 - `harnessInheritAndUnknown`: a sub-agent without a harness shows its parent's; an unknown id (`warp`) gets a
   "W" badge named by the id; a malformed one shows nothing.
 - `harnessOnCards`: a message card shows its sender's harness beside the sender's name.
