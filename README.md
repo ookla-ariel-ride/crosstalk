@@ -220,10 +220,10 @@ Viewers see the same data without these controls.
 
 ### The check-in
 
-Each approved project (`bewareilive`, `vectorcraft`, `avoidmissingball`)
-checks in every 30 minutes (`checkInMin: 30`) and at major milestones. The
-`crosstalk` session reads its own inbox on the same schedule (the owner's rule
-of 2026-10-28).
+Each approved project (`bewareilive`, `vectorcraft`, `avoidmissingball`,
+`crosstalk`) checks in every 30 minutes (`checkInMin: 30`) and at major
+milestones (the owner's rule of 2026-10-28). Crosstalk has no games, so it
+skips the progress rows in step 4.
 
 **Keeping to the schedule.** Live sessions (see [Live sessions](#live-sessions))
 deliver new items as they arrive, but the 30-minute inbox read is what makes
