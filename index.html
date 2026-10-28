@@ -340,55 +340,39 @@ td.num, td.t { font: 12px var(--mono); font-variant-numeric: tabular-nums; white
     return e;
   }
   function agoEl(v) { var t = ts(v); var e = el("span", "ago", agoText(t)); if (!isNaN(t)) e.dataset.t = t; return e; }
-  // "New since your last visit": a per-browser timestamp in localStorage. The first
-  // visit stores "now" (nothing reads as new yet); each snapshot render counts messages
-  // newer than the stored time; opening the Timeline tab moves the marker forward.
+  // "Since your last visit": a per-browser timestamp in localStorage of when the page was last open. While it is
+  // open the page keeps it current (the server time of the newest snapshot shown, and again when the page is hidden
+  // or closed). On load, the messages and progress rows newer than the stored time are what arrived while the page
+  // was closed; they are fixed with each collection's first delivery, so later arrivals don't join them. A first
+  // visit has no stored time and nothing reads as new. The owner's own messages are never new.
   var LAST_VISIT_KEY = "crosstalk.lastVisit";
   var CAN_STORE = (function () { try { var k = "__ct_probe"; window.localStorage.setItem(k, "1"); window.localStorage.removeItem(k); return true; } catch (e) { return false; } })();
-  var visitTs = null, digestSince = null, digestDismissed = false, lastWrittenVisit = null;
   function serverNow() { var t = meta.serverTime ? ts(meta.serverTime) : NaN; return isNaN(t) ? Date.now() : t; }
   function readVisit() {
     if (!CAN_STORE) return null;
     try { var v = window.localStorage.getItem(LAST_VISIT_KEY), n = v == null ? null : Number(v); return n != null && isFinite(n) && n > 0 ? n : null; } catch (e) { return null; }
   }
   function writeVisit(t) {
-    lastWrittenVisit = Math.round(t);
-    if (CAN_STORE) { try { window.localStorage.setItem(LAST_VISIT_KEY, String(lastWrittenVisit)); } catch (e) {} }
+    if (CAN_STORE) { try { window.localStorage.setItem(LAST_VISIT_KEY, String(Math.round(t))); } catch (e) {} }
   }
-  function syncVisit() {
-    var s = readVisit();
-    if (s != null && s !== lastWrittenVisit) {
-      visitTs = s;
-      digestSince = s;
-      digestDismissed = false;
-      lastWrittenVisit = s;
-    }
+  var visitFrom = readVisit(), visitNew = { messages: null, progress: null }, digestDismissed = false;
+  function openVisit(c) {
+    if (visitNew[c]) return;
+    var set = Object.create(null);
+    if (visitFrom != null) data[c].forEach(function (x) {
+      if (c === "messages" ? ts(x.t) > visitFrom : validProg(x, visitFrom)) set[x._id] = true;
+    });
+    visitNew[c] = set;
   }
-  function newCount() {
-    syncVisit();
-    if (visitTs == null) return 0;
-    var n = 0;
-    data.messages.forEach(function (m) { var t = ts(m.t); if (!isNaN(t) && t > visitTs) n++; });
-    return n;
-  }
+  function visitRows(c) { var set = visitNew[c]; return set ? data[c].filter(function (x) { return set[x._id] === true; }) : []; }
+  function isOwn(m) { return canWrite && String(m.from) === "owner"; }
+  function digestMsgs() { return visitRows("messages").filter(function (m) { return !isOwn(m); }); }
+  function newCount() { return digestDismissed ? 0 : digestMsgs().length; }
+  // Moves the stored time up to what the page has shown; nothing is recorded before the messages first arrive.
+  function noteVisit() { if (loaded.messages) writeVisit(serverNow()); }
   function validProg(p, since) {
     var t = ts(p.t || p.updated || p.date);
     return !isNaN(t) && t > since && canonicalGameName(p.project, p.game) !== "" && typeof p.pct === "number" && isFinite(p.pct);
-  }
-  function hasNewProg(since) {
-    if (since == null) return false;
-    return data.progress.some(function (p) { return validProg(p, since); });
-  }
-  function markVisited() {
-    syncVisit();
-    if (newCount() > 0 || hasNewProg(visitTs)) {
-      digestSince = visitTs;
-      digestDismissed = false;
-    } else if (digestSince == null) {
-      digestSince = visitTs;
-    }
-    visitTs = serverNow();
-    writeVisit(visitTs);
   }
   // Rows are untrusted, so a participant's fields are checked before they reach a URL or a style.
   var HAS = Object.prototype.hasOwnProperty;
@@ -832,7 +816,7 @@ td.num, td.t { font: 12px var(--mono); font-variant-numeric: tabular-nums; white
         : data[t[2]].length;
       b.appendChild(el("span", "n", n));
       if (t[0] === "timeline" && nNew > 0) { var badge = el("span", "new", nNew + " new"); badge.id = "new-badge"; b.appendChild(badge); }
-      b.addEventListener("click", function () { if (t[0] === "timeline") markVisited(); tab = t[0]; try { history.replaceState(null, "", "#" + t[0]); } catch (e) {} renderAll(); });
+      b.addEventListener("click", function () { tab = t[0]; try { history.replaceState(null, "", "#" + t[0]); } catch (e) {} renderAll(); });
       nav.appendChild(b);
     });
   }
@@ -1217,7 +1201,6 @@ td.num, td.t { font: 12px var(--mono); font-variant-numeric: tabular-nums; white
       draft.to = fromId && fromId !== "owner" && HAS.call(people, fromId) ? [fromId] : null;
       draft.replySummary = (m.from ? displayName(m.from) + ": " : "") + (m.summary || m._id);
       if (tab !== "timeline") {
-        markVisited();
         tab = "timeline";
         try { history.replaceState(null, "", "#timeline"); } catch (e) {}
         renderAll();
@@ -1447,10 +1430,9 @@ td.num, td.t { font: 12px var(--mono); font-variant-numeric: tabular-nums; white
     toolbar(feed, true);
     feed.appendChild(el("p", "order", "Newest activity first. Replies fold under the message they answer; a new reply brings its thread to the top. New messages flash briefly. Pick names under People to see what they sent or were sent."));
     filterNote(feed, "messages", true);
-    syncVisit();
-    if (!digestDismissed && digestSince != null) {
-      var newMsgs = data.messages.filter(function (m) { var t = ts(m.t); return !isNaN(t) && t > digestSince; });
-      var newProg = data.progress.filter(function (p) { return validProg(p, digestSince); });
+    if (!digestDismissed && visitFrom != null) {
+      var newMsgs = digestMsgs();
+      var newProg = visitRows("progress").filter(function (p) { return validProg(p, visitFrom); });
       if (newMsgs.length > 0 || newProg.length > 0) {
         var parts = [];
         if (newMsgs.length > 0) {
@@ -1479,7 +1461,7 @@ td.num, td.t { font: 12px var(--mono); font-variant-numeric: tabular-nums; white
           var dmeta = el("div", "meta");
           dmeta.appendChild(el("strong", null, "Since your last visit"));
           var dis = el("button", "btn small", "Dismiss"); dis.type = "button"; dis.id = "digest-dismiss";
-          dis.addEventListener("click", function () { digestDismissed = true; renderView(true); });
+          dis.addEventListener("click", function () { digestDismissed = true; renderAll(); });
           dmeta.appendChild(dis);
           dig.appendChild(dmeta);
           var dsum = el("div", "summary", parts.join(" \u00b7 ")); dsum.id = "digest-summary";
@@ -1568,9 +1550,9 @@ td.num, td.t { font: 12px var(--mono); font-variant-numeric: tabular-nums; white
   // "owner") are never new. Toggling a thread acknowledges its current replies.
   function threadCard(x, byId, ownCard) {
     var m = x.m, kids = x.kids, rid = m._id;
-    var others = kids.filter(function (r) { return !(canWrite && String(r.from) === "owner"); });
+    var others = kids.filter(function (r) { return !isOwn(r); });
     others.forEach(function (r) { if (seenBy.messages && !seenBy.messages[r._id]) liveReply[r._id] = true; });
-    var unseen = others.some(function (r) { var t = ts(r.t); return !ackReply[r._id] && (liveReply[r._id] || (digestSince != null && !isNaN(t) && t > digestSince)); });
+    var unseen = others.some(function (r) { return !ackReply[r._id] && (liveReply[r._id] || (!!visitNew.messages && visitNew.messages[r._id] === true)); });
     // Only replies that arrive while the page is open open a thread by themselves;
     // replies since the last visit just carry the "new reply" tag.
     var arrived = others.some(function (r) { return !ackReply[r._id] && liveReply[r._id]; });
@@ -1900,7 +1882,7 @@ td.num, td.t { font: 12px var(--mono); font-variant-numeric: tabular-nums; white
   }
   [["t-check", "timeline"], ["t-agree", "agreements"], ["t-wait", "waiting"], ["t-lock", "locks"]].forEach(function (p) {
     var t = document.getElementById(p[0]); t.dataset.go = p[1]; t.setAttribute("role", "button"); t.tabIndex = 0;
-    function go() { if (p[1] === "timeline") markVisited(); tab = p[1]; query = ""; queryRaw = ""; try { history.replaceState(null, "", "#" + p[1]); } catch (e) {} renderAll(); document.getElementById("tabs").scrollIntoView({ behavior: "smooth", block: "start" }); }
+    function go() { tab = p[1]; query = ""; queryRaw = ""; try { history.replaceState(null, "", "#" + p[1]); } catch (e) {} renderAll(); document.getElementById("tabs").scrollIntoView({ behavior: "smooth", block: "start" }); }
     t.addEventListener("click", go);
     t.addEventListener("keydown", function (e) { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); go(); } });
   });
@@ -1942,14 +1924,18 @@ td.num, td.t { font: 12px var(--mono); font-variant-numeric: tabular-nums; white
     return "Viewing as " + (me.isOwner ? "the owner" : me.canEdit ? "an editor" : "a viewer (read only)");
   }
   // Read-only helpers for the page tests.
-  window.__crosstalk = Object.freeze({ dotState: dotState, viewerText: viewerText, spanText: spanText, colorOf: colorOf, canonicalGameName: canonicalGameName, parseMentions: parseMentions, extractMentionsFromText: extractMentionsFromText, setLiveSessions: setLiveSessions, setBuildMeta: function (m) { Object.assign(meta, m || {}); renderBuild(); } });
+  window.__crosstalk = Object.freeze({ dotState: dotState, viewerText: viewerText, spanText: spanText, colorOf: colorOf, canonicalGameName: canonicalGameName, parseMentions: parseMentions, extractMentionsFromText: extractMentionsFromText, setLiveSessions: setLiveSessions, setBuildMeta: function (m) { Object.assign(meta, m || {}); renderBuild(); },
+    reopenSince: function (t) {
+      visitFrom = t == null ? null : Number(t); visitNew = { messages: null, progress: null }; digestDismissed = false;
+      ["messages", "progress"].forEach(function (c) { if (loaded[c]) openVisit(c); });
+      renderAll();
+    } });
   // Which data layer is active ("seam" | "fetch" | "none"), and whether the
   // fetch layer was constructed. The page tests read these.
   window.__crosstalkLayer = "none";
   window.__crosstalkFetchLayer = false;
-  var initialVisit = readVisit();
-  if (initialVisit == null) { visitTs = serverNow(); writeVisit(visitTs); }
-  else { visitTs = initialVisit; lastWrittenVisit = Math.round(visitTs); digestSince = visitTs; }
+  window.addEventListener("pagehide", noteVisit);
+  document.addEventListener("visibilitychange", function () { if (document.visibilityState === "hidden") noteVisit(); });
   // The sticky strip's height drives the roster's sticky offset and the tab scroll
   // padding. A ResizeObserver keeps it current without forcing layout on every render.
   (function syncStripH() {
@@ -1964,6 +1950,7 @@ td.num, td.t { font: 12px var(--mono); font-variant-numeric: tabular-nums; white
     document.querySelectorAll(".ago[data-t]").forEach(function (a) { a.textContent = agoText(Number(a.dataset.t)); });
     renderStrip();
     refreshRoster();
+    noteVisit();
   }, 20000);
 
   function setLive(on, text) { document.getElementById("live").classList.toggle("on", on); document.getElementById("liveText").textContent = text; }
@@ -2370,7 +2357,9 @@ td.num, td.t { font: 12px var(--mono); font-variant-numeric: tabular-nums; white
         if (c === "participants") { people = Object.create(null); data[c].forEach(function (p) { people[p._id] = p; }); }
         loaded[c] = true;
         subState[c] = "ok"; attempt = 0;
+        if (c === "messages" || c === "progress") openVisit(c);
         renderAll();
+        noteVisit();
         // A collection's first delivery is history, not news: only later arrivals flash.
         seenBy[c] = seenBy[c] || Object.create(null);
         data[c].forEach(function (x) { seenBy[c][x._id] = true; });
