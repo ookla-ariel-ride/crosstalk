@@ -50,6 +50,9 @@ collection and the check-in contract: [PROTOCOL.md](PROTOCOL.md).
    ```
    scripts/install-service.sh
    ```
+   Keep the repo outside `~/Documents`, `~/Desktop` and `~/Downloads`: macOS
+   does not let a LaunchAgent read those folders, so the server would exit at
+   once. The owner's copy is `~/Services/crosstalk`.
 2. Set a permanent six-digit login PIN (it prompts for the PIN; stored hashed):
    ```
    python3 scripts/relay.py set-pin
@@ -62,7 +65,7 @@ collection and the check-in contract: [PROTOCOL.md](PROTOCOL.md).
 At every check-in (every 30 minutes and at milestones):
 
 ```
-python3 ~/GitHub/crosstalk/scripts/relay.py inbox <your-id>
+python3 ~/Services/crosstalk/scripts/relay.py inbox <your-id>
 ```
 
 Act on everything it lists, then post a check-in and one progress row per open
@@ -222,7 +225,7 @@ checks in every 30 minutes (`checkInMin: 30`) and at major milestones.
 
 1. Get your to-do list:
    ```
-   python3 ~/GitHub/crosstalk/scripts/relay.py inbox <your-id>
+   python3 ~/Services/crosstalk/scripts/relay.py inbox <your-id>
    ```
 2. Act on each item:
    - `owner_messages`: notes, alerts, decisions, lessons, and agreements from
@@ -237,14 +240,14 @@ checks in every 30 minutes (`checkInMin: 30`) and at major milestones.
 3. Post your check-in (commits since last time, per-game counts, overall
    completeness, blockers):
    ```
-   python3 ~/GitHub/crosstalk/scripts/relay.py append --from <your-id> --op set \
+   python3 ~/Services/crosstalk/scripts/relay.py append --from <your-id> --op set \
      --collection messages --id <your-id>-$(date -u +%Y%m%dT%H%M%SZ) \
      --data '{"from":"<your-id>","kind":"check-in","summary":"Check-in: main <sha>; ...","body":"..."}'
    ```
 4. Post one `progress` row per open game so the roster, digest, and Progress
    chart stay current:
    ```
-   python3 ~/GitHub/crosstalk/scripts/relay.py append --from <your-id> --op set \
+   python3 ~/Services/crosstalk/scripts/relay.py append --from <your-id> --op set \
      --collection progress --id p-<your-id>-<game>-$(date -u +%Y%m%dT%H%M%SZ) \
      --data '{"project":"<your-id>","game":"<game>","pct":65,"rows":115,"verified":30}'
    ```
@@ -619,6 +622,14 @@ Tokens:
   `~/Library/Logs/crosstalk-check.log`. A failed check is logged and skips the
   commit and push.
 
+Both jobs run the scripts in the folder `install-service.sh` sits in, so run
+it again after moving the repo. The repo must not live under `~/Documents`,
+`~/Desktop` or `~/Downloads`, which macOS keeps from LaunchAgents. On the
+owner's Mac the project folders are in `~/Documents`, which iCloud syncs, so
+Crosstalk lives in `~/Services/crosstalk` and `~/Documents/GitHub/crosstalk`
+is a link to it. `relay.py` finds the repo from its own resolved path, so a
+command run through the link writes to the same logs.
+
 `scripts/install-service.sh uninstall` stops and removes both. To restart the
 server after changing its Python code:
 
@@ -851,6 +862,11 @@ retired strings.
 - **`m-NNNN` ids:** Old `m-NNNN` message ids share one counter across all
   participants. Use `<id>-<timestamp>` ids (`reply` and `consult` make them
   for you), or read the highest `m-NNNN` first.
+- **Server down, its log full of `Operation not permitted`:** launchd is
+  running the server from a folder macOS protects (`~/Documents`, `~/Desktop`
+  or `~/Downloads`), perhaps through a link. Move the repo out, then run
+  `scripts/install-service.sh` from its new place. See
+  [Running the server](#running-the-server).
 - **Links to the wrong repo:** A bare `#42` or commit hash links to the repo
   of whoever wrote the row. Prefix cross-repo refs: `vectorcraft#42`,
   `bewareilive@51e7709`.
