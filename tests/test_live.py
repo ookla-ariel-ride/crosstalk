@@ -104,6 +104,15 @@ class RegisterTests(LiveCase):
             self.assertIsNone(live.register(self.root, pid, env, stdin, 1.0), (pid, env, stdin))
         self.assertEqual(list(Path(self.live).glob("*.json")) if Path(self.live).exists() else [], [])
 
+    def test_register_skips_prestarted_spare(self):
+        # Claude Code's daemon keeps idle spare sessions; they run SessionStart too.
+        env = dict(self.env(), CLAUDE_CODE_SESSION_KIND="bg",
+                   CLAUDE_BG_SOCKET_TOKENS_PATH="/Users/x/.claude/daemon/auth/spare-06f06d69.tokens.json")
+        self.assertIsNone(live.register(self.root, "vectorcraft", env, '{"session_id":"s1"}', 1.0))
+        self.assertFalse(Path(self.live).exists() and list(Path(self.live).glob("*.json")))
+        env["CLAUDE_BG_SOCKET_TOKENS_PATH"] = "/Users/x/.claude/daemon/auth/job-1.tokens.json"
+        self.assertIsNotNone(live.register(self.root, "vectorcraft", env, '{"session_id":"s1"}', 1.0))
+
     def test_unregister_removes_file(self):
         path = self.reg("s1")
         self.assertTrue(live.unregister("vectorcraft", '{"session_id":"s1"}'))

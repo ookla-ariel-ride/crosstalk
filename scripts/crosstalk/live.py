@@ -27,6 +27,7 @@ SESSION_ID_RE = re.compile(r"^[A-Za-z0-9._-]{1,128}$")
 MAX_TOKEN = 512
 ENV_SOCKET = "CLAUDE_CODE_MESSAGING_SOCKET"
 ENV_TOKEN = "CLAUDE_CODE_MESSAGING_TOKEN"
+ENV_BG_TOKENS = "CLAUDE_BG_SOCKET_TOKENS_PATH"
 
 
 class Registration(NamedTuple):
@@ -94,9 +95,23 @@ def _iso(ts: float) -> str:
     return time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime(ts))
 
 
+def is_spare(env: Mapping[str, str]) -> bool:
+    """True for an idle session Claude Code's daemon starts ahead of time.
+
+    Spares run SessionStart in the project too, so without this check every
+    project gets a second registration for a session nobody is using.
+    """
+    return os.path.basename(env.get(ENV_BG_TOKENS) or "").startswith("spare-")
+
+
 def register(root: Path, pid: str, env: Mapping[str, str], stdin_text: str,
              now: float) -> Optional[Path]:
-    """Write this session's registration; None (and a stderr note) on any problem."""
+    """Write this session's registration; None (and a stderr note) on any problem.
+
+    A pre-started spare session is skipped quietly.
+    """
+    if is_spare(env):
+        return None
     if not _known_pid(root, pid):
         _err("unknown participant %r" % (pid,))
         return None
