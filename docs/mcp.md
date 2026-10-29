@@ -219,7 +219,12 @@ When it is built, there are two places it can go:
 
 ## Open questions
 
-- **Remote participants.** This server writes locally, as `relay.py` does.
+- **Push (owner, 2026-10-29).** Non-Claude sessions are interrupted only for
+  urgent items; everything else waits for their check-in `inbox` call. The
+  design for which items count as urgent and how each harness is reached is
+  being settled with the owner before it is built.
+- **Remote participants (owner, 2026-10-29: maybe later).** Nothing is built
+  until a participant actually runs on another machine. This server writes locally, as `relay.py` does.
   A session on another machine would need an HTTP back end that posts to
   `/api/append` with the participant's token, read from an environment
   variable or a file path, never a tool argument. The read side would use
