@@ -11,6 +11,7 @@ from .requests import (
     inbox_for,
     pending_recipients,
     stale_locks_for,
+    thread_replies_for,
     unanswered_owner_messages,
 )
 from .service import SERVICE
@@ -39,7 +40,8 @@ def load_docs(root: Path, roster: Roster) -> Tuple[Optional[Dict], List[Problem]
 
 def inbox_report(docs: Dict, pid: str, roster: Roster, include_answered: bool = False,
                  now_iso: Optional[str] = None) -> dict:
-    """What `relay.py inbox <pid>` prints: requests, owner messages, agreements, stale locks."""
+    """What `relay.py inbox <pid>` prints: requests, owner messages, replies on pid's
+    threads, agreements, stale locks."""
     requests = (
         all_requests_for(docs, pid, roster=roster)
         if include_answered
@@ -64,6 +66,14 @@ def inbox_report(docs: Dict, pid: str, roster: Roster, include_answered: bool = 
                 "replies": [dict(r, trust=trust_of(r.get("from"), roster)) for r in replies],
             }
             for (did, doc, replies) in owner_msgs
+        ],
+        "thread_replies": [
+            {
+                "message": dict(doc, id=did),
+                "trust": trust_of(doc.get("from"), roster),
+                "root": root,
+            }
+            for (did, doc, root) in thread_replies_for(docs, pid, roster=roster)
         ],
         "agreements_to_adopt": agreements_to_adopt_for(docs, pid, roster=roster),
         "stale_locks": stale_locks_for(docs, pid, now_iso=now_iso),

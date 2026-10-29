@@ -13,6 +13,7 @@ from typing import Dict, List, Optional, Tuple
 _MENTION_RE = re.compile(r"(?:^|[\s(\[,:;])@([A-Za-z0-9_.-]+)")
 _BROADCAST_HANDLES = ("everyone", "all", "channel", "here")
 _OWNER_MESSAGE_KINDS = ("owner", "alert", "agreement", "lesson", "decision")
+_CHECK_IN_KINDS = ("check-in", "checkin")
 
 
 def _messages(docs: Dict) -> Dict[str, dict]:
@@ -324,35 +325,164 @@ def all_requests_for(docs: Dict, pid: str, roster=None) -> List[Tuple[str, dict,
     return _requests(docs, pid=pid, open_only=False, roster=roster)
 
 
-def unanswered_owner_messages(docs: Dict, pid: str, roster=None) -> List[Tuple[str, dict, List[dict]]]:
-    """Owner messages addressed to pid that pid has not replied to yet, newest first.
+class _Threads:
+    """Thread structure over the messages: each message's ancestors and root.
 
-    A message that doesn't name pid (a broadcast, or a group such as @projects)
-    and is dated before pid's first row is left out: pid had not joined yet.
-    When pid has no dated row, or the message has no valid `t`, nothing is left
-    out on that account. A message naming pid stays until pid replies.
+    A thread is a root message (no replyTo, or a replyTo naming no known
+    message) and every message whose replyTo chain leads to it. A replyTo cycle
+    stops at the first repeated message.
+    """
+
+    def __init__(self, messages: Dict[str, dict]):
+        self.messages = messages
+        self._chain = {}  # type: Dict[str, List[str]]
+        self._posts = {}  # type: Dict[str, List[str]]
+        for did, doc in messages.items():
+            frm = doc.get("from")
+            if isinstance(frm, str):
+                self._posts.setdefault(frm, []).append(did)
+
+    def ancestors(self, did: str) -> List[str]:
+        """did's chain upward, nearest parent first, ending at its root (empty for a root)."""
+        if did in self._chain:
+            return self._chain[did]
+        chain = []  # type: List[str]
+        seen = {did}
+        cur = did
+        while True:
+            rt = self.messages.get(cur, {}).get("replyTo")
+            if not isinstance(rt, str) or rt not in self.messages or rt in seen:
+                break
+            chain.append(rt)
+            seen.add(rt)
+            cur = rt
+        self._chain[did] = chain
+        return chain
+
+    def root(self, did: str) -> str:
+        chain = self.ancestors(did)
+        return chain[-1] if chain else did
+
+    def posted_after(self, pid: str, did: str) -> bool:
+        """Whether pid posted in did's thread after did: below it, or later by `t`."""
+        root = self.root(did)
+        when = _parse_iso(self.messages[did].get("t"))
+        for mine in self._posts.get(pid, []):
+            if mine == did or self.root(mine) != root:
+                continue
+            if did in self.ancestors(mine):
+                return True
+            mt = _parse_iso(self.messages[mine].get("t"))
+            if mt is not None and when is not None:
+                if mt > when:
+                    return True
+            elif _t(self.messages[mine]) > _t(self.messages[did]):
+                return True
+        return False
+
+
+def owner_reply_recipients(doc: dict, messages: Dict[str, dict], roster=None) -> List[str]:
+    """Who an owner reply is for: its `to`, else its @mentions, else the parent's author.
+
+    The parent's author counts whatever its trust: the owner is speaking to it.
+    The owner itself is a recipient only when `to` names it.
+    """
+    if doc.get("to") is not None:
+        return _recipients(doc, roster=roster)
+    mentioned = extract_mentions(doc, roster=roster)
+    if mentioned:
+        return mentioned
+    parent = messages.get(doc.get("replyTo"))
+    author = parent.get("from") if isinstance(parent, dict) else None
+    if isinstance(author, str) and author and author != "owner":
+        return [author]
+    return []
+
+
+def unanswered_owner_messages(docs: Dict, pid: str, roster=None) -> List[Tuple[str, dict, List[dict]]]:
+    """Owner messages addressed to pid that pid has not answered yet, newest first.
+
+    A top-level owner message is addressed by `to`, mention, or broadcast. An
+    owner reply (one with `replyTo`) is addressed to owner_reply_recipients;
+    it is never a broadcast. Either one leaves once pid posts in its thread
+    after it (for a top-level message: any reply below it).
+
+    A top-level message that doesn't name pid (a broadcast, or a group such as
+    @projects) and is dated before pid's first row is left out: pid had not
+    joined yet. When pid has no dated row, or the message has no valid `t`,
+    nothing is left out on that account. An owner reply always names its
+    recipients, so this rule never hides one.
     """
     messages = _messages(docs)
     replies = _replies_by_request(messages)
+    threads = _Threads(messages)
     joined = first_seen(docs, pid)
     out = []  # type: List[Tuple[str, dict, List[dict]]]
     for did, doc in messages.items():
-        if doc.get("from") != "owner" or doc.get("replyTo"):
+        if doc.get("from") != "owner":
             continue
         if doc.get("kind") not in _OWNER_MESSAGE_KINDS:
             continue
-        if not _addressed(doc, pid, roster=roster):
-            continue
-        if pid == "owner" and "owner" not in _recipients(doc, roster=roster):
-            continue
-        if joined is not None and not _named(doc, pid, roster=roster):
-            posted = _parse_iso(doc.get("t"))
-            if posted is not None and posted < joined:
+        rt = doc.get("replyTo")
+        if rt:
+            if not isinstance(rt, str):
                 continue
-        doc_replies = replies.get(did, [])
-        if any(r.get("from") == pid for r in doc_replies):
+            if pid not in owner_reply_recipients(doc, messages, roster=roster):
+                continue
+        else:
+            if not _addressed(doc, pid, roster=roster):
+                continue
+            if pid == "owner" and "owner" not in _recipients(doc, roster=roster):
+                continue
+            if joined is not None and not _named(doc, pid, roster=roster):
+                posted = _parse_iso(doc.get("t"))
+                if posted is not None and posted < joined:
+                    continue
+        if threads.posted_after(pid, did):
             continue
-        out.append((did, doc, doc_replies))
+        out.append((did, doc, replies.get(did, [])))
+    out.sort(key=lambda item: _t(item[1]), reverse=True)
+    return out
+
+
+def thread_replies_for(docs: Dict, pid: str, roster=None) -> List[Tuple[str, dict, str]]:
+    """Replies on pid's threads that pid has not posted after, newest first.
+
+    A reply is on pid's thread when pid wrote the message it answers or the
+    root of its thread. Its sender must be approved and not pid. It leaves once
+    pid posts in the thread after it, or posts a check-in after it: a check-in
+    follows reading the inbox, and a reply needs no answer unless it asks
+    something, so replies don't pile up waiting for acknowledgements. Replies
+    already listed for pid as an open request or an owner message are left
+    out. Returns (id, doc, root id).
+    """
+    messages = _messages(docs)
+    threads = _Threads(messages)
+    listed = {did for did, _d, _r in unanswered_owner_messages(docs, pid, roster=roster)}
+    listed.update(did for did, _d, _r in inbox_for(docs, pid, roster=roster))
+    checked_in = None  # type: Optional[float]
+    for doc in messages.values():
+        if doc.get("from") == pid and doc.get("kind") in _CHECK_IN_KINDS:
+            ts = _parse_iso(doc.get("t"))
+            if ts is not None and (checked_in is None or ts > checked_in):
+                checked_in = ts
+    out = []  # type: List[Tuple[str, dict, str]]
+    for did, doc in messages.items():
+        rt = doc.get("replyTo")
+        if not isinstance(rt, str) or rt not in messages:
+            continue
+        sender = doc.get("from")
+        if sender == pid or not _is_approved(sender, roster):
+            continue
+        root = threads.root(did)
+        if messages[rt].get("from") != pid and messages[root].get("from") != pid:
+            continue
+        if did in listed or threads.posted_after(pid, did):
+            continue
+        posted = _parse_iso(doc.get("t"))
+        if checked_in is not None and posted is not None and checked_in > posted:
+            continue
+        out.append((did, doc, root))
     out.sort(key=lambda item: _t(item[1]), reverse=True)
     return out
 

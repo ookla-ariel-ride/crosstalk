@@ -41,7 +41,7 @@ You don't run it by hand.
 
 | Tool | What it does | Same as |
 |---|---|---|
-| `inbox` | Open requests, unanswered owner messages, agreements to adopt, stale claims; `include_answered` for all | `relay.py inbox <id> [--all]` |
+| `inbox` | Open requests, unanswered owner messages (owner replies included), replies on your threads, agreements to adopt, stale claims; `include_answered` for all | `relay.py inbox <id> [--all]` |
 | `read_messages` | Recent messages, oldest first, at most 100 (`limit`, default 20), optionally `since` a UTC time or from one `sender`; each with its sender's trust | `relay.py read --collection messages` |
 | `post_message` | A new message: `kind` (`sync`, `reply`, `request`, `review`, `agreement`, `alert`, `disagreement`, `lesson`), `summary`, optional `body`, `to`, `refs`, `important`, `positions` | `relay.py append` |
 | `reply` | Answers a message by id; sets `replyTo` and `to` | `relay.py reply` |

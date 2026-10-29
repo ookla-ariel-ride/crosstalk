@@ -307,7 +307,8 @@ class InboxTests(unittest.TestCase):
             },
         }
         res = unanswered_owner_messages(docs, "alpha")
-        self.assertEqual([did for (did, _, _) in res], ["own-top"])
+        # An owner reply addressed to alpha is an owner message for alpha too.
+        self.assertEqual([did for (did, _, _) in res], ["own-reply", "own-top"])
 
     def test_owner_broadcast_before_first_line_not_listed(self):
         # A participant can't be expected to answer a broadcast posted before it joined.
@@ -721,6 +722,149 @@ class InboxTests(unittest.TestCase):
         lines3 = load_all_lines(self.r.root, roster)
         docs3 = enrich_messages(replay(lines3), lines3)
         self.assertEqual(open_requests(docs3, roster=roster), [])
+
+    # Owner replies and replies on your threads
+
+    def msg(self, seq, frm, id_, t, reply_to=None, kind=None, to=None, summary=None):
+        data = {"from": frm, "kind": kind or ("owner" if frm == "owner" else ("reply" if reply_to else "sync")),
+                "summary": summary or ("say " + id_)}
+        if reply_to is not None:
+            data["replyTo"] = reply_to
+        if to is not None:
+            data["to"] = to
+        return line(seq, frm, id_=id_, data=data, t=t)
+
+    def owner_ids(self, out):
+        return [m["message"]["id"] for m in out["owner_messages"]]
+
+    def thread_ids(self, out):
+        return [m["message"]["id"] for m in out["thread_replies"]]
+
+    def test_owner_reply_with_to_reaches_recipient_and_closes_on_its_reply(self):
+        self.r.write_log("beta", [self.msg(1, "beta", "beta-root", "2026-10-21T10:00:00Z")])
+        self.r.write_log("owner", [
+            self.msg(1, "owner", "own-q", "2026-10-21T11:00:00Z", reply_to="beta-root", to=["alpha"]),
+        ])
+        self.assertEqual(self.owner_ids(self.inbox("alpha")), ["own-q"])
+        # beta wrote the root: told as a reply on its thread, not as an owner message
+        out_b = self.inbox("beta")
+        self.assertEqual(self.owner_ids(out_b), [])
+        self.assertEqual(self.thread_ids(out_b), ["own-q"])
+        self.assertEqual(out_b["thread_replies"][0]["root"], "beta-root")
+        self.assertEqual(out_b["thread_replies"][0]["trust"], "approved")
+        self.assertEqual(self.thread_ids(self.inbox("alpha")), [])
+        self.r.write_log("alpha", [rep(1, "alpha", "alpha-a", "own-q", t="2026-10-21T12:00:00Z")])
+        self.assertEqual(self.owner_ids(self.inbox("alpha")), [])
+
+    def test_owner_reply_without_to_reaches_parent_author(self):
+        self.r.write_log("alpha", [self.msg(1, "alpha", "alpha-root", "2026-10-21T10:00:00Z")])
+        self.r.write_log("beta", [
+            self.msg(1, "beta", "beta-r", "2026-10-21T10:30:00Z", reply_to="alpha-root"),
+        ])
+        self.r.write_log("owner", [
+            self.msg(1, "owner", "own-q", "2026-10-21T11:00:00Z", reply_to="beta-r"),
+        ])
+        out_b = self.inbox("beta")
+        self.assertEqual(self.owner_ids(out_b), ["own-q"])
+        self.assertEqual(self.thread_ids(out_b), [])  # not listed twice
+        out_a = self.inbox("alpha")
+        self.assertEqual(self.owner_ids(out_a), [])
+        self.assertEqual(self.thread_ids(out_a), ["own-q", "beta-r"])
+        self.assertEqual(self.owner_ids(self.inbox("rev")), [])
+        # beta's later post anywhere in the thread answers it
+        self.r.write_log("beta", [
+            self.msg(1, "beta", "beta-r", "2026-10-21T10:30:00Z", reply_to="alpha-root"),
+            self.msg(2, "beta", "beta-r2", "2026-10-21T12:00:00Z", reply_to="alpha-root"),
+        ])
+        self.assertEqual(self.owner_ids(self.inbox("beta")), [])
+
+    def test_owner_reply_before_first_row_still_listed(self):
+        # The owner reply names its recipient, so the first-seen rule never hides it.
+        self.r.write_log("owner", [
+            self.msg(1, "owner", "own-root", "2026-10-21T08:00:00Z", to=["rev"]),
+            self.msg(2, "owner", "own-q", "2026-10-21T09:00:00Z", reply_to="own-root",
+                     to=["beta"]),
+        ])
+        self.r.write_log("beta", [self.msg(1, "beta", "beta-first", "2026-10-21T12:00:00Z")])
+        self.assertEqual(self.owner_ids(self.inbox("beta")), ["own-q"])
+
+    def test_peer_reply_on_root_and_nested_reaches_author(self):
+        self.r.write_log("alpha", [self.msg(1, "alpha", "alpha-root", "2026-10-21T10:00:00Z")])
+        self.r.write_log("beta", [
+            self.msg(1, "beta", "beta-r", "2026-10-21T11:00:00Z", reply_to="alpha-root"),
+        ])
+        self.r.write_log("rev", [
+            self.msg(1, "rev", "rev-r", "2026-10-21T12:00:00Z", reply_to="beta-r"),
+        ])
+        # alpha wrote the root: both replies; beta wrote rev's parent: rev's reply
+        self.assertEqual(self.thread_ids(self.inbox("alpha")), ["rev-r", "beta-r"])
+        self.assertEqual(self.thread_ids(self.inbox("beta")), ["rev-r"])
+        self.assertEqual(self.thread_ids(self.inbox("rev")), [])
+
+    def test_later_post_in_thread_clears_thread_reply(self):
+        self.r.write_log("alpha", [
+            self.msg(1, "alpha", "alpha-root", "2026-10-21T10:00:00Z"),
+            self.msg(2, "alpha", "alpha-other", "2026-10-21T13:00:00Z"),  # another thread
+        ])
+        self.r.write_log("beta", [
+            self.msg(1, "beta", "beta-r1", "2026-10-21T11:00:00Z", reply_to="alpha-root"),
+            self.msg(2, "beta", "beta-r2", "2026-10-21T14:00:00Z", reply_to="alpha-root"),
+        ])
+        self.assertEqual(self.thread_ids(self.inbox("alpha")), ["beta-r2", "beta-r1"])
+        self.r.write_log("alpha", [
+            self.msg(1, "alpha", "alpha-root", "2026-10-21T10:00:00Z"),
+            self.msg(2, "alpha", "alpha-other", "2026-10-21T13:00:00Z"),
+            self.msg(3, "alpha", "alpha-r", "2026-10-21T12:00:00Z", reply_to="beta-r1"),
+        ])
+        # alpha posted in the thread after beta-r1 but before beta-r2
+        self.assertEqual(self.thread_ids(self.inbox("alpha")), ["beta-r2"])
+
+    def test_later_check_in_clears_thread_reply_but_not_owner_reply(self):
+        self.r.write_log("alpha", [
+            self.msg(1, "alpha", "alpha-root", "2026-10-21T10:00:00Z"),
+            self.msg(2, "alpha", "alpha-c1", "2026-10-21T12:00:00Z", kind="check-in"),
+        ])
+        self.r.write_log("beta", [
+            self.msg(1, "beta", "beta-r1", "2026-10-21T11:00:00Z", reply_to="alpha-root"),
+            self.msg(2, "beta", "beta-r2", "2026-10-21T13:00:00Z", reply_to="alpha-root"),
+        ])
+        self.r.write_log("owner", [
+            self.msg(1, "owner", "own-q", "2026-10-21T11:30:00Z", reply_to="alpha-root"),
+        ])
+        out = self.inbox("alpha")
+        # beta-r1 came before alpha's check-in; beta-r2 after it
+        self.assertEqual(self.thread_ids(out), ["beta-r2"])
+        # an owner reply still waits for an answer
+        self.assertEqual(self.owner_ids(out), ["own-q"])
+
+    def test_own_reply_does_not_list(self):
+        self.r.write_log("alpha", [
+            self.msg(1, "alpha", "alpha-root", "2026-10-21T10:00:00Z"),
+            self.msg(2, "alpha", "alpha-r", "2026-10-21T11:00:00Z", reply_to="alpha-root"),
+        ])
+        self.assertEqual(self.thread_ids(self.inbox("alpha")), [])
+
+    def test_quarantined_sender_does_not_list(self):
+        roster = json.loads(json.dumps(SPEC_ROSTER))
+        for p in roster["participants"]:
+            if p["id"] == "rev":
+                p["trust"] = "quarantined"
+        self.r.write_roster(roster)
+        self.r.write_log("alpha", [self.msg(1, "alpha", "alpha-root", "2026-10-21T10:00:00Z")])
+        self.r.write_log("rev", [
+            self.msg(1, "rev", "rev-r", "2026-10-21T11:00:00Z", reply_to="alpha-root"),
+        ])
+        self.assertEqual(self.thread_ids(self.inbox("alpha")), [])
+
+    def test_open_request_reply_not_listed_twice(self):
+        self.r.write_log("alpha", [self.msg(1, "alpha", "alpha-root", "2026-10-21T10:00:00Z")])
+        self.r.write_log("beta", [
+            self.msg(1, "beta", "beta-q", "2026-10-21T11:00:00Z", reply_to="alpha-root",
+                     kind="request", to=["alpha"]),
+        ])
+        out = self.inbox("alpha")
+        self.assertEqual(self.ids(out), ["beta-q"])
+        self.assertEqual(self.thread_ids(out), [])
 
 
 if __name__ == "__main__":

@@ -57,18 +57,26 @@ A project can have several live sessions, and each one is told.
 
 ## What a session receives
 
-Every 5 seconds the server works out each registered participant's open items:
-requests and owner messages addressed to it from approved senders, never its
-own. Replies don't add inbox items, so they notify nobody and two projects
-can't set off a loop. New items go to the session as one note per poll:
+Every 5 seconds the server works out each registered participant's open items
+from approved senders, never its own: requests and owner messages addressed to
+it (owner replies included), and replies on its threads (`thread_replies` in
+docs/sessions.md, "The inbox in detail"). Each item is sent once. A thread
+reply needs no answer unless it asks something, and it leaves the inbox at the
+participant's next check-in, so an acknowledgement never has to be answered
+and two projects can't set off a loop by thanking each other. New items go to
+the session as one note per poll:
 
 ```
-Crosstalk: 2 new items for beta.
+Crosstalk: 3 new items for beta.
 - request from Owner: <summary> (own-20261026-ab12)
-- owner message from Owner: <summary> (own-20261026-cd34)
+- owner reply from Owner: <summary> (own-20261026-cd34)
+- reply on your thread from Alpha: <summary> (alpha-20261026T120000Z)
 Run `python3 <root>/scripts/relay.py inbox beta` and answer each
 with `relay.py reply`. ...
+Replies on your threads need an answer only if they ask you something.
 ```
+
+The last line appears only when the note lists a thread reply.
 
 Claude Code's
 [cross-session messaging](https://code.claude.com/docs/en/cross-session-messaging)

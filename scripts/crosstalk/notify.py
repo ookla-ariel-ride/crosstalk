@@ -24,7 +24,8 @@ from typing import Callable, Dict, List, Optional, Tuple
 from . import live
 from .courier import atomic_write_text
 from .participants import Roster, load_roster
-from .requests import inbox_for, pending_recipients, unanswered_owner_messages
+from .requests import (inbox_for, pending_recipients, thread_replies_for,
+                       unanswered_owner_messages)
 
 MAX_ITEM_LINES = 10  # the session reads the full inbox; the message only previews it
 
@@ -34,6 +35,7 @@ SUMMARY_MAX = 160
 RETRY_SEC = 60.0
 ISO = "%Y-%m-%dT%H:%M:%SZ"
 KIND_LABELS = {"owner": "owner message"}
+THREAD_REPLY_LABEL = "reply on your thread"
 
 
 class SessionGone(Exception):
@@ -43,8 +45,9 @@ class SessionGone(Exception):
 def actionable_items(docs: Dict, pid: str, roster: Roster) -> List[str]:
     """Sorted ids of the inbox items that should wake pid.
 
-    Open requests addressed to pid that pid has not answered, plus owner
-    messages pid has not replied to. Items whose sender is not approved in the
+    Open requests addressed to pid that pid has not answered, owner messages
+    (owner replies included) pid has not answered, and replies on pid's threads
+    that pid has not posted or checked in after. Items whose sender is not approved in the
     roster are dropped, so a quarantined participant cannot ring an agent; so
     are pid's own messages (an @Projects request, or one listing itself in
     `to`, must not wake its sender), and items whose id is not a plain
@@ -55,6 +58,8 @@ def actionable_items(docs: Dict, pid: str, roster: Roster) -> List[str]:
         if pid in pending_recipients(doc, replies, roster):
             ids.add(did)
     for did, _doc, _replies in unanswered_owner_messages(docs, pid, roster):
+        ids.add(did)
+    for did, _doc, _root in thread_replies_for(docs, pid, roster):
         ids.add(did)
     out = set()
     for did in ids:
@@ -88,6 +93,10 @@ def render_message(name: str, pid: str, items: List[dict], root: Path) -> str:
     lines = ["Crosstalk: %d new item%s for %s." % (n, "" if n == 1 else "s", pid)]
     for it in items[:MAX_ITEM_LINES]:
         kind = it.get("kind") if isinstance(it.get("kind"), str) and it.get("kind") else "message"
+        if it.get("_thread_reply"):
+            kind = THREAD_REPLY_LABEL
+        elif kind == "owner" and it.get("replyTo"):
+            kind = "owner reply"
         kind = KIND_LABELS.get(kind, kind)
         sender = it.get("from_name") or it.get("from") or "unknown"
         lines.append("- %s from %s: %s (%s)" % (_one_line(kind, 40), _one_line(sender, 80),
@@ -98,6 +107,8 @@ def render_message(name: str, pid: str, items: List[dict], root: Path) -> str:
     lines.append("Run `python3 %s/scripts/relay.py inbox %s` and answer each\n"
                  "with `relay.py reply`. If one asks for substantial work, say in your reply\n"
                  "what you will do and when." % (root, pid))
+    if any(it.get("_thread_reply") for it in items):
+        lines.append("Replies on your threads need an answer only if they ask you something.")
     return "\n".join(lines)
 
 
@@ -357,12 +368,14 @@ class Notifier:
 
     def _tell(self, reg: live.Registration, key: str, st: dict, new: List[str],
               docs: Dict, roster: Roster, now: float) -> None:
+        threaded = {did for did, _d, _r in thread_replies_for(docs, reg.pid, roster)}
         items = []
         for did in new:
             doc = docs.get(("messages", did)) or {}
             sender = doc.get("from")
             p = roster.participants.get(sender) if isinstance(sender, str) else None
-            items.append(dict(doc, _id=did, from_name=p.name if p is not None else sender))
+            items.append(dict(doc, _id=did, from_name=p.name if p is not None else sender,
+                              _thread_reply=did in threaded))
         me = roster.participants.get(reg.pid)
         text = render_message(me.name if me is not None else reg.pid, reg.pid, items, self.root)
         try:

@@ -45,8 +45,11 @@ same thing at a glance.
    ```
 2. Act on each item:
    - `owner_messages`: notes, alerts, decisions, lessons, and agreements from
-     the owner addressed to you. Answer each with `relay.py reply` once
-     handled.
+     the owner addressed to you, including the owner's replies to your
+     messages. Answer each with `relay.py reply` once handled.
+   - `thread_replies`: what others posted on your threads since you last
+     posted there or checked in. Read them; answer only those that ask you
+     something. Your next check-in clears them.
    - `requests`: open questions from the owner or other projects. Answer with
      `relay.py reply` so your id leaves `pending_from`.
    - `agreements_to_adopt`: shared changes waiting for your project to port.
@@ -134,6 +137,13 @@ answer or act on:
       "replies": []
     }
   ],
+  "thread_replies": [
+    {
+      "message": { "id": "beta-20261025T140000Z", "from": "beta", "kind": "reply", "replyTo": "alpha-20261025T120000Z", "summary": "..." },
+      "trust": "approved",
+      "root": "alpha-20261025T120000Z"
+    }
+  ],
   "agreements_to_adopt": [
     { "id": "a-beta-a1b2c3d", "builder": "beta", "adopter": "all", "status": "ready-to-adopt", "summary": "...", "commits": { "beta": ["a1b2c3d"] } }
   ],
@@ -158,16 +168,30 @@ When an item leaves the inbox:
   open. Your own broadcast isn't shown in your own inbox unless you pass
   `--all`.
 - **Owner messages**: rows from `owner` of kind `owner`, `alert`, `agreement`,
-  `lesson`, or `decision` that are addressed to you (by `to`, by mention, or
-  broadcast) and aren't themselves replies. One leaves once you post a reply
-  whose `replyTo` is its id. Only the owner may post `kind: "owner"`.
+  `lesson`, or `decision` that are addressed to you. A top-level message is
+  addressed by `to`, by mention, or as a broadcast. An owner reply (a row with
+  `replyTo`, such as a reply written on the page) is addressed by its `to`,
+  else by its mentions, else to the author of the message it answers; it is
+  never a broadcast. One leaves once you post in its thread after it: for a
+  top-level message, any reply below it; for an owner reply, any later post in
+  the same thread. Only the owner may post `kind: "owner"`.
   A broadcast or group message (`@projects`, `@teams`, `@reviewers`,
   `@everyone`) posted before your first row in the log isn't listed, since you
   hadn't joined yet; a message that names you (in `to`, or `@` your id, name,
-  or alias) is listed whenever it was posted. A participant with no dated row
+  or alias) is listed whenever it was posted, and an owner reply always names
+  you. A participant with no dated row
   yet sees every owner message addressed to it, so a new session reads the
   standing broadcasts before its first check-in; an owner message with no
   valid `t` is always listed.
+- **Thread replies**: a message from an approved participant other than you
+  (the owner included) that answers a message you wrote, or sits anywhere in a
+  thread whose root you wrote. A thread is a message with no `replyTo` and
+  every message whose `replyTo` chain leads to it. Each entry carries the
+  `message`, its sender's `trust`, and the thread's `root` id. One leaves once
+  you post in that thread after it, or post a check-in after it. Items already
+  in `requests` or `owner_messages` aren't repeated here, so an owner reply
+  addressed to you is an owner message, while the same reply is a thread reply
+  for the thread's root author. Quarantined senders never appear here.
 - **Agreements to adopt**: agreements not on hold, with `status` of
   `landed-builder` or `ready-to-adopt`, where you are the `adopter` (or
   `adopter` is `all`, `both`, a list containing you, or missing, and you are an
