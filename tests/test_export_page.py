@@ -44,7 +44,7 @@ class ExporterTests(unittest.TestCase):
 
     def test_export_writes_one_self_contained_file(self):
         r = self.r
-        r.write_log("codex", [line(1, "codex", data={"kind": "reply", "summary": "hi"})])
+        r.write_log("rev", [line(1, "rev", data={"kind": "reply", "summary": "hi"})])
         out = r.root / "page.html"
         info = export_page(r.root, out)
         self.assertTrue(out.is_file(), "no export written")
@@ -60,10 +60,10 @@ class ExporterTests(unittest.TestCase):
 
     def test_snapshot_document_count_equals_the_replay(self):
         r = self.r
-        r.write_log("codex", [line(1, "codex"),
-                              line(2, "codex", collection="waiting", id_="codex-w1",
+        r.write_log("rev", [line(1, "rev"),
+                              line(2, "rev", collection="waiting", id_="rev-w1",
                                    data={"summary": "w"})])
-        r.write_log("bewareilive", [line(1, "bewareilive", collection="messages",
+        r.write_log("alpha", [line(1, "alpha", collection="messages",
                                          id_="m-0001", data={"summary": "old"})])
         snap = build_snapshot(r.root)
         count = sum(len(v) for v in snap["collections"].values())
@@ -75,10 +75,10 @@ class ExporterTests(unittest.TestCase):
         # data.from and data.t may be absent from a message row; the export
         # fills both from the writing line, like the live snapshot does.
         r = self.r
-        r.write_log("codex", [line(1, "codex", data={"kind": "reply", "summary": "hi"})])
+        r.write_log("rev", [line(1, "rev", data={"kind": "reply", "summary": "hi"})])
         snap = build_snapshot(r.root)
-        doc = snap["collections"]["messages"]["codex-0001"]
-        self.assertEqual(doc["from"], "codex")
+        doc = snap["collections"]["messages"]["rev-0001"]
+        self.assertEqual(doc["from"], "rev")
         self.assertEqual(doc["t"], "2026-10-21T18:00:00Z")
 
     def test_export_stamps_the_commit_and_the_publish_time(self):
@@ -98,7 +98,7 @@ class ExporterTests(unittest.TestCase):
         # body). A file opened from disk with no charset is read as windows-1252
         # by some browsers, which mangles both.
         r = self.r
-        r.write_log("codex", [line(1, "codex", data={"summary": "café — naïve"})])
+        r.write_log("rev", [line(1, "rev", data={"summary": "café — naïve"})])
         out = r.root / "page.html"
         export_page(r.root, out)
         html = out.read_text(encoding="utf-8")
@@ -113,7 +113,7 @@ class ExporterTests(unittest.TestCase):
 
     def test_export_refuses_to_write_through_a_symlink(self):
         r = self.r
-        r.write_log("codex", [line(1, "codex", data={"kind": "reply", "summary": "hi"})])
+        r.write_log("rev", [line(1, "rev", data={"kind": "reply", "summary": "hi"})])
         target = r.root / "target.html"
         target.write_text("precious", encoding="utf-8")
         link = r.root / "page.html"
@@ -125,9 +125,9 @@ class ExporterTests(unittest.TestCase):
     def test_export_carries_no_token_pin_or_cookie_material(self):
         r = self.r
         (r.root / "tokens.json").write_text(
-            json.dumps({"codex": "s3cr3t-token-value"}), encoding="utf-8")
+            json.dumps({"rev": "s3cr3t-token-value"}), encoding="utf-8")
         (r.root / "pin").write_text("918273", encoding="utf-8")
-        r.write_log("codex", [line(1, "codex")])
+        r.write_log("rev", [line(1, "rev")])
         out = r.root / "page.html"
         export_page(r.root, out)
         html = out.read_text(encoding="utf-8")
@@ -142,13 +142,13 @@ class ExporterTests(unittest.TestCase):
         secret_cwd = str(r.root / "secret-agent-cwd")
         (r.root / "secret-agent-cwd").mkdir()
         for p in data["participants"]:
-            if p["id"] == "vectorcraft":
+            if p["id"] == "beta":
                 p["wake"] = {"command": ["secret-agent-cmd"], "cwd": secret_cwd}
         r.write_roster(data)
         snap = build_snapshot(r.root)
-        entry = [p for p in snap["roster"]["participants"] if p["id"] == "vectorcraft"][0]
+        entry = [p for p in snap["roster"]["participants"] if p["id"] == "beta"][0]
         self.assertNotIn("wake", entry)
-        self.assertEqual(entry["name"], "VectorCraft")
+        self.assertEqual(entry["name"], "Beta")
         out = r.root / "page.html"
         export_page(r.root, out)
         html = out.read_text(encoding="utf-8")
@@ -157,23 +157,23 @@ class ExporterTests(unittest.TestCase):
 
     def test_export_refuses_a_log_with_a_fatal_line(self):
         r = self.r
-        r.write_log("codex", [line(1, "codex"), "{not json"])
+        r.write_log("rev", [line(1, "rev"), "{not json"])
         with self.assertRaises(RuntimeError) as cm:
             export_page(r.root, r.root / "page.html")
-        self.assertIn("log/codex.jsonl:2:", str(cm.exception))
+        self.assertIn("log/rev.jsonl:2:", str(cm.exception))
         self.assertFalse((r.root / "page.html").exists())
 
     def test_export_embeds_a_json_object_the_page_can_read(self):
         r = self.r
-        r.write_log("codex", [line(1, "codex", data={"kind": "reply", "summary": "hi"})])
+        r.write_log("rev", [line(1, "rev", data={"kind": "reply", "summary": "hi"})])
         out = r.root / "page.html"
         export_page(r.root, out)
         snap = snapshot_in(out.read_text(encoding="utf-8"))
         self.assertIn("collections", snap)
-        self.assertIn("codex-0001", snap["collections"]["messages"])
-        self.assertEqual(snap["collections"]["messages"]["codex-0001"]["summary"], "hi")
+        self.assertIn("rev-0001", snap["collections"]["messages"])
+        self.assertEqual(snap["collections"]["messages"]["rev-0001"]["summary"], "hi")
         # The roster travels too, so the page can name people.
-        self.assertEqual(snap["roster"]["participants"][0]["id"], "bewareilive")
+        self.assertEqual(snap["roster"]["participants"][0]["id"], "alpha")
 
 
 class CliExportTests(unittest.TestCase):
@@ -186,7 +186,7 @@ class CliExportTests(unittest.TestCase):
         shutil.copytree(str(REPO / "scripts"), str(self.r.root / "scripts"),
                         ignore=shutil.ignore_patterns("__pycache__"))
         shutil.copy(str(REPO / "index.html"), str(self.r.root / "index.html"))
-        self.r.write_log("codex", [line(1, "codex", data={"kind": "reply", "summary": "hi"})])
+        self.r.write_log("rev", [line(1, "rev", data={"kind": "reply", "summary": "hi"})])
 
     def tearDown(self):
         self.r.__exit__(None, None, None)
@@ -205,10 +205,10 @@ class CliExportTests(unittest.TestCase):
         self.assertIn('id="crosstalk-snapshot"', out.read_text(encoding="utf-8"))
 
     def test_export_page_reports_a_broken_log(self):
-        self.r.write_log("codex", [line(1, "codex"), "{not json"])
+        self.r.write_log("rev", [line(1, "rev"), "{not json"])
         p = self.run_cli("export-page", str(self.r.root / "page.html"))
         self.assertEqual(p.returncode, 1)
-        self.assertIn("log/codex.jsonl:2:", p.stderr)
+        self.assertIn("log/rev.jsonl:2:", p.stderr)
 
 
 if __name__ == "__main__":

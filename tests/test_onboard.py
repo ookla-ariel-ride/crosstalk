@@ -32,7 +32,7 @@ def run_cli(script, *args):
 
 def kit_entry(**kw):
     base = {"id": "smoke-agent", "name": "Smoke Agent", "kind": "agent",
-            "color": "#2e7d32", "colorDark": "#81c784", "parent": "bewareilive",
+            "color": "#2e7d32", "colorDark": "#81c784", "parent": "alpha",
             "trust": "quarantined"}
     base.update(kw)
     return base
@@ -75,8 +75,8 @@ class OnboardTests(unittest.TestCase):
         with TempRepo() as r:
             r.write_roster()
             with self.assertRaises(ValueError) as cm:
-                onboard(r.root, "codex", "Codex Two", "reviewer")
-            self.assertIn("codex", str(cm.exception))
+                onboard(r.root, "rev", "Rev Two", "reviewer")
+            self.assertIn("rev", str(cm.exception))
 
     def test_repo_with_newline_refused(self):
         with TempRepo() as r:
@@ -110,8 +110,8 @@ class OnboardTests(unittest.TestCase):
             r.write_roster(data)
             onboard(r.root, "x", "X", "tool")
             roster = load_roster(r.root / "participants.json")
-            self.assertEqual(roster.participants["bewareilive"].aliases, ["bil"])
-            self.assertEqual(roster.participants["vectorcraft"].itemNames, {"bzone": "Battlezone"})
+            self.assertEqual(roster.participants["alpha"].aliases, ["al"])
+            self.assertEqual(roster.participants["beta"].itemNames, {"bzone": "Battlezone"})
 
     def test_load_roster_rejects_bad_repo(self):
         with TempRepo() as r:
@@ -125,13 +125,13 @@ class OnboardTests(unittest.TestCase):
         with TempRepo() as r:
             r.write_roster()
             with self.assertRaises(ValueError) as cm:
-                onboard(r.root, "newbie", "Codex", "reviewer")
-            self.assertIn("Codex", str(cm.exception))
+                onboard(r.root, "newbie", "Rev", "reviewer")
+            self.assertIn("Rev", str(cm.exception))
 
     def test_bad_id_refused(self):
         with TempRepo() as r:
             r.write_roster()
-            for bad in ("Bad Id", "Codex", "a b"):
+            for bad in ("Bad Id", "Rev", "a b"):
                 with self.assertRaises(ValueError):
                     onboard(r.root, bad, "X", "tool")
 
@@ -323,7 +323,7 @@ class OnboardCliTests(unittest.TestCase):
     def test_onboard_refuses_duplicate(self):
         with TempRepo() as r:
             script = cli_setup(r)
-            p = run_cli(script, "onboard", "codex", "--name", "Codex", "--kind", "reviewer")
+            p = run_cli(script, "onboard", "rev", "--name", "Rev", "--kind", "reviewer")
             self.assertEqual(p.returncode, 1)
             self.assertEqual(p.stdout, "")
 
@@ -349,19 +349,19 @@ class OnboardCliTests(unittest.TestCase):
     def test_token_new_rotates(self):
         with TempRepo() as r:
             script = cli_setup(r)
-            old = run_cli(script, "token", "codex").stdout.strip()
-            new = run_cli(script, "token", "codex", "--new").stdout.strip()
+            old = run_cli(script, "token", "rev").stdout.strip()
+            new = run_cli(script, "token", "rev", "--new").stdout.strip()
             self.assertNotEqual(old, new)
             store = Tokens.load(r.root / "tokens.json")
-            self.assertFalse(store.verify("Bearer " + old, "codex").ok)
-            self.assertTrue(store.verify("Bearer " + new, "codex").ok)
+            self.assertFalse(store.verify("Bearer " + old, "rev").ok)
+            self.assertTrue(store.verify("Bearer " + new, "rev").ok)
 
     def test_token_without_new_refuses_when_a_key_exists(self):
         with TempRepo() as r:
             script = cli_setup(r)
-            p = run_cli(script, "token", "codex")
+            p = run_cli(script, "token", "rev")
             self.assertEqual(p.returncode, 0, p.stderr)
-            p = run_cli(script, "token", "codex")
+            p = run_cli(script, "token", "rev")
             self.assertEqual(p.returncode, 1)
             self.assertIn("already has a key", p.stderr)
             self.assertEqual(p.stdout, "")
@@ -369,20 +369,20 @@ class OnboardCliTests(unittest.TestCase):
     def test_token_mints_when_no_key_exists(self):
         with TempRepo() as r:
             script = cli_setup(r)
-            p = run_cli(script, "token", "codex")
+            p = run_cli(script, "token", "rev")
             self.assertEqual(p.returncode, 0, p.stderr)
             self.assertGreaterEqual(len(p.stdout.strip()), 32)
 
     def test_token_kit_regenerates_kit(self):
         with TempRepo() as r:
             script = cli_setup(r)
-            p = run_cli(script, "token", "codex", "--kit")
+            p = run_cli(script, "token", "rev", "--kit")
             self.assertEqual(p.returncode, 0, p.stderr)
             lines = p.stdout.strip().splitlines()
             self.assertEqual(len(lines), 2)
             token = lines[0]
-            self.assertTrue((r.root / "kits" / "codex.md").exists())
-            kit = (r.root / "kits" / "codex.md").read_text(encoding="utf-8")
+            self.assertTrue((r.root / "kits" / "rev.md").exists())
+            kit = (r.root / "kits" / "rev.md").read_text(encoding="utf-8")
             self.assertIn(token, kit)
 
 

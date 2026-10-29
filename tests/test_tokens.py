@@ -32,30 +32,30 @@ class TokenTests(unittest.TestCase):
     def test_mint_then_verify(self):
         with TempRepo() as r:
             store = Tokens(r.root / "tokens.json")
-            token = store.mint("codex")
+            token = store.mint("rev")
             self.assertGreaterEqual(len(token), 32)
             result = store.verify("Bearer " + token)
             self.assertTrue(result.ok, result)
-            self.assertEqual(result.pid, "codex")
+            self.assertEqual(result.pid, "rev")
 
     def test_only_the_hash_is_stored(self):
         with TempRepo() as r:
             store = Tokens(r.root / "tokens.json")
-            token = store.mint("codex")
+            token = store.mint("rev")
             text = (r.root / "tokens.json").read_text(encoding="utf-8")
             self.assertNotIn(token, text)
-            self.assertEqual(json.loads(text), {"codex": token_hash(token)})
+            self.assertEqual(json.loads(text), {"rev": token_hash(token)})
 
     def test_the_store_is_private_to_its_owner(self):
         with TempRepo() as r:
-            Tokens(r.root / "tokens.json").mint("codex")
+            Tokens(r.root / "tokens.json").mint("rev")
             mode = (r.root / "tokens.json").stat().st_mode & 0o777
             self.assertEqual(mode, 0o600)
 
     def test_an_unknown_token_is_refused(self):
         with TempRepo() as r:
             store = Tokens(r.root / "tokens.json")
-            store.mint("codex")
+            store.mint("rev")
             result = store.verify("Bearer not-the-token")
             self.assertFalse(result.ok)
             self.assertEqual(result.code, "unknown")
@@ -63,8 +63,8 @@ class TokenTests(unittest.TestCase):
     def test_a_missing_header_is_refused(self):
         with TempRepo() as r:
             store = Tokens(r.root / "tokens.json")
-            store.mint("codex")
-            for header in (None, "", "Bearer", "Basic abc", "tok-codex"):
+            store.mint("rev")
+            for header in (None, "", "Bearer", "Basic abc", "tok-rev"):
                 result = store.verify(header)
                 self.assertFalse(result.ok, header)
                 self.assertIn(result.code, ("missing", "malformed"), header)
@@ -72,17 +72,17 @@ class TokenTests(unittest.TestCase):
     def test_a_token_of_another_participant_does_not_match(self):
         with TempRepo() as r:
             store = Tokens(r.root / "tokens.json")
-            token = store.mint("codex")
-            result = store.verify("Bearer " + token, "vectorcraft")
+            token = store.mint("rev")
+            result = store.verify("Bearer " + token, "beta")
             self.assertFalse(result.ok)
             self.assertEqual(result.code, "mismatch")
-            self.assertEqual(result.pid, "codex")
-            self.assertTrue(store.verify("Bearer " + token, "codex").ok)
+            self.assertEqual(result.pid, "rev")
+            self.assertTrue(store.verify("Bearer " + token, "rev").ok)
 
     def test_the_comparison_is_constant_time_and_hashed(self):
         with TempRepo() as r:
             store = Tokens(r.root / "tokens.json")
-            token = store.mint("codex")
+            token = store.mint("rev")
             seen = []
             real = hmac.compare_digest
 
@@ -106,15 +106,15 @@ class TokenTests(unittest.TestCase):
 
     def test_the_store_survives_a_reload(self):
         with TempRepo() as r:
-            token = Tokens(r.root / "tokens.json").mint("codex")
+            token = Tokens(r.root / "tokens.json").mint("rev")
             again = Tokens.load(r.root / "tokens.json")
             self.assertTrue(again.verify("Bearer " + token).ok)
 
     def test_minting_twice_replaces_the_old_token(self):
         with TempRepo() as r:
             store = Tokens(r.root / "tokens.json")
-            first = store.mint("codex")
-            second = store.mint("codex")
+            first = store.mint("rev")
+            second = store.mint("rev")
             self.assertNotEqual(first, second)
             self.assertFalse(store.verify("Bearer " + first).ok)
             self.assertTrue(store.verify("Bearer " + second).ok)
@@ -124,23 +124,23 @@ class TokenCliTests(unittest.TestCase):
     def test_relay_token_prints_the_token_once_and_keeps_its_hash(self):
         with TempRepo() as r:
             script = cli_setup(r)
-            p = run_cli(script, "token", "codex")
+            p = run_cli(script, "token", "rev")
             self.assertEqual(p.returncode, 0, p.stderr)
             token = p.stdout.strip()
             self.assertGreaterEqual(len(token), 32)
             self.assertEqual(len(token.split()), 1)
             stored = json.loads((r.root / "tokens.json").read_text(encoding="utf-8"))
-            self.assertEqual(stored, {"codex": token_hash(token)})
+            self.assertEqual(stored, {"rev": token_hash(token)})
             self.assertNotIn(token, (r.root / "tokens.json").read_text(encoding="utf-8"))
 
     def test_relay_token_can_mint_for_any_participant(self):
         with TempRepo() as r:
             script = cli_setup(r)
-            for pid in ("codex", "owner"):
+            for pid in ("rev", "owner"):
                 p = run_cli(script, "token", pid)
                 self.assertEqual(p.returncode, 0, p.stderr)
             stored = json.loads((r.root / "tokens.json").read_text(encoding="utf-8"))
-            self.assertEqual(sorted(stored), ["codex", "owner"])
+            self.assertEqual(sorted(stored), ["owner", "rev"])
 
     def test_relay_token_refuses_an_unknown_participant(self):
         with TempRepo() as r:

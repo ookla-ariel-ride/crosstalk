@@ -12,33 +12,33 @@ class CheckTests(unittest.TestCase):
 
     def test_clean_log_has_no_problems(self):
         with TempRepo() as r:
-            r.write_log("codex", [line(1, "codex"), line(2, "codex")])
+            r.write_log("rev", [line(1, "rev"), line(2, "rev")])
             self.assertEqual(self.check(r), [])
 
     def test_malformed_json(self):
         with TempRepo() as r:
-            r.write_log("codex", [line(1, "codex"), "{not json"])
+            r.write_log("rev", [line(1, "rev"), "{not json"])
             (p,) = self.check(r)
-            self.assertEqual((p.file, p.line, p.fatal), ("log/codex.jsonl", 2, True))
+            self.assertEqual((p.file, p.line, p.fatal), ("log/rev.jsonl", 2, True))
 
     def test_seq_gap(self):
         with TempRepo() as r:
-            r.write_log("codex", [line(1, "codex"), line(3, "codex")])
+            r.write_log("rev", [line(1, "rev"), line(3, "rev")])
             (p,) = self.check(r)
-            self.assertEqual((p.file, p.line, p.fatal), ("log/codex.jsonl", 2, True))
+            self.assertEqual((p.file, p.line, p.fatal), ("log/rev.jsonl", 2, True))
             self.assertIn("seq", p.message)
 
     def test_from_mismatch(self):
         with TempRepo() as r:
-            r.write_log("owner", [line(1, "codex")])
+            r.write_log("owner", [line(1, "rev")])
             (p,) = self.check(r)
             self.assertEqual((p.file, p.line, p.fatal), ("log/owner.jsonl", 1, True))
 
     def test_new_id_without_prefix(self):
         with TempRepo() as r:
-            r.write_log("codex", [line(1, "codex", id_="x-1")])
+            r.write_log("rev", [line(1, "rev", id_="x-1")])
             (p,) = self.check(r)
-            self.assertEqual((p.file, p.line, p.fatal), ("log/codex.jsonl", 1, True))
+            self.assertEqual((p.file, p.line, p.fatal), ("log/rev.jsonl", 1, True))
 
     def test_update_may_name_any_id(self):
         with TempRepo() as r:
@@ -48,7 +48,7 @@ class CheckTests(unittest.TestCase):
 
     def test_legacy_ids_allowed(self):
         with TempRepo() as r:
-            r.write_log("bewareilive", [line(1, "bewareilive", id_="m-0001")])
+            r.write_log("alpha", [line(1, "alpha", id_="m-0001")])
             self.assertEqual(self.check(r), [])
 
     def test_unknown_participant_warns(self):
@@ -59,20 +59,20 @@ class CheckTests(unittest.TestCase):
 
     def test_unknown_collection_fatal(self):
         with TempRepo() as r:
-            r.write_log("codex", [line(1, "codex", collection="bogus")])
+            r.write_log("rev", [line(1, "rev", collection="bogus")])
             (p,) = self.check(r)
             self.assertTrue(p.fatal)
 
     def test_participants_collection_owner_only(self):
         with TempRepo() as r:
             r.write_log("owner", [line(1, "owner", collection="participants", id_="owner-x")])
-            r.write_log("codex", [line(1, "codex", collection="participants")])
+            r.write_log("rev", [line(1, "rev", collection="participants")])
             ps = self.check(r)
-            self.assertEqual([(p.file, p.fatal) for p in ps], [("log/codex.jsonl", True)])
+            self.assertEqual([(p.file, p.fatal) for p in ps], [("log/rev.jsonl", True)])
 
     def test_lines_before_bad_line_returned(self):
         with TempRepo() as r:
-            path = r.write_log("codex", [line(1, "codex"), "oops", line(3, "codex")])
+            path = r.write_log("rev", [line(1, "rev"), "oops", line(3, "rev")])
             lines, problems = read_log(path)
             self.assertEqual([l.seq for l in lines], [1])
             self.assertEqual(len(problems), 1)
@@ -109,7 +109,7 @@ class TrustTests(unittest.TestCase):
 
     def test_quarantined_update_of_other_doc_fatal(self):
         with TempRepo() as r:
-            r.write_log("gemini", [line(1, "gemini", id_="codex-0001", op="update",
+            r.write_log("gemini", [line(1, "gemini", id_="rev-0001", op="update",
                                         data={"body": "x"})])
             (p,) = self.check(r)
             self.assertEqual((p.line, p.fatal), (1, True))
@@ -130,7 +130,7 @@ class TrustTests(unittest.TestCase):
 
     def test_message_from_checked_for_approved_too(self):
         with TempRepo() as r:
-            r.write_log("codex", [line(1, "codex", id_="codex-1", op="update",
+            r.write_log("rev", [line(1, "rev", id_="rev-1", op="update",
                                        data={"from": "owner"})])
             (p,) = self.check(r)
             self.assertTrue(p.fatal)
@@ -143,24 +143,24 @@ class TrustTests(unittest.TestCase):
 
     def test_approved_may_set_others_ids(self):
         with TempRepo() as r:
-            r.write_log("bewareilive", [line(1, "bewareilive", collection="agreements",
+            r.write_log("alpha", [line(1, "alpha", collection="agreements",
                                              id_="a-x"),
-                                        line(2, "bewareilive", id_="codex-0001", op="update",
+                                        line(2, "alpha", id_="rev-0001", op="update",
                                              data={"seen": True})])
             self.assertEqual(self.check(r), [])
 
     def test_unknown_writer_touching_other_doc_fatal(self):
         with TempRepo() as r:
-            r.write_log("stranger", [line(1, "stranger", id_="codex-1", op="update",
+            r.write_log("stranger", [line(1, "stranger", id_="rev-1", op="update",
                                           data={"body": "x"})])
             ps = self.check(r)
             self.assertEqual([(p.line, p.fatal) for p in ps], [(0, False), (1, True)])
 
     def test_imported_mismatched_from_fine(self):
         with TempRepo() as r:
-            d = line(1, "bewareilive", id_="m-0001", data={"from": "vectorcraft"})
+            d = line(1, "alpha", id_="m-0001", data={"from": "beta"})
             d["via"] = "import"
-            r.write_log("bewareilive", [d])
+            r.write_log("alpha", [d])
             self.assertEqual(self.check(r), [])
 
     def test_read_log_without_roster_skips_trust(self):
@@ -179,22 +179,22 @@ class TrustTests(unittest.TestCase):
             roster = load_roster(r.write_roster(roster_with_gemini()))
             errs, _ = message_problems(
                 "messages", "set",
-                {"from": "codex", "kind": "owner", "summary": "spoof"},
+                {"from": "rev", "kind": "owner", "summary": "spoof"},
                 roster,
             )
             self.assertIn("only 'owner' may post kind 'owner'", errs)
 
             with self.assertRaises(ValueError) as ctx:
                 append_line(
-                    r.root, "codex", "set", "messages", "codex-1",
-                    {"from": "codex", "kind": "owner", "summary": "spoof"},
+                    r.root, "rev", "set", "messages", "rev-1",
+                    {"from": "rev", "kind": "owner", "summary": "spoof"},
                     roster=roster,
                 )
             self.assertIn("only 'owner' may post kind 'owner'", str(ctx.exception))
 
-            path = r.write_log("codex", [
-                line(1, "codex", id_="codex-1",
-                     data={"from": "codex", "kind": "owner", "summary": "spoof"})
+            path = r.write_log("rev", [
+                line(1, "rev", id_="rev-1",
+                     data={"from": "rev", "kind": "owner", "summary": "spoof"})
             ])
             lines, problems = read_log(path)
             self.assertEqual(lines, [])
@@ -213,8 +213,8 @@ class TrustTests(unittest.TestCase):
                      data={"project": "gemini", "start": "2026-10-25T10:00:00Z", "end": None, "summary": "Disk"}),
                 line(4, "gemini", collection="progress", id_="p-gemini-1",
                      data={"project": "gemini", "summary": "Progress"}),
-                line(5, "gemini", collection="locks", id_="l-codex-shared-rs",
-                     data={"project": "codex", "path": "shared.rs", "since": "2026-10-25T10:00:00Z", "released": None}),
+                line(5, "gemini", collection="locks", id_="l-rev-shared-rs",
+                     data={"project": "rev", "path": "shared.rs", "since": "2026-10-25T10:00:00Z", "released": None}),
             ])
             ps = self.check(r)
             self.assertEqual([(p.line, p.fatal) for p in ps], [(5, True)])
@@ -227,7 +227,7 @@ class TrustTests(unittest.TestCase):
             for bad in ("Trailing\n", "\nLeading", "Carriage\rreturn"):
                 errs, _ = message_problems(
                     "messages", "set",
-                    {"from": "codex", "kind": "sync", "summary": bad},
+                    {"from": "rev", "kind": "sync", "summary": bad},
                     roster,
                 )
                 self.assertIn("summary must be one line (put the rest in body)", errs)

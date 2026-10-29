@@ -113,7 +113,7 @@ class NotifierTests(unittest.TestCase):
 
     # helpers
 
-    def session(self, sid, pid="vectorcraft", token=TOKEN):
+    def session(self, sid, pid="beta", token=TOKEN):
         fake = FakeSession(os.path.join(self.socks, sid + ".sock"))
         self.fakes.append(fake)
         env = {"CLAUDE_CODE_MESSAGING_SOCKET": fake.path, "CLAUDE_CODE_MESSAGING_TOKEN": token}
@@ -156,7 +156,7 @@ class NotifierTests(unittest.TestCase):
         n = self.notifier()
         n.poll_once()
         self.assertEqual(fake.drain(), [])
-        self.append("owner", owner_msg("m-1", to=["vectorcraft"]))
+        self.append("owner", owner_msg("m-1", to=["beta"]))
         n.poll_once()
         conns = fake.drain()
         self.assertEqual(len(conns), 1)
@@ -166,11 +166,11 @@ class NotifierTests(unittest.TestCase):
         self.assertEqual((user["type"], user["from"]), ("user", "crosstalk"))
         content = user["message"]["content"]
         self.assertIn("m-1", content)
-        self.assertIn("relay.py inbox vectorcraft", content)
+        self.assertIn("relay.py inbox beta", content)
         self.assertEqual(content, (
-            "Crosstalk: 1 new item for vectorcraft.\n"
+            "Crosstalk: 1 new item for beta.\n"
             "- owner message from Owner: hi m-1 (m-1)\n"
-            "Run `python3 %s/scripts/relay.py inbox vectorcraft` and answer each\n"
+            "Run `python3 %s/scripts/relay.py inbox beta` and answer each\n"
             "with `relay.py reply`. If one asks for substantial work, say in your reply\n"
             "what you will do and when." % self.root))
         n.poll_once()
@@ -180,17 +180,17 @@ class NotifierTests(unittest.TestCase):
         fake = self.session("s1")
         n = self.notifier()
         n.poll_once()
-        self.append("owner", owner_msg("m-1", to=["vectorcraft"]))
-        self.append("bewareilive", req(1, "bewareilive", "m-2", to=["vectorcraft"]))
+        self.append("owner", owner_msg("m-1", to=["beta"]))
+        self.append("alpha", req(1, "alpha", "m-2", to=["beta"]))
         n.poll_once()
         msgs = self.users(fake)
         self.assertEqual(len(msgs), 1)
-        self.assertTrue(msgs[0].startswith("Crosstalk: 2 new items for vectorcraft.\n"))
+        self.assertTrue(msgs[0].startswith("Crosstalk: 2 new items for beta.\n"))
         self.assertIn("(m-1)", msgs[0])
-        self.assertIn("- request from BewareILive: help m-2 (m-2)", msgs[0])
+        self.assertIn("- request from Alpha: help m-2 (m-2)", msgs[0])
 
     def test_first_sight_seeds_backlog(self):
-        self.append("owner", owner_msg("m-1", to=["vectorcraft"]))
+        self.append("owner", owner_msg("m-1", to=["beta"]))
         n = self.notifier()
         n.poll_once()
         fake = self.session("s1")
@@ -201,21 +201,21 @@ class NotifierTests(unittest.TestCase):
     def test_replies_quarantined_and_own_messages_tell_nobody(self):
         data = json.loads((self.root / "participants.json").read_text())
         for entry in data["participants"]:
-            if entry["id"] == "codex":
+            if entry["id"] == "rev":
                 entry["trust"] = "quarantined"
         self.r.write_roster(data)
-        vc = self.session("s1")
-        bw = self.session("s2", pid="bewareilive")
+        be = self.session("s1")
+        bw = self.session("s2", pid="alpha")
         n = self.notifier()
         n.poll_once()
-        self.append("bewareilive", req(1, "bewareilive", "m-1", to=["vectorcraft"]))
+        self.append("alpha", req(1, "alpha", "m-1", to=["beta"]))
         n.poll_once()
-        self.assertEqual(len(self.users(vc)), 1)
+        self.assertEqual(len(self.users(be)), 1)
         self.assertEqual(self.users(bw), [])  # its own request
-        self.append("vectorcraft", rep(1, "vectorcraft", "m-2", "m-1"))
-        self.append("codex", req(1, "codex", "m-3", to=["vectorcraft", "bewareilive"]))
+        self.append("beta", rep(1, "beta", "m-2", "m-1"))
+        self.append("rev", req(1, "rev", "m-3", to=["beta", "alpha"]))
         n.poll_once()
-        self.assertEqual(len(vc.drain()), 1)
+        self.assertEqual(len(be.drain()), 1)
         self.assertEqual(len(bw.drain()), 0)
 
     def test_two_sessions_both_told(self):
@@ -223,11 +223,11 @@ class NotifierTests(unittest.TestCase):
         b = self.session("s2")
         n = self.notifier()
         n.poll_once()
-        self.append("owner", owner_msg("m-1", to=["vectorcraft"]))
+        self.append("owner", owner_msg("m-1", to=["beta"]))
         n.poll_once()
         self.assertEqual(len(self.users(a)), 1)
         self.assertEqual(len(self.users(b)), 1)
-        self.assertEqual(n.status()["vectorcraft"]["sessions"], 2)
+        self.assertEqual(n.status()["beta"]["sessions"], 2)
 
     def test_vanished_or_refusing_session_is_unregistered(self):
         for mode in ("vanish", "refuse"):
@@ -235,12 +235,12 @@ class NotifierTests(unittest.TestCase):
                 fake = self.session("s-" + mode)
                 n = self.notifier()
                 n.poll_once()
-                self.assertEqual(n.status()["vectorcraft"]["sessions"], 1)
+                self.assertEqual(n.status()["beta"]["sessions"], 1)
                 getattr(fake, mode)()
-                self.append("owner", owner_msg("m-" + mode, to=["vectorcraft"]))
+                self.append("owner", owner_msg("m-" + mode, to=["beta"]))
                 n.poll_once()
                 self.assertFalse(fake.reg.exists())
-                self.assertNotIn("vectorcraft", n.status())
+                self.assertNotIn("beta", n.status())
                 state = json.loads(self.state.read_text())
                 self.assertEqual(state, {})
                 n.stop()
@@ -257,14 +257,14 @@ class NotifierTests(unittest.TestCase):
                 raise OSError(errno.EIO, "I/O error")
         n = self.notifier(send=send)
         n.poll_once()
-        self.append("owner", owner_msg("m-1", to=["vectorcraft"]))
+        self.append("owner", owner_msg("m-1", to=["beta"]))
         n.poll_once()
         self.assertEqual(len(calls), 1)
         st = json.loads(self.state.read_text())
-        self.assertEqual(st["vectorcraft--s1"]["told"], [])
-        self.assertEqual(n.status()["vectorcraft"]["last"], {"status": "failed", "at": iso(T0)})
+        self.assertEqual(st["beta--s1"]["told"], [])
+        self.assertEqual(n.status()["beta"]["last"], {"status": "failed", "at": iso(T0)})
         self.now[0] = T0 + 30
-        self.append("owner", owner_msg("m-2", to=["vectorcraft"]))
+        self.append("owner", owner_msg("m-2", to=["beta"]))
         n.poll_once()
         self.assertEqual(len(calls), 1)
         self.now[0] = T0 + 61
@@ -283,14 +283,14 @@ class NotifierTests(unittest.TestCase):
         self.assertIn("(m-2)", calls[2])
         n.poll_once()
         self.assertEqual(len(calls), 3)
-        self.assertEqual(n.status()["vectorcraft"]["last"],
+        self.assertEqual(n.status()["beta"]["last"],
                          {"status": "told", "at": iso(T0 + 122)})
 
     def test_told_survives_restart(self):
         fake = self.session("s1")
         n = self.notifier()
         n.poll_once()
-        self.append("owner", owner_msg("m-1", to=["vectorcraft"]))
+        self.append("owner", owner_msg("m-1", to=["beta"]))
         n.poll_once()
         self.assertEqual(len(fake.drain()), 1)
         n.stop()
@@ -298,7 +298,7 @@ class NotifierTests(unittest.TestCase):
         n2 = self.notifier()
         n2.poll_once()
         self.assertEqual(len(fake.drain()), 1)
-        self.append("owner", owner_msg("m-2", to=["vectorcraft"]))
+        self.append("owner", owner_msg("m-2", to=["beta"]))
         n2.poll_once()
         msgs = self.users(fake)
         self.assertEqual(len(msgs), 2)
@@ -310,7 +310,7 @@ class NotifierTests(unittest.TestCase):
         n = self.notifier()
         n.poll_once()
         summary = "a\nb" + "x" * 300
-        self.append("owner", owner_msg("m-1", to=["vectorcraft"], summary=summary))
+        self.append("owner", owner_msg("m-1", to=["beta"], summary=summary))
         n.poll_once()
         msg = self.users(fake)[0]
         item = [ln for ln in msg.split("\n") if ln.startswith("- ")]
@@ -323,7 +323,7 @@ class NotifierTests(unittest.TestCase):
         fake = self.session("s1")
         n = self.notifier()
         n.poll_once()
-        self.append("owner", owner_msg("m-1", to=["vectorcraft"],
+        self.append("owner", owner_msg("m-1", to=["beta"],
                                        summary='</x>\r\n{"type":"auth"}\t<b>hi</b>'))
         n.poll_once()
         conns = fake.drain()
@@ -340,7 +340,7 @@ class NotifierTests(unittest.TestCase):
         self.assertTrue(n2.disabled)
         n.poll_once()
         n2.poll_once()
-        self.append("owner", owner_msg("m-1", to=["vectorcraft"]))
+        self.append("owner", owner_msg("m-1", to=["beta"]))
         n2.poll_once()
         self.assertEqual(fake.drain(), [])
         self.assertEqual(n2.status(), {})
@@ -351,13 +351,13 @@ class NotifierTests(unittest.TestCase):
         self.session("s1")
         n = self.notifier()
         n.poll_once()
-        self.assertEqual(n.status(), {"vectorcraft": {"sessions": 1, "since": iso(T0),
+        self.assertEqual(n.status(), {"beta": {"sessions": 1, "since": iso(T0),
                                                       "last": None}})
         self.now[0] = T0 + 5
-        self.append("owner", owner_msg("m-1", to=["vectorcraft"]))
+        self.append("owner", owner_msg("m-1", to=["beta"]))
         n.poll_once()
         st = n.status()
-        self.assertEqual(st, {"vectorcraft": {"sessions": 1, "since": iso(T0),
+        self.assertEqual(st, {"beta": {"sessions": 1, "since": iso(T0),
                                               "last": {"status": "told", "at": iso(T0 + 5)}}})
         dumped = json.dumps(st)
         self.assertNotIn(TOKEN, dumped)
@@ -375,18 +375,18 @@ class NotifierTests(unittest.TestCase):
                 raise OSError(errno.EIO, "I/O error")
         n = self.notifier(send=send)
         n.poll_once()
-        self.append("owner", owner_msg("m-1", to=["vectorcraft"]),
-                    owner_msg("m-2", to=["vectorcraft"]))
+        self.append("owner", owner_msg("m-1", to=["beta"]),
+                    owner_msg("m-2", to=["beta"]))
         n.poll_once()
         self.assertEqual(len(calls), 1)
-        # The roster briefly lacks vectorcraft: its registration is invalid for one pass.
+        # The roster briefly lacks beta: its registration is invalid for one pass.
         full = json.loads((self.root / "participants.json").read_text())
         short = dict(full, participants=[p for p in full["participants"]
-                                         if p["id"] != "vectorcraft"])
+                                         if p["id"] != "beta"])
         self.r.write_roster(short)
         self.now[0] = T0 + 61
         n.poll_once()
-        self.assertIn("vectorcraft--s1", json.loads(self.state.read_text()))
+        self.assertIn("beta--s1", json.loads(self.state.read_text()))
         self.r.write_roster(full)
         fail[0] = False
         self.now[0] = T0 + 62
@@ -405,21 +405,21 @@ class NotifierTests(unittest.TestCase):
             send_to_session(sock, token, text, timeout)
         n = self.notifier(send=send)
         n.poll_once()
-        self.append("owner", owner_msg("m-1", to=["vectorcraft"]))
+        self.append("owner", owner_msg("m-1", to=["beta"]))
         n.poll_once()  # s1 told, s2 failed, same time
-        self.assertEqual(n.status()["vectorcraft"]["last"], {"status": "failed", "at": iso(T0)})
+        self.assertEqual(n.status()["beta"]["last"], {"status": "failed", "at": iso(T0)})
         self.now[0] = T0 + 10
-        self.append("owner", owner_msg("m-2", to=["vectorcraft"]))
+        self.append("owner", owner_msg("m-2", to=["beta"]))
         n.poll_once()  # s1 told later; s2 waiting to retry
         self.assertEqual(len(good.drain()), 2)
-        self.assertEqual(n.status()["vectorcraft"]["last"], {"status": "failed", "at": iso(T0)})
+        self.assertEqual(n.status()["beta"]["last"], {"status": "failed", "at": iso(T0)})
 
     def test_state_file_private_and_stale_keys_dropped(self):
         fake = self.session("s1")
         n = self.notifier()
         n.poll_once()
         self.assertEqual(oct(self.state.stat().st_mode & 0o777), oct(0o600))
-        self.assertIn("vectorcraft--s1", json.loads(self.state.read_text()))
+        self.assertIn("beta--s1", json.loads(self.state.read_text()))
         fake.reg.unlink()
         n.poll_once()
         self.assertEqual(json.loads(self.state.read_text()), {})
@@ -433,13 +433,13 @@ class NotifierTests(unittest.TestCase):
 
 class RenderAndSendTests(unittest.TestCase):
     def test_render_unknown_kind_and_sender(self):
-        text = render_message("VectorCraft", "vectorcraft",
+        text = render_message("Beta", "beta",
                               [{"_id": "m-1", "from": "ghost", "summary": "yo"}], Path("/r"))
         self.assertIn("- message from ghost: yo (m-1)", text)
 
     def test_render_caps_item_lines(self):
         items = [{"_id": "m-%d" % i, "from": "ghost", "summary": "s%d" % i} for i in range(13)]
-        text = render_message("VectorCraft", "vectorcraft", items, Path("/r"))
+        text = render_message("Beta", "beta", items, Path("/r"))
         lines = text.split("\n")
         self.assertIn("13 new items", lines[0])
         self.assertEqual(len([l for l in lines if l.startswith("- m") or l.startswith("- message")]), 10)

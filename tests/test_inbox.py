@@ -50,108 +50,108 @@ class InboxTests(unittest.TestCase):
         return [r["request"]["id"] for r in out["requests"]]
 
     def test_addressed_only(self):
-        self.r.write_log("vectorcraft", [
-            req(1, "vectorcraft", "vc-r1", to=["bewareilive"]),
-            req(2, "vectorcraft", "vc-r2", to=["codex"]),
+        self.r.write_log("beta", [
+            req(1, "beta", "beta-r1", to=["alpha"]),
+            req(2, "beta", "beta-r2", to=["rev"]),
         ])
-        out = self.inbox("bewareilive")
-        self.assertEqual(self.ids(out), ["vc-r1"])
+        out = self.inbox("alpha")
+        self.assertEqual(self.ids(out), ["beta-r1"])
 
     def test_broadcast(self):
-        self.r.write_log("vectorcraft", [req(1, "vectorcraft", "vc-r1")])
-        for pid in ("bewareilive", "codex", "owner"):
+        self.r.write_log("beta", [req(1, "beta", "beta-r1")])
+        for pid in ("alpha", "rev", "owner"):
             out = self.inbox(pid)
-            self.assertEqual(self.ids(out), ["vc-r1"], pid)
+            self.assertEqual(self.ids(out), ["beta-r1"], pid)
 
     def test_excludes_other_pids(self):
-        self.r.write_log("vectorcraft", [
-            req(1, "vectorcraft", "vc-r1", to=["codex"]),
-            req(2, "vectorcraft", "vc-r2", to=["bewareilive", "codex"]),
+        self.r.write_log("beta", [
+            req(1, "beta", "beta-r1", to=["rev"]),
+            req(2, "beta", "beta-r2", to=["alpha", "rev"]),
         ])
-        out = self.inbox("bewareilive")
-        self.assertEqual(self.ids(out), ["vc-r2"])
+        out = self.inbox("alpha")
+        self.assertEqual(self.ids(out), ["beta-r2"])
 
     def test_replied_drops_and_all_keeps(self):
-        self.r.write_log("vectorcraft", [req(1, "vectorcraft", "vc-r1", to=["bewareilive"])])
-        self.r.write_log("bewareilive", [rep(1, "bewareilive", "bewareilive-r1", "vc-r1")])
-        out = self.inbox("bewareilive")
+        self.r.write_log("beta", [req(1, "beta", "beta-r1", to=["alpha"])])
+        self.r.write_log("alpha", [rep(1, "alpha", "alpha-r1", "beta-r1")])
+        out = self.inbox("alpha")
         self.assertEqual(out["requests"], [])
-        out_all = self.inbox("bewareilive", "--all")
-        self.assertEqual(self.ids(out_all), ["vc-r1"])
+        out_all = self.inbox("alpha", "--all")
+        self.assertEqual(self.ids(out_all), ["beta-r1"])
         self.assertEqual(len(out_all["requests"][0]["replies"]), 1)
 
     def test_newest_first(self):
-        self.r.write_log("vectorcraft", [
-            req(1, "vectorcraft", "vc-r1", t="2026-10-21T18:00:00Z"),
-            req(2, "vectorcraft", "vc-r2", t="2026-10-21T20:00:00Z"),
-            req(3, "vectorcraft", "vc-r3", t="2026-10-21T19:00:00Z"),
+        self.r.write_log("beta", [
+            req(1, "beta", "beta-r1", t="2026-10-21T18:00:00Z"),
+            req(2, "beta", "beta-r2", t="2026-10-21T20:00:00Z"),
+            req(3, "beta", "beta-r3", t="2026-10-21T19:00:00Z"),
         ])
-        out = self.inbox("bewareilive")
-        self.assertEqual(self.ids(out), ["vc-r2", "vc-r3", "vc-r1"])
+        out = self.inbox("alpha")
+        self.assertEqual(self.ids(out), ["beta-r2", "beta-r3", "beta-r1"])
 
     def test_replies_attached_in_order(self):
-        self.r.write_log("vectorcraft", [req(1, "vectorcraft", "vc-r1", to=["bewareilive"])])
-        self.r.write_log("codex", [rep(1, "codex", "codex-r1", "vc-r1", t="2026-10-21T19:00:00Z")])
-        self.r.write_log("owner", [rep(1, "owner", "own-r1", "vc-r1", t="2026-10-21T18:30:00Z")])
-        out = self.inbox("bewareilive", "--all")
+        self.r.write_log("beta", [req(1, "beta", "beta-r1", to=["alpha"])])
+        self.r.write_log("rev", [rep(1, "rev", "rev-r1", "beta-r1", t="2026-10-21T19:00:00Z")])
+        self.r.write_log("owner", [rep(1, "owner", "own-r1", "beta-r1", t="2026-10-21T18:30:00Z")])
+        out = self.inbox("alpha", "--all")
         replies = out["requests"][0]["replies"]
-        self.assertEqual([r["summary"] for r in replies], ["answer own-r1", "answer codex-r1"])
+        self.assertEqual([r["summary"] for r in replies], ["answer own-r1", "answer rev-r1"])
 
     def test_string_to_is_one_recipient(self):
         # A string `to` names one recipient, matching the page's help card.
-        self.r.write_log("vectorcraft", [req(1, "vectorcraft", "vc-r1", to="bewareilive")])
-        out = self.inbox("bewareilive")
-        self.assertEqual(self.ids(out), ["vc-r1"])
-        out2 = self.inbox("codex")
+        self.r.write_log("beta", [req(1, "beta", "beta-r1", to="alpha")])
+        out = self.inbox("alpha")
+        self.assertEqual(self.ids(out), ["beta-r1"])
+        out2 = self.inbox("rev")
         self.assertEqual(out2["requests"], [])
 
     def test_quarantined_requester_listed(self):
         roster = json.loads(json.dumps(SPEC_ROSTER))
         for p in roster["participants"]:
-            if p["id"] == "codex":
+            if p["id"] == "rev":
                 p["trust"] = "quarantined"
         self.r.write_roster(roster)
-        self.r.write_log("codex", [req(1, "codex", "codex-r1", to=["bewareilive"])])
-        out = self.inbox("bewareilive")
-        self.assertEqual(self.ids(out), ["codex-r1"])
+        self.r.write_log("rev", [req(1, "rev", "rev-r1", to=["alpha"])])
+        out = self.inbox("alpha")
+        self.assertEqual(self.ids(out), ["rev-r1"])
 
     def test_quarantined_requester_flagged(self):
         roster = json.loads(json.dumps(SPEC_ROSTER))
         for p in roster["participants"]:
-            if p["id"] == "codex":
+            if p["id"] == "rev":
                 p["trust"] = "quarantined"
         self.r.write_roster(roster)
-        self.r.write_log("codex", [req(1, "codex", "codex-r1", to=["bewareilive"])])
-        out = self.inbox("bewareilive")
+        self.r.write_log("rev", [req(1, "rev", "rev-r1", to=["alpha"])])
+        out = self.inbox("alpha")
         self.assertEqual(out["requests"][0]["trust"], "quarantined")
 
     def test_approved_requester_flagged(self):
-        self.r.write_log("vectorcraft", [req(1, "vectorcraft", "vc-r1", to=["bewareilive"])])
-        out = self.inbox("bewareilive")
+        self.r.write_log("beta", [req(1, "beta", "beta-r1", to=["alpha"])])
+        out = self.inbox("alpha")
         self.assertEqual(out["requests"][0]["trust"], "approved")
 
     def test_quarantined_reply_flagged(self):
         roster = json.loads(json.dumps(SPEC_ROSTER))
         for p in roster["participants"]:
-            if p["id"] == "codex":
+            if p["id"] == "rev":
                 p["trust"] = "quarantined"
         self.r.write_roster(roster)
-        self.r.write_log("vectorcraft", [req(1, "vectorcraft", "vc-r1", to=["bewareilive"])])
-        self.r.write_log("codex", [rep(1, "codex", "codex-r1", "vc-r1")])
-        out = self.inbox("bewareilive", "--all")
+        self.r.write_log("beta", [req(1, "beta", "beta-r1", to=["alpha"])])
+        self.r.write_log("rev", [rep(1, "rev", "rev-r1", "beta-r1")])
+        out = self.inbox("alpha", "--all")
         self.assertEqual(out["requests"][0]["replies"][0]["trust"], "quarantined")
 
     def test_unknown_requester_flagged(self):
-        self.r.write_log("gemini", [req(1, "gemini", "gemini-r1", to=["bewareilive"])])
-        out = self.inbox("bewareilive")
+        self.r.write_log("gemini", [req(1, "gemini", "gemini-r1", to=["alpha"])])
+        out = self.inbox("alpha")
         self.assertEqual(out["requests"][0]["trust"], "unknown")
 
     def test_roster_map_present(self):
-        self.r.write_log("vectorcraft", [req(1, "vectorcraft", "vc-r1", to=["bewareilive"])])
-        out = self.inbox("bewareilive")
+        self.r.write_log("beta", [req(1, "beta", "beta-r1", to=["alpha"])])
+        out = self.inbox("alpha")
         self.assertIn("roster", out)
-        self.assertEqual(out["roster"]["codex"]["trust"], "approved")
-        self.assertEqual(out["roster"]["bewareilive"]["trust"], "approved")
+        self.assertEqual(out["roster"]["rev"]["trust"], "approved")
+        self.assertEqual(out["roster"]["alpha"]["trust"], "approved")
 
     def test_unknown_pid_exits_1(self):
         p = self.run_cli("inbox", "gemini")
@@ -160,15 +160,15 @@ class InboxTests(unittest.TestCase):
         self.assertEqual(p.stdout, "")
 
     def test_malformed_log_exits_1(self):
-        self.r.write_log("codex", [line(1, "codex"), "{not json"])
-        p = self.run_cli("inbox", "bewareilive")
+        self.r.write_log("rev", [line(1, "rev"), "{not json"])
+        p = self.run_cli("inbox", "alpha")
         self.assertEqual(p.returncode, 1)
-        self.assertIn("log/codex.jsonl:2:", p.stderr)
+        self.assertIn("log/rev.jsonl:2:", p.stderr)
         self.assertEqual(p.stdout, "")
 
     def test_service_block_present(self):
-        self.r.write_log("vectorcraft", [req(1, "vectorcraft", "vc-r1", to=["bewareilive"])])
-        out = self.inbox("bewareilive")
+        self.r.write_log("beta", [req(1, "beta", "beta-r1", to=["alpha"])])
+        out = self.inbox("alpha")
         svc = out["service"]
         self.assertEqual(svc["name"], "Crosstalk")
         for key in ("purpose", "capabilities", "commands", "protocol"):
@@ -179,276 +179,358 @@ class InboxTests(unittest.TestCase):
         from crosstalk.replay import enrich_messages, load_all_lines, replay
         from crosstalk.requests import open_requests, pending_recipients
 
-        self.r.write_log("vectorcraft", [
-            req(1, "vectorcraft", "vc-r1", to=["bewareilive", "codex", "bewareilive"]),
+        self.r.write_log("beta", [
+            req(1, "beta", "beta-r1", to=["alpha", "rev", "alpha"]),
         ])
-        out_before = self.inbox("bewareilive")
-        self.assertEqual(self.ids(out_before), ["vc-r1"])
-        self.assertEqual(out_before["requests"][0]["pending_from"], ["bewareilive", "codex"])
+        out_before = self.inbox("alpha")
+        self.assertEqual(self.ids(out_before), ["beta-r1"])
+        self.assertEqual(out_before["requests"][0]["pending_from"], ["alpha", "rev"])
 
-        self.r.write_log("bewareilive", [rep(1, "bewareilive", "bewareilive-r1", "vc-r1")])
-        out_bil = self.inbox("bewareilive")
-        self.assertEqual(out_bil["requests"], [])
+        self.r.write_log("alpha", [rep(1, "alpha", "alpha-r1", "beta-r1")])
+        out_al = self.inbox("alpha")
+        self.assertEqual(out_al["requests"], [])
 
-        out_bil_all = self.inbox("bewareilive", "--all")
-        self.assertEqual(self.ids(out_bil_all), ["vc-r1"])
-        self.assertEqual(out_bil_all["requests"][0]["pending_from"], ["codex"])
+        out_al_all = self.inbox("alpha", "--all")
+        self.assertEqual(self.ids(out_al_all), ["beta-r1"])
+        self.assertEqual(out_al_all["requests"][0]["pending_from"], ["rev"])
 
-        out_codex = self.inbox("codex")
-        self.assertEqual(self.ids(out_codex), ["vc-r1"])
-        self.assertEqual(out_codex["requests"][0]["pending_from"], ["codex"])
-        self.assertEqual(len(out_codex["requests"][0]["replies"]), 1)
-        self.assertEqual(out_codex["requests"][0]["replies"][0]["from"], "bewareilive")
+        out_rev = self.inbox("rev")
+        self.assertEqual(self.ids(out_rev), ["beta-r1"])
+        self.assertEqual(out_rev["requests"][0]["pending_from"], ["rev"])
+        self.assertEqual(len(out_rev["requests"][0]["replies"]), 1)
+        self.assertEqual(out_rev["requests"][0]["replies"][0]["from"], "alpha")
 
         lines = load_all_lines(self.r.root)
         docs = enrich_messages(replay(lines), lines)
-        self.assertEqual([did for (did, _, _) in open_requests(docs)], ["vc-r1"])
+        self.assertEqual([did for (did, _, _) in open_requests(docs)], ["beta-r1"])
 
-        self.r.write_log("codex", [rep(1, "codex", "codex-r1", "vc-r1")])
-        self.assertEqual(self.inbox("codex")["requests"], [])
+        self.r.write_log("rev", [rep(1, "rev", "rev-r1", "beta-r1")])
+        self.assertEqual(self.inbox("rev")["requests"], [])
         lines2 = load_all_lines(self.r.root)
         docs2 = enrich_messages(replay(lines2), lines2)
         self.assertEqual(open_requests(docs2), [])
-        self.assertEqual(pending_recipients({"to": "bewareilive"}, []), ["bewareilive"])
+        self.assertEqual(pending_recipients({"to": "alpha"}, []), ["alpha"])
         self.assertEqual(pending_recipients({}, []), [])
 
     def test_broadcast_per_recipient_and_excludes_sender(self):
         from crosstalk.replay import enrich_messages, load_all_lines, replay
         from crosstalk.requests import open_requests
 
-        self.r.write_log("vectorcraft", [
-            req(1, "vectorcraft", "vc-bcast"),
-            req(2, "vectorcraft", "vc-self", to=["vectorcraft", "bewareilive"]),
+        self.r.write_log("beta", [
+            req(1, "beta", "beta-bcast"),
+            req(2, "beta", "beta-self", to=["beta", "alpha"]),
         ])
         # Sender does not see its own broadcast in open inbox, but sees explicit self-addressed request
-        out_vc = self.inbox("vectorcraft")
-        self.assertEqual(self.ids(out_vc), ["vc-self"])
+        out_be = self.inbox("beta")
+        self.assertEqual(self.ids(out_be), ["beta-self"])
         # --all includes sender's own broadcast
-        out_vc_all = self.inbox("vectorcraft", "--all")
-        self.assertEqual(set(self.ids(out_vc_all)), {"vc-bcast", "vc-self"})
+        out_be_all = self.inbox("beta", "--all")
+        self.assertEqual(set(self.ids(out_be_all)), {"beta-bcast", "beta-self"})
 
         # Other participants see broadcast
-        self.assertIn("vc-bcast", self.ids(self.inbox("bewareilive")))
-        self.assertIn("vc-bcast", self.ids(self.inbox("codex")))
+        self.assertIn("beta-bcast", self.ids(self.inbox("alpha")))
+        self.assertIn("beta-bcast", self.ids(self.inbox("rev")))
 
-        # bewareilive replies to broadcast: drops from bewareilive's inbox, stays in codex's inbox
-        self.r.write_log("bewareilive", [rep(1, "bewareilive", "bewareilive-r1", "vc-bcast")])
-        self.assertNotIn("vc-bcast", self.ids(self.inbox("bewareilive")))
-        out_codex = self.inbox("codex")
-        self.assertEqual(self.ids(out_codex), ["vc-bcast"])
-        self.assertEqual(out_codex["requests"][0]["pending_from"], [])
-        self.assertEqual(len(out_codex["requests"][0]["replies"]), 1)
+        # alpha replies to broadcast: drops from alpha's inbox, stays in rev's inbox
+        self.r.write_log("alpha", [rep(1, "alpha", "alpha-r1", "beta-bcast")])
+        self.assertNotIn("beta-bcast", self.ids(self.inbox("alpha")))
+        out_rev = self.inbox("rev")
+        self.assertEqual(self.ids(out_rev), ["beta-bcast"])
+        self.assertEqual(out_rev["requests"][0]["pending_from"], [])
+        self.assertEqual(len(out_rev["requests"][0]["replies"]), 1)
 
         # In global open_requests(docs), broadcast closes after first reply while multi-recipient stays open
         lines = load_all_lines(self.r.root)
         docs = enrich_messages(replay(lines), lines)
-        self.assertEqual([did for (did, _, _) in open_requests(docs)], ["vc-self"])
+        self.assertEqual([did for (did, _, _) in open_requests(docs)], ["beta-self"])
 
     def test_owner_messages_unanswered_and_replied(self):
         self.r.write_log("owner", [
             line(1, "owner", id_="own-bcast",
                  data={"from": "owner", "kind": "owner", "summary": "all hands"},
                  t="2026-10-21T18:00:00Z"),
-            line(2, "owner", id_="own-codex",
-                 data={"from": "owner", "kind": "owner", "summary": "for codex", "to": ["codex"]},
+            line(2, "owner", id_="own-rev",
+                 data={"from": "owner", "kind": "owner", "summary": "for rev", "to": ["rev"]},
                  t="2026-10-21T19:00:00Z"),
-            line(3, "owner", id_="own-bil",
-                 data={"from": "owner", "kind": "owner", "summary": "for bil", "to": ["bewareilive"]},
+            line(3, "owner", id_="own-al",
+                 data={"from": "owner", "kind": "owner", "summary": "for al", "to": ["alpha"]},
                  t="2026-10-21T20:00:00Z"),
         ])
-        out = self.inbox("bewareilive")
-        self.assertEqual([m["message"]["id"] for m in out["owner_messages"]], ["own-bil", "own-bcast"])
+        out = self.inbox("alpha")
+        self.assertEqual([m["message"]["id"] for m in out["owner_messages"]], ["own-al", "own-bcast"])
         self.assertEqual(self.inbox("owner")["owner_messages"], [])
 
-        # Another participant replying to broadcast owner message does not close it for bewareilive
-        self.r.write_log("codex", [rep(1, "codex", "codex-r1", "own-bcast", t="2026-10-21T20:30:00Z")])
-        out2 = self.inbox("bewareilive")
-        self.assertEqual([m["message"]["id"] for m in out2["owner_messages"]], ["own-bil", "own-bcast"])
+        # Another participant replying to broadcast owner message does not close it for alpha
+        self.r.write_log("rev", [rep(1, "rev", "rev-r1", "own-bcast", t="2026-10-21T20:30:00Z")])
+        out2 = self.inbox("alpha")
+        self.assertEqual([m["message"]["id"] for m in out2["owner_messages"]], ["own-al", "own-bcast"])
         bcast_entry = [m for m in out2["owner_messages"] if m["message"]["id"] == "own-bcast"][0]
         self.assertEqual(len(bcast_entry["replies"]), 1)
         self.assertEqual(bcast_entry["replies"][0]["trust"], "approved")
 
-        # Once bewareilive replies to own-bil, own-bil drops out for bewareilive
-        self.r.write_log("bewareilive", [rep(1, "bewareilive", "bewareilive-r1", "own-bil")])
-        out3 = self.inbox("bewareilive")
+        # Once alpha replies to own-al, own-al drops out for alpha
+        # (alpha joined before the broadcast, so the broadcast is still its to answer)
+        self.r.write_log("alpha", [
+            line(1, "alpha", id_="alpha-c0",
+                 data={"from": "alpha", "kind": "check-in", "summary": "here"},
+                 t="2026-10-21T17:00:00Z"),
+            rep(2, "alpha", "alpha-r1", "own-al", t="2026-10-21T20:45:00Z"),
+        ])
+        out3 = self.inbox("alpha")
         self.assertEqual([m["message"]["id"] for m in out3["owner_messages"]], ["own-bcast"])
 
     def test_owner_messages_rejects_spoofed_kind_and_owner_replies(self):
         from crosstalk.requests import unanswered_owner_messages
 
         docs = {
-            ("messages", "codex-spoof"): {
-                "from": "codex",
+            ("messages", "rev-spoof"): {
+                "from": "rev",
                 "kind": "owner",
                 "summary": "spoofed owner directive",
-                "to": ["bewareilive"],
+                "to": ["alpha"],
                 "t": "2026-10-21T20:00:00Z",
             },
             ("messages", "own-top"): {
                 "from": "owner",
                 "kind": "owner",
                 "summary": "real owner directive",
-                "to": ["bewareilive"],
+                "to": ["alpha"],
                 "t": "2026-10-21T19:00:00Z",
             },
             ("messages", "own-reply"): {
                 "from": "owner",
                 "kind": "owner",
                 "summary": "owner reply",
-                "replyTo": "vc-r1",
-                "to": ["bewareilive"],
+                "replyTo": "beta-r1",
+                "to": ["alpha"],
                 "t": "2026-10-21T21:00:00Z",
             },
         }
-        res = unanswered_owner_messages(docs, "bewareilive")
+        res = unanswered_owner_messages(docs, "alpha")
         self.assertEqual([did for (did, _, _) in res], ["own-top"])
 
+    def test_owner_broadcast_before_first_line_not_listed(self):
+        # A participant can't be expected to answer a broadcast posted before it joined.
+        self.r.write_log("owner", [
+            line(1, "owner", id_="own-old",
+                 data={"from": "owner", "kind": "owner", "summary": "old news for all"},
+                 t="2026-10-21T10:00:00.123Z"),
+            line(2, "owner", id_="own-group",
+                 data={"from": "owner", "kind": "alert", "summary": "@projects sync up"},
+                 t="2026-10-21T11:00:00Z"),
+            line(3, "owner", id_="own-same",
+                 data={"from": "owner", "kind": "owner", "summary": "same second as first line"},
+                 t="2026-10-21T12:00:00Z"),
+            line(4, "owner", id_="own-new",
+                 data={"from": "owner", "kind": "owner", "summary": "new news for all"},
+                 t="2026-10-21T13:00:00Z"),
+        ])
+        self.r.write_log("beta", [
+            line(1, "beta", id_="beta-first",
+                 data={"from": "beta", "kind": "check-in", "summary": "hello"},
+                 t="2026-10-21T12:00:00Z"),
+        ])
+        out = self.inbox("beta")
+        self.assertEqual([m["message"]["id"] for m in out["owner_messages"]],
+                         ["own-new", "own-same"])
+        # alpha has no lines yet: it sees every broadcast
+        out_al = self.inbox("alpha")
+        self.assertEqual([m["message"]["id"] for m in out_al["owner_messages"]],
+                         ["own-new", "own-same", "own-group", "own-old"])
+
+    def test_owner_message_naming_participant_listed_even_before_first_line(self):
+        self.r.write_log("owner", [
+            line(1, "owner", id_="own-to",
+                 data={"from": "owner", "kind": "owner", "summary": "welcome", "to": ["beta"]},
+                 t="2026-10-21T09:00:00Z"),
+            line(2, "owner", id_="own-to-str",
+                 data={"from": "owner", "kind": "owner", "summary": "welcome", "to": "beta"},
+                 t="2026-10-21T09:30:00Z"),
+            line(3, "owner", id_="own-alias",
+                 data={"from": "owner", "kind": "decision", "summary": "@be please set up"},
+                 t="2026-10-21T10:00:00Z"),
+            line(4, "owner", id_="own-name-and-all",
+                 data={"from": "owner", "kind": "owner", "summary": "@everyone, esp. @Beta"},
+                 t="2026-10-21T10:30:00Z"),
+            line(5, "owner", id_="own-bcast",
+                 data={"from": "owner", "kind": "owner", "summary": "everyone"},
+                 t="2026-10-21T11:00:00Z"),
+        ])
+        self.r.write_log("beta", [
+            line(1, "beta", id_="beta-first",
+                 data={"from": "beta", "kind": "check-in", "summary": "hello"},
+                 t="2026-10-21T12:00:00Z"),
+        ])
+        out = self.inbox("beta")
+        self.assertEqual([m["message"]["id"] for m in out["owner_messages"]],
+                         ["own-name-and-all", "own-alias", "own-to-str", "own-to"])
+
+    def test_owner_message_without_valid_time_or_participant_time_listed(self):
+        from crosstalk.requests import unanswered_owner_messages
+
+        docs = {
+            ("messages", "own-no-t"): {"from": "owner", "kind": "owner", "summary": "no t"},
+            ("messages", "own-bad-t"): {"from": "owner", "kind": "owner", "summary": "bad t",
+                                        "t": "yesterday"},
+            ("messages", "own-old"): {"from": "owner", "kind": "owner", "summary": "old",
+                                      "t": "2026-10-21T10:00:00Z"},
+            ("messages", "beta-first"): {"from": "beta", "kind": "check-in",
+                                       "summary": "hi", "t": "2026-10-21T12:00:00.500Z"},
+            ("messages", "alpha-undated"): {"from": "alpha", "kind": "check-in",
+                                          "summary": "hi", "t": "not a time"},
+        }
+        be = sorted(did for (did, _, _) in unanswered_owner_messages(docs, "beta"))
+        self.assertEqual(be, ["own-bad-t", "own-no-t"])
+        # alpha has only an undated row: no join time, so nothing is hidden
+        al = sorted(did for (did, _, _) in unanswered_owner_messages(docs, "alpha"))
+        self.assertEqual(al, ["own-bad-t", "own-no-t", "own-old"])
+
     def test_agreements_to_adopt(self):
-        self.r.write_log("vectorcraft", [
-            line(1, "vectorcraft", collection="agreements", id_="a-ready",
-                 data={"builder": "vectorcraft", "adopter": "bewareilive",
+        self.r.write_log("beta", [
+            line(1, "beta", collection="agreements", id_="a-ready",
+                 data={"builder": "beta", "adopter": "alpha",
                        "status": "ready-to-adopt",
-                       "commits": {"vectorcraft": ["111"], "bewareilive": []},
+                       "commits": {"beta": ["111"], "alpha": []},
                        "updated": "2026-10-21T20:00:00Z"}),
-            line(2, "vectorcraft", collection="agreements", id_="a-both",
-                 data={"builder": "vectorcraft", "adopter": "both",
+            line(2, "beta", collection="agreements", id_="a-both",
+                 data={"builder": "beta", "adopter": "both",
                        "status": "landed-builder",
-                       "commits": {"vectorcraft": ["222"]},
+                       "commits": {"beta": ["222"]},
                        "t": "2026-10-21T19:00:00Z"}),
-            line(3, "vectorcraft", collection="agreements", id_="a-all",
-                 data={"builder": "vectorcraft", "adopter": "all",
+            line(3, "beta", collection="agreements", id_="a-all",
+                 data={"builder": "beta", "adopter": "all",
                        "status": "landed-builder",
                        "t": "2026-10-21T18:00:00Z"}),
-            line(4, "vectorcraft", collection="agreements", id_="a-held-flag",
-                 data={"builder": "vectorcraft", "adopter": "bewareilive",
+            line(4, "beta", collection="agreements", id_="a-held-flag",
+                 data={"builder": "beta", "adopter": "alpha",
                        "status": "ready-to-adopt", "hold": True,
                        "updated": "2026-10-21T21:00:00Z"}),
-            line(5, "vectorcraft", collection="agreements", id_="a-held-status",
-                 data={"builder": "vectorcraft", "adopter": "bewareilive",
+            line(5, "beta", collection="agreements", id_="a-held-status",
+                 data={"builder": "beta", "adopter": "alpha",
                        "status": "held", "updated": "2026-10-21T21:00:00Z"}),
-            line(6, "vectorcraft", collection="agreements", id_="a-agreed",
-                 data={"builder": "vectorcraft", "adopter": "bewareilive",
+            line(6, "beta", collection="agreements", id_="a-agreed",
+                 data={"builder": "beta", "adopter": "alpha",
                        "status": "agreed", "updated": "2026-10-21T21:00:00Z"}),
-            line(7, "vectorcraft", collection="agreements", id_="a-done",
-                 data={"builder": "vectorcraft", "adopter": "bewareilive",
+            line(7, "beta", collection="agreements", id_="a-done",
+                 data={"builder": "beta", "adopter": "alpha",
                        "status": "ready-to-adopt",
-                       "commits": {"bewareilive": ["abc1234"]},
+                       "commits": {"alpha": ["abc1234"]},
                        "updated": "2026-10-21T21:00:00Z"}),
-            line(8, "vectorcraft", collection="agreements", id_="a-codex",
-                 data={"builder": "vectorcraft", "adopter": "codex",
+            line(8, "beta", collection="agreements", id_="a-rev",
+                 data={"builder": "beta", "adopter": "rev",
                        "status": "ready-to-adopt",
                        "updated": "2026-10-21T21:00:00Z"}),
         ])
-        out_bil = self.inbox("bewareilive")
-        self.assertEqual([a["id"] for a in out_bil["agreements_to_adopt"]],
+        out_al = self.inbox("alpha")
+        self.assertEqual([a["id"] for a in out_al["agreements_to_adopt"]],
                          ["a-ready", "a-both", "a-all"])
         # Builder does not adopt its own 'both'/'all' agreements
-        out_vc = self.inbox("vectorcraft")
-        self.assertEqual(out_vc["agreements_to_adopt"], [])
+        out_be = self.inbox("beta")
+        self.assertEqual(out_be["agreements_to_adopt"], [])
         # Reviewer only adopts agreements explicitly naming it, not 'both'/'all' project agreements
-        out_codex = self.inbox("codex")
-        self.assertEqual([a["id"] for a in out_codex["agreements_to_adopt"]],
-                         ["a-codex"])
+        out_rev = self.inbox("rev")
+        self.assertEqual([a["id"] for a in out_rev["agreements_to_adopt"]],
+                         ["a-rev"])
         self.assertEqual(self.inbox("owner")["agreements_to_adopt"], [])
 
     def test_quarantined_or_third_party_reply_does_not_censor_request(self):
         roster = json.loads(json.dumps(SPEC_ROSTER))
         for p in roster["participants"]:
-            if p["id"] == "codex":
+            if p["id"] == "rev":
                 p["trust"] = "quarantined"
         self.r.write_roster(roster)
-        self.r.write_log("vectorcraft", [
-            req(1, "vectorcraft", "vc-req-1", to=["bewareilive"]),
+        self.r.write_log("beta", [
+            req(1, "beta", "beta-req-1", to=["alpha"]),
         ])
-        self.r.write_log("codex", [
-            rep(1, "codex", "codex-hijack", "vc-req-1"),
+        self.r.write_log("rev", [
+            rep(1, "rev", "rev-hijack", "beta-req-1"),
         ])
-        out_open = self.inbox("bewareilive")
-        self.assertEqual(self.ids(out_open), ["vc-req-1"])
-        self.assertEqual(out_open["requests"][0]["pending_from"], ["bewareilive"])
-        out_all = self.inbox("bewareilive", "--all")
-        self.assertEqual(out_all["requests"][0]["pending_from"], ["bewareilive"])
+        out_open = self.inbox("alpha")
+        self.assertEqual(self.ids(out_open), ["beta-req-1"])
+        self.assertEqual(out_open["requests"][0]["pending_from"], ["alpha"])
+        out_all = self.inbox("alpha", "--all")
+        self.assertEqual(out_all["requests"][0]["pending_from"], ["alpha"])
         self.assertEqual(out_all["requests"][0]["replies"][0]["trust"], "quarantined")
 
-        # Even if codex is approved, a third-party reply to a 1-recipient request for bewareilive
-        # does not remove it from bewareilive's open inbox
+        # Even if rev is approved, a third-party reply to a 1-recipient request for alpha
+        # does not remove it from alpha's open inbox
         self.r.write_roster(SPEC_ROSTER)
-        out_open2 = self.inbox("bewareilive")
-        self.assertEqual(self.ids(out_open2), ["vc-req-1"])
-        self.assertEqual(out_open2["requests"][0]["pending_from"], ["bewareilive"])
+        out_open2 = self.inbox("alpha")
+        self.assertEqual(self.ids(out_open2), ["beta-req-1"])
+        self.assertEqual(out_open2["requests"][0]["pending_from"], ["alpha"])
 
         # Owner reply does close the 1-recipient request
         self.r.write_log("owner", [
-            rep(1, "owner", "own-close", "vc-req-1"),
+            rep(1, "owner", "own-close", "beta-req-1"),
         ])
-        self.assertEqual(self.inbox("bewareilive")["requests"], [])
+        self.assertEqual(self.inbox("alpha")["requests"], [])
 
     def test_stale_locks_extreme_timezone_does_not_overflow(self):
-        self.r.write_log("bewareilive", [
-            line(1, "bewareilive", collection="locks", id_="l-bewareilive-extreme",
+        self.r.write_log("alpha", [
+            line(1, "alpha", collection="locks", id_="l-alpha-extreme",
                  data={
-                     "project": "bewareilive",
+                     "project": "alpha",
                      "path": "a.rs",
                      "since": "0001-01-01T00:00:00+01:00",
                      "released": None,
                  })
         ])
-        out = self.inbox("bewareilive")
+        out = self.inbox("alpha")
         self.assertEqual(out["stale_locks"], [])
 
     def test_stale_locks(self):
         from crosstalk.replay import enrich_messages, load_all_lines, replay
         from crosstalk.requests import stale_locks_for
 
-        self.r.write_log("bewareilive", [
-            line(1, "bewareilive", collection="locks", id_="l-old-2",
-                 data={"project": "bewareilive", "path": "b.rs",
+        self.r.write_log("alpha", [
+            line(1, "alpha", collection="locks", id_="l-old-2",
+                 data={"project": "alpha", "path": "b.rs",
                        "since": "2026-10-21T12:00:00Z"}),
-            line(2, "bewareilive", collection="locks", id_="l-old-1",
-                 data={"project": "bewareilive", "path": "a.rs",
+            line(2, "alpha", collection="locks", id_="l-old-1",
+                 data={"project": "alpha", "path": "a.rs",
                        "since": "2026-10-21T10:00:00Z", "released": None}),
-            line(3, "bewareilive", collection="locks", id_="l-fresh",
-                 data={"project": "bewareilive", "path": "c.rs",
+            line(3, "alpha", collection="locks", id_="l-fresh",
+                 data={"project": "alpha", "path": "c.rs",
                        "since": "2099-01-01T00:00:00Z", "released": None}),
-            line(4, "bewareilive", collection="locks", id_="l-released",
-                 data={"project": "bewareilive", "path": "d.rs",
+            line(4, "alpha", collection="locks", id_="l-released",
+                 data={"project": "alpha", "path": "d.rs",
                        "since": "2026-10-21T08:00:00Z", "released": "2026-10-21T09:00:00Z"}),
         ])
-        self.r.write_log("vectorcraft", [
-            line(1, "vectorcraft", collection="locks", id_="l-vc",
-                 data={"project": "vectorcraft", "path": "v.rs",
+        self.r.write_log("beta", [
+            line(1, "beta", collection="locks", id_="l-be",
+                 data={"project": "beta", "path": "v.rs",
                        "since": "2026-10-21T08:00:00Z", "released": None}),
         ])
-        out = self.inbox("bewareilive")
+        out = self.inbox("alpha")
         self.assertEqual([lk["id"] for lk in out["stale_locks"]], ["l-old-1", "l-old-2"])
 
         lines = load_all_lines(self.r.root)
         docs = enrich_messages(replay(lines), lines)
         # At 15:00Z: l-old-1 (10:00Z, 5h) is stale; l-old-2 (12:00Z, 3h) is not
-        self.assertEqual([lk["id"] for lk in stale_locks_for(docs, "bewareilive", now_iso="2026-10-21T15:00:00Z")],
+        self.assertEqual([lk["id"] for lk in stale_locks_for(docs, "alpha", now_iso="2026-10-21T15:00:00Z")],
                          ["l-old-1"])
         # At 16:00:00Z: l-old-2 is exactly 4h old (not > 4h)
-        self.assertEqual([lk["id"] for lk in stale_locks_for(docs, "bewareilive", now_iso="2026-10-21T16:00:00Z")],
+        self.assertEqual([lk["id"] for lk in stale_locks_for(docs, "alpha", now_iso="2026-10-21T16:00:00Z")],
                          ["l-old-1"])
         # At 16:00:01Z: both are > 4h old, sorted oldest since first
-        self.assertEqual([lk["id"] for lk in stale_locks_for(docs, "bewareilive", now_iso="2026-10-21T16:00:01Z")],
+        self.assertEqual([lk["id"] for lk in stale_locks_for(docs, "alpha", now_iso="2026-10-21T16:00:01Z")],
                          ["l-old-1", "l-old-2"])
 
     def test_at_mentions_target_recipients_when_to_omitted(self):
         self.r.write_log("owner", [
             line(1, "owner", id_="own-1", t="2026-10-24T12:00:00Z",
                  data={"from": "owner", "kind": "owner",
-                       "summary": "@BewareILive check robotron audio",
-                       "body": "Ref vectorcraft@f0bfbca3 and user@example.com"}),
+                       "summary": "@Alpha check robotron audio",
+                       "body": "Ref beta@f0bfbca3 and user@example.com"}),
             line(2, "owner", id_="own-2", t="2026-10-24T12:01:00Z",
                  data={"from": "owner", "kind": "owner",
                        "summary": "@Everyone status check"}),
         ])
-        bil_out = self.inbox("bewareilive")
-        vc_out = self.inbox("vectorcraft")
-        self.assertEqual([m["message"]["id"] for m in bil_out["owner_messages"]],
+        al_out = self.inbox("alpha")
+        be_out = self.inbox("beta")
+        self.assertEqual([m["message"]["id"] for m in al_out["owner_messages"]],
                          ["own-2", "own-1"])
-        self.assertEqual([m["message"]["id"] for m in vc_out["owner_messages"]],
+        self.assertEqual([m["message"]["id"] for m in be_out["owner_messages"]],
                          ["own-2"])
 
     def test_at_mentions_aliases_groups_broadcast_and_owner_message_kinds(self):
@@ -456,49 +538,49 @@ class InboxTests(unittest.TestCase):
 
         # Aliases and groups come from the roster
         three = {
-            "avoidmissingball": {"name": "AvoidMissingBall", "kind": "project", "trust": "approved", "aliases": ["amb"]},
-            "bewareilive": {"name": "BewareILive", "kind": "project", "trust": "approved", "aliases": ["bil"]},
-            "vectorcraft": {"name": "VectorCraft", "kind": "project", "trust": "approved", "aliases": ["vc"]},
-            "codex": {"name": "Codex", "kind": "reviewer", "trust": "approved"},
+            "gamma": {"name": "Gamma", "kind": "project", "trust": "approved", "aliases": ["ga"]},
+            "alpha": {"name": "Alpha", "kind": "project", "trust": "approved", "aliases": ["al"]},
+            "beta": {"name": "Beta", "kind": "project", "trust": "approved", "aliases": ["be"]},
+            "rev": {"name": "Rev", "kind": "reviewer", "trust": "approved"},
         }
         self.assertEqual(
-            extract_mentions({"summary": "Ping (@bil, @vc; @amb: check this)"}, roster=three),
-            ["bewareilive", "vectorcraft", "avoidmissingball"],
+            extract_mentions({"summary": "Ping (@al, @be; @ga: check this)"}, roster=three),
+            ["alpha", "beta", "gamma"],
         )
         self.assertEqual(
             extract_mentions({"summary": "@projects sync up"}, roster=three),
-            ["avoidmissingball", "bewareilive", "vectorcraft"],
+            ["gamma", "alpha", "beta"],
         )
         self.assertEqual(
             extract_mentions({"summary": "@teams and @reviewers"}, roster=three),
-            ["avoidmissingball", "bewareilive", "vectorcraft", "codex"],
+            ["gamma", "alpha", "beta", "rev"],
         )
         # With no roster nothing resolves: no project names are built in
-        self.assertEqual(extract_mentions({"summary": "Ping @bil and @projects"}), [])
+        self.assertEqual(extract_mentions({"summary": "Ping @al and @projects"}), [])
         # Broadcast handles override specific mentions
         for bcast in ("@everyone", "@all", "@channel", "@here"):
             self.assertEqual(
-                extract_mentions({"summary": "%s and @BewareILive" % bcast}, roster=three),
+                extract_mentions({"summary": "%s and @Alpha" % bcast}, roster=three),
                 [],
             )
         # Commit refs and emails do not trigger mentions
         self.assertEqual(
-            extract_mentions({"summary": "See vectorcraft@f0bfbca3 or dev@bewareilive.com"}, roster=three),
+            extract_mentions({"summary": "See beta@f0bfbca3 or dev@alpha.com"}, roster=three),
             [],
         )
         # @owner is excluded from extract_mentions so "(cc @owner)" does not narrow a broadcast
         custom_roster = {
-            "owner": {"name": "VectorCraft", "kind": "person", "trust": "approved"},
-            "bewareilive": {"name": "BewareILive", "kind": "project", "trust": "approved"},
+            "owner": {"name": "Beta", "kind": "person", "trust": "approved"},
+            "alpha": {"name": "Alpha", "kind": "project", "trust": "approved"},
         }
-        self.assertEqual(extract_mentions({"summary": "@VectorCraft hi"}, roster=custom_roster), [])
+        self.assertEqual(extract_mentions({"summary": "@Beta hi"}, roster=custom_roster), [])
         self.assertEqual(extract_mentions({"summary": "@owner hi"}, roster=custom_roster), [])
 
         # Test CLI inbox with requests and owner_messages of various kinds (alert, agreement, lesson, decision)
         self.r.write_log("owner", [
             line(1, "owner", id_="own-alert", t="2026-10-24T12:00:00Z",
                  data={"from": "owner", "kind": "alert",
-                       "summary": "Urgent: @bil fix audio"}),
+                       "summary": "Urgent: @al fix audio"}),
             line(2, "owner", id_="own-agree", t="2026-10-24T12:01:00Z",
                  data={"from": "owner", "kind": "agreement",
                        "summary": "Agreement for @projects"}),
@@ -507,64 +589,67 @@ class InboxTests(unittest.TestCase):
                        "summary": "Lesson for @reviewers"}),
             line(4, "owner", id_="own-decision", t="2026-10-24T12:03:00Z",
                  data={"from": "owner", "kind": "decision",
-                       "summary": "Decision for @vc and @channel"}),
+                       "summary": "Decision for @be and @channel"}),
             line(5, "owner", id_="own-checkin", t="2026-10-24T12:04:00Z",
                  data={"from": "owner", "kind": "check-in",
                        "summary": "Owner routine check-in"}),
         ])
-        self.r.write_log("vectorcraft", [
-            line(1, "vectorcraft", id_="vc-req-bil", t="2026-10-24T12:05:00Z",
-                 data={"from": "vectorcraft", "kind": "request",
-                       "summary": "Hey @bil can you check vectorcraft@f0bfbca3?"}),
-            line(2, "vectorcraft", id_="vc-req-rev", t="2026-10-24T12:06:00Z",
-                 data={"from": "vectorcraft", "kind": "request",
+        self.r.write_log("beta", [
+            # beta joined before the owner's group messages
+            line(1, "beta", id_="beta-checkin", t="2026-10-24T11:00:00Z",
+                 data={"from": "beta", "kind": "check-in", "summary": "here"}),
+            line(2, "beta", id_="beta-req-al", t="2026-10-24T12:05:00Z",
+                 data={"from": "beta", "kind": "request",
+                       "summary": "Hey @al can you check beta@f0bfbca3?"}),
+            line(3, "beta", id_="beta-req-rev", t="2026-10-24T12:06:00Z",
+                 data={"from": "beta", "kind": "request",
                        "summary": "Need @reviewers on this PR"}),
         ])
 
-        bil_out = self.inbox("bewareilive")
+        al_out = self.inbox("alpha")
         self.assertEqual(
-            [m["message"]["id"] for m in bil_out["owner_messages"]],
+            [m["message"]["id"] for m in al_out["owner_messages"]],
             ["own-decision", "own-agree", "own-alert"],
         )
-        self.assertEqual(self.ids(bil_out), ["vc-req-bil"])
-        self.assertEqual(bil_out["requests"][0]["pending_from"], ["bewareilive"])
+        self.assertEqual(self.ids(al_out), ["beta-req-al"])
+        self.assertEqual(al_out["requests"][0]["pending_from"], ["alpha"])
 
-        vc_out = self.inbox("vectorcraft")
+        be_out = self.inbox("beta")
         self.assertEqual(
-            [m["message"]["id"] for m in vc_out["owner_messages"]],
+            [m["message"]["id"] for m in be_out["owner_messages"]],
             ["own-decision", "own-agree"],
         )
-        self.assertEqual(self.ids(vc_out), [])
+        self.assertEqual(self.ids(be_out), [])
 
-        codex_out = self.inbox("codex")
+        rev_out = self.inbox("rev")
         self.assertEqual(
-            [m["message"]["id"] for m in codex_out["owner_messages"]],
+            [m["message"]["id"] for m in rev_out["owner_messages"]],
             ["own-decision", "own-lesson"],
         )
-        self.assertEqual(self.ids(codex_out), ["vc-req-rev"])
+        self.assertEqual(self.ids(rev_out), ["beta-req-rev"])
 
     def test_extract_mentions_subagent_dots_punctuation_quarantine_and_non_string(self):
         from crosstalk.requests import extract_mentions
 
         roster = {
             "owner": {"name": "Owner", "kind": "person", "trust": "approved"},
-            "bewareilive": {"name": "BewareILive", "kind": "project", "trust": "approved", "aliases": ["bil"]},
-            "vectorcraft": {"name": "VectorCraft", "kind": "project", "trust": "approved", "aliases": ["vc"]},
+            "alpha": {"name": "Alpha", "kind": "project", "trust": "approved", "aliases": ["al"]},
+            "beta": {"name": "Beta", "kind": "project", "trust": "approved", "aliases": ["be"]},
             "quarantined-proj": {"name": "QuarantinedProj", "kind": "project", "trust": "quarantined"},
-            "codex": {"name": "Codex", "kind": "reviewer", "trust": "approved"},
+            "rev": {"name": "Rev", "kind": "reviewer", "trust": "approved"},
             "quarantined-rev": {"name": "QuarantinedRev", "kind": "reviewer", "trust": "quarantined"},
-            "bewareilive.verifier": {"name": "BIL Verifier", "kind": "agent", "trust": "approved"},
+            "alpha.verifier": {"name": "AL Verifier", "kind": "agent", "trust": "approved"},
         }
         self.assertEqual(
             extract_mentions(
-                {"summary": "Ask @bewareilive.verifier, @bil! (@vc?) and @owner."},
+                {"summary": "Ask @alpha.verifier, @al! (@be?) and @owner."},
                 roster=roster,
             ),
-            ["bewareilive.verifier", "bewareilive", "vectorcraft"],
+            ["alpha.verifier", "alpha", "beta"],
         )
         self.assertEqual(
             extract_mentions({"summary": "@projects and @reviewers"}, roster=roster),
-            ["bewareilive", "vectorcraft", "codex"],
+            ["alpha", "beta", "rev"],
         )
         self.assertEqual(
             extract_mentions({"summary": 123, "body": ["not-a-str"]}, roster=roster),
@@ -581,7 +666,7 @@ class InboxTests(unittest.TestCase):
             "id": "qbot",
             "name": "QBot",
             "kind": "agent",
-            "parent": "bewareilive",
+            "parent": "alpha",
             "color": "#2e7d32",
             "colorDark": "#81c784",
             "trust": "quarantined",
@@ -590,8 +675,8 @@ class InboxTests(unittest.TestCase):
         roster = load_roster(self.r.root / "participants.json")
 
         # Quarantined recipient in `to` does not deadlock multi-recipient request
-        self.r.write_log("vectorcraft", [
-            req(1, "vectorcraft", "vc-q", to=["bewareilive", "qbot"], t="2026-10-21T18:00:00Z"),
+        self.r.write_log("beta", [
+            req(1, "beta", "beta-q", to=["alpha", "qbot"], t="2026-10-21T18:00:00Z"),
         ])
         self.r.write_log("owner", [
             line(1, "owner", id_="own-req-bcast", t="2026-10-21T18:05:00Z",
@@ -600,18 +685,18 @@ class InboxTests(unittest.TestCase):
         lines = load_all_lines(self.r.root, roster)
         docs = enrich_messages(replay(lines), lines)
         self.assertEqual(
-            pending_recipients(docs[("messages", "vc-q")], [], roster=roster),
-            ["bewareilive"],
+            pending_recipients(docs[("messages", "beta-q")], [], roster=roster),
+            ["alpha"],
         )
         self.assertEqual(
             pending_recipients(docs[("messages", "own-req-bcast")], [], roster=roster),
-            ["bewareilive", "vectorcraft"],
+            ["alpha", "beta"],
         )
 
-        # bewareilive replies to both: vc-q closes, own-req-bcast stays open waiting for vectorcraft
-        self.r.write_log("bewareilive", [
-            rep(1, "bewareilive", "bewareilive-r1", "vc-q", t="2026-10-21T19:00:00Z"),
-            rep(2, "bewareilive", "bewareilive-r2", "own-req-bcast", t="2026-10-21T19:01:00Z"),
+        # alpha replies to both: be-q closes, own-req-bcast stays open waiting for beta
+        self.r.write_log("alpha", [
+            rep(1, "alpha", "alpha-r1", "beta-q", t="2026-10-21T19:00:00Z"),
+            rep(2, "alpha", "alpha-r2", "own-req-bcast", t="2026-10-21T19:01:00Z"),
         ])
         lines2 = load_all_lines(self.r.root, roster)
         docs2 = enrich_messages(replay(lines2), lines2)
@@ -622,16 +707,16 @@ class InboxTests(unittest.TestCase):
         self.assertEqual(
             pending_recipients(
                 docs2[("messages", "own-req-bcast")],
-                [docs2[("messages", "bewareilive-r2")]],
+                [docs2[("messages", "alpha-r2")]],
                 roster=roster,
             ),
-            ["vectorcraft"],
+            ["beta"],
         )
 
-        # vectorcraft replies to own-req-bcast: now it closes
-        self.r.write_log("vectorcraft", [
-            req(1, "vectorcraft", "vc-q", to=["bewareilive", "qbot"], t="2026-10-21T18:00:00Z"),
-            rep(2, "vectorcraft", "vectorcraft-r1", "own-req-bcast", t="2026-10-21T19:02:00Z"),
+        # beta replies to own-req-bcast: now it closes
+        self.r.write_log("beta", [
+            req(1, "beta", "beta-q", to=["alpha", "qbot"], t="2026-10-21T18:00:00Z"),
+            rep(2, "beta", "beta-r1", "own-req-bcast", t="2026-10-21T19:02:00Z"),
         ])
         lines3 = load_all_lines(self.r.root, roster)
         docs3 = enrich_messages(replay(lines3), lines3)

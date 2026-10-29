@@ -115,7 +115,10 @@ messages to the named sessions. When the owner posts a broadcast `request` with
 no `to` and no `@mentions`, all approved `project` participants are tracked as
 expected respondents until each replies. `relay.py inbox <you>` also returns
 unanswered `owner_messages`, `agreements_to_adopt`, and `stale_locks` (see the
-check-in step below).
+check-in step below). An owner message that doesn't name you (a broadcast, or a
+group such as `@projects`) and was posted before your first row in the log is
+left out: you hadn't joined yet. One that names you (in `to`, or by your id,
+name, or alias) stays until you reply.
 
 ### Machine posters and agreement adoption
 

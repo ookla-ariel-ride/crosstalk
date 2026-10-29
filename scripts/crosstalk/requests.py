@@ -52,8 +52,7 @@ def _norm(s: str) -> str:
     return re.sub(r"[^a-z0-9]", "", s.lower())
 
 
-def extract_mentions(doc: dict, roster=None) -> List[str]:
-    """Resolve @mentions in summary/body to participant ids (empty list if broadcast or none)."""
+def _mention_tokens(doc: dict) -> List[str]:
     s = doc.get("summary")
     b = doc.get("body")
     text = "%s\n%s" % (s if isinstance(s, str) else "", b if isinstance(b, str) else "")
@@ -62,12 +61,16 @@ def extract_mentions(doc: dict, roster=None) -> List[str]:
         tok = m.group(1).rstrip(".,;:!?)]")
         if tok:
             raw_tokens.append(tok)
-    if not raw_tokens:
-        return []
-    if any(_norm(t) in _BROADCAST_HANDLES or t.lower() in _BROADCAST_HANDLES for t in raw_tokens):
-        return []
+    return raw_tokens
+
+
+def _handles(roster) -> Tuple[Dict[str, str], List[str], List[str]]:
+    """(handle -> pid, project group, reviewer group) built from the roster alone.
+
+    Handles are ids, names, and each participant's aliases. The groups hold the
+    approved projects and reviewers (or all of them when none is approved).
+    """
     participants = getattr(roster, "participants", roster) if roster is not None else None
-    # Handles come from the roster alone: ids, names, and each participant's aliases.
     by_norm = {}  # type: Dict[str, str]
     projects = []  # type: List[str]
     reviewers = []  # type: List[str]
@@ -101,25 +104,75 @@ def extract_mentions(doc: dict, roster=None) -> List[str]:
                     approved_reviewers.append(pid)
         projects = approved_projects if approved_projects else all_projects
         reviewers = approved_reviewers if approved_reviewers else all_reviewers
+    return by_norm, projects, reviewers
+
+
+def _handle_pid(raw_t: str, by_norm: Dict[str, str]) -> Optional[str]:
+    low = raw_t.lower()
+    if low in by_norm:
+        return by_norm[low]
+    return by_norm.get(_norm(raw_t))
+
+
+def extract_mentions(doc: dict, roster=None) -> List[str]:
+    """Resolve @mentions in summary/body to participant ids (empty list if broadcast or none)."""
+    raw_tokens = _mention_tokens(doc)
+    if not raw_tokens:
+        return []
+    if any(_norm(t) in _BROADCAST_HANDLES or t.lower() in _BROADCAST_HANDLES for t in raw_tokens):
+        return []
+    by_norm, projects, reviewers = _handles(roster)
     out = []  # type: List[str]
     seen = set()
     for raw_t in raw_tokens:
-        low = raw_t.lower()
         t = _norm(raw_t)
         matched = []  # type: List[str]
         if t in ("projects", "teams"):
             matched = projects
         elif t == "reviewers":
             matched = reviewers
-        elif low in by_norm:
-            matched = [by_norm[low]]
-        elif t in by_norm:
-            matched = [by_norm[t]]
+        else:
+            hit = _handle_pid(raw_t, by_norm)
+            matched = [hit] if hit else []
         for pid in matched:
             if pid != "owner" and pid not in seen:
                 seen.add(pid)
                 out.append(pid)
     return out
+
+
+def _named(doc: dict, pid: str, roster=None) -> bool:
+    """Whether doc names pid itself: in `to`, or by an @mention of its id, name, or alias.
+
+    Group handles (@projects, @teams, @reviewers) and broadcast handles
+    (@everyone, @all, ...) don't name anyone; a name next to them still does.
+    """
+    to = doc.get("to")
+    if to is not None:
+        return pid == to if isinstance(to, str) else isinstance(to, list) and pid in to
+    by_norm, _projects, _reviewers = _handles(roster)
+    for raw_t in _mention_tokens(doc):
+        if _norm(raw_t) in ("projects", "teams", "reviewers"):
+            continue
+        if _handle_pid(raw_t, by_norm) == pid:
+            return True
+    return False
+
+
+def first_seen(docs: Dict, pid: str) -> Optional[float]:
+    """The earliest valid time on any row whose `from` is pid, or None if it has none.
+
+    Messages carry their writing line's `from` and `t` after enrich_messages, so
+    this is when pid first posted.
+    """
+    first = None  # type: Optional[float]
+    for (_coll, _did), doc in docs.items():
+        if not isinstance(doc, dict) or doc.get("from") != pid:
+            continue
+        ts = _parse_iso(doc.get("t"))
+        if ts is not None and (first is None or ts < first):
+            first = ts
+    return first
 
 
 def _addressed(doc: dict, pid: str, roster=None) -> bool:
@@ -272,9 +325,16 @@ def all_requests_for(docs: Dict, pid: str, roster=None) -> List[Tuple[str, dict,
 
 
 def unanswered_owner_messages(docs: Dict, pid: str, roster=None) -> List[Tuple[str, dict, List[dict]]]:
-    """Owner messages addressed to pid that pid has not replied to yet, newest first."""
+    """Owner messages addressed to pid that pid has not replied to yet, newest first.
+
+    A message that doesn't name pid (a broadcast, or a group such as @projects)
+    and is dated before pid's first row is left out: pid had not joined yet.
+    When pid has no dated row, or the message has no valid `t`, nothing is left
+    out on that account. A message naming pid stays until pid replies.
+    """
     messages = _messages(docs)
     replies = _replies_by_request(messages)
+    joined = first_seen(docs, pid)
     out = []  # type: List[Tuple[str, dict, List[dict]]]
     for did, doc in messages.items():
         if doc.get("from") != "owner" or doc.get("replyTo"):
@@ -285,6 +345,10 @@ def unanswered_owner_messages(docs: Dict, pid: str, roster=None) -> List[Tuple[s
             continue
         if pid == "owner" and "owner" not in _recipients(doc, roster=roster):
             continue
+        if joined is not None and not _named(doc, pid, roster=roster):
+            posted = _parse_iso(doc.get("t"))
+            if posted is not None and posted < joined:
+                continue
         doc_replies = replies.get(did, [])
         if any(r.get("from") == pid for r in doc_replies):
             continue

@@ -18,10 +18,10 @@ class RosterTests(unittest.TestCase):
 
     def test_loads_spec_example(self):
         ro = self.load(None)
-        self.assertEqual(set(ro.participants), {"bewareilive", "vectorcraft", "codex", "owner"})
+        self.assertEqual(set(ro.participants), {"alpha", "beta", "rev", "owner"})
         self.assertEqual(ro.page, helpers.SPEC_ROSTER["page"])
-        self.assertEqual(ro.relay, "bewareilive")
-        self.assertEqual(ro.participants["vectorcraft"].checkInMin, 30)
+        self.assertEqual(ro.relay, "alpha")
+        self.assertEqual(ro.participants["beta"].checkInMin, 30)
 
     def test_defaults_trust_to_quarantined(self):
         self.assertEqual(self.load(self.entry()).participants["x"].trust, "quarantined")
@@ -32,7 +32,7 @@ class RosterTests(unittest.TestCase):
         self.assertIn("helper", str(cm.exception))
 
     def test_bad_id_rejected(self):
-        for bad in ("Codex", "a b", "codex\n"):
+        for bad in ("Rev", "a b", "rev\n"):
             with self.assertRaises(ValueError):
                 self.load(self.entry(id=bad))
 
@@ -51,11 +51,11 @@ class RosterTests(unittest.TestCase):
     def test_repo_falls_back_to_parent(self):
         data = dict(helpers.SPEC_ROSTER)
         data["participants"] = list(data["participants"]) + [
-            {"id": "bewareilive.verifier", "name": "Verifier", "kind": "agent", "parent": "bewareilive",
+            {"id": "alpha.verifier", "name": "Verifier", "kind": "agent", "parent": "alpha",
              "color": "#8a5a00", "colorDark": "#d9b25c"}]
         ro = self.load(data)
-        self.assertEqual(ro.repo_for("bewareilive.verifier"), "ookla-ariel-ride/bewareilive")
-        self.assertIsNone(ro.repo_for("codex"))
+        self.assertEqual(ro.repo_for("alpha.verifier"), "owner/alpha")
+        self.assertIsNone(ro.repo_for("rev"))
 
     def test_color_and_dark_color_required(self):
         for field in ("color", "colorDark"):
@@ -85,7 +85,7 @@ class RosterTests(unittest.TestCase):
             with self.assertRaises(ValueError) as cm:
                 self.load(data)
             self.assertIn("too close", str(cm.exception))
-            self.assertIn("bewareilive", str(cm.exception))
+            self.assertIn("alpha", str(cm.exception))
 
     def test_colors_kept_lowercase(self):
         ro = self.load(self.entry(color="#8A5A00"))

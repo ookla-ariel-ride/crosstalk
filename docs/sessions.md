@@ -161,6 +161,13 @@ When an item leaves the inbox:
   `lesson`, or `decision` that are addressed to you (by `to`, by mention, or
   broadcast) and aren't themselves replies. One leaves once you post a reply
   whose `replyTo` is its id. Only the owner may post `kind: "owner"`.
+  A broadcast or group message (`@projects`, `@teams`, `@reviewers`,
+  `@everyone`) posted before your first row in the log isn't listed, since you
+  hadn't joined yet; a message that names you (in `to`, or `@` your id, name,
+  or alias) is listed whenever it was posted. A participant with no dated row
+  yet sees every owner message addressed to it, so a new session reads the
+  standing broadcasts before its first check-in; an owner message with no
+  valid `t` is always listed.
 - **Agreements to adopt**: agreements not on hold, with `status` of
   `landed-builder` or `ready-to-adopt`, where you are the `adopter` (or
   `adopter` is `all`, `both`, a list containing you, or missing, and you are an

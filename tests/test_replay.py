@@ -32,10 +32,10 @@ class ReplayTests(unittest.TestCase):
         self.assertEqual(docs[("messages", "x-1")], {"v": odd, "w": {"__delete__": False}})
 
     def test_order_by_t_then_from_then_seq(self):
-        a = L(1, "codex", data={"v": "codex"})
-        b = L(1, "bewareilive", data={"v": "bew"})
+        a = L(1, "rev", data={"v": "rev"})
+        b = L(1, "alpha", data={"v": "bew"})
         docs = replay([a, b])
-        self.assertEqual(docs[("messages", "x-1")], {"v": "codex"})
+        self.assertEqual(docs[("messages", "x-1")], {"v": "rev"})
         self.assertLess(order_key(b), order_key(a))
 
     def test_update_before_any_set_creates_doc(self):
@@ -72,28 +72,28 @@ class ReplayTests(unittest.TestCase):
 
     def test_enrich_messages_enriches_progress_lessons_decisions_agreements(self):
         lines = [
-            L(1, "bewareilive", op="set", id_="p-bil-1", collection="progress",
+            L(1, "alpha", op="set", id_="p-al-1", collection="progress",
               data={"summary": "Wave 1"}, t="2026-10-21T10:00:00Z"),
-            L(2, "bewareilive", op="update", id_="p-bil-1", collection="progress",
+            L(2, "alpha", op="update", id_="p-al-1", collection="progress",
               data={"status": "done"}, t="2026-10-21T12:00:00Z"),
-            L(1, "vectorcraft", op="set", id_="l-vc-1", collection="lessons",
-              data={"from": "vectorcraft", "summary": "Lesson 1"}, t="2026-10-21T11:00:00Z"),
+            L(1, "beta", op="set", id_="l-be-1", collection="lessons",
+              data={"from": "beta", "summary": "Lesson 1"}, t="2026-10-21T11:00:00Z"),
             L(1, "owner", op="set", id_="d-own-1", collection="decisions",
               data={"summary": "Decision 1"}, t="2026-10-21T13:00:00Z"),
-            L(1, "vectorcraft", op="set", id_="a-vc-1", collection="agreements",
+            L(1, "beta", op="set", id_="a-be-1", collection="agreements",
               data={"summary": "Agreement 1"}, t="2026-10-21T14:00:00Z"),
-            L(2, "bewareilive", op="update", id_="a-vc-1", collection="agreements",
+            L(2, "alpha", op="update", id_="a-be-1", collection="agreements",
               data={"status": "landed-both"}, t="2026-10-21T15:00:00Z"),
-            L(1, "codex", op="update", id_="d-upd-only", collection="decisions",
+            L(1, "rev", op="update", id_="d-upd-only", collection="decisions",
               data={"summary": "Update only"}, t="2026-10-21T16:00:00Z"),
         ]
         docs = enrich_messages(replay(lines), lines)
-        self.assertEqual(docs[("progress", "p-bil-1")]["t"], "2026-10-21T10:00:00Z")
-        self.assertEqual(docs[("progress", "p-bil-1")]["project"], "bewareilive")
-        self.assertEqual(docs[("lessons", "l-vc-1")]["t"], "2026-10-21T11:00:00Z")
-        self.assertEqual(docs[("lessons", "l-vc-1")]["project"], "vectorcraft")
+        self.assertEqual(docs[("progress", "p-al-1")]["t"], "2026-10-21T10:00:00Z")
+        self.assertEqual(docs[("progress", "p-al-1")]["project"], "alpha")
+        self.assertEqual(docs[("lessons", "l-be-1")]["t"], "2026-10-21T11:00:00Z")
+        self.assertEqual(docs[("lessons", "l-be-1")]["project"], "beta")
         self.assertEqual(docs[("decisions", "d-own-1")]["t"], "2026-10-21T13:00:00Z")
-        self.assertEqual(docs[("agreements", "a-vc-1")]["t"], "2026-10-21T14:00:00Z")
+        self.assertEqual(docs[("agreements", "a-be-1")]["t"], "2026-10-21T14:00:00Z")
         self.assertEqual(docs[("decisions", "d-upd-only")]["t"], "2026-10-21T16:00:00Z")
 
 

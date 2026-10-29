@@ -16,6 +16,20 @@ REPO = Path(__file__).resolve().parent.parent
 SNAP_A = REPO / "import" / "2uM4ZVpmoYLQYkyXVgvckH-2026-10-21"
 SNAP_B = REPO / "import" / "ThPWGePNJjieLDTUqJbfmc-2026-10-21"
 
+# The historical import maps legacy id prefixes to the real writers
+# (importer.PREFIX_WRITERS: m- -> bewareilive, vc- -> vectorcraft), so these
+# tests keep the real participant ids rather than helpers.SPEC_ROSTER's placeholders.
+LEGACY_ROSTER = {
+    "page": "http://127.0.0.1:8484/",
+    "relay": "bewareilive",
+    "participants": [
+        {"id": "bewareilive", "name": "BewareILive", "kind": "project", "repo": "ookla-ariel-ride/bewareilive", "color": "#b3261e", "colorDark": "#ef6a5f", "checkInMin": 30, "trust": "approved", "aliases": ["bil"]},
+        {"id": "vectorcraft", "name": "VectorCraft", "kind": "project", "repo": "ookla-ariel-ride/vectorcraft", "color": "#1f5f8b", "colorDark": "#6fb2e2", "checkInMin": 30, "trust": "approved", "aliases": ["vc"]},
+        {"id": "codex", "name": "Codex", "kind": "reviewer", "color": "#00727a", "colorDark": "#45c2bf", "trust": "approved"},
+        {"id": "owner", "name": "Owner", "kind": "person", "color": "#6b3fa0", "colorDark": "#b892e6", "trust": "approved"},
+    ],
+}
+
 
 def make_snap(root, name, rows):
     """rows: {(collection, id): fields}"""
@@ -37,7 +51,7 @@ def writer_of(root, coll, did):
 class ImportTests(unittest.TestCase):
     def test_prefix_mapping(self):
         with TempRepo() as r:
-            r.write_roster()
+            r.write_roster(LEGACY_ROSTER)
             snap = make_snap(r.root, "s", {
                 ("messages", "m-0001"): {"t": "2026-01-01T00:00:00Z"},
                 ("messages", "vc-x"): {"t": "2026-01-01T00:00:01Z"},
@@ -61,7 +75,7 @@ class ImportTests(unittest.TestCase):
         # A row written under the new id rule (`<id>-…`) belongs to that participant,
         # whatever its project field says.
         with TempRepo() as r:
-            r.write_roster()
+            r.write_roster(LEGACY_ROSTER)
             snap = make_snap(r.root, "s", {
                 ("messages", "codex-20261022T132907"): {"t": "2026-01-01T00:00:00Z",
                                                         "project": "vectorcraft"},
@@ -74,7 +88,7 @@ class ImportTests(unittest.TestCase):
 
     def test_every_imported_line_is_via_import_and_checks_clean(self):
         with TempRepo() as r:
-            r.write_roster()
+            r.write_roster(LEGACY_ROSTER)
             snap = make_snap(r.root, "s", {
                 ("messages", "m-0001"): {"t": "2026-01-01T00:00:00Z", "from": "vectorcraft"},
                 ("messages", "vc-1"): {"t": "2026-01-01T00:00:01Z", "from": "bewareilive"},
@@ -89,7 +103,7 @@ class ImportTests(unittest.TestCase):
 
     def test_time_fields(self):
         with TempRepo() as r:
-            r.write_roster()
+            r.write_roster(LEGACY_ROSTER)
             snap = make_snap(r.root, "s", {
                 ("waiting", "w-a"): {"since": "2026-02-02T00:00:00Z", "project": "vectorcraft"},
                 ("incidents", "i-a"): {"start": "2026-03-03T00:00:00Z"},
@@ -104,7 +118,7 @@ class ImportTests(unittest.TestCase):
 
     def test_order_is_time_then_writer_then_collection_then_id(self):
         with TempRepo() as r:
-            r.write_roster()
+            r.write_roster(LEGACY_ROSTER)
             t = "2026-01-01T00:00:00Z"
             snap = make_snap(r.root, "s", {
                 ("messages", "m-2"): {"t": t}, ("messages", "m-1"): {"t": t},
@@ -118,7 +132,7 @@ class ImportTests(unittest.TestCase):
 
     def test_skips_non_json_and_passes_fields_through(self):
         with TempRepo() as r:
-            r.write_roster()
+            r.write_roster(LEGACY_ROSTER)
             snap = make_snap(r.root, "s", {("messages", "m-1"): {"t": "2026-01-01T00:00:00Z", "body": "é\n\"x\""}})
             (snap / "messages" / "x.listing.txt").write_text("junk")
             import_snapshots(r.root, [snap])
@@ -128,7 +142,7 @@ class ImportTests(unittest.TestCase):
 
     def test_refuses_when_log_not_empty(self):
         with TempRepo() as r:
-            r.write_roster()
+            r.write_roster(LEGACY_ROSTER)
             r.write_log("owner", [{"seq": 1, "t": "2026-01-01T00:00:00Z", "from": "owner", "op": "set",
                                    "collection": "messages", "id": "owner-1", "data": {}}])
             snap = make_snap(r.root, "s", {("messages", "m-1"): {}})
@@ -138,7 +152,7 @@ class ImportTests(unittest.TestCase):
 
     def test_duplicate_across_snapshots_raises(self):
         with TempRepo() as r:
-            r.write_roster()
+            r.write_roster(LEGACY_ROSTER)
             a = make_snap(r.root, "a", {("messages", "m-1"): {}})
             b = make_snap(r.root, "b", {("messages", "m-1"): {}})
             with self.assertRaises(RuntimeError):
@@ -147,7 +161,7 @@ class ImportTests(unittest.TestCase):
 
     def test_symlinked_files_are_skipped(self):
         with TempRepo() as r:
-            r.write_roster()
+            r.write_roster(LEGACY_ROSTER)
             target = r.root / "secret.json"
             target.write_text(json.dumps({"kind": "reply", "summary": "secret"}),
                               encoding="utf-8")
@@ -164,7 +178,7 @@ class ImportTests(unittest.TestCase):
 
     def test_symlinked_dirs_are_skipped(self):
         with TempRepo() as r:
-            r.write_roster()
+            r.write_roster(LEGACY_ROSTER)
             outside = r.root / "outside"
             outside.mkdir()
             (outside / "m-1.json").write_text(
@@ -194,7 +208,7 @@ class MergeTests(unittest.TestCase):
     def setUp(self):
         self.r = TempRepo()
         self.r.__enter__()
-        self.r.write_roster()
+        self.r.write_roster(LEGACY_ROSTER)
 
     def tearDown(self):
         self.r.__exit__(None, None, None)
@@ -305,7 +319,7 @@ class MergeCliTests(unittest.TestCase):
     def setUp(self):
         self.r = TempRepo()
         self.r.__enter__()
-        self.r.write_roster()
+        self.r.write_roster(LEGACY_ROSTER)
         shutil.copytree(str(REPO / "scripts"), str(self.r.root / "scripts"),
                         ignore=shutil.ignore_patterns("__pycache__"))
         self.script = str(self.r.root / "scripts" / "relay.py")
