@@ -17,7 +17,8 @@ from helpers import TempRepo, line  # noqa: E402
 from test_inbox import rep, req  # noqa: E402
 
 from crosstalk import live  # noqa: E402
-from crosstalk.notify import Notifier, SessionGone, render_message, send_to_session  # noqa: E402
+from crosstalk.notify import (Notifier, SessionGone, actionable_items,  # noqa: E402
+                              render_message, send_to_session)  # noqa: E402
 from crosstalk.participants import load_roster  # noqa: E402
 from crosstalk.replay import enrich_messages, load_all_lines, replay  # noqa: E402
 
@@ -138,6 +139,13 @@ class NotifierTests(unittest.TestCase):
         self.notifiers.append(n)
         return n
 
+    def roster(self):
+        return load_roster(self.root / "participants.json")
+
+    def docs(self):
+        lines = load_all_lines(self.root, self.roster())
+        return enrich_messages(replay(lines), lines)
+
     def users(self, fake):
         """The user-message contents fake received, one per connection."""
         out = []
@@ -189,6 +197,40 @@ class NotifierTests(unittest.TestCase):
         self.assertIn("(m-1)", msgs[0])
         self.assertIn("- request from Alpha: help m-2 (m-2)", msgs[0])
 
+    def test_thread_reply_is_told_once_and_labeled(self):
+        fake = self.session("s1")
+        n = self.notifier()
+        self.append("beta", line(1, "beta", id_="beta-root",
+                                 data={"from": "beta", "kind": "check-in", "summary": "root"}))
+        n.poll_once()
+        self.assertEqual(fake.drain(), [])
+        self.append("alpha", rep(1, "alpha", "alpha-r1", "beta-root"))
+        n.poll_once()
+        msgs = self.users(fake)
+        self.assertEqual(len(msgs), 1)
+        self.assertIn("- reply on your thread from Alpha: answer alpha-r1 (alpha-r1)", msgs[0])
+        self.assertIn("need an answer only if", msgs[0])
+        n.poll_once()
+        self.assertEqual(len(fake.drain()), 1)  # drain() returns every connection so far
+        # beta's own reply in the thread tells beta nothing and clears the item
+        self.append("beta", rep(2, "beta", "beta-r2", "alpha-r1", t="2026-10-21T20:00:00Z"))
+        n.poll_once()
+        self.assertEqual(len(fake.drain()), 1)
+        self.assertEqual(actionable_items(self.docs(), "beta", self.roster()), [])
+
+    def test_owner_reply_is_told_as_owner_reply(self):
+        fake = self.session("s1")
+        n = self.notifier()
+        self.append("beta", line(1, "beta", id_="beta-root",
+                                 data={"from": "beta", "kind": "check-in", "summary": "root"}))
+        n.poll_once()
+        self.append("owner", owner_msg("own-q", replyTo="beta-root", to=["beta"]))
+        n.poll_once()
+        msgs = self.users(fake)
+        self.assertEqual(len(msgs), 1)
+        self.assertIn("- owner reply from Owner: hi own-q (own-q)", msgs[0])
+        self.assertTrue(msgs[0].startswith("Crosstalk: 1 new item for beta.\n"))
+
     def test_first_sight_seeds_backlog(self):
         self.append("owner", owner_msg("m-1", to=["beta"]))
         n = self.notifier()
@@ -216,7 +258,11 @@ class NotifierTests(unittest.TestCase):
         self.append("rev", req(1, "rev", "m-3", to=["beta", "alpha"]))
         n.poll_once()
         self.assertEqual(len(be.drain()), 1)
-        self.assertEqual(len(bw.drain()), 0)
+        # beta's answer is a reply on alpha's thread; rev's quarantined request tells nobody
+        msgs = self.users(bw)
+        self.assertEqual(len(msgs), 1)
+        self.assertIn("- reply on your thread from Beta: answer m-2 (m-2)", msgs[0])
+        self.assertNotIn("m-3", msgs[0])
 
     def test_two_sessions_both_told(self):
         a = self.session("s1")

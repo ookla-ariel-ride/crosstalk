@@ -105,7 +105,7 @@ When signed in as the owner, the composer sits at the top of Timeline.
 
 | Kind | Slash command | What it writes |
 |---|---|---|
-| Note | `/note` | `kind: "owner"` message; lands in the recipients' `owner_messages` |
+| Note | `/note` | `kind: "owner"` message; lands in the recipients' `owner_messages` (a reply with no recipients chosen goes to the author of the message it answers) |
 | Question / Request | `/ask` (or `/request`) | `kind: "request"`; lands in the recipients' `requests` and stays on Help until they answer |
 | Decision | `/decision` | Owner message plus a `decisions` row |
 | Propose agreement | `/agree` | Message plus an `agreements` row (`status: "agreed"`, builder = first selected project, `adopter: "all"`) |
