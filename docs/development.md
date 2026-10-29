@@ -80,7 +80,7 @@ token as it should, and a brainstorming tool's scratch log.
 
 ### Running the tests
 
-Python tests (428 unit, CLI, MCP, and live-server tests; standard library
+Python tests (438 unit, CLI, MCP, and live-server tests; standard library
 `unittest` only):
 
 ```
