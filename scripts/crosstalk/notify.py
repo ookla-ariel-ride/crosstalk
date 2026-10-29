@@ -24,7 +24,7 @@ from typing import Callable, Dict, List, Optional, Tuple
 from . import live
 from .courier import atomic_write_text
 from .participants import Roster, load_roster
-from .requests import (inbox_for, pending_recipients, thread_replies_for,
+from .requests import (inbox_for, peer_alerts_for, pending_recipients, thread_replies_for,
                        unanswered_owner_messages)
 
 MAX_ITEM_LINES = 10  # the session reads the full inbox; the message only previews it
@@ -42,25 +42,32 @@ class SessionGone(Exception):
     """The session's socket is gone or refuses: the session has ended."""
 
 
-def actionable_items(docs: Dict, pid: str, roster: Roster) -> List[str]:
+def actionable_items(docs: Dict, pid: str, roster: Roster, urgent: bool = False) -> List[str]:
     """Sorted ids of the inbox items that should wake pid.
 
     Open requests addressed to pid that pid has not answered, owner messages
     (owner replies included) pid has not answered, and replies on pid's threads
-    that pid has not posted or checked in after. Items whose sender is not approved in the
+    that pid has not posted or checked in after. With `urgent`, only the items
+    that may interrupt a non-Claude session (urgent.py): the owner messages,
+    plus alerts from peers that name pid in `to` (peer_alerts_for); requests
+    and thread replies wait for the check-in. Items whose sender is not approved in the
     roster are dropped, so a quarantined participant cannot ring an agent; so
     are pid's own messages (an @Projects request, or one listing itself in
     `to`, must not wake its sender), and items whose id is not a plain
     SAFE_ID_RE id, since ids are written into the prompt and the argv.
     """
     ids = set()
-    for did, doc, replies in inbox_for(docs, pid, roster):
-        if pid in pending_recipients(doc, replies, roster):
-            ids.add(did)
     for did, _doc, _replies in unanswered_owner_messages(docs, pid, roster):
         ids.add(did)
-    for did, _doc, _root in thread_replies_for(docs, pid, roster):
-        ids.add(did)
+    if urgent:
+        for did, _doc, _replies in peer_alerts_for(docs, pid, roster):
+            ids.add(did)
+    else:
+        for did, doc, replies in inbox_for(docs, pid, roster):
+            if pid in pending_recipients(doc, replies, roster):
+                ids.add(did)
+        for did, _doc, _root in thread_replies_for(docs, pid, roster):
+            ids.add(did)
     out = set()
     for did in ids:
         if not isinstance(did, str) or not SAFE_ID_RE.fullmatch(did):
@@ -81,16 +88,9 @@ def _one_line(value, limit: Optional[int] = None) -> str:
     return text[:limit] if limit is not None else text
 
 
-def render_message(name: str, pid: str, items: List[dict], root: Path) -> str:
-    """The message posted into a session: one line per item, then what to do.
-
-    items are message docs with `_id` added; `kind`, `from` and `summary` come
-    from the log. `from` is shown by its roster name when known (pass the name
-    in as `from_name`), else as the id. Summaries are untrusted: one line,
-    at most SUMMARY_MAX characters.
-    """
-    n = len(items)
-    lines = ["Crosstalk: %d new item%s for %s." % (n, "" if n == 1 else "s", pid)]
+def item_lines(items: List[dict]) -> List[str]:
+    """One `- <kind> from <sender>: <summary> (<id>)` line per item, at most MAX_ITEM_LINES."""
+    lines = []
     for it in items[:MAX_ITEM_LINES]:
         kind = it.get("kind") if isinstance(it.get("kind"), str) and it.get("kind") else "message"
         if it.get("_thread_reply"):
@@ -102,6 +102,20 @@ def render_message(name: str, pid: str, items: List[dict], root: Path) -> str:
         lines.append("- %s from %s: %s (%s)" % (_one_line(kind, 40), _one_line(sender, 80),
                                                _one_line(it.get("summary"), SUMMARY_MAX),
                                                it["_id"]))
+    return lines
+
+
+def render_message(name: str, pid: str, items: List[dict], root: Path) -> str:
+    """The message posted into a session: one line per item, then what to do.
+
+    items are message docs with `_id` added; `kind`, `from` and `summary` come
+    from the log. `from` is shown by its roster name when known (pass the name
+    in as `from_name`), else as the id. Summaries are untrusted: one line,
+    at most SUMMARY_MAX characters.
+    """
+    n = len(items)
+    lines = ["Crosstalk: %d new item%s for %s." % (n, "" if n == 1 else "s", pid)]
+    lines.extend(item_lines(items))
     if n > MAX_ITEM_LINES:
         lines.append("- and %d more" % (n - MAX_ITEM_LINES))
     lines.append("Run `python3 %s/scripts/relay.py inbox %s` and answer each\n"
@@ -153,8 +167,12 @@ class Notifier:
     def __init__(self, root: Path, snapshot: Callable[[], Tuple[Dict, Dict]],
                  state_path: Optional[Path], clock: Callable[[], float] = time.time,
                  poll_sec: float = 5.0,
-                 send: Callable[..., None] = send_to_session):
+                 send: Callable[..., None] = send_to_session,
+                 fallback=None):
         self.root = Path(root)
+        # urgent.Fallback (or None): run on every pass, so a disabled Notifier
+        # (a second server) posts no desktop notifications either.
+        self.fallback = fallback
         self.snapshot = snapshot
         self.state_path = Path(state_path) if state_path is not None else None
         self.clock = clock
@@ -365,6 +383,11 @@ class Notifier:
                 self._tell(reg, key, st, new, docs, roster, now)
             self._build_view(regs)
             self._save()
+            if self.fallback is not None:
+                try:
+                    self.fallback.poll(docs, roster)
+                except Exception as e:  # the fallback never stops the live pass
+                    _warn("urgent fallback failed: %s" % e.__class__.__name__)
 
     def _tell(self, reg: live.Registration, key: str, st: dict, new: List[str],
               docs: Dict, roster: Roster, now: float) -> None:

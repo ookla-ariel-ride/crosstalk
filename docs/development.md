@@ -26,6 +26,7 @@ Part of the [Crosstalk docs](../README.md#documentation).
 | `scripts/crosstalk/reports.py` | The inbox and recent-messages reports shared by `relay.py` and the MCP server |
 | `scripts/crosstalk/live.py` | Live-session registrations (`live register`, `unregister`, `status`, `hooks`) |
 | `scripts/crosstalk/notify.py` | Sends inbox notes to live sessions over their sockets |
+| `scripts/crosstalk/urgent.py` | The Codex urgent-item hook (`relay.py urgent`) and its macOS fallback |
 | `scripts/crosstalk/logs.py` | Locked appends (`fcntl.flock`), line validation, trust and quarantine rules |
 | `scripts/crosstalk/replay.py` | `(t, from, seq)` replay and filling in missing `from`, `t`, and `project` |
 | `scripts/crosstalk/requests.py` | Recipient and group routing and the inbox |
@@ -80,7 +81,7 @@ token as it should, and a brainstorming tool's scratch log.
 
 ### Running the tests
 
-Python tests (449 unit, CLI, MCP, and live-server tests; standard library
+Python tests (481 unit, CLI, MCP, live-server, and urgent-hook tests; standard library
 `unittest` only):
 
 ```

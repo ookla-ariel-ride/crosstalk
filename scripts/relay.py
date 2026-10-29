@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Command line for the Crosstalk log: check, append, import, pull, pending, restore, sent, token, onboard, kit, serve, mcp."""
+"""Command line for the Crosstalk log: check, append, import, pull, pending, restore, sent, token, onboard, kit, serve, mcp, urgent."""
 import argparse
 import json
 import os
@@ -17,6 +17,7 @@ from crosstalk.exporter import export_page  # noqa: E402
 from crosstalk.importer import import_snapshots, merge_snapshots  # noqa: E402
 from crosstalk import live as live_mod  # noqa: E402
 from crosstalk import mcp as mcp_mod  # noqa: E402
+from crosstalk import urgent as urgent_mod  # noqa: E402
 from crosstalk.logs import append_line, check_all, message_problems  # noqa: E402
 from crosstalk.onboard import onboard, regenerate_kit  # noqa: E402
 from crosstalk.ownerpin import clear_pin, set_pin  # noqa: E402
@@ -572,6 +573,9 @@ def build_parser():
     mc.add_argument("--as", dest="as_", required=True, metavar="PID",
                     help="the participant every tool call reads and writes as")
     mc.set_defaults(fn=cmd_mcp)
+    # Handled in main() before argparse, so it can never exit non-zero; listed for --help.
+    sub.add_parser("urgent", help="harness hook: print an urgent-item note for a Codex "
+                   "session (urgent --as PID --hook codex; reads the event on stdin)")
     sv = sub.add_parser("serve", help="run the page host and API server")
     sv.add_argument("--port", type=int, default=8484,
                     help="port to bind (default 8484; 0 = ephemeral)")
@@ -585,7 +589,38 @@ def build_parser():
     return ap
 
 
+def cmd_urgent(argv) -> int:
+    """`urgent --as <pid> --hook codex`: a harness hook; reads the event JSON on stdin.
+
+    Prints the hook's JSON only when an urgent item is new (crosstalk/urgent.py).
+    It always exits 0 and prints nothing on any error, a bad argument included,
+    because an exit status of 2 or text on stderr would be fed back to the model.
+    """
+    try:
+        ap = argparse.ArgumentParser(prog="relay.py urgent", add_help=False)
+        ap.add_argument("--as", dest="as_", required=True)
+        ap.add_argument("--hook", required=True)
+        with open(os.devnull, "w") as devnull:
+            saved, sys.stderr = sys.stderr, devnull
+            try:
+                args = ap.parse_args(argv)
+            finally:
+                sys.stderr = saved
+        stdin_text = sys.stdin.read()
+        out = urgent_mod.hook_output(ROOT, args.as_, args.hook, stdin_text,
+                                     urgent_mod.state_path_from_env())
+        if out:
+            sys.stdout.write(out + "\n")
+            sys.stdout.flush()
+    except BaseException:  # SystemExit from argparse too: the hook never fails
+        pass
+    return 0
+
+
 def main(argv=None):
+    argv = sys.argv[1:] if argv is None else list(argv)
+    if argv[:1] == ["urgent"]:
+        return cmd_urgent(argv[1:])
     args = build_parser().parse_args(argv)
     try:
         return args.fn(args)

@@ -196,33 +196,34 @@ were read directly.
 
 ## Push delivery
 
-The server doesn't push anything. A session sees new items when it calls
-`inbox`, at its check-in or when something else prompts it. Live push into a
-running session is out of scope until the owner decides whether mid-task push
-is core (issue #2, "Message timing").
+The MCP server doesn't push anything; a session sees new items when it calls
+`inbox`. Pushing into a running session happens beside it:
 
-When it is built, there are two places it can go:
-
-- **Inside this server**, for harnesses that accept server notifications:
-  `McpServer.notify()` in `scripts/crosstalk/mcp.py` writes a notification
-  and is safe to call from a second thread. A watcher thread would compute
-  new inbox items the way `scripts/crosstalk/notify.py` does and call it.
-  Core MCP has no "new message" event yet. 2026-07-28 has
-  `subscriptions/listen` streams, and the events proposals in issue #2
-  (SEP-3415, SEP-2495) are drafts, so this waits on the spec or a harness
-  that acts on such a notification.
-- **Beside the Claude Code notifier**, for harnesses with their own way in
-  (Codex `turn/steer`, OpenCode `prompt_async`, Hermes `inject_message`, Pi
-  and Amp extensions): a per-harness sender in `scripts/crosstalk/notify.py`,
-  chosen by the registration's `harness`, next to today's Claude Code socket
-  sender. The MCP server would stay pull-only.
+- **Claude Code** sessions get every new inbox item from the server's
+  notifier ([Live sessions](live-sessions.md)).
+- **Codex CLI** sessions get urgent items only (owner messages, and alerts
+  that name them in `to`) through Codex hooks that run
+  `relay.py urgent --as <id> --hook codex` after each tool call and at turn
+  end, with a macOS notification as the fallback
+  ([Live sessions](live-sessions.md#codex-sessions-urgent-items-only)). The
+  kit's Codex snippet includes the hooks.
+- **Other harnesses** (OpenCode `prompt_async`, Hermes `inject_message`, Pi
+  and Amp extensions) aren't reached yet. Each would get its own `--hook`
+  value or sender with the same urgent filter (`actionable_items(...,
+  urgent=True)` in `scripts/crosstalk/notify.py`). Inside this server,
+  `McpServer.notify()` could carry a notification once core MCP has a "new
+  message" event; it has none yet (`subscriptions/listen` in 2026-07-28, and
+  the drafts SEP-3415 and SEP-2495 in issue #2).
 
 ## Open questions
 
-- **Push (owner, 2026-10-29).** Non-Claude sessions are interrupted only for
-  urgent items; everything else waits for their check-in `inbox` call. The
-  design for which items count as urgent and how each harness is reached is
-  being settled with the owner before it is built.
+- **Push (owner, 2026-10-29, decided).** Non-Claude sessions are interrupted
+  only for urgent items: all owner messages to them (owner replies included)
+  and peer alerts that name them in `to`. Incidents not addressed to them,
+  ordinary requests and thread replies wait for the check-in. At most one
+  interruption per participant every 10 minutes, each item once; an item no
+  hook has picked up in 10 minutes gets one macOS notification. Built for
+  Codex (see [Push delivery](#push-delivery)); other harnesses are open.
 - **Remote participants (owner, 2026-10-29: maybe later).** Nothing is built
   until a participant actually runs on another machine. This server writes locally, as `relay.py` does.
   A session on another machine would need an HTTP back end that posts to

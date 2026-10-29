@@ -236,6 +236,29 @@ def _mcp_servers_json(args) -> str:
             '      "command": "python3",\n      "args": %s\n    }\n  }\n}\n```\n' % _qlist(args))
 
 
+# Urgent push for Codex: hooks that run `relay.py urgent` (docs/live-sessions.md,
+# "Codex sessions: urgent items only"). Event names and output shapes were
+# checked against the Codex hooks docs on 2026-10-29; keep the two in step.
+_CODEX_HOOK_EVENTS = (("SessionStart", "startup|clear"), ("PostToolUse", None), ("Stop", None))
+
+
+def codex_hooks_block(relay: str, pid: str) -> str:
+    """The kit's Codex hooks snippet: urgent items interrupt a running session."""
+    command = "python3 %s urgent --as %s --hook codex" % (shlex.quote(relay), shlex.quote(pid))
+    toml = []
+    for event, matcher in _CODEX_HOOK_EVENTS:
+        toml.append("[[hooks.%s]]" % event)
+        if matcher:
+            toml.append("matcher = %s" % _q(matcher))
+        toml += ["", "[[hooks.%s.hooks]]" % event, 'type = "command"',
+                 "command = %s" % _q(command), "timeout = 10", ""]
+    return ("**Urgent messages.** Owner messages to you and alerts that name you in `to` "
+            "can reach a running Codex session. Add these hooks to the same file; Codex "
+            "runs them after each tool call and when a turn ends, and asks you to trust "
+            "them once in `/hooks`. Everything else waits for your check-in.\n\n"
+            "```toml\n%s```\n" % "\n".join(toml))
+
+
 def _mcp_body(harness: Optional[str], relay: str, pid: str) -> Tuple[str, str]:
     """(where to put it, the snippet) for a harness; the generic entry for any other."""
     args = [relay, "mcp", "--as", pid]
@@ -250,7 +273,8 @@ def _mcp_body(harness: Optional[str], relay: str, pid: str) -> Tuple[str, str]:
         return ("For **Codex CLI**, in `~/.codex/config.toml` or a trusted project's "
                 "`.codex/config.toml`:",
                 '```toml\n[mcp_servers.crosstalk]\ncommand = "python3"\nargs = %s\n```\n\n'
-                "Or run:\n\n```\ncodex mcp add crosstalk -- %s\n```\n" % (_qlist(args), shell))
+                "Or run:\n\n```\ncodex mcp add crosstalk -- %s\n```\n\n%s"
+                % (_qlist(args), shell, codex_hooks_block(relay, pid)))
     if harness == "opencode":
         return ("For **OpenCode**, in the project's `opencode.json` (or the global "
                 "`~/.config/opencode/opencode.json`):",

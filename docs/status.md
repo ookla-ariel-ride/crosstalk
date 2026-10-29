@@ -52,6 +52,14 @@ everything starts at [README.md](../README.md).
 
 ## Recent changes
 
+- 2026-10-29: urgent-only push for Codex sessions. `relay.py urgent --as <id>
+  --hook codex` runs as a Codex `PostToolUse`, `Stop` and `SessionStart`
+  hook and adds a note for new owner messages and peer alerts addressed to the
+  participant, at most once every 10 minutes and each item once. The server's
+  notifier posts a macOS notification for an urgent item no hook picked up in
+  10 minutes. The Codex kit includes the hooks (docs/live-sessions.md). Not
+  yet set up for the `codex` participant: its kit has to be regenerated and
+  the hooks trusted in `/hooks`.
 - 2026-10-28 (afternoon): Crosstalk checks in every 30 minutes like the other
   projects; rules moved to `AGENTS.md`, which `CLAUDE.md` imports
   (`@AGENTS.md`), the standard for all projects; gitleaks `pre-commit` and
@@ -82,7 +90,7 @@ everything starts at [README.md](../README.md).
 
 ## Tests
 
-449 Python tests (`python3 -m unittest discover -s tests`) pass as of
+481 Python tests (`python3 -m unittest discover -s tests`) pass as of
 2026-10-29; `tests/page/scenarios.js` has 96 page scenarios (`tests/page/run.md`).
 
 ## History

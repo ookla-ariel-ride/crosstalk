@@ -445,6 +445,34 @@ def unanswered_owner_messages(docs: Dict, pid: str, roster=None) -> List[Tuple[s
     return out
 
 
+def peer_alerts_for(docs: Dict, pid: str, roster=None) -> List[Tuple[str, dict, List[dict]]]:
+    """Alerts from approved peers that name pid in `to`, which pid has not answered, newest first.
+
+    A peer alert is a `kind: "alert"` message from anyone but the owner (owner
+    alerts are owner messages) and pid. Only an explicit `to` counts: an
+    @mention or a broadcast alert is not addressed to pid here. It leaves once
+    pid posts in its thread after it. Returns (id, doc, [reply docs]).
+    """
+    messages = _messages(docs)
+    replies = _replies_by_request(messages)
+    threads = _Threads(messages)
+    out = []  # type: List[Tuple[str, dict, List[dict]]]
+    for did, doc in messages.items():
+        if doc.get("kind") != "alert":
+            continue
+        sender = doc.get("from")
+        if sender in ("owner", pid) or not _is_approved(sender, roster):
+            continue
+        to = doc.get("to")
+        if not (to == pid or (isinstance(to, list) and pid in to)):
+            continue
+        if threads.posted_after(pid, did):
+            continue
+        out.append((did, doc, replies.get(did, [])))
+    out.sort(key=lambda item: _t(item[1]), reverse=True)
+    return out
+
+
 def thread_replies_for(docs: Dict, pid: str, roster=None) -> List[Tuple[str, dict, str]]:
     """Replies on pid's threads that pid has not posted after, newest first.
 

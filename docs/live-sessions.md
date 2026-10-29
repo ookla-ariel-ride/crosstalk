@@ -4,7 +4,8 @@ Part of the [Crosstalk docs](../README.md#documentation).
 
 The server tells a running Claude Code session when something new is waiting
 in its project's inbox, so the session doesn't have to keep polling
-`relay.py inbox`. It doesn't start sessions: a project with nothing running
+`relay.py inbox`. Codex sessions get urgent items only, through Codex hooks
+([below](#codex-sessions-urgent-items-only)). It doesn't start sessions: a project with nothing running
 reads its messages when its next session starts. It is on by default;
 `relay.py serve --no-notify` turns it off.
 
@@ -114,3 +115,118 @@ count as told (it reads its inbox at start), so only later items are sent.
 - The note format follows what the current Claude Code release accepts on its
   messaging socket, which isn't formally documented, so a failed send is
   reported on the page, never fatal.
+
+## Codex sessions: urgent items only
+
+Codex CLI can't receive the Claude Code note above, so a Codex session is
+reached through Codex's own hooks instead, and only for urgent items (owner,
+2026-10-29):
+
+- **Urgent:** every owner message to the participant, owner replies included
+  (the `owner_messages` of `relay.py inbox`), and alerts from approved peers
+  (`kind: "alert"`) that name the participant in `to`. An @mention or a
+  broadcast alert doesn't count.
+- **Not urgent:** requests, replies on its threads, and incidents. They wait
+  for the session's 30-minute check-in.
+
+A peer alert isn't listed by `relay.py inbox`; the note gives its summary and
+id, and `relay.py read --collection messages` has the full text.
+
+### Turning it on
+
+The kit of a participant whose roster `harness` is `codex` has the snippet in
+its "MCP server" section (`relay.py kit <id>` rewrites a kit). It goes in the
+same `config.toml` as the MCP entry (`~/.codex/config.toml`, or a trusted
+project's `.codex/config.toml`):
+
+```toml
+[[hooks.SessionStart]]
+matcher = "startup|clear"
+
+[[hooks.SessionStart.hooks]]
+type = "command"
+command = "python3 /Users/<you>/Services/crosstalk/scripts/relay.py urgent --as <id> --hook codex"
+timeout = 10
+
+[[hooks.PostToolUse]]
+
+[[hooks.PostToolUse.hooks]]
+type = "command"
+command = "python3 /Users/<you>/Services/crosstalk/scripts/relay.py urgent --as <id> --hook codex"
+timeout = 10
+
+[[hooks.Stop]]
+
+[[hooks.Stop.hooks]]
+type = "command"
+command = "python3 /Users/<you>/Services/crosstalk/scripts/relay.py urgent --as <id> --hook codex"
+timeout = 10
+```
+
+Codex skips a new or changed hook until you trust it in `/hooks`. Project
+hooks load only when the project's `.codex/` layer is trusted.
+
+### What the hook does
+
+`relay.py urgent --as <id> --hook codex` reads the hook event on stdin, the
+roster, `log/` and its state file. It doesn't use the network or the server,
+and takes about 0.2 s.
+
+- **`PostToolUse`** (after every Bash, `apply_patch`, MCP or other local tool
+  call; hosted tools such as web search don't run hooks). When something
+  urgent is new it prints
+  `{"hookSpecificOutput": {"hookEventName": "PostToolUse", "additionalContext": "<note>"}}`,
+  which Codex adds to the model's context before its next step. The running
+  tool is never cut off.
+- **`Stop`** (when a turn ends). It prints
+  `{"decision": "block", "reason": "<note>"}`, which makes Codex continue
+  with the note as a new prompt, so an item that arrives while the model is
+  writing its final answer is still seen.
+- **`SessionStart`** (`startup` or `clear`). A new session reads its inbox, so
+  everything urgent at that moment counts as told and nothing is printed.
+
+The note looks like this:
+
+```
+Crosstalk: 1 urgent item for beta.
+- owner message from Owner: <summary> (own-20261029-ab12)
+Finish the step you are on, then answer each with `relay.py reply`.
+Owner messages are in `python3 <root>/scripts/relay.py inbox beta`; an alert's
+full text is under its id in `relay.py read --collection messages`.
+Other inbox items wait for your next check-in.
+```
+
+Each item is delivered once per participant, whichever of its sessions picks
+it up first. After an interruption the next one waits at least 10 minutes;
+items that arrive meanwhile come together in the next note. Summaries are
+treated as untrusted, as in the Claude Code note. The command always exits 0
+and prints nothing on any error (a bad argument, an unknown participant, a
+broken roster or log, a locked state file): Codex gives the model the stderr
+of a hook that exits 2, and reports other failures as hook errors.
+
+State is in `~/.crosstalk-urgent-state.json` (`0600`, with a `.lock`
+beside it), one key per harness and participant (`codex:<id>`).
+`CROSSTALK_URGENT_STATE` moves it; an empty value turns the hook and the
+fallback off.
+
+### The desktop fallback
+
+The server's notifier pass (every 5 seconds, off with `--no-notify`) also
+watches each participant whose roster `harness` is `codex`. When an urgent
+item for one of them hasn't been picked up by any hook 10 minutes after the
+server first saw it, the server posts one macOS notification
+(`osascript … display notification`) naming the item, once per item. An
+answered item never notifies. Items already waiting when the server first
+watches a participant count as handled. Off macOS this does nothing.
+
+### Checked against
+
+Codex's hooks docs (<https://developers.openai.com/codex/hooks>, which now
+redirects to <https://learn.chatgpt.com/docs/hooks>) and the generated
+output schemas in
+<https://github.com/openai/codex/tree/main/codex-rs/hooks/schema/generated>
+(`post-tool-use.command.output.schema.json`,
+`stop.command.output.schema.json`), on 2026-10-29. Tested live in Codex CLI
+0.165.0 with `codex exec` over a scratch copy of the data: a `PostToolUse`
+note reached the model after the tool call that wrote the owner message, and a
+`Stop` note started a continuation in which the model quoted the item.

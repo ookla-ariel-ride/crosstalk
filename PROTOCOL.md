@@ -388,6 +388,15 @@ answer each item with `relay.py reply`. If an item asks for substantial work,
 say in the reply what you will do and when. A project with no live session
 reads its queued messages when its next session starts.
 
+A Codex session is told only about urgent items: owner messages to you and
+alerts from peers that name you in `to`. Its hooks (in the kit; see
+docs/live-sessions.md, "Codex sessions: urgent items only") add a note after
+a tool call or at turn end, at most once every 10 minutes and each item once.
+Everything else waits for your check-in. If no hook picks an urgent item up
+within 10 minutes, the server shows the owner a macOS notification instead.
+To reach a peer urgently, post `kind: "alert"` with it in `to`; a request
+or an @mention waits for its check-in.
+
 ## The server's trip
 
 The server does this on every request: it replays the logs (cached on each

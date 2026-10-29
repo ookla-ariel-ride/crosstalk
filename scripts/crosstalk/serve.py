@@ -44,6 +44,7 @@ from .service import SERVICE
 from .tokens import TOKEN_FILE, Result, Tokens
 from . import ownerpin
 from .notify import Notifier
+from . import urgent as urgent_mod
 
 # The collections the page reads. "participants" is the owner's roster.
 KNOWN_COLLECTIONS = tuple(COLLECTIONS) + ("participants",)
@@ -863,13 +864,15 @@ class RunningServer:
 
     With `notify`, a Notifier polls the log on its own thread and tells live
     Claude Code sessions about new inbox items; its state persists at
-    `notify_state` (None keeps it in memory).
+    `notify_state` (None keeps it in memory). With `urgent_state` as well, each
+    notifier pass also runs the urgent fallback (urgent.Fallback) on that file.
     """
 
     def __init__(self, root, port: int = 0, host: str = "127.0.0.1", tokens=None,
                  no_pin: bool = False, sessions=None, notify: bool = False,
-                 notify_state=None, notify_poll_sec: float = 5.0):
+                 notify_state=None, notify_poll_sec: float = 5.0, urgent_state=None):
         self.root = Path(root)
+        self.urgent_state = urgent_state
         self.host = host
         self.port = port
         self.tokens = tokens
@@ -899,8 +902,10 @@ class RunningServer:
         self._thread.start()
         if self.notify:
             state = httpd.state  # type: ignore[attr-defined]
+            fallback = (urgent_mod.Fallback(Path(self.urgent_state))
+                        if self.urgent_state is not None else None)
             state.notifier = Notifier(self.root, state.cache.snapshot, self.notify_state,
-                                      poll_sec=self.notify_poll_sec)
+                                      poll_sec=self.notify_poll_sec, fallback=fallback)
             self._notifier = state.notifier
             self._notifier.start()
         return self
@@ -976,7 +981,10 @@ def serve(root, host: str = "127.0.0.1", port: int = 8484, no_pin: bool = False,
     `notify` (on by default; `--no-notify` turns it off) runs the notifier
     that tells live Claude Code sessions about new inbox items. Its state
     lives in ~/.crosstalk-notify-state.json (`CROSSTALK_NOTIFY_STATE`; empty
-    keeps it in memory).
+    keeps it in memory). The same pass runs the urgent fallback: a macOS
+    notification for an urgent item that no Codex hook has picked up in ten
+    minutes (crosstalk/urgent.py; state ~/.crosstalk-urgent-state.json,
+    `CROSSTALK_URGENT_STATE`, empty turns the fallback off).
 
     SIGTERM (how launchd stops the service) shuts down like Ctrl-C: the
     notifier stops cleanly, then the process exits with status 143
@@ -987,7 +995,8 @@ def serve(root, host: str = "127.0.0.1", port: int = 8484, no_pin: bool = False,
     notify_state = os.environ.get("CROSSTALK_NOTIFY_STATE", DEFAULT_NOTIFY_STATE) or None
     server = RunningServer(root, port=port, host=host, tokens=tokens,
                            no_pin=no_pin, sessions=sessions, notify=notify,
-                           notify_state=notify_state)
+                           notify_state=notify_state,
+                           urgent_state=urgent_mod.state_path_from_env())
     server.start_server()
     if server.pin:
         print("Login PIN: %s  (one login, ten minutes)" % server.pin, flush=True)

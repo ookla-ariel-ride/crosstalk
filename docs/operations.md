@@ -52,7 +52,8 @@ python3 scripts/relay.py serve [--port 8484] [--host 127.0.0.1] [--no-pin] [--no
 ```
 
 `--port 0` picks a free port. `--no-pin` skips the startup PIN. `--no-notify`
-turns off live-session notes.
+turns off live-session notes and the urgent-item desktop fallback for Codex
+participants.
 
 ### Signing in
 

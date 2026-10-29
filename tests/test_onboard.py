@@ -410,6 +410,32 @@ class KitMcpTests(unittest.TestCase):
             self.assertIn('mcp_servers:\n  crosstalk:\n    command: "python3"\n    args: %s\n' % args,
                           hermes)
 
+    def test_codex_kit_has_urgent_hooks(self):
+        with TempRepo() as r:
+            r.write_roster()
+            relay = str(r.root.resolve() / "scripts" / "relay.py")
+            codex = mcp_section(self.kit(r.root, "codex"))
+            command = 'command = "python3 %s urgent --as smoke-agent --hook codex"' % relay
+            self.assertEqual(codex.count(command), 3)
+            for event in ("SessionStart", "PostToolUse", "Stop"):
+                self.assertIn("[[hooks.%s]]" % event, codex)
+                self.assertIn("[[hooks.%s.hooks]]" % event, codex)
+            self.assertIn("/hooks", codex)
+            try:
+                import tomllib  # Python 3.11+
+            except ImportError:
+                return
+            blocks = [part.split("```", 1)[0] for part in codex.split("```toml\n")[1:]]
+            cfg = tomllib.loads("\n".join(blocks))
+            stop = cfg["hooks"]["Stop"][0]["hooks"][0]
+            self.assertEqual(stop["type"], "command")
+            self.assertEqual(stop["command"],
+                             "python3 %s urgent --as smoke-agent --hook codex" % relay)
+            self.assertEqual(cfg["hooks"]["SessionStart"][0]["matcher"], "startup|clear")
+            self.assertEqual(cfg["mcp_servers"]["crosstalk"]["command"], "python3")
+            for harness in ("claude-code", "opencode", None):
+                self.assertNotIn("--hook codex", mcp_section(self.kit(r.root, harness)))
+
     def test_shell_command_quotes_a_path_with_spaces(self):
         with TempRepo() as r:
             root = r.root / "my checkout"
