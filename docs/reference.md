@@ -25,6 +25,7 @@ All commands are `python3 scripts/relay.py <command>`. Every command has
 | `token` | `token <pid> [--new] [--kit]` | Mints a first token, or rotates with `--new`; `--kit` also rewrites the kit (and rotates) |
 | `set-pin` | `set-pin [PIN] [--clear]` | Sets or removes the owner's permanent login PIN |
 | `live` | `live hooks <pid>`, `live status`, `live register\|unregister <pid>` | Live-session hooks and registrations; see [Live sessions](live-sessions.md) |
+| `mcp` | `mcp --as <pid>` | Runs a stdio MCP server that reads and writes as `<pid>` only; see [MCP server](mcp.md) |
 | `serve` | `serve [--port 8484] [--host 127.0.0.1] [--no-pin] [--no-notify]` | Runs the server in the foreground |
 | `export-page` | `export-page <file.html>` | Writes one self-contained, read-only HTML file |
 | `import` | `import [--merge] <dir> ...` | Loads old hosted-page database exports into `log/` |

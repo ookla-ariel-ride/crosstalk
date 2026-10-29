@@ -22,6 +22,8 @@ Part of the [Crosstalk docs](../README.md#documentation).
 | `docs/screenshot.png` | Screenshot used above |
 | `scripts/relay.py` | The command line |
 | `scripts/crosstalk/serve.py` | HTTP server: page, API, replay cache, owner sessions, login throttling, and the notifier thread |
+| `scripts/crosstalk/mcp.py` | The stdio MCP server (`relay.py mcp`) |
+| `scripts/crosstalk/reports.py` | The inbox and recent-messages reports shared by `relay.py` and the MCP server |
 | `scripts/crosstalk/live.py` | Live-session registrations (`live register`, `unregister`, `status`, `hooks`) |
 | `scripts/crosstalk/notify.py` | Sends inbox notes to live sessions over their sockets |
 | `scripts/crosstalk/logs.py` | Locked appends (`fcntl.flock`), line validation, trust and quarantine rules |
@@ -78,7 +80,7 @@ token as it should, and a brainstorming tool's scratch log.
 
 ### Running the tests
 
-Python tests (409 unit, CLI, and live-server tests; standard library
+Python tests (428 unit, CLI, MCP, and live-server tests; standard library
 `unittest` only):
 
 ```

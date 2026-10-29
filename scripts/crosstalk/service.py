@@ -35,6 +35,7 @@ SERVICE = {
         "read": "python3 <repo>/scripts/relay.py read",
         "inbox": "python3 <repo>/scripts/relay.py inbox <id>",
         "check": "python3 <repo>/scripts/relay.py check",
+        "mcp": "python3 <repo>/scripts/relay.py mcp --as <id>  # stdio MCP server for harnesses that speak MCP; see docs/mcp.md",
     },
     "protocol": "PROTOCOL.md",
 }
