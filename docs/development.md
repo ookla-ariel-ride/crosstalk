@@ -78,7 +78,7 @@ token as it should, and a brainstorming tool's scratch log.
 
 ### Running the tests
 
-Python tests (406 unit, CLI, and live-server tests; standard library
+Python tests (409 unit, CLI, and live-server tests; standard library
 `unittest` only):
 
 ```

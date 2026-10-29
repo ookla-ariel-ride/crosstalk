@@ -269,7 +269,13 @@ class InboxTests(unittest.TestCase):
         self.assertEqual(bcast_entry["replies"][0]["trust"], "approved")
 
         # Once bewareilive replies to own-bil, own-bil drops out for bewareilive
-        self.r.write_log("bewareilive", [rep(1, "bewareilive", "bewareilive-r1", "own-bil")])
+        # (bewareilive joined before the broadcast, so the broadcast is still its to answer)
+        self.r.write_log("bewareilive", [
+            line(1, "bewareilive", id_="bewareilive-c0",
+                 data={"from": "bewareilive", "kind": "check-in", "summary": "here"},
+                 t="2026-10-21T17:00:00Z"),
+            rep(2, "bewareilive", "bewareilive-r1", "own-bil", t="2026-10-21T20:45:00Z"),
+        ])
         out3 = self.inbox("bewareilive")
         self.assertEqual([m["message"]["id"] for m in out3["owner_messages"]], ["own-bcast"])
 
@@ -302,6 +308,82 @@ class InboxTests(unittest.TestCase):
         }
         res = unanswered_owner_messages(docs, "bewareilive")
         self.assertEqual([did for (did, _, _) in res], ["own-top"])
+
+    def test_owner_broadcast_before_first_line_not_listed(self):
+        # A participant can't be expected to answer a broadcast posted before it joined.
+        self.r.write_log("owner", [
+            line(1, "owner", id_="own-old",
+                 data={"from": "owner", "kind": "owner", "summary": "old news for all"},
+                 t="2026-10-21T10:00:00.123Z"),
+            line(2, "owner", id_="own-group",
+                 data={"from": "owner", "kind": "alert", "summary": "@projects sync up"},
+                 t="2026-10-21T11:00:00Z"),
+            line(3, "owner", id_="own-same",
+                 data={"from": "owner", "kind": "owner", "summary": "same second as first line"},
+                 t="2026-10-21T12:00:00Z"),
+            line(4, "owner", id_="own-new",
+                 data={"from": "owner", "kind": "owner", "summary": "new news for all"},
+                 t="2026-10-21T13:00:00Z"),
+        ])
+        self.r.write_log("vectorcraft", [
+            line(1, "vectorcraft", id_="vc-first",
+                 data={"from": "vectorcraft", "kind": "check-in", "summary": "hello"},
+                 t="2026-10-21T12:00:00Z"),
+        ])
+        out = self.inbox("vectorcraft")
+        self.assertEqual([m["message"]["id"] for m in out["owner_messages"]],
+                         ["own-new", "own-same"])
+        # bewareilive has no lines yet: it sees every broadcast
+        out_bil = self.inbox("bewareilive")
+        self.assertEqual([m["message"]["id"] for m in out_bil["owner_messages"]],
+                         ["own-new", "own-same", "own-group", "own-old"])
+
+    def test_owner_message_naming_participant_listed_even_before_first_line(self):
+        self.r.write_log("owner", [
+            line(1, "owner", id_="own-to",
+                 data={"from": "owner", "kind": "owner", "summary": "welcome", "to": ["vectorcraft"]},
+                 t="2026-10-21T09:00:00Z"),
+            line(2, "owner", id_="own-to-str",
+                 data={"from": "owner", "kind": "owner", "summary": "welcome", "to": "vectorcraft"},
+                 t="2026-10-21T09:30:00Z"),
+            line(3, "owner", id_="own-alias",
+                 data={"from": "owner", "kind": "decision", "summary": "@vc please set up"},
+                 t="2026-10-21T10:00:00Z"),
+            line(4, "owner", id_="own-name-and-all",
+                 data={"from": "owner", "kind": "owner", "summary": "@everyone, esp. @VectorCraft"},
+                 t="2026-10-21T10:30:00Z"),
+            line(5, "owner", id_="own-bcast",
+                 data={"from": "owner", "kind": "owner", "summary": "everyone"},
+                 t="2026-10-21T11:00:00Z"),
+        ])
+        self.r.write_log("vectorcraft", [
+            line(1, "vectorcraft", id_="vc-first",
+                 data={"from": "vectorcraft", "kind": "check-in", "summary": "hello"},
+                 t="2026-10-21T12:00:00Z"),
+        ])
+        out = self.inbox("vectorcraft")
+        self.assertEqual([m["message"]["id"] for m in out["owner_messages"]],
+                         ["own-name-and-all", "own-alias", "own-to-str", "own-to"])
+
+    def test_owner_message_without_valid_time_or_participant_time_listed(self):
+        from crosstalk.requests import unanswered_owner_messages
+
+        docs = {
+            ("messages", "own-no-t"): {"from": "owner", "kind": "owner", "summary": "no t"},
+            ("messages", "own-bad-t"): {"from": "owner", "kind": "owner", "summary": "bad t",
+                                        "t": "yesterday"},
+            ("messages", "own-old"): {"from": "owner", "kind": "owner", "summary": "old",
+                                      "t": "2026-10-21T10:00:00Z"},
+            ("messages", "vc-first"): {"from": "vectorcraft", "kind": "check-in",
+                                       "summary": "hi", "t": "2026-10-21T12:00:00.500Z"},
+            ("messages", "bil-undated"): {"from": "bewareilive", "kind": "check-in",
+                                          "summary": "hi", "t": "not a time"},
+        }
+        vc = sorted(did for (did, _, _) in unanswered_owner_messages(docs, "vectorcraft"))
+        self.assertEqual(vc, ["own-bad-t", "own-no-t"])
+        # bewareilive has only an undated row: no join time, so nothing is hidden
+        bil = sorted(did for (did, _, _) in unanswered_owner_messages(docs, "bewareilive"))
+        self.assertEqual(bil, ["own-bad-t", "own-no-t", "own-old"])
 
     def test_agreements_to_adopt(self):
         self.r.write_log("vectorcraft", [
@@ -513,10 +595,13 @@ class InboxTests(unittest.TestCase):
                        "summary": "Owner routine check-in"}),
         ])
         self.r.write_log("vectorcraft", [
-            line(1, "vectorcraft", id_="vc-req-bil", t="2026-10-24T12:05:00Z",
+            # vectorcraft joined before the owner's group messages
+            line(1, "vectorcraft", id_="vc-checkin", t="2026-10-24T11:00:00Z",
+                 data={"from": "vectorcraft", "kind": "check-in", "summary": "here"}),
+            line(2, "vectorcraft", id_="vc-req-bil", t="2026-10-24T12:05:00Z",
                  data={"from": "vectorcraft", "kind": "request",
                        "summary": "Hey @bil can you check vectorcraft@f0bfbca3?"}),
-            line(2, "vectorcraft", id_="vc-req-rev", t="2026-10-24T12:06:00Z",
+            line(3, "vectorcraft", id_="vc-req-rev", t="2026-10-24T12:06:00Z",
                  data={"from": "vectorcraft", "kind": "request",
                        "summary": "Need @reviewers on this PR"}),
         ])
