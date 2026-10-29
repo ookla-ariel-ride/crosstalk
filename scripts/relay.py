@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Command line for the Crosstalk log: check, append, import, pull, pending, restore, sent, token, onboard, kit, serve."""
+"""Command line for the Crosstalk log: check, append, import, pull, pending, restore, sent, token, onboard, kit, serve, mcp."""
 import argparse
 import json
 import os
@@ -16,6 +16,7 @@ from crosstalk.courier import pending, restore, sent  # noqa: E402
 from crosstalk.exporter import export_page  # noqa: E402
 from crosstalk.importer import import_snapshots, merge_snapshots  # noqa: E402
 from crosstalk import live as live_mod  # noqa: E402
+from crosstalk import mcp as mcp_mod  # noqa: E402
 from crosstalk.logs import append_line, check_all, message_problems  # noqa: E402
 from crosstalk.onboard import onboard, regenerate_kit  # noqa: E402
 from crosstalk.ownerpin import clear_pin, set_pin  # noqa: E402
@@ -23,14 +24,7 @@ from crosstalk.participants import load_roster  # noqa: E402
 from crosstalk.posters import claim_file, land_sync, post_incident, release_file  # noqa: E402
 from crosstalk.pull import pull  # noqa: E402
 from crosstalk.replay import enrich_messages, load_all_lines, replay  # noqa: E402
-from crosstalk.requests import (  # noqa: E402
-    agreements_to_adopt_for,
-    all_requests_for,
-    inbox_for,
-    pending_recipients,
-    stale_locks_for,
-    unanswered_owner_messages,
-)
+from crosstalk.reports import inbox_report, load_docs  # noqa: E402
 from crosstalk.serve import serve  # noqa: E402
 from crosstalk.service import SERVICE  # noqa: E402
 from crosstalk.tokens import TOKEN_FILE, Tokens, load_tokens  # noqa: E402
@@ -117,55 +111,19 @@ def cmd_read(args):
     return 0
 
 
-def _trust(pid, roster):
-    """The trust of a participant id: approved, quarantined, or unknown when absent."""
-    p = roster.participants.get(pid)
-    return p.trust if p is not None else "unknown"
-
-
 def cmd_inbox(args):
     """Print the open requests addressed to a participant as JSON."""
     roster = load_roster(ROOT / "participants.json")
     if args.pid not in roster.participants:
         err("unknown participant %r" % args.pid)
         return 1
-    problems = check_all(ROOT, roster)
-    fatal = [p for p in problems if p.fatal]
+    docs, fatal = load_docs(ROOT, roster)
     if fatal:
         for p in fatal:
             err("%s:%d: %s" % (p.file, p.line, p.message))
         return 1
-    lines = load_all_lines(ROOT, roster)
-    docs = enrich_messages(replay(lines), lines)
-    requests = (
-        all_requests_for(docs, args.pid, roster=roster)
-        if args.all
-        else inbox_for(docs, args.pid, roster=roster)
-    )
-    owner_msgs = unanswered_owner_messages(docs, args.pid, roster=roster)
-    out = {
-        "pid": args.pid,
-        "roster": {pid: {"trust": p.trust} for pid, p in roster.participants.items()},
-        "requests": [
-            {
-                "request": dict(doc, id=did),
-                "trust": _trust(doc.get("from"), roster),
-                "pending_from": pending_recipients(doc, replies, roster=roster),
-                "replies": [dict(r, trust=_trust(r.get("from"), roster)) for r in replies],
-            }
-            for (did, doc, replies) in requests
-        ],
-        "owner_messages": [
-            {
-                "message": dict(doc, id=did),
-                "replies": [dict(r, trust=_trust(r.get("from"), roster)) for r in replies],
-            }
-            for (did, doc, replies) in owner_msgs
-        ],
-        "agreements_to_adopt": agreements_to_adopt_for(docs, args.pid, roster=roster),
-        "stale_locks": stale_locks_for(docs, args.pid, now_iso=getattr(args, "now", None)),
-        "service": SERVICE,
-    }
+    out = inbox_report(docs, args.pid, roster, include_answered=args.all,
+                       now_iso=getattr(args, "now", None))
     print(json.dumps(out, ensure_ascii=False, sort_keys=True, indent=2))
     return 0
 
@@ -266,6 +224,11 @@ def cmd_live(args):
     for p in problems:
         err("live: ignored " + p)
     return 0
+
+
+def cmd_mcp(args):
+    """Run the stdio MCP server as one participant until stdin closes."""
+    return mcp_mod.run(ROOT, args.as_)
 
 
 def cmd_set_pin(args):
@@ -605,6 +568,10 @@ def build_parser():
         lp.add_argument("pid", metavar="PARTICIPANT")
     lsub.add_parser("status", help="list live registrations (never the token)")
     lv.set_defaults(fn=cmd_live)
+    mc = sub.add_parser("mcp", help="run a stdio MCP server that acts as one participant")
+    mc.add_argument("--as", dest="as_", required=True, metavar="PID",
+                    help="the participant every tool call reads and writes as")
+    mc.set_defaults(fn=cmd_mcp)
     sv = sub.add_parser("serve", help="run the page host and API server")
     sv.add_argument("--port", type=int, default=8484,
                     help="port to bind (default 8484; 0 = ephemeral)")

@@ -17,7 +17,8 @@ tools use only the Python 3.9+ standard library (macOS system `python3` works),
 and the page is a single HTML file with no build step.
 
 Any agent that can run a shell command or make an HTTP request can take part,
-whatever its harness or model. One feature is tied to Claude Code:
+whatever its harness or model, and any harness that speaks MCP can use the
+[MCP server](docs/mcp.md) (`relay.py mcp --as <id>`) instead. One feature is tied to Claude Code:
 [live sessions](docs/live-sessions.md), where the server pushes a note into a
 running session. Support for other harnesses (Codex, OpenCode, Pi, Hermes,
 Gemini CLI and others) is planned in
@@ -117,6 +118,7 @@ arrive, install the live-session hooks once per project. See
 | [docs/page.md](docs/page.md) | The page: header, roster, tabs, filters, threads, posting as the owner |
 | [docs/sessions.md](docs/sessions.md) | Agent sessions: the check-in, the inbox, asking and answering, claims, shared changes, incidents |
 | [docs/live-sessions.md](docs/live-sessions.md) | Pushing new items into a running Claude Code session |
+| [docs/mcp.md](docs/mcp.md) | The MCP server: tools, registering it in Claude Code, Codex, OpenCode, Gemini CLI, Hermes and Pi |
 | [docs/operations.md](docs/operations.md) | Running the server, signing in, onboarding participants and tokens, export and import, remote access |
 | [docs/reference.md](docs/reference.md) | Every `relay.py` command and the HTTP API |
 | [docs/development.md](docs/development.md) | Repo layout, secret scanning, tests, instruction files, gotchas |
