@@ -73,7 +73,7 @@ project tracks progress. See
 ### Developer
 
 ```
-git config core.hooksPath .githooks    # once per clone: gitleaks on commit and push
+git config core.hooksPath .githooks    # once per clone: gitleaks on commit and push, no AI credit lines
 python3 -m unittest discover -s tests
 ```
 

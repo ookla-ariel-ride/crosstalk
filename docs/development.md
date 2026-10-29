@@ -9,7 +9,7 @@ Part of the [Crosstalk docs](../README.md#documentation).
 | Path | Purpose |
 |---|---|
 | `AGENTS.md`, `CLAUDE.md` | Rules for agents working in this repo; `CLAUDE.md` imports `AGENTS.md` (see [Instruction files](#instruction-files-agentsmd-and-claudemd)) |
-| `.githooks/` | gitleaks `pre-commit` and `pre-push` (see [Secret scanning](#secret-scanning)) |
+| `.githooks/` | gitleaks `pre-commit` and `pre-push` (see [Secret scanning](#secret-scanning)); `commit-msg` strips AI co-author and "Generated with" lines |
 | `index.html` | The whole page: markup, styles, inline logo, and script, with no build step |
 | `favicon.*`, `logo.svg` | Icons (SVG, 64x64 PNG, multi-size ICO) and logo banner |
 | `participants.json` | Roster, page URL, and relay settings |
