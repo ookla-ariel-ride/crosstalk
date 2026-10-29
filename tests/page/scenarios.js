@@ -48,6 +48,18 @@
     return res("subAgentTag", name === "BewareILive › verifier", "name=" + JSON.stringify(name));
   });
 
+  // A body that repeats the summary shows once: an equal body is hidden, a body that opens with the summary line drops it.
+  S.push(async function bodyRepeatsSummary() {
+    await go("timeline");
+    await addDoc("messages", "dup-1", { t: T0, from: "owner", kind: "owner", summary: "Same text twice", body: "Same text twice " });
+    await addDoc("messages", "dup-2", { t: T0, from: "owner", kind: "owner", summary: "First line", body: "First line\nSecond line" });
+    var c1 = card("dup-1"), c2 = card("dup-2");
+    if (!c1 || !c2) return res("bodyRepeatsSummary", false, "no card");
+    var b1 = c1.querySelectorAll("p.body").length, b2 = c2.querySelector("p.body");
+    var t2 = b2 ? b2.textContent : null;
+    return res("bodyRepeatsSummary", b1 === 0 && t2 === "Second line", "equalBodies=" + b1 + " prefixBody=" + JSON.stringify(t2));
+  });
+
   S.push(async function refViaRoster() {
     var codex = Object.assign({}, __store.participants.codex, { repo: "example-org/codex" });
     await addDoc("participants", "codex", codex);

@@ -681,9 +681,14 @@ td.num, td.t { font: 12px var(--mono); font-variant-numeric: tabular-nums; white
     var d = el("div", "summary");
     return richTextInto(d, text);
   }
-  function bodyEl(text) {
+  // A body that repeats the summary (the page's reply box writes the text into both) shows only once.
+  function bodyEl(text, summary) {
     if (!text) return null;
-    var s = String(text);
+    var s = String(text), sum = String(summary || "").trim();
+    if (sum) {
+      if (s.trim() === sum) return null;
+      if (s.indexOf(sum) === 0 && /^\s*\n/.test(s.slice(sum.length))) s = s.slice(sum.length).replace(/^\s+/, "");
+    }
     if (s.length <= 420) return richTextInto(el("p", "body"), s);
     var d = el("details"); d.appendChild(el("summary", null, "Full text")); d.appendChild(richTextInto(el("p", "body"), s)); return d;
   }
@@ -1216,7 +1221,7 @@ td.num, td.t { font: 12px var(--mono); font-variant-numeric: tabular-nums; white
         body = bodyText;
       } else {
         summary = bodyText.split("\n")[0].slice(0, 160);
-        body = bodyText.length > summary.length ? bodyText : "";
+        body = bodyText.trim() !== summary.trim() ? bodyText : "";
       }
       var effectiveTo = effectiveRecipients(subj, bodyText);
       draft.kind = effectiveKind;
@@ -1341,7 +1346,7 @@ td.num, td.t { font: 12px var(--mono); font-variant-numeric: tabular-nums; white
     card.appendChild(meta);
     if (parent) card.appendChild(el("div", "re", "↩ Replying to " + (parent.from ? displayName(parent.from) : "") + ": " + (parent.summary || "")));
     if (m.summary) card.appendChild(summaryEl(m.summary));
-    add(card, bodyEl(m.body));
+    add(card, bodyEl(m.body, m.summary));
     if (m.kind === "disagreement" && m.positions) add(card, positionsEl(m));
     add(card, refsEl(m.refs, m.project || m.from));
     return card;
@@ -1687,7 +1692,7 @@ td.num, td.t { font: 12px var(--mono); font-variant-numeric: tabular-nums; white
     if (canWrite) meta.appendChild(replyBtnEl(m));
     card.appendChild(meta);
     if (m.summary) card.appendChild(summaryEl(m.summary));
-    add(card, bodyEl(m.body));
+    add(card, bodyEl(m.body, m.summary));
     add(card, refsEl(m.refs, m.project || m.from));
     if (replies.length) {
       var box = el("div", "replies");
@@ -1697,7 +1702,7 @@ td.num, td.t { font: 12px var(--mono); font-variant-numeric: tabular-nums; white
         rmeta.appendChild(who(r.from));
         if (r.summary) rmeta.appendChild(richTextInto(el("span"), r.summary));
         rc.appendChild(rmeta);
-        add(rc, bodyEl(r.body));
+        add(rc, bodyEl(r.body, r.summary));
         box.appendChild(rc);
       });
       card.appendChild(box);
@@ -1733,7 +1738,7 @@ td.num, td.t { font: 12px var(--mono); font-variant-numeric: tabular-nums; white
     rows.forEach(function (a) {
       var tr = el("tr");
       var bld = a.builder || a.owner;
-      var c1 = el("td"); c1.appendChild(el("div", "summary", a.summary || a.title || "")); add(c1, bodyEl(a.body || a.detail || "")); add(c1, refsEl(a.refs, bld)); tr.appendChild(c1);
+      var c1 = el("td"); c1.appendChild(el("div", "summary", a.summary || a.title || "")); add(c1, bodyEl(a.body || a.detail || "", a.summary || a.title)); add(c1, refsEl(a.refs, bld)); tr.appendChild(c1);
       var held = isHeld(a);
       var rawStatus = String(a.status || "");
       var longStatus = !held && STATUSES.indexOf(rawStatus) === -1 && rawStatus.length > 20;
@@ -1785,7 +1790,7 @@ td.num, td.t { font: 12px var(--mono); font-variant-numeric: tabular-nums; white
       var meta = el("div", "meta"); meta.appendChild(who(w.project)); meta.appendChild(el("span", null, "waiting since")); meta.appendChild(timeEl(w.since, true)); meta.appendChild(agoEl(w.since));
       if (quarantined) meta.appendChild(quarantinePill());
       c.appendChild(meta);
-      c.appendChild(el("div", "summary", w.summary || "")); add(c, bodyEl(w.body)); add(c, refsEl(w.refs, w.project));
+      c.appendChild(el("div", "summary", w.summary || "")); add(c, bodyEl(w.body, w.summary)); add(c, refsEl(w.refs, w.project));
       if (canWrite) {
         var b = el("button", "btn", "Mark done"); b.type = "button"; b.id = "done-" + w._id;
         b.addEventListener("click", function () { b.disabled = true; db.collection("waiting").doc(w._id).update({ done: new Date().toISOString() }).catch(function () { b.disabled = false; }); });
@@ -1814,7 +1819,7 @@ td.num, td.t { font: 12px var(--mono); font-variant-numeric: tabular-nums; white
     rows.forEach(function (r) { var tr = el("tr"); cols.forEach(function (c) { var td = el("td", c[2] || null); add(td, c[1](r)); tr.appendChild(td); }); tb.appendChild(tr); });
     table.appendChild(tb); wrap.appendChild(table); view.appendChild(wrap);
   }
-  function textBlock(r) { var d = el("div"); d.appendChild(el("div", "summary", r.summary || "")); add(d, bodyEl(r.body)); add(d, refsEl(r.refs, r.project)); return d; }
+  function textBlock(r) { var d = el("div"); d.appendChild(el("div", "summary", r.summary || "")); add(d, bodyEl(r.body, r.summary)); add(d, refsEl(r.refs, r.project)); return d; }
   function renderLocks(view) {
     var rows = data.locks.slice().sort(function (a, b) { return (a.released ? 1 : 0) - (b.released ? 1 : 0) || (ts(b.since) || 0) - (ts(a.since) || 0); });
     simpleTable(view, rows, [
@@ -1827,7 +1832,7 @@ td.num, td.t { font: 12px var(--mono); font-variant-numeric: tabular-nums; white
   }
   function renderLessons(view) {
     simpleTable(view, data.lessons.slice().sort(byT).reverse(), [
-      ["What happened", function (r) { var d = el("div"); d.appendChild(el("div", "summary", r.summary || r.title || "")); add(d, bodyEl(r.body || r.detail || "")); return d; }],
+      ["What happened", function (r) { var d = el("div"); d.appendChild(el("div", "summary", r.summary || r.title || "")); add(d, bodyEl(r.body || r.detail || "", r.summary || r.title)); return d; }],
       ["What prevents it now", function (r) { var d = el("div"); d.appendChild(el("p", "body", r.fix || "")); add(d, refsEl(r.refs, r.project || r.from)); return d; }],
       ["From", function (r) { return who(r.project || r.from); }],
       ["When", function (r) { return timeEl(r.t, true); }, "t"]
