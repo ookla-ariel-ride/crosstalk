@@ -60,7 +60,7 @@ class LiveCase(unittest.TestCase):
         return {"CLAUDE_CODE_MESSAGING_SOCKET": sock or self.sock,
                 "CLAUDE_CODE_MESSAGING_TOKEN": token}
 
-    def reg(self, sid, pid="vectorcraft", sock=None):
+    def reg(self, sid, pid="beta", sock=None):
         return live.register(self.root, pid, self.env(sock), json.dumps({"session_id": sid}), 1000.0)
 
     def write_file(self, name, doc):
@@ -72,18 +72,18 @@ class LiveCase(unittest.TestCase):
 class RegisterTests(LiveCase):
     def test_register_writes_private_file(self):
         path = self.reg("s1")
-        self.assertEqual(path, Path(self.live) / "vectorcraft--s1.json")
+        self.assertEqual(path, Path(self.live) / "beta--s1.json")
         self.assertEqual(stat.S_IMODE(path.stat().st_mode), 0o600)
         self.assertEqual(stat.S_IMODE(Path(self.live).stat().st_mode), 0o700)
         doc = json.loads(path.read_text())
         self.assertEqual(set(doc), {"pid", "session_id", "socket", "token", "registered"})
         self.assertEqual((doc["pid"], doc["session_id"], doc["socket"], doc["token"]),
-                         ("vectorcraft", "s1", self.sock, TOKEN))
+                         ("beta", "s1", self.sock, TOKEN))
 
     def test_register_replaces_same_socket(self):
         self.reg("s1")
         self.reg("s2")
-        self.assertEqual(sorted(p.name for p in Path(self.live).iterdir()), ["vectorcraft--s2.json"])
+        self.assertEqual(sorted(p.name for p in Path(self.live).iterdir()), ["beta--s2.json"])
 
     def test_register_keeps_other_sockets(self):
         self.reg("s1")
@@ -93,12 +93,12 @@ class RegisterTests(LiveCase):
     def test_register_silently_ignores_problems(self):
         good = self.env()
         cases = [
-            ("vectorcraft", {}, '{"session_id":"s1"}'),
-            ("vectorcraft", {"CLAUDE_CODE_MESSAGING_SOCKET": self.sock}, '{"session_id":"s1"}'),
+            ("beta", {}, '{"session_id":"s1"}'),
+            ("beta", {"CLAUDE_CODE_MESSAGING_SOCKET": self.sock}, '{"session_id":"s1"}'),
             ("nobody", good, '{"session_id":"s1"}'),
-            ("vectorcraft", good, '{"session_id":"../x"}'),
-            ("vectorcraft", good, "not json"),
-            ("vectorcraft", good, "[1]"),
+            ("beta", good, '{"session_id":"../x"}'),
+            ("beta", good, "not json"),
+            ("beta", good, "[1]"),
         ]
         for pid, env, stdin in cases:
             self.assertIsNone(live.register(self.root, pid, env, stdin, 1.0), (pid, env, stdin))
@@ -108,62 +108,62 @@ class RegisterTests(LiveCase):
         # Claude Code's daemon keeps idle spare sessions; they run SessionStart too.
         env = dict(self.env(), CLAUDE_CODE_SESSION_KIND="bg",
                    CLAUDE_BG_SOCKET_TOKENS_PATH="/Users/x/.claude/daemon/auth/spare-06f06d69.tokens.json")
-        self.assertIsNone(live.register(self.root, "vectorcraft", env, '{"session_id":"s1"}', 1.0))
+        self.assertIsNone(live.register(self.root, "beta", env, '{"session_id":"s1"}', 1.0))
         self.assertFalse(Path(self.live).exists() and list(Path(self.live).glob("*.json")))
         env["CLAUDE_BG_SOCKET_TOKENS_PATH"] = "/Users/x/.claude/daemon/auth/job-1.tokens.json"
-        self.assertIsNotNone(live.register(self.root, "vectorcraft", env, '{"session_id":"s1"}', 1.0))
+        self.assertIsNotNone(live.register(self.root, "beta", env, '{"session_id":"s1"}', 1.0))
 
     def test_unregister_removes_file(self):
         path = self.reg("s1")
-        self.assertTrue(live.unregister("vectorcraft", '{"session_id":"s1"}'))
+        self.assertTrue(live.unregister("beta", '{"session_id":"s1"}'))
         self.assertFalse(path.exists())
-        self.assertFalse(live.unregister("vectorcraft", '{"session_id":"s1"}'))
+        self.assertFalse(live.unregister("beta", '{"session_id":"s1"}'))
 
     def test_unregister_ignores_bad_input(self):
-        self.assertFalse(live.unregister("vectorcraft", "nope"))
-        self.assertFalse(live.unregister("vectorcraft", '{"session_id":"../x"}'))
+        self.assertFalse(live.unregister("beta", "nope"))
+        self.assertFalse(live.unregister("beta", '{"session_id":"../x"}'))
 
 
 class LoadTests(LiveCase):
     def test_load_registrations_validates(self):
-        good = {"pid": "vectorcraft", "session_id": "ok", "socket": self.sock,
+        good = {"pid": "beta", "session_id": "ok", "socket": self.sock,
                 "token": TOKEN, "registered": "2026-10-26T00:00:00Z"}
         plain = os.path.join(self.socks, "plain.txt")
         Path(plain).write_text("x")
         bad = {
-            "vectorcraft--elsewhere.json": dict(good, session_id="elsewhere", socket="/etc/cc-socks/x.sock"),
-            "vectorcraft--notsock.json": dict(good, session_id="notsock", socket=plain),
-            "vectorcraft--notoken.json": dict(good, session_id="notoken", token=""),
-            "vectorcraft--longtok.json": dict(good, session_id="longtok", token="x" * 513),
+            "beta--elsewhere.json": dict(good, session_id="elsewhere", socket="/etc/cc-socks/x.sock"),
+            "beta--notsock.json": dict(good, session_id="notsock", socket=plain),
+            "beta--notoken.json": dict(good, session_id="notoken", token=""),
+            "beta--longtok.json": dict(good, session_id="longtok", token="x" * 513),
             "nobody--s.json": dict(good, pid="nobody", session_id="s"),
-            "vectorcraft--mangled.json": "{oops",
+            "beta--mangled.json": "{oops",
         }
-        self.write_file("vectorcraft--ok.json", good)
+        self.write_file("beta--ok.json", good)
         for name, doc in bad.items():
             self.write_file(name, doc)
         regs, problems = live.load_registrations(self.root)
         self.assertEqual([(r.pid, r.session_id, r.socket, r.token) for r in regs],
-                         [("vectorcraft", "ok", self.sock, TOKEN)])
-        self.assertEqual(regs[0].path, Path(self.live) / "vectorcraft--ok.json")
+                         [("beta", "ok", self.sock, TOKEN)])
+        self.assertEqual(regs[0].path, Path(self.live) / "beta--ok.json")
         self.assertEqual(len(problems), len(bad), problems)
         for p in problems:
             self.assertNotIn(TOKEN, p)
 
     def test_surrogate_socket_is_one_bad_file(self):
-        good = {"pid": "vectorcraft", "session_id": "ok", "socket": self.sock,
+        good = {"pid": "beta", "session_id": "ok", "socket": self.sock,
                 "token": TOKEN, "registered": "2026-10-26T00:00:00Z"}
-        self.write_file("vectorcraft--ok.json", good)
-        self.write_file("vectorcraft--sur.json",
-                        '{"pid":"vectorcraft","session_id":"sur","socket":"/tmp/cc-socks-1/\\ud800","token":"t"}')
+        self.write_file("beta--ok.json", good)
+        self.write_file("beta--sur.json",
+                        '{"pid":"beta","session_id":"sur","socket":"/tmp/cc-socks-1/\\ud800","token":"t"}')
         regs, problems = live.load_registrations(self.root)
         self.assertEqual([r.session_id for r in regs], ["ok"])
         self.assertEqual(len(problems), 1, problems)
-        self.assertIn("vectorcraft--sur.json", problems[0])
+        self.assertIn("beta--sur.json", problems[0])
 
     def test_unexpected_error_in_one_file_is_contained(self):
-        self.write_file("vectorcraft--ok.json", {"pid": "vectorcraft", "session_id": "ok",
+        self.write_file("beta--ok.json", {"pid": "beta", "session_id": "ok",
                         "socket": self.sock, "token": TOKEN})
-        self.write_file("vectorcraft--boom.json", {"pid": "vectorcraft", "session_id": "boom",
+        self.write_file("beta--boom.json", {"pid": "beta", "session_id": "boom",
                         "socket": self.sock, "token": TOKEN})
         real = live.token_problem
 

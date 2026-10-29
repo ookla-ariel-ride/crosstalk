@@ -15,18 +15,18 @@ from crosstalk.service import SERVICE
 REPO = Path(__file__).resolve().parent.parent
 
 
-def roster_with_amb():
+def roster_with_ga():
     data = json.loads(json.dumps(SPEC_ROSTER))
     data["participants"].append({
-        "id": "avoidmissingball",
-        "name": "AvoidMissingBall",
+        "id": "gamma",
+        "name": "Gamma",
         "kind": "project",
-        "repo": "ookla-ariel-ride/avoidmissingball",
+        "repo": "owner/gamma",
         "color": "#2e6f40",
         "colorDark": "#68c783",
         "checkInMin": 30,
         "trust": "approved",
-        "aliases": ["amb"],
+        "aliases": ["ga"],
     })
     return data
 
@@ -35,7 +35,7 @@ class ConsultsUnitTests(unittest.TestCase):
     def setUp(self):
         self.r = TempRepo()
         self.r.__enter__()
-        self.r.write_roster(roster_with_amb())
+        self.r.write_roster(roster_with_ga())
         self.roster = load_roster(self.r.root / "participants.json")
 
     def tearDown(self):
@@ -48,34 +48,34 @@ class ConsultsUnitTests(unittest.TestCase):
     def test_post_reply_populates_reply_to_and_recipient(self):
         from crosstalk.consults import post_reply
 
-        self.r.write_log("vectorcraft", [
-            line(1, "vectorcraft", id_="vc-r1",
-                 data={"from": "vectorcraft", "kind": "request", "summary": "Need parity check"})
+        self.r.write_log("beta", [
+            line(1, "beta", id_="beta-r1",
+                 data={"from": "beta", "kind": "request", "summary": "Need parity check"})
         ])
         ln = post_reply(
             self.r.root,
-            "bewareilive",
-            "vc-r1",
+            "alpha",
+            "beta-r1",
             "Confirmed on Williams hardware",
             body="Details with 'apostrophes' included",
-            refs=["bewareilive@51e7709"],
+            refs=["alpha@51e7709"],
             roster=self.roster,
         )
-        self.assertTrue(ln.id.startswith("bewareilive-"))
+        self.assertTrue(ln.id.startswith("alpha-"))
         doc = self.docs()[("messages", ln.id)]
-        self.assertEqual(doc["from"], "bewareilive")
+        self.assertEqual(doc["from"], "alpha")
         self.assertEqual(doc["kind"], "reply")
-        self.assertEqual(doc["replyTo"], "vc-r1")
-        self.assertEqual(doc["to"], ["vectorcraft"])
+        self.assertEqual(doc["replyTo"], "beta-r1")
+        self.assertEqual(doc["to"], ["beta"])
         self.assertEqual(doc["summary"], "Confirmed on Williams hardware")
         self.assertEqual(doc["body"], "Details with 'apostrophes' included")
-        self.assertEqual(doc["refs"], ["bewareilive@51e7709"])
+        self.assertEqual(doc["refs"], ["alpha@51e7709"])
 
     def test_post_reply_unknown_message_raises(self):
         from crosstalk.consults import post_reply
 
         with self.assertRaises(ValueError) as ctx:
-            post_reply(self.r.root, "bewareilive", "no-such-msg", "Ack", roster=self.roster)
+            post_reply(self.r.root, "alpha", "no-such-msg", "Ack", roster=self.roster)
         self.assertIn("no such message 'no-such-msg'", str(ctx.exception))
 
     def test_post_consult_creates_request_with_refs_and_to(self):
@@ -83,57 +83,57 @@ class ConsultsUnitTests(unittest.TestCase):
 
         ln = post_consult(
             self.r.root,
-            "avoidmissingball",
+            "gamma",
             "Centipede RNG bank window",
             body="Question about POKEY timer...",
-            refs=["avoidmissingball@91bab82"],
-            to=["vectorcraft", "bewareilive"],
+            refs=["gamma@91bab82"],
+            to=["beta", "alpha"],
             roster=self.roster,
         )
-        self.assertTrue(ln.id.startswith("avoidmissingball-"))
+        self.assertTrue(ln.id.startswith("gamma-"))
         doc = self.docs()[("messages", ln.id)]
-        self.assertEqual(doc["from"], "avoidmissingball")
+        self.assertEqual(doc["from"], "gamma")
         self.assertEqual(doc["kind"], "request")
         self.assertEqual(doc["summary"], "Centipede RNG bank window")
         self.assertEqual(doc["body"], "Question about POKEY timer...")
-        self.assertEqual(doc["refs"], ["avoidmissingball@91bab82"])
-        self.assertEqual(doc["to"], ["vectorcraft", "bewareilive"])
+        self.assertEqual(doc["refs"], ["gamma@91bab82"])
+        self.assertEqual(doc["to"], ["beta", "alpha"])
 
     def test_post_consult_drops_sender_from_to(self):
         from crosstalk.consults import post_consult
         from crosstalk.requests import inbox_for
 
         ln = post_consult(
-            self.r.root, "avoidmissingball", "Own id in --to",
-            to=["vectorcraft", "avoidmissingball", "bewareilive"], roster=self.roster,
+            self.r.root, "gamma", "Own id in --to",
+            to=["beta", "gamma", "alpha"], roster=self.roster,
         )
-        self.assertEqual(self.docs()[("messages", ln.id)]["to"], ["vectorcraft", "bewareilive"])
-        self.assertNotIn(ln.id, [did for did, _, _ in inbox_for(self.docs(), "avoidmissingball", roster=self.roster)])
+        self.assertEqual(self.docs()[("messages", ln.id)]["to"], ["beta", "alpha"])
+        self.assertNotIn(ln.id, [did for did, _, _ in inbox_for(self.docs(), "gamma", roster=self.roster)])
 
     def test_post_consult_to_only_sender_raises(self):
         from crosstalk.consults import post_consult
 
         with self.assertRaises(ValueError) as ctx:
-            post_consult(self.r.root, "avoidmissingball", "Only me", to=["avoidmissingball"], roster=self.roster)
+            post_consult(self.r.root, "gamma", "Only me", to=["gamma"], roster=self.roster)
         self.assertIn("--to", str(ctx.exception))
 
     def test_adopt_agreement_specific_adopter_lands_both(self):
         from crosstalk.consults import adopt_agreement
 
-        self.r.write_log("vectorcraft", [
-            line(1, "vectorcraft", collection="agreements", id_="a-fast-verify",
+        self.r.write_log("beta", [
+            line(1, "beta", collection="agreements", id_="a-fast-verify",
                  data={
                      "t": "2026-10-25T10:00:00Z",
                      "summary": "Fast verify lane",
-                     "builder": "vectorcraft",
-                     "adopter": "bewareilive",
+                     "builder": "beta",
+                     "adopter": "alpha",
                      "status": "ready-to-adopt",
-                     "commits": {"vectorcraft": ["a1b2c3d"]},
+                     "commits": {"beta": ["a1b2c3d"]},
                  })
         ])
         res = adopt_agreement(
             self.r.root,
-            "bewareilive",
+            "alpha",
             "a-fast-verify",
             "51e7709",
             summary="Adopted fast verify",
@@ -141,166 +141,166 @@ class ConsultsUnitTests(unittest.TestCase):
         )
         self.assertEqual(res["agreement_id"], "a-fast-verify")
         self.assertEqual(res["status"], "landed-both")
-        self.assertTrue(res["message_id"].startswith("bewareilive-"))
+        self.assertTrue(res["message_id"].startswith("alpha-"))
 
         docs = self.docs()
         agr = docs[("agreements", "a-fast-verify")]
         self.assertEqual(agr["status"], "landed-both")
-        self.assertEqual(agr["commits"]["vectorcraft"], ["a1b2c3d"])
-        self.assertEqual(agr["commits"]["bewareilive"], ["51e7709"])
+        self.assertEqual(agr["commits"]["beta"], ["a1b2c3d"])
+        self.assertEqual(agr["commits"]["alpha"], ["51e7709"])
         self.assertIn("updated", agr)
 
         msg = docs[("messages", res["message_id"])]
         self.assertEqual(msg["kind"], "sync")
         self.assertEqual(msg["summary"], "Adopted fast verify")
-        self.assertEqual(msg["refs"], ["a-fast-verify", "bewareilive@51e7709"])
+        self.assertEqual(msg["refs"], ["a-fast-verify", "alpha@51e7709"])
 
     def test_adopt_agreement_multi_project_waits_for_all_projects(self):
         from crosstalk.consults import adopt_agreement
 
-        self.r.write_log("vectorcraft", [
-            line(1, "vectorcraft", collection="agreements", id_="a-shared-hook",
+        self.r.write_log("beta", [
+            line(1, "beta", collection="agreements", id_="a-shared-hook",
                  data={
                      "t": "2026-10-25T10:00:00Z",
                      "summary": "Shared pre-commit hook",
-                     "builder": "vectorcraft",
+                     "builder": "beta",
                      "adopter": "all",
                      "status": "ready-to-adopt",
-                     "commits": {"vectorcraft": ["a1b2c3d"]},
+                     "commits": {"beta": ["a1b2c3d"]},
                  })
         ])
-        # First sister project adopts: avoidmissingball still hasn't adopted
+        # First sister project adopts: gamma still hasn't adopted
         res1 = adopt_agreement(
-            self.r.root, "bewareilive", "a-shared-hook", "51e7709", roster=self.roster
+            self.r.root, "alpha", "a-shared-hook", "51e7709", roster=self.roster
         )
         self.assertEqual(res1["status"], "ready-to-adopt")
 
         # Duplicate commit by same project is deduplicated
         adopt_agreement(
-            self.r.root, "bewareilive", "a-shared-hook", "51e7709", roster=self.roster
+            self.r.root, "alpha", "a-shared-hook", "51e7709", roster=self.roster
         )
         self.assertEqual(
-            self.docs()[("agreements", "a-shared-hook")]["commits"]["bewareilive"],
+            self.docs()[("agreements", "a-shared-hook")]["commits"]["alpha"],
             ["51e7709"],
         )
 
         # Second sister project adopts: all non-builder approved projects now have commits
         res2 = adopt_agreement(
-            self.r.root, "avoidmissingball", "a-shared-hook", "91bab82", roster=self.roster
+            self.r.root, "gamma", "a-shared-hook", "91bab82", roster=self.roster
         )
         self.assertEqual(res2["status"], "landed-both")
         agr = self.docs()[("agreements", "a-shared-hook")]
         self.assertEqual(agr["status"], "landed-both")
-        self.assertEqual(agr["commits"]["avoidmissingball"], ["91bab82"])
+        self.assertEqual(agr["commits"]["gamma"], ["91bab82"])
 
     def test_adopt_agreement_refuses_bad_sha_missing_or_held(self):
         from crosstalk.consults import adopt_agreement
 
-        self.r.write_log("vectorcraft", [
-            line(1, "vectorcraft", collection="agreements", id_="a-held-one",
+        self.r.write_log("beta", [
+            line(1, "beta", collection="agreements", id_="a-held-one",
                  data={
                      "summary": "Held agreement",
-                     "builder": "vectorcraft",
+                     "builder": "beta",
                      "status": "ready-to-adopt",
                      "hold": True,
                  }),
-            line(2, "vectorcraft", collection="agreements", id_="a-status-held",
+            line(2, "beta", collection="agreements", id_="a-status-held",
                  data={
                      "summary": "Legacy held status",
-                     "builder": "vectorcraft",
+                     "builder": "beta",
                      "status": "held",
                  }),
         ])
         with self.assertRaises(ValueError):
-            adopt_agreement(self.r.root, "bewareilive", "a-held-one", "not-a-sha", roster=self.roster)
+            adopt_agreement(self.r.root, "alpha", "a-held-one", "not-a-sha", roster=self.roster)
         with self.assertRaises(ValueError) as ctx_missing:
-            adopt_agreement(self.r.root, "bewareilive", "a-missing", "51e7709", roster=self.roster)
+            adopt_agreement(self.r.root, "alpha", "a-missing", "51e7709", roster=self.roster)
         self.assertIn("no such agreement 'a-missing'", str(ctx_missing.exception))
         with self.assertRaises(ValueError) as ctx_hold:
-            adopt_agreement(self.r.root, "bewareilive", "a-held-one", "51e7709", roster=self.roster)
+            adopt_agreement(self.r.root, "alpha", "a-held-one", "51e7709", roster=self.roster)
         self.assertIn("is on hold", str(ctx_hold.exception))
         with self.assertRaises(ValueError) as ctx_status_held:
-            adopt_agreement(self.r.root, "bewareilive", "a-status-held", "51e7709", roster=self.roster)
+            adopt_agreement(self.r.root, "alpha", "a-status-held", "51e7709", roster=self.roster)
         self.assertIn("is on hold", str(ctx_status_held.exception))
 
     def test_adopt_agreement_handles_list_adopter_and_malformed_commits(self):
         from crosstalk.consults import adopt_agreement
 
-        self.r.write_log("vectorcraft", [
-            line(1, "vectorcraft", collection="agreements", id_="a-list-adopter",
+        self.r.write_log("beta", [
+            line(1, "beta", collection="agreements", id_="a-list-adopter",
                  data={
-                     "builder": "vectorcraft",
-                     "adopter": ["bewareilive", "avoidmissingball"],
+                     "builder": "beta",
+                     "adopter": ["alpha", "gamma"],
                      "status": "ready-to-adopt",
                      "summary": "List adopter agreement",
                  }),
-            line(2, "vectorcraft", collection="agreements", id_="a-list-commits",
+            line(2, "beta", collection="agreements", id_="a-list-commits",
                  data={
-                     "builder": "vectorcraft",
-                     "adopter": "bewareilive",
+                     "builder": "beta",
+                     "adopter": "alpha",
                      "status": "ready-to-adopt",
                      "commits": ["a1b2c3d"],
                      "summary": "List commits agreement",
                  }),
-            line(3, "vectorcraft", collection="agreements", id_="a-str-commits",
+            line(3, "beta", collection="agreements", id_="a-str-commits",
                  data={
-                     "builder": "vectorcraft",
-                     "adopter": "bewareilive",
+                     "builder": "beta",
+                     "adopter": "alpha",
                      "status": "ready-to-adopt",
-                     "commits": {"vectorcraft": "a1b2c3d"},
+                     "commits": {"beta": "a1b2c3d"},
                      "summary": "String commits agreement",
                  }),
         ])
-        res1 = adopt_agreement(self.r.root, "bewareilive", "a-list-adopter", "51e7709", roster=self.roster)
+        res1 = adopt_agreement(self.r.root, "alpha", "a-list-adopter", "51e7709", roster=self.roster)
         self.assertEqual(res1["status"], "ready-to-adopt")
-        res1b = adopt_agreement(self.r.root, "avoidmissingball", "a-list-adopter", "91bab82", roster=self.roster)
+        res1b = adopt_agreement(self.r.root, "gamma", "a-list-adopter", "91bab82", roster=self.roster)
         self.assertEqual(res1b["status"], "landed-both")
 
-        res2 = adopt_agreement(self.r.root, "bewareilive", "a-list-commits", "51e7709", roster=self.roster)
+        res2 = adopt_agreement(self.r.root, "alpha", "a-list-commits", "51e7709", roster=self.roster)
         self.assertEqual(res2["status"], "landed-both")
-        self.assertEqual(self.docs()[("agreements", "a-list-commits")]["commits"], {"bewareilive": ["51e7709"]})
+        self.assertEqual(self.docs()[("agreements", "a-list-commits")]["commits"], {"alpha": ["51e7709"]})
 
-        res3 = adopt_agreement(self.r.root, "bewareilive", "a-str-commits", "51e7709", roster=self.roster)
+        res3 = adopt_agreement(self.r.root, "alpha", "a-str-commits", "51e7709", roster=self.roster)
         self.assertEqual(res3["status"], "landed-both")
         self.assertEqual(
             self.docs()[("agreements", "a-str-commits")]["commits"],
-            {"vectorcraft": ["a1b2c3d"], "bewareilive": ["51e7709"]},
+            {"beta": ["a1b2c3d"], "alpha": ["51e7709"]},
         )
 
     def test_adopt_agreement_invalid_summary_leaves_no_partial_write(self):
         from crosstalk.consults import adopt_agreement
 
-        self.r.write_log("vectorcraft", [
-            line(1, "vectorcraft", collection="agreements", id_="a-fast-verify",
+        self.r.write_log("beta", [
+            line(1, "beta", collection="agreements", id_="a-fast-verify",
                  data={
                      "t": "2026-10-25T10:00:00Z",
                      "summary": "Fast verify",
-                     "builder": "vectorcraft",
-                     "adopter": "bewareilive",
+                     "builder": "beta",
+                     "adopter": "alpha",
                      "status": "ready-to-adopt",
-                     "commits": {"vectorcraft": ["a1b2c3d"]},
+                     "commits": {"beta": ["a1b2c3d"]},
                  })
         ])
         for bad_summary in ("Line 1\nLine 2", "Line 1\rLine 2", "Trailing\n", "   "):
             with self.assertRaises(ValueError):
                 adopt_agreement(
                     self.r.root,
-                    "bewareilive",
+                    "alpha",
                     "a-fast-verify",
                     "51e7709",
                     summary=bad_summary,
                     roster=self.roster,
                 )
-        self.assertFalse((self.r.root / "log" / "bewareilive.jsonl").exists())
+        self.assertFalse((self.r.root / "log" / "alpha.jsonl").exists())
 
     def test_consult_and_reply_reject_unknown_pid_and_bad_or_existing_msg_id(self):
         from crosstalk.consults import adopt_agreement, post_consult, post_reply
 
-        self.r.write_log("vectorcraft", [
-            line(1, "vectorcraft", id_="vc-r1",
-                 data={"from": "vectorcraft", "kind": "request", "summary": "Help?"}),
-            line(2, "vectorcraft", collection="agreements", id_="a-1",
-                 data={"builder": "vectorcraft", "adopter": "bewareilive",
+        self.r.write_log("beta", [
+            line(1, "beta", id_="beta-r1",
+                 data={"from": "beta", "kind": "request", "summary": "Help?"}),
+            line(2, "beta", collection="agreements", id_="a-1",
+                 data={"builder": "beta", "adopter": "alpha",
                        "status": "ready-to-adopt", "summary": "Agr"}),
         ])
         self.r.write_log("owner", [
@@ -311,45 +311,45 @@ class ConsultsUnitTests(unittest.TestCase):
         with self.assertRaises(ValueError):
             post_consult(self.r.root, "ghost", "Ghost consult", roster=self.roster)
         with self.assertRaises(ValueError):
-            post_reply(self.r.root, "ghost", "vc-r1", "Ghost reply", roster=self.roster)
+            post_reply(self.r.root, "ghost", "beta-r1", "Ghost reply", roster=self.roster)
         with self.assertRaises(ValueError):
             adopt_agreement(self.r.root, "ghost", "a-1", "1234567", roster=self.roster)
         self.assertFalse((self.r.root / "log" / "ghost.jsonl").exists())
 
         # Cannot use non-prefixed msg_id or overwrite another message
         with self.assertRaises(ValueError):
-            post_consult(self.r.root, "bewareilive", "Spoof", msg_id="own-1", roster=self.roster)
+            post_consult(self.r.root, "alpha", "Spoof", msg_id="own-1", roster=self.roster)
         with self.assertRaises(ValueError):
-            post_reply(self.r.root, "bewareilive", "vc-r1", "Spoof", msg_id="own-1", roster=self.roster)
+            post_reply(self.r.root, "alpha", "beta-r1", "Spoof", msg_id="own-1", roster=self.roster)
 
         # Cannot overwrite own existing message id either
-        ln = post_consult(self.r.root, "bewareilive", "First", msg_id="bewareilive-custom1", roster=self.roster)
-        self.assertEqual(ln.id, "bewareilive-custom1")
+        ln = post_consult(self.r.root, "alpha", "First", msg_id="alpha-custom1", roster=self.roster)
+        self.assertEqual(ln.id, "alpha-custom1")
         with self.assertRaises(ValueError):
-            post_consult(self.r.root, "bewareilive", "Second", msg_id="bewareilive-custom1", roster=self.roster)
+            post_consult(self.r.root, "alpha", "Second", msg_id="alpha-custom1", roster=self.roster)
         with self.assertRaises(ValueError):
-            post_reply(self.r.root, "bewareilive", "vc-r1", "Reply dup", msg_id="bewareilive-custom1", roster=self.roster)
+            post_reply(self.r.root, "alpha", "beta-r1", "Reply dup", msg_id="alpha-custom1", roster=self.roster)
 
     def test_adopt_agreement_builder_or_reviewer_does_not_prematurely_land_both(self):
         from crosstalk.consults import adopt_agreement
 
         self.r.write_roster(SPEC_ROSTER)
         roster = load_roster(self.r.root / "participants.json")
-        self.r.write_log("vectorcraft", [
-            line(1, "vectorcraft", collection="agreements", id_="a-all-proj",
+        self.r.write_log("beta", [
+            line(1, "beta", collection="agreements", id_="a-all-proj",
                  data={
-                     "builder": "vectorcraft",
+                     "builder": "beta",
                      "adopter": "all",
                      "status": "ready-to-adopt",
-                     "commits": {"vectorcraft": ["1111111"]},
+                     "commits": {"beta": ["1111111"]},
                      "summary": "Shared agreement",
                  })
         ])
-        res_builder = adopt_agreement(self.r.root, "vectorcraft", "a-all-proj", "2222222", roster=roster)
+        res_builder = adopt_agreement(self.r.root, "beta", "a-all-proj", "2222222", roster=roster)
         self.assertEqual(res_builder["status"], "ready-to-adopt")
-        res_reviewer = adopt_agreement(self.r.root, "codex", "a-all-proj", "3333333", roster=roster)
+        res_reviewer = adopt_agreement(self.r.root, "rev", "a-all-proj", "3333333", roster=roster)
         self.assertEqual(res_reviewer["status"], "ready-to-adopt")
-        res_adopter = adopt_agreement(self.r.root, "bewareilive", "a-all-proj", "4444444", roster=roster)
+        res_adopter = adopt_agreement(self.r.root, "alpha", "a-all-proj", "4444444", roster=roster)
         self.assertEqual(res_adopter["status"], "landed-both")
 
     def test_consult_and_reply_reject_trailing_newline_and_wrap_bare_str_refs_to(self):
@@ -357,36 +357,36 @@ class ConsultsUnitTests(unittest.TestCase):
 
         for bad in ("Trailing newline\n", "Leading\nnewline", "Carriage\rreturn", "   "):
             with self.assertRaises(ValueError):
-                post_consult(self.r.root, "bewareilive", bad, roster=self.roster)
+                post_consult(self.r.root, "alpha", bad, roster=self.roster)
 
         ln = post_consult(
             self.r.root,
-            "bewareilive",
+            "alpha",
             "  Clean summary  ",
-            refs="bewareilive@51e7709",
-            to="vectorcraft",
+            refs="alpha@51e7709",
+            to="beta",
             roster=self.roster,
         )
         doc = self.docs()[("messages", ln.id)]
         self.assertEqual(doc["summary"], "Clean summary")
-        self.assertEqual(doc["refs"], ["bewareilive@51e7709"])
-        self.assertEqual(doc["to"], ["vectorcraft"])
+        self.assertEqual(doc["refs"], ["alpha@51e7709"])
+        self.assertEqual(doc["to"], ["beta"])
 
         for bad in ("Trailing newline\n", "Carriage\rreturn", ""):
             with self.assertRaises(ValueError):
-                post_reply(self.r.root, "vectorcraft", ln.id, bad, roster=self.roster)
+                post_reply(self.r.root, "beta", ln.id, bad, roster=self.roster)
 
         rep_ln = post_reply(
             self.r.root,
-            "vectorcraft",
+            "beta",
             ln.id,
             "  Ack reply  ",
-            refs="vectorcraft@a1b2c3d",
+            refs="beta@a1b2c3d",
             roster=self.roster,
         )
         rep_doc = self.docs()[("messages", rep_ln.id)]
         self.assertEqual(rep_doc["summary"], "Ack reply")
-        self.assertEqual(rep_doc["refs"], ["vectorcraft@a1b2c3d"])
+        self.assertEqual(rep_doc["refs"], ["beta@a1b2c3d"])
 
     def test_post_consult_auto_populates_to_from_at_mentions_when_to_omitted(self):
         from crosstalk.consults import post_consult
@@ -394,30 +394,30 @@ class ConsultsUnitTests(unittest.TestCase):
         # Single @mention in summary
         ln1 = post_consult(
             self.r.root,
-            "vectorcraft",
-            "@BewareILive how does defender sound work?",
-            body="See vectorcraft@f0bfbca3 for context",
+            "beta",
+            "@Alpha how does defender sound work?",
+            body="See beta@f0bfbca3 for context",
             roster=self.roster,
         )
         doc1 = self.docs()[("messages", ln1.id)]
-        self.assertEqual(doc1["to"], ["bewareilive"])
+        self.assertEqual(doc1["to"], ["alpha"])
 
         # Aliases and body @mentions
         ln2 = post_consult(
             self.r.root,
-            "vectorcraft",
+            "beta",
             "Audio timing question",
-            body="Asking @bil and @amb (cc @reviewers)",
+            body="Asking @al and @ga (cc @reviewers)",
             roster=self.roster,
         )
         doc2 = self.docs()[("messages", ln2.id)]
-        self.assertEqual(doc2["to"], ["bewareilive", "avoidmissingball", "codex"])
+        self.assertEqual(doc2["to"], ["alpha", "gamma", "rev"])
 
         # @everyone broadcast leaves `to` omitted
         ln3 = post_consult(
             self.r.root,
-            "vectorcraft",
-            "@everyone status check on @bil",
+            "beta",
+            "@everyone status check on @al",
             roster=self.roster,
         )
         doc3 = self.docs()[("messages", ln3.id)]
@@ -426,17 +426,17 @@ class ConsultsUnitTests(unittest.TestCase):
         # @projects or self-mention filters out sender pid and quarantined participants
         ln4 = post_consult(
             self.r.root,
-            "vectorcraft",
-            "@projects check shared bus timing (from @vectorcraft, cc @owner)",
+            "beta",
+            "@projects check shared bus timing (from @beta, cc @owner)",
             roster=self.roster,
         )
         doc4 = self.docs()[("messages", ln4.id)]
-        self.assertEqual(doc4["to"], ["bewareilive", "avoidmissingball"])
+        self.assertEqual(doc4["to"], ["alpha", "gamma"])
 
         ln5 = post_consult(
             self.r.root,
-            "vectorcraft",
-            "Note from @vectorcraft (cc @owner)",
+            "beta",
+            "Note from @beta (cc @owner)",
             roster=self.roster,
         )
         doc5 = self.docs()[("messages", ln5.id)]
@@ -447,7 +447,7 @@ class ConsultsCliTests(unittest.TestCase):
     def setUp(self):
         self.r = TempRepo()
         self.r.__enter__()
-        self.r.write_roster(roster_with_amb())
+        self.r.write_roster(roster_with_ga())
         shutil.copytree(str(REPO / "scripts"), str(self.r.root / "scripts"),
                         ignore=shutil.ignore_patterns("__pycache__"))
         self.script = str(self.r.root / "scripts" / "relay.py")
@@ -466,31 +466,31 @@ class ConsultsCliTests(unittest.TestCase):
         return json.loads(p.stdout)["collections"]
 
     def test_cli_reply(self):
-        self.r.write_log("vectorcraft", [
-            line(1, "vectorcraft", id_="vc-r1",
-                 data={"from": "vectorcraft", "kind": "request", "summary": "Check Williams timing"})
+        self.r.write_log("beta", [
+            line(1, "beta", id_="beta-r1",
+                 data={"from": "beta", "kind": "request", "summary": "Check Williams timing"})
         ])
         p = self.run_cli(
             "reply",
-            "--from", "bewareilive",
-            "--to-id", "vc-r1",
+            "--from", "alpha",
+            "--to-id", "beta-r1",
             "--summary", "Confirmed on Williams hardware",
             "--body", "Details...",
-            "--ref", "bewareilive@51e7709",
+            "--ref", "alpha@51e7709",
         )
         self.assertEqual(p.returncode, 0, p.stderr)
         msg_id = p.stdout.strip()
-        self.assertTrue(msg_id.startswith("bewareilive-"))
+        self.assertTrue(msg_id.startswith("alpha-"))
         msg = self.read_replay()["messages"][msg_id]
-        self.assertEqual(msg["replyTo"], "vc-r1")
-        self.assertEqual(msg["to"], ["vectorcraft"])
+        self.assertEqual(msg["replyTo"], "beta-r1")
+        self.assertEqual(msg["to"], ["beta"])
         self.assertEqual(msg["summary"], "Confirmed on Williams hardware")
         self.assertEqual(msg["body"], "Details...")
-        self.assertEqual(msg["refs"], ["bewareilive@51e7709"])
+        self.assertEqual(msg["refs"], ["alpha@51e7709"])
 
         p_bad = self.run_cli(
             "reply",
-            "--from", "bewareilive",
+            "--from", "alpha",
             "--to-id", "unknown-id",
             "--summary", "Nope",
         )
@@ -500,47 +500,47 @@ class ConsultsCliTests(unittest.TestCase):
     def test_cli_consult(self):
         p = self.run_cli(
             "consult",
-            "--from", "avoidmissingball",
+            "--from", "gamma",
             "--summary", "Centipede RNG bank window",
             "--body", "Question...",
-            "--ref", "avoidmissingball@91bab82",
-            "--to", "vectorcraft", "bewareilive",
+            "--ref", "gamma@91bab82",
+            "--to", "beta", "alpha",
         )
         self.assertEqual(p.returncode, 0, p.stderr)
         msg_id = p.stdout.strip()
-        self.assertTrue(msg_id.startswith("avoidmissingball-"))
+        self.assertTrue(msg_id.startswith("gamma-"))
         msg = self.read_replay()["messages"][msg_id]
         self.assertEqual(msg["kind"], "request")
         self.assertEqual(msg["summary"], "Centipede RNG bank window")
         self.assertEqual(msg["body"], "Question...")
-        self.assertEqual(msg["refs"], ["avoidmissingball@91bab82"])
-        self.assertEqual(msg["to"], ["vectorcraft", "bewareilive"])
+        self.assertEqual(msg["refs"], ["gamma@91bab82"])
+        self.assertEqual(msg["to"], ["beta", "alpha"])
 
         p_mention = self.run_cli(
             "consult",
-            "--from", "vectorcraft",
-            "--summary", "@BewareILive how does defender sound work?",
+            "--from", "beta",
+            "--summary", "@Alpha how does defender sound work?",
         )
         self.assertEqual(p_mention.returncode, 0, p_mention.stderr)
         mention_id = p_mention.stdout.strip()
         mention_msg = self.read_replay()["messages"][mention_id]
-        self.assertEqual(mention_msg["to"], ["bewareilive"])
+        self.assertEqual(mention_msg["to"], ["alpha"])
 
     def test_cli_adopt(self):
-        self.r.write_log("vectorcraft", [
-            line(1, "vectorcraft", collection="agreements", id_="a-fast-verify",
+        self.r.write_log("beta", [
+            line(1, "beta", collection="agreements", id_="a-fast-verify",
                  data={
                      "t": "2026-10-25T10:00:00Z",
                      "summary": "Fast verify",
-                     "builder": "vectorcraft",
-                     "adopter": "bewareilive",
+                     "builder": "beta",
+                     "adopter": "alpha",
                      "status": "ready-to-adopt",
-                     "commits": {"vectorcraft": ["a1b2c3d"]},
+                     "commits": {"beta": ["a1b2c3d"]},
                  })
         ])
         p = self.run_cli(
             "adopt",
-            "--from", "bewareilive",
+            "--from", "alpha",
             "--agreement", "a-fast-verify",
             "--commit", "51e7709",
             "--summary", "Adopted fast verify",
@@ -549,11 +549,11 @@ class ConsultsCliTests(unittest.TestCase):
         out = json.loads(p.stdout)
         self.assertEqual(out["agreement_id"], "a-fast-verify")
         self.assertEqual(out["status"], "landed-both")
-        self.assertTrue(out["message_id"].startswith("bewareilive-"))
+        self.assertTrue(out["message_id"].startswith("alpha-"))
 
         colls = self.read_replay()
         self.assertEqual(colls["agreements"]["a-fast-verify"]["status"], "landed-both")
-        self.assertEqual(colls["agreements"]["a-fast-verify"]["commits"]["bewareilive"], ["51e7709"])
+        self.assertEqual(colls["agreements"]["a-fast-verify"]["commits"]["alpha"], ["51e7709"])
         self.assertEqual(colls["messages"][out["message_id"]]["kind"], "sync")
 
     def test_service_and_protocol_advertise_new_commands(self):

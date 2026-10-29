@@ -8,7 +8,7 @@ from crosstalk.logs import append_line  # noqa: E402
 
 def worker(root, n):
     for i in range(n):
-        append_line(Path(root), "codex", "set", "messages", "codex-%d-%d" % (_pid(), i), {"i": i})
+        append_line(Path(root), "rev", "set", "messages", "rev-%d-%d" % (_pid(), i), {"i": i})
 
 
 def _pid():

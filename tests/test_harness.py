@@ -80,14 +80,14 @@ class HarnessServerTests(unittest.TestCase):
             with self.server(r) as srv:
                 status, body = request(srv.url + "/api/append", "POST",
                                        {"from": "owner", "op": "update", "collection": "participants",
-                                        "id": "codex", "data": {"harness": "codex"}}, self.owner(srv))
+                                        "id": "rev", "data": {"harness": "codex"}}, self.owner(srv))
                 self.assertEqual(status, 201, body)
                 status, bad = request(srv.url + "/api/append", "POST",
                                       {"from": "owner", "op": "update", "collection": "participants",
-                                       "id": "codex", "data": {"harness": "Not An Id"}}, self.owner(srv))
+                                       "id": "rev", "data": {"harness": "Not An Id"}}, self.owner(srv))
                 self.assertEqual(status, 400)
                 status, snap = request(srv.url + "/api/snapshot")
-            self.assertEqual(snap["roster"]["codex"]["harness"], "codex")
+            self.assertEqual(snap["roster"]["rev"]["harness"], "codex")
 
     def test_onboard_api_takes_harness(self):
         with TempRepo() as r:

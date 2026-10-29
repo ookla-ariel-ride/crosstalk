@@ -31,31 +31,31 @@ class ReadTests(unittest.TestCase):
                               universal_newlines=True, cwd="/")
 
     def test_read_prints_the_replay_as_json(self):
-        self.r.write_log("codex", [line(1, "codex", data={"kind": "reply", "summary": "hi"}),
-                                   line(2, "codex", collection="waiting", id_="codex-w1",
+        self.r.write_log("rev", [line(1, "rev", data={"kind": "reply", "summary": "hi"}),
+                                   line(2, "rev", collection="waiting", id_="rev-w1",
                                         data={"summary": "w", "since": "2026-10-21T00:00:00Z"})])
         p = self.run_cli("read")
         self.assertEqual(p.returncode, 0, p.stderr)
         out = json.loads(p.stdout)
         self.assertEqual(sorted(out["collections"]), ["messages", "waiting"])
-        self.assertEqual(out["collections"]["messages"]["codex-0001"]["summary"], "hi")
-        self.assertEqual(out["collections"]["waiting"]["codex-w1"]["summary"], "w")
+        self.assertEqual(out["collections"]["messages"]["rev-0001"]["summary"], "hi")
+        self.assertEqual(out["collections"]["waiting"]["rev-w1"]["summary"], "w")
 
     def test_read_collection_filter(self):
-        self.r.write_log("codex", [line(1, "codex", data={"kind": "reply", "summary": "hi"}),
-                                   line(2, "codex", collection="waiting", id_="codex-w1",
+        self.r.write_log("rev", [line(1, "rev", data={"kind": "reply", "summary": "hi"}),
+                                   line(2, "rev", collection="waiting", id_="rev-w1",
                                         data={"summary": "w"})])
         p = self.run_cli("read", "--collection", "messages")
         self.assertEqual(p.returncode, 0, p.stderr)
         out = json.loads(p.stdout)
         self.assertEqual(list(out["collections"]), ["messages"])
-        self.assertIn("codex-0001", out["collections"]["messages"])
+        self.assertIn("rev-0001", out["collections"]["messages"])
 
     def test_read_filter_may_name_several_collections(self):
-        self.r.write_log("codex", [line(1, "codex", data={"kind": "reply", "summary": "hi"}),
-                                   line(2, "codex", collection="waiting", id_="codex-w1",
+        self.r.write_log("rev", [line(1, "rev", data={"kind": "reply", "summary": "hi"}),
+                                   line(2, "rev", collection="waiting", id_="rev-w1",
                                         data={"summary": "w"}),
-                                   line(3, "codex", collection="locks", id_="codex-l1",
+                                   line(3, "rev", collection="locks", id_="rev-l1",
                                         data={"path": "a.txt"})])
         p = self.run_cli("read", "--collection", "messages", "--collection", "locks")
         self.assertEqual(p.returncode, 0, p.stderr)
@@ -70,29 +70,29 @@ class ReadTests(unittest.TestCase):
         self.assertEqual(out["service"]["name"], "Crosstalk")
 
     def test_read_exits_1_on_a_fatal_line(self):
-        self.r.write_log("codex", [line(1, "codex"), "{not json"])
+        self.r.write_log("rev", [line(1, "rev"), "{not json"])
         p = self.run_cli("read")
         self.assertEqual(p.returncode, 1)
-        self.assertIn("log/codex.jsonl:2:", p.stderr)
+        self.assertIn("log/rev.jsonl:2:", p.stderr)
         self.assertEqual(p.stdout, "")
 
     def test_read_exits_1_on_a_trust_violation(self):
         # A message whose data.from is not its writer is fatal (ruling R9).
-        self.r.write_log("codex", [line(1, "codex", data={"from": "owner"})])
+        self.r.write_log("rev", [line(1, "rev", data={"from": "owner"})])
         p = self.run_cli("read")
         self.assertEqual(p.returncode, 1)
-        self.assertIn("log/codex.jsonl:1:", p.stderr)
+        self.assertIn("log/rev.jsonl:1:", p.stderr)
 
     def test_read_gives_the_documents_as_the_page_sees_them(self):
-        self.r.write_log("codex", [line(1, "codex", data={"kind": "reply", "summary": "hi"})])
+        self.r.write_log("rev", [line(1, "rev", data={"kind": "reply", "summary": "hi"})])
         p = self.run_cli("read")
         out = json.loads(p.stdout)
-        doc = out["collections"]["messages"]["codex-0001"]
+        doc = out["collections"]["messages"]["rev-0001"]
         self.assertEqual(doc["summary"], "hi")
         self.assertNotIn("data", doc)
 
     def test_read_carries_the_service_block(self):
-        self.r.write_log("codex", [line(1, "codex", data={"kind": "reply", "summary": "hi"})])
+        self.r.write_log("rev", [line(1, "rev", data={"kind": "reply", "summary": "hi"})])
         p = self.run_cli("read")
         self.assertEqual(p.returncode, 0, p.stderr)
         svc = json.loads(p.stdout)["service"]
@@ -106,12 +106,12 @@ class ReadTests(unittest.TestCase):
         self.r.write_roster()
         cmd = SERVICE["commands"]["write"]
         cmd = (cmd.replace("<repo>", str(self.r.root))
-                  .replace("<id>", "codex")
+                  .replace("<id>", "rev")
                   .replace("<n>", "1"))
         p = subprocess.run(cmd, shell=True, stdout=subprocess.PIPE,
                            stderr=subprocess.PIPE, universal_newlines=True, cwd="/")
         self.assertEqual(p.returncode, 0, p.stderr)
-        self.assertTrue((self.r.root / "log" / "codex.jsonl").is_file())
+        self.assertTrue((self.r.root / "log" / "rev.jsonl").is_file())
 
 
 if __name__ == "__main__":
