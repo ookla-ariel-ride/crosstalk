@@ -25,7 +25,7 @@ projects do (owner, 2026-10-28, replacing the "no check-ins" rule of
   again at every session start if it ends with the session.
 - The live checkout is `~/Services/crosstalk`. It stays outside `~/Documents`,
   because macOS keeps LaunchAgents out of Documents. Keep the links that reach
-  it from `~/GitHub/crosstalk`. See README "Running the server".
+  it from `~/GitHub/crosstalk`. See docs/operations.md, "Running the server".
 - While Crosstalk is quarantined, write only doc ids that start with
   `crosstalk-`.
 - Never put a token, the owner PIN, or anything from `kits/` or `tokens.json`

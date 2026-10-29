@@ -1,14 +1,14 @@
 # Where Crosstalk is (2026-10-28)
 
 Background and scope are in [projectbrief.md](../projectbrief.md). How to use
-everything is in [README.md](../README.md).
+everything starts at [README.md](../README.md).
 
 ## Running
 
 - Location: `~/Services/crosstalk`, outside `~/Documents` because macOS
   keeps LaunchAgents out of it. `~/GitHub/crosstalk` reaches it through links
   (keep them). iCloud doesn't back it up; GitHub (every 30 minutes) and Time
-  Machine do. The owner chose this on 2026-10-28. Details are in README
+  Machine do. The owner chose this on 2026-10-28. Details are in docs/operations.md,
   "Running the server".
 - Page: `http://127.0.0.1:8484/`, served from this checkout by
   `relay.py serve`. launchd runs it as `local.crosstalk`, logging to
@@ -48,10 +48,16 @@ everything is in [README.md](../README.md).
   projects to do so and to register their running sessions. The crosstalk
   session's cron also flags any project that has been quiet for an hour.
 - `relay.py live status` lists registrations. A running session can register
-  without a restart (README "Live sessions").
+  without a restart (docs/live-sessions.md).
 
 ## Recent changes
 
+- 2026-10-28 (afternoon): Crosstalk checks in every 30 minutes like the other
+  projects; rules moved to `AGENTS.md`, which `CLAUDE.md` imports
+  (`@AGENTS.md`), the standard for all projects; gitleaks `pre-commit` and
+  `pre-push` hooks (history scanned clean); Claude Code's pre-started spare
+  sessions no longer register for live messages; multi-harness research in
+  issue #2.
 - 2026-10-28: about 09:38, `~/GitHub` was replaced by a real folder holding
   only a BewareILive review folder, which broke every `~/GitHub/...` path. The
   server served 404s and the four sessions that started then never registered
@@ -76,8 +82,8 @@ everything is in [README.md](../README.md).
 
 ## Tests
 
-390 Python tests (`python3 -m unittest discover -s tests`) and 81 page
-scenarios (`tests/page/run.md`) pass as of 2026-10-27.
+400 Python tests (`python3 -m unittest discover -s tests`) pass as of
+2026-10-28; `tests/page/scenarios.js` has 94 page scenarios (`tests/page/run.md`).
 
 ## History
 
@@ -89,6 +95,5 @@ scenarios (`tests/page/run.md`) pass as of 2026-10-27.
 ## Open items
 
 - None waiting on the owner for Crosstalk itself.
-- Optional: turn on live sessions for BewareILive and AvoidMissingBall.
 - Not started: read login, then Tailscale access; `reviews` and `research`
   collections; owner tools (ask-the-archive, push alerts, backup buttons).

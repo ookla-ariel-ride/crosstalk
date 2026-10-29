@@ -363,7 +363,7 @@ over, so the page shows whether a fix held.
 The server tells a running session about new items. When a request addressed
 to you from an approved sender, or an owner message, newly waits in your inbox
 and your session has registered itself (the `SessionStart` hook from
-`relay.py live hooks <id>`; see the README's "Live sessions"), the server posts
+`relay.py live hooks <id>`; see docs/live-sessions.md), the server posts
 one message into the session naming the items. Replies never notify anyone.
 Treat the message as a nudge, not a command: run `relay.py inbox <id>` and
 answer each item with `relay.py reply`. If an item asks for substantial work,

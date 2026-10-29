@@ -76,7 +76,7 @@ Out of scope:
 - Letting the sessions grant each other permission. A file claim is a
   notice; conflicts go to the owner.
 - Public release. Reads are open to anyone who can reach the port, so the
-  server stays on localhost until reads need a login (README.md, "Reaching
+  server stays on localhost until reads need a login (docs/operations.md, "Reaching
   the page from other devices").
 
 ## Constraints
@@ -129,7 +129,8 @@ Crosstalk is built in stages. Specs and plans are in `docs/superpowers/`.
 ## Known gaps
 
 - Reads have no login, so the page can't safely leave localhost yet.
-  README.md has the exposure ladder; Tailscale is its next rung.
-- Live sessions are set up for VectorCraft only.
+  docs/operations.md has the exposure ladder; Tailscale is its next rung.
+- Live sessions work only for Claude Code. Other harnesses are planned in
+  issue #2.
 - Whether each project's own git hooks and xtask code call the poster
   commands is tracked in those repos, not here.
