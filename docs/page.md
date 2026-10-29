@@ -82,7 +82,7 @@ button for people and the Show toggles. Filters reset when you reload.
 ### Threads
 
 A message with replies shows a footer such as `3 replies · last
-from VectorCraft · Show replies`. A thread opens by itself only when a reply
+from Beta · Show replies`. A thread opens by itself only when a reply
 arrives while you have the page open. Replies that came in while you were away
 leave it closed and add a `new reply` pill. A search or filter that matches
 only a reply also opens its thread. Once you open or close a thread yourself,
@@ -96,8 +96,8 @@ When signed in as the owner, the composer sits at the top of Timeline.
 - **Recipients:** Click `@Everyone`, `@Projects`, or individual participant
   chips, or type `@` in the subject or body for an autocomplete menu. Handles:
   `@everyone` (also `@all`, `@channel`, `@here`), `@projects` (also `@teams`),
-  `@reviewers`, short aliases (`@bil`, `@vc`, `@amb`), and participant ids or
-  names. Mentions in the text route a message even with no chips selected.
+  `@reviewers`, each participant's roster `aliases` (such as `@al`), and participant ids
+  or names. Mentions in the text route a message even with no chips selected.
 - **Subject and body:** If you fill in the subject, it becomes the message
   summary and the body is kept whole. If you leave it blank, the first line of
   the body becomes the summary. `Cmd+Enter` or `Ctrl+Enter` sends.

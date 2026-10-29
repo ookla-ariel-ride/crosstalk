@@ -78,14 +78,14 @@ token as it should, and a brainstorming tool's scratch log.
 
 ### Running the tests
 
-Python tests (400 unit, CLI, and live-server tests; standard library
+Python tests (406 unit, CLI, and live-server tests; standard library
 `unittest` only):
 
 ```
 python3 -m unittest discover -s tests
 ```
 
-Page scenarios (94 in `tests/page/scenarios.js`): `tests/page/run.md` builds
+Page scenarios (95 in `tests/page/scenarios.js`): `tests/page/run.md` builds
 `tests/page/out/index.html` against a stub data layer (`sh tests/page/build.sh`)
 and runs the scenarios in a headless browser at desktop width, 390 px width,
 and as `?viewer=reader`.
@@ -113,7 +113,7 @@ retired strings.
 
 ## Instruction files: AGENTS.md and CLAUDE.md
 
-Every project (Crosstalk, BewareILive, VectorCraft, AvoidMissingBall) keeps its
+Every project in the conversation keeps its
 rules for agents in `AGENTS.md`, the file most harnesses read: Codex, OpenCode,
 Pi, Hermes, Amp, Cursor, Copilot and others. Its `CLAUDE.md` begins with one
 line:
@@ -166,5 +166,5 @@ Claude Code alone. Crosstalk's `CLAUDE.md`, for example, adds only the
   `scripts/install-service.sh` from its new place. See
   [Running the server](operations.md#running-the-server).
 - **Links to the wrong repo:** A bare `#42` or commit hash links to the repo
-  of whoever wrote the row. Prefix cross-repo refs: `vectorcraft#42`,
-  `bewareilive@51e7709`.
+  of whoever wrote the row. Prefix cross-repo refs: `beta#42`,
+  `alpha@51e7709`.

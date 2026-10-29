@@ -319,10 +319,11 @@
     await go("timeline");
     var X = window.__crosstalk;
     if (!X || typeof X.dotState !== "function") return res("dotThresholds", false, "window.__crosstalk.dotState missing");
-    // Every project checked in just now, so the test participant is the only one that can be late.
-    await addDoc("messages", "ci-amb", { t: ago(2), from: "avoidmissingball", kind: "check-in", summary: "Check-in" });
-    await addDoc("messages", "ci-bil", { t: ago(2), from: "bewareilive", kind: "check-in", summary: "Check-in" });
-    await addDoc("messages", "ci-vc", { t: ago(2), from: "vectorcraft", kind: "check-in", summary: "Check-in" });
+    // Everyone on the roster checked in just now, so the test participant is the only one that can be late.
+    var pids = Object.keys(__store.participants || {});
+    for (var j = 0; j < pids.length; j++) {
+      await addDoc("messages", "ci-" + pids[j], { t: ago(2), from: pids[j], kind: "check-in", summary: "Check-in" });
+    }
     await addDoc("participants", "dt", { name: "Dot test", kind: "tool", color: "#555555", checkInMin: 30, trust: "approved" });
     var never = X.dotState("dt", Date.now());
     var got = {}, tiles = {}, rosterDots = {};
@@ -521,7 +522,7 @@
     var rows = [].slice.call(document.querySelectorAll("#view tbody tr")).map(function (tr) { return tr.querySelector(".summary").textContent; });
     var pillEl = document.querySelector("#view .pill.ready-to-adopt"), bg = pillEl && getComputedStyle(pillEl).backgroundColor;
     await go("timeline");
-    return res("readyToAdopt", rows[0] === "Ready" && bg === rgb("var(--vc-soft)"), "order=" + JSON.stringify(rows) + " bg=" + bg);
+    return res("readyToAdopt", rows[0] === "Ready" && bg === rgb("var(--accent-soft)"), "order=" + JSON.stringify(rows) + " bg=" + bg);
   });
 
   // A missing, empty or not-yet-loaded roster must not quarantine everyone.
@@ -1231,6 +1232,24 @@
     return res("composerAllMessageKinds", ok,
       "liveKindAsk=" + liveKindAsk + " onHelp=" + onHelp + " agrOk=" + agrOk + " alertOk=" + alertOk +
       " lesOk=" + lesOk + " incCreated=" + incCreated + " resBtn=" + !!resBtn + " incResolved=" + incResolved);
+  });
+
+  // Aliases and item names come from the roster; a progress row may name its item in `item`.
+  S.push(async function rosterAliasesAndItems() {
+    var X = window.__crosstalk;
+    var m = X.extractMentionsFromText("ping @amb and @VC, not @zzz");
+    var aliasOk = !m.broadcast && JSON.stringify(m.ids) === JSON.stringify(["avoidmissingball", "vectorcraft"]);
+    var nameOk = X.canonicalItemName("avoidmissingball", "digdugat") === "Dig Dug" &&
+      X.canonicalItemName("vectorcraft", "digdugat") === "digdugat" && X.canonicalItemName("nobody", "x") === "x";
+    var savedProg = Object.assign({}, __store.progress || {});
+    await put("progress", { "it-1": { t: ago(10), project: "avoidmissingball", item: "missile", pct: 33 } });
+    await go("timeline");
+    var e = entry("avoidmissingball");
+    var rprog = e && e.querySelector(".rprog") ? e.querySelector(".rprog").textContent : null;
+    await put("progress", savedProg);
+    await go("timeline");
+    return res("rosterAliasesAndItems", aliasOk && nameOk && rprog === "Missile Command 33%",
+      "mentions=" + JSON.stringify(m) + " names=" + nameOk + " rprog=" + JSON.stringify(rprog));
   });
 
   S.push(async function canonicalGameProgress() {

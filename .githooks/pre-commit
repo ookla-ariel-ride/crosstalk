@@ -2,7 +2,7 @@
 # Refuse a commit whose staged changes contain a secret (gitleaks). Fails
 # closed: without gitleaks no commit is made, so a missing tool can't let a
 # key through. Install: brew install gitleaks. `git commit --no-verify` skips
-# this; don't. Same check as VectorCraft, BewareILive and AvoidMissingBall.
+# this; don't. The other projects in the conversation run the same check.
 # launchd runs the housekeeper with a bare PATH, so add Homebrew's bins.
 PATH="/opt/homebrew/bin:/usr/local/bin:$PATH"
 if ! command -v gitleaks >/dev/null 2>&1; then

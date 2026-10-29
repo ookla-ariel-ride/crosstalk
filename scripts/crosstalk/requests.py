@@ -12,9 +12,6 @@ from typing import Dict, List, Optional, Tuple
 
 _MENTION_RE = re.compile(r"(?:^|[\s(\[,:;])@([A-Za-z0-9_.-]+)")
 _BROADCAST_HANDLES = ("everyone", "all", "channel", "here")
-_ALIASES = {"bil": "bewareilive", "vc": "vectorcraft", "amb": "avoidmissingball"}
-_DEFAULT_PROJECTS = ("avoidmissingball", "bewareilive", "vectorcraft")
-_DEFAULT_REVIEWERS = ("codex",)
 _OWNER_MESSAGE_KINDS = ("owner", "alert", "agreement", "lesson", "decision")
 
 
@@ -70,12 +67,11 @@ def extract_mentions(doc: dict, roster=None) -> List[str]:
     if any(_norm(t) in _BROADCAST_HANDLES or t.lower() in _BROADCAST_HANDLES for t in raw_tokens):
         return []
     participants = getattr(roster, "participants", roster) if roster is not None else None
-    by_norm = dict(_ALIASES)
+    # Handles come from the roster alone: ids, names, and each participant's aliases.
+    by_norm = {}  # type: Dict[str, str]
     projects = []  # type: List[str]
     reviewers = []  # type: List[str]
     if isinstance(participants, dict) and participants:
-        valid_pids = set(participants.keys()) - {"owner"}
-        by_norm = {k: v for k, v in _ALIASES.items() if v in valid_pids}
         all_projects = []  # type: List[str]
         approved_projects = []  # type: List[str]
         all_reviewers = []  # type: List[str]
@@ -89,6 +85,11 @@ def extract_mentions(doc: dict, roster=None) -> List[str]:
             if isinstance(name, str) and name:
                 by_norm[name.lower()] = pid
                 by_norm[_norm(name)] = pid
+            aliases = p.get("aliases") if isinstance(p, dict) else getattr(p, "aliases", None)
+            for a in aliases if isinstance(aliases, list) else []:
+                if isinstance(a, str) and a:
+                    by_norm.setdefault(a.lower(), pid)
+                    by_norm.setdefault(_norm(a), pid)
             kind = p.get("kind") if isinstance(p, dict) else getattr(p, "kind", None)
             if kind == "project":
                 all_projects.append(pid)
@@ -100,12 +101,6 @@ def extract_mentions(doc: dict, roster=None) -> List[str]:
                     approved_reviewers.append(pid)
         projects = approved_projects if approved_projects else all_projects
         reviewers = approved_reviewers if approved_reviewers else all_reviewers
-    else:
-        for pid in _DEFAULT_PROJECTS + _DEFAULT_REVIEWERS:
-            by_norm[pid.lower()] = pid
-            by_norm[_norm(pid)] = pid
-        projects = list(_DEFAULT_PROJECTS)
-        reviewers = list(_DEFAULT_REVIEWERS)
     out = []  # type: List[str]
     seen = set()
     for raw_t in raw_tokens:

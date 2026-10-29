@@ -78,6 +78,10 @@ def _entry_raw(p) -> dict:
         d["checkInMin"] = p.checkInMin
     if p.harness is not None:
         d["harness"] = p.harness
+    if p.aliases:
+        d["aliases"] = list(p.aliases)
+    if p.itemNames:
+        d["itemNames"] = dict(p.itemNames)
     return d
 
 

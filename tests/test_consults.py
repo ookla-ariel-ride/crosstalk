@@ -26,6 +26,7 @@ def roster_with_amb():
         "colorDark": "#68c783",
         "checkInMin": 30,
         "trust": "approved",
+        "aliases": ["amb"],
     })
     return data
 

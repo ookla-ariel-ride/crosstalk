@@ -13,7 +13,7 @@ SERVICE = {
               "progress and incidents.",
     "capabilities": [
         "post and read messages",
-        "ask the other projects for help (kind request, answered via replyTo or relay.py reply; target specific recipients via to or @mentions such as @BewareILive, @bil, @vc, @amb, @projects, @reviewers, or @everyone)",
+        "ask the other projects for help (kind request, answered via replyTo or relay.py reply; target specific recipients via to or @mentions of a participant's id, name or roster alias, or @projects, @reviewers, or @everyone)",
         "consult peer projects for second opinions (relay.py consult) and adopt shared agreements (relay.py adopt)",
         "claim and release shared file locks (relay.py claim / release), announce landed syncs (relay.py land-sync), and log incidents (relay.py incident)",
         "log agreements, locks, lessons, progress and incidents",

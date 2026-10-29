@@ -454,28 +454,36 @@ class InboxTests(unittest.TestCase):
     def test_at_mentions_aliases_groups_broadcast_and_owner_message_kinds(self):
         from crosstalk.requests import extract_mentions, unanswered_owner_messages
 
-        # Test unit extraction with roster=None (defaults) and aliases
+        # Aliases and groups come from the roster
+        three = {
+            "avoidmissingball": {"name": "AvoidMissingBall", "kind": "project", "trust": "approved", "aliases": ["amb"]},
+            "bewareilive": {"name": "BewareILive", "kind": "project", "trust": "approved", "aliases": ["bil"]},
+            "vectorcraft": {"name": "VectorCraft", "kind": "project", "trust": "approved", "aliases": ["vc"]},
+            "codex": {"name": "Codex", "kind": "reviewer", "trust": "approved"},
+        }
         self.assertEqual(
-            extract_mentions({"summary": "Ping (@bil, @vc; @amb: check this)"}),
+            extract_mentions({"summary": "Ping (@bil, @vc; @amb: check this)"}, roster=three),
             ["bewareilive", "vectorcraft", "avoidmissingball"],
         )
         self.assertEqual(
-            extract_mentions({"summary": "@projects sync up"}),
+            extract_mentions({"summary": "@projects sync up"}, roster=three),
             ["avoidmissingball", "bewareilive", "vectorcraft"],
         )
         self.assertEqual(
-            extract_mentions({"summary": "@teams and @reviewers"}),
+            extract_mentions({"summary": "@teams and @reviewers"}, roster=three),
             ["avoidmissingball", "bewareilive", "vectorcraft", "codex"],
         )
+        # With no roster nothing resolves: no project names are built in
+        self.assertEqual(extract_mentions({"summary": "Ping @bil and @projects"}), [])
         # Broadcast handles override specific mentions
         for bcast in ("@everyone", "@all", "@channel", "@here"):
             self.assertEqual(
-                extract_mentions({"summary": "%s and @BewareILive" % bcast}),
+                extract_mentions({"summary": "%s and @BewareILive" % bcast}, roster=three),
                 [],
             )
         # Commit refs and emails do not trigger mentions
         self.assertEqual(
-            extract_mentions({"summary": "See vectorcraft@f0bfbca3 or dev@bewareilive.com"}),
+            extract_mentions({"summary": "See vectorcraft@f0bfbca3 or dev@bewareilive.com"}, roster=three),
             [],
         )
         # @owner is excluded from extract_mentions so "(cc @owner)" does not narrow a broadcast
@@ -540,8 +548,8 @@ class InboxTests(unittest.TestCase):
 
         roster = {
             "owner": {"name": "Owner", "kind": "person", "trust": "approved"},
-            "bewareilive": {"name": "BewareILive", "kind": "project", "trust": "approved"},
-            "vectorcraft": {"name": "VectorCraft", "kind": "project", "trust": "approved"},
+            "bewareilive": {"name": "BewareILive", "kind": "project", "trust": "approved", "aliases": ["bil"]},
+            "vectorcraft": {"name": "VectorCraft", "kind": "project", "trust": "approved", "aliases": ["vc"]},
             "quarantined-proj": {"name": "QuarantinedProj", "kind": "project", "trust": "quarantined"},
             "codex": {"name": "Codex", "kind": "reviewer", "trust": "approved"},
             "quarantined-rev": {"name": "QuarantinedRev", "kind": "reviewer", "trust": "quarantined"},

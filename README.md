@@ -93,7 +93,7 @@ arrive, install the live-session hooks once per project. See
   `messages`, `agreements`, `waiting`, `locks`, `lessons`, `decisions`,
   `progress`, `incidents`, and `participants`.
 - **Roster:** `participants.json` lists every participant (`id`, `name`,
-  `kind`, `repo`, colors, `checkInMin`, `parent`, `harness`, `trust`). New participants
+  `kind`, `repo`, colors, `checkInMin`, `parent`, `harness`, `aliases`, `itemNames`, `trust`). New participants
   start `quarantined`: they can write only in their own namespace, their rows
   show dimmed, and they can't trigger actions in other sessions until the owner
   approves them.

@@ -10,8 +10,7 @@
 /* Layout: a status strip, tabs, then per-tab views; the timeline is one feed beside a roster of participants. */
 :root {
   --bg: #f3f2ef; --panel: #fbfaf8; --fg: #1d1c1a; --muted: #6d6a64; --rule: #d9d6cf;
-  --bil: #b3261e; --bil-soft: #f6e4e1;   /* Williams marquee red */
-  --vc: #1f5f8b; --vc-soft: #e1ecf4;     /* vector-monitor blue */
+  --accent: #1f5f8b; --accent-soft: #e1ecf4;
   --own: #6b3fa0; --own-soft: #eee6f7;   /* the owner */
   --ok: #2f6b3a; --warn: #9a5b00; --bad: #a3271f;
   --tag-ink-themed: #fff;   /* text on a tag whose color is a theme token (the owner, unknown senders) */
@@ -21,11 +20,11 @@
 }
 @media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) {
   --bg: #151413; --panel: #1d1c1a; --fg: #ecebe7; --muted: #a29e96; --rule: #34322e;
-  --bil: #ef6a5f; --bil-soft: #3a1f1c; --vc: #6fb2e2; --vc-soft: #1a2b38; --own: #b892e6; --own-soft: #2c2238;
+  --accent: #6fb2e2; --accent-soft: #1a2b38; --own: #b892e6; --own-soft: #2c2238;
   --ok: #7cc48a; --warn: #e0a54a; --bad: #f08a80; --tag-ink-themed: #151413; color-scheme: dark } }
 :root[data-theme="dark"] {
   --bg: #151413; --panel: #1d1c1a; --fg: #ecebe7; --muted: #a29e96; --rule: #34322e;
-  --bil: #ef6a5f; --bil-soft: #3a1f1c; --vc: #6fb2e2; --vc-soft: #1a2b38; --own: #b892e6; --own-soft: #2c2238;
+  --accent: #6fb2e2; --accent-soft: #1a2b38; --own: #b892e6; --own-soft: #2c2238;
   --ok: #7cc48a; --warn: #e0a54a; --bad: #f08a80; --tag-ink-themed: #151413; color-scheme: dark }
 
 html { scroll-padding-top: var(--strip-h, 0px); }
@@ -54,7 +53,7 @@ header .lead { flex: 1 1 420px; min-width: 0; }
 .color-wrap { display: flex; flex-direction: column; gap: 4px; }
 h2 { font: 800 13px var(--display); letter-spacing: .08em; text-transform: uppercase; margin: 0 0 10px; color: var(--muted); }
 button, input, textarea, select { font: inherit; color: inherit; }
-button:focus-visible, input:focus-visible, textarea:focus-visible, select:focus-visible, a:focus-visible { outline: 2px solid var(--vc); outline-offset: 2px; }
+button:focus-visible, input:focus-visible, textarea:focus-visible, select:focus-visible, a:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
 a { color: inherit; }
 
 /* status strip */
@@ -179,7 +178,7 @@ a.who-link { text-decoration: none; }
 #digest { margin-bottom: 12px; border-left: 4px solid var(--own); }
 #digest #digest-dismiss { margin-left: auto; }
 #composer #reply-banner { margin: 0; }
-.pill.building, .pill.landed-builder, .pill.ready-to-adopt, .pill.agreed { background: var(--vc-soft); color: var(--fg); }
+.pill.building, .pill.landed-builder, .pill.ready-to-adopt, .pill.agreed { background: var(--accent-soft); color: var(--fg); }
 .pill.dropped { text-decoration: line-through; }
 .summary { font: 600 15px/1.35 var(--body); margin: 6px 0 4px; text-wrap: balance; overflow-wrap: anywhere; }
 .body { white-space: pre-wrap; overflow-wrap: anywhere; margin: 0; font-size: 14px; }
@@ -377,7 +376,7 @@ td.num, td.t { font: 12px var(--mono); font-variant-numeric: tabular-nums; white
   function noteVisit() { if (loaded.messages) writeVisit(serverNow()); }
   function validProg(p, since) {
     var t = ts(p.t || p.updated || p.date);
-    return !isNaN(t) && t > since && canonicalGameName(p.project, p.game) !== "" && typeof p.pct === "number" && isFinite(p.pct);
+    return !isNaN(t) && t > since && canonicalItemName(p.project, progressItem(p)) !== "" && typeof p.pct === "number" && isFinite(p.pct);
   }
   // Rows are untrusted, so a participant's fields are checked before they reach a URL or a style.
   var HAS = Object.prototype.hasOwnProperty;
@@ -391,13 +390,24 @@ td.num, td.t { font: 12px var(--mono); font-variant-numeric: tabular-nums; white
   }
   function person(id) {
     var k = String(id == null ? "" : id), p = HAS.call(people, k) && people[k] && typeof people[k] === "object" ? people[k] : null;
-    if (!p) return { id: k, name: k, kind: null, color: "var(--muted)", colorDark: "var(--muted)", repo: null, parent: null, checkInMin: null, trust: "quarantined", harness: null };
+    if (!p) return { id: k, name: k, kind: null, color: "var(--muted)", colorDark: "var(--muted)", repo: null, parent: null, checkInMin: null, trust: "quarantined", harness: null, aliases: [], itemNames: Object.create(null) };
     var name = typeof p.name === "string" && p.name ? p.name : (p.kind === "agent" ? k.split(".").pop() : k);
     var color = okColor(p.color) ? p.color : "var(--muted)", colorDark = okColor(p.colorDark) ? p.colorDark : color;
     var repo = typeof p.repo === "string" && /^[\w.-]+\/[\w.-]+$/.test(p.repo) ? p.repo : null;
     return { id: k, name: name, kind: p.kind || null, color: color, colorDark: colorDark, repo: repo, parent: typeof p.parent === "string" ? p.parent : null,
       checkInMin: typeof p.checkInMin === "number" ? p.checkInMin : null, trust: p.trust === "approved" ? "approved" : "quarantined",
-      harness: okHarness(p.harness) ? p.harness : null };
+      harness: okHarness(p.harness) ? p.harness : null, aliases: okAliases(p.aliases), itemNames: okItemNames(p.itemNames) };
+  }
+  // Roster aliases: lowercase strings only. itemNames: string to string, keyed lowercase.
+  function okAliases(a) {
+    return Array.isArray(a) ? a.filter(function (x) { return typeof x === "string" && x; }).map(function (x) { return x.toLowerCase(); }) : [];
+  }
+  function okItemNames(o) {
+    var out = Object.create(null);
+    if (o && typeof o === "object" && !Array.isArray(o)) Object.keys(o).forEach(function (k) {
+      if (typeof o[k] === "string" && o[k]) out[k.trim().toLowerCase()] = o[k];
+    });
+    return out;
   }
   // The harness a participant's sessions run in (participants.json: harness), shown as an icon. Logos are 24x24
   // path data: `d` from Simple Icons 16.36.0 (CC0), `paths` (drawn even-odd) from Lobe Icons 1.101.0 (MIT). A
@@ -558,26 +568,25 @@ td.num, td.t { font: 12px var(--mono); font-variant-numeric: tabular-nums; white
     a.target = "_blank"; a.rel = "noopener";
     return a;
   }
-  var GAME_CANON = {
-    centiped: "Centipede", centipede: "Centipede",
-    digdugat: "Dig Dug", digdug: "Dig Dug", "dig dug": "Dig Dug",
-    missile: "Missile Command", "missile command": "Missile Command",
-    battlezone: "bzone", bzone: "bzone",
-    "star castle": "starcas", starcas: "starcas",
-    tempest: "tempest"
-  };
-  function canonicalGameName(project, rawGame) {
-    var g = typeof rawGame === "string" ? rawGame.trim() : "";
-    if (!g) return "";
-    var low = g.toLowerCase();
-    return HAS.call(GAME_CANON, low) ? GAME_CANON[low] : g;
+  // A progress row names what it measures in `item` (older rows: `game`).
+  function progressItem(p) {
+    return p && typeof p.item === "string" && p.item.trim() ? p.item : p ? p.game : "";
   }
-  var ALIAS_MAP = {
-    bil: "bewareilive", bewareilive: "bewareilive",
-    vc: "vectorcraft", vectorcraft: "vectorcraft",
-    amb: "avoidmissingball", avoidmissingball: "avoidmissingball",
-    codex: "codex"
-  };
+  // The item's shown name: the project's itemNames entry for it (roster), else the name as written.
+  function canonicalItemName(project, rawItem) {
+    var g = typeof rawItem === "string" ? rawItem.trim() : "";
+    if (!g) return "";
+    var names = person(project).itemNames, low = g.toLowerCase();
+    return HAS.call(names, low) ? names[low] : g;
+  }
+  // A participant's extra @handles from the roster ("aliases": ["bil"]), or null.
+  function aliasOwner(low) {
+    var found = null;
+    Object.keys(people).forEach(function (id) {
+      if (!found && id !== "owner" && person(id).aliases.indexOf(low) !== -1) found = id;
+    });
+    return found;
+  }
   // A group's approved members, or every member when none is approved yet (as requests.extract_mentions does).
   function approvedFirst(ids) {
     var ok = ids.filter(function (id) { return !isQuarantined(id); });
@@ -585,11 +594,11 @@ td.num, td.t { font: 12px var(--mono); font-variant-numeric: tabular-nums; white
   }
   function projectIds() {
     var ids = Object.keys(people).filter(function (id) { return id !== "owner" && person(id).kind === "project"; }).sort(byName);
-    return ids.length ? approvedFirst(ids) : ["avoidmissingball", "bewareilive", "vectorcraft"];
+    return approvedFirst(ids);
   }
   function reviewerIds() {
     var ids = Object.keys(people).filter(function (id) { var k = person(id).kind; return id !== "owner" && (k === "reviewer" || k === "researcher"); }).sort(byName);
-    return ids.length ? approvedFirst(ids) : ["codex"];
+    return approvedFirst(ids);
   }
   function resolveMentionToken(raw) {
     var tok = String(raw == null ? "" : raw).replace(/[.,;:!?)\]]+$/, "");
@@ -599,8 +608,8 @@ td.num, td.t { font: 12px var(--mono); font-variant-numeric: tabular-nums; white
     if (low === "owner") return { broadcast: false, ids: [], pid: "owner", label: "@" + tok };
     if (low === "projects" || low === "teams") return { broadcast: false, ids: projectIds(), group: true, label: "@" + tok };
     if (low === "reviewers") return { broadcast: false, ids: reviewerIds(), group: true, label: "@" + tok };
-    if (HAS.call(ALIAS_MAP, low)) {
-      var aid = ALIAS_MAP[low];
+    var aid = aliasOwner(low);
+    if (aid) {
       return { broadcast: false, ids: [aid], pid: aid, label: "@" + tok };
     }
     var norm = low.replace(/[^a-z0-9]/g, "");
@@ -683,7 +692,7 @@ td.num, td.t { font: 12px var(--mono); font-variant-numeric: tabular-nums; white
     if (!query) return true;
     var commits = o.commits && typeof o.commits === "object" ? Object.keys(o.commits).map(function (k) { return [].concat(o.commits[k] || []).join(" "); }) : [];
     var projId = o.project || o.owner || o.from;
-    var hay = [o.summary, o.title, o.body, o.detail, o.fix, o.path, o.note, o.game, o.game ? canonicalGameName(o.project, o.game) : "", o.source,
+    var hay = [o.summary, o.title, o.body, o.detail, o.fix, o.path, o.note, progressItem(o), progressItem(o) ? canonicalItemName(o.project, progressItem(o)) : "", o.source,
       o.owner, o.from, projId ? person(projId).name : "",
       [].concat(o.refs || []).join(" "), [].concat(o.fixRefs || []).join(" "), commits.join(" ")].join(" ").toLowerCase();
     return hay.indexOf(query) !== -1;
@@ -718,7 +727,7 @@ td.num, td.t { font: 12px var(--mono); font-variant-numeric: tabular-nums; white
     var i = whoPicked.indexOf(id);
     if (i === -1) whoPicked.push(id); else whoPicked.splice(i, 1);
   }
-  // "Showing starred messages sent by BewareILive, VectorCraft." Null when no filter is on. The Help tab passes
+  // "Showing starred messages sent by Alpha, Beta." Null when no filter is on. The Help tab passes
   // withShow false: only the people filter applies there.
   function filterNoteText(noun, withShow) {
     var rep = withShow && showReplies, open = withShow && showOpen, star = withShow && showStarred;
@@ -839,7 +848,7 @@ td.num, td.t { font: 12px var(--mono); font-variant-numeric: tabular-nums; white
     else locks.slice(0, 2).forEach(function (l, i) { if (i) lockHint.appendChild(document.createTextNode(", ")); lockHint.appendChild(lockLink(l) || el("span", null, String(l.path == null ? "" : l.path))); });
   }
 
-  // The roster's worst check-in dot: "all on time", or the latest participant, e.g. "VectorCraft 38 min late".
+  // The roster's worst check-in dot: "all on time", or the latest participant, e.g. "Alpha 38 min late".
   function renderCheckTile() {
     var now = Date.now(), rank = { ok: 0, warn: 1, bad: 2 };
     var due = Object.keys(people).map(person).filter(function (p) { return p.checkInMin != null; });
@@ -940,7 +949,7 @@ td.num, td.t { font: 12px var(--mono); font-variant-numeric: tabular-nums; white
     var out = [];
     var groups = [
       { handle: "Everyone", desc: "All sessions", broadcast: true, match: ["everyone", "all", "channel", "here"] },
-      { handle: "Projects", desc: "All game projects", group: "projects", match: ["projects", "teams"] },
+      { handle: "Projects", desc: "All projects", group: "projects", match: ["projects", "teams"] },
       { handle: "Reviewers", desc: "Reviewers & research", group: "reviewers", match: ["reviewers"] }
     ];
     groups.forEach(function (g) {
@@ -955,8 +964,7 @@ td.num, td.t { font: 12px var(--mono); font-variant-numeric: tabular-nums; white
     pids.forEach(function (id) {
       var p = person(id);
       var disp = displayName(id).replace(/\s+/g, "");
-      var alias = Object.keys(ALIAS_MAP).filter(function (k) { return ALIAS_MAP[k] === id; })[0] || "";
-      var hay = [id.toLowerCase(), p.name.toLowerCase(), disp.toLowerCase(), alias];
+      var hay = [id.toLowerCase(), p.name.toLowerCase(), disp.toLowerCase()].concat(person(id).aliases);
       if (!low || hay.some(function (h) { return h && h.indexOf(low) !== -1; })) {
         out.push({ handle: p.kind === "agent" ? id : p.name.replace(/\s+/g, ""), desc: displayName(id) + (p.kind ? " (" + p.kind + ")" : ""), pid: id });
       }
@@ -1230,7 +1238,7 @@ td.num, td.t { font: 12px var(--mono); font-variant-numeric: tabular-nums; white
           extra.push(db.collection("waiting").doc(id).set({ since: now, project: effectiveTo.length === 1 ? effectiveTo[0] : "owner", summary: summary, body: body, done: null }));
         }
         if (effectiveKind === "agreement") {
-          var builder = effectiveTo[0] || "vectorcraft";
+          var builder = effectiveTo[0] || "owner";
           extra.push(db.collection("agreements").doc("a-" + id).set({ t: now, updated: now, summary: summary, body: body, status: "agreed", builder: builder, adopter: "all", commits: {} }));
         }
         if (effectiveKind === "lesson") {
@@ -1400,22 +1408,22 @@ td.num, td.t { font: 12px var(--mono); font-variant-numeric: tabular-nums; white
     });
     return d;
   }
-  // A project's latest progress row per game, one muted line for the roster: "joust 62% \u00b7 robotron 41%".
+  // A project's latest progress row per item, one muted line for the roster: "parser 62% \u00b7 docs 41%".
   function rosterProgressLine(id) {
     var p = person(id);
     if (p.kind !== "project") return null;
-    var latest = Object.create(null), games = [];
+    var latest = Object.create(null), items = [];
     data.progress.forEach(function (r) {
       var rt = ts(r.t || r.updated || r.date);
       if (String(r.project) !== id || typeof r.pct !== "number" || !isFinite(r.pct) || isNaN(rt)) return;
-      var g = canonicalGameName(r.project, r.game);
+      var g = canonicalItemName(r.project, progressItem(r));
       if (!g) return;
-      if (!HAS.call(latest, g)) { latest[g] = { r: r, t: rt, game: g }; games.push(g); }
-      else if (rt >= latest[g].t) latest[g] = { r: r, t: rt, game: g };
+      if (!HAS.call(latest, g)) { latest[g] = { r: r, t: rt, item: g }; items.push(g); }
+      else if (rt >= latest[g].t) latest[g] = { r: r, t: rt, item: g };
     });
-    if (!games.length) return null;
-    games.sort();
-    return games.map(function (g) { return g + " " + latest[g].r.pct + "%"; }).join(" \u00b7 ");
+    if (!items.length) return null;
+    items.sort();
+    return items.map(function (g) { return g + " " + latest[g].r.pct + "%"; }).join(" \u00b7 ");
   }
   // The live badge for a project with a session listening: "live", or a warning when the last message could not be delivered.
   function liveBadge(id) {
@@ -1519,14 +1527,14 @@ td.num, td.t { font: 12px var(--mono); font-variant-numeric: tabular-nums; white
         if (newProg.length > 0) {
           var latestProg = Object.create(null), progKeys = [];
           newProg.forEach(function (p) {
-            var g = canonicalGameName(p.project, p.game);
+            var g = canonicalItemName(p.project, progressItem(p));
             if (!g) return;
             var k = String(p.project || "") + ":" + g;
             var pt = ts(p.t || p.updated || p.date);
-            if (!HAS.call(latestProg, k)) { latestProg[k] = { p: p, t: pt, game: g }; progKeys.push(k); }
-            else if (pt >= latestProg[k].t) latestProg[k] = { p: p, t: pt, game: g };
+            if (!HAS.call(latestProg, k)) { latestProg[k] = { p: p, t: pt, item: g }; progKeys.push(k); }
+            else if (pt >= latestProg[k].t) latestProg[k] = { p: p, t: pt, item: g };
           });
-          if (progKeys.length) parts.push(progKeys.map(function (k) { return latestProg[k].game + " " + latestProg[k].p.pct + "%"; }).join(" \u00b7 "));
+          if (progKeys.length) parts.push(progKeys.map(function (k) { return latestProg[k].item + " " + latestProg[k].p.pct + "%"; }).join(" \u00b7 "));
         }
         if (parts.length > 0) {
           var dig = el("div", "card"); dig.id = "digest";
@@ -1862,21 +1870,21 @@ td.num, td.t { font: 12px var(--mono); font-variant-numeric: tabular-nums; white
   }
 
   /* ---------- progress chart ---------- */
-  // A game's line takes its project's color; a project's games differ by dash pattern.
+  // An item's line takes its project's color; a project's items differ by dash pattern.
   var DASHES = ["", "7 4", "2 3", "10 3 2 3", "4 4 1 4"];
   function renderProgress(view) {
     toolbar(view, false);
-    var all = data.progress.filter(function (p) { return !isNaN(ts(p.t || p.updated || p.date)) && typeof p.pct === "number" && isFinite(p.pct) && canonicalGameName(p.project, p.game) !== ""; });
+    var all = data.progress.filter(function (p) { return !isNaN(ts(p.t || p.updated || p.date)) && typeof p.pct === "number" && isFinite(p.pct) && canonicalItemName(p.project, progressItem(p)) !== ""; });
     var pts = all.filter(matches).sort(byT);
-    if (!pts.length) { view.appendChild(el("div", "empty", all.length ? "No games match." : "No progress recorded yet. Each check-in records every open game's percentage built here.")); return; }
+    if (!pts.length) { view.appendChild(el("div", "empty", all.length ? "No items match." : "No progress recorded yet. Each check-in records every open item's percentage done here.")); return; }
     var groups = {}, keys = [];
-    var gameNo = {}, style = {};
+    var itemNo = {}, style = {};
     pts.forEach(function (p) {
-      var canon = canonicalGameName(p.project, p.game);
+      var canon = canonicalItemName(p.project, progressItem(p));
       var k = person(p.project).name + ": " + canon;
       if (!groups[k]) {
         groups[k] = []; keys.push(k);
-        var n = gameNo[p.project] = (gameNo[p.project] || 0) + 1;
+        var n = itemNo[p.project] = (itemNo[p.project] || 0) + 1;
         style[k] = { col: colorOf(p.project), dash: DASHES[(n - 1) % DASHES.length] };
       }
       var g = groups[k], pt = ts(p.t || p.updated || p.date);
@@ -1889,7 +1897,7 @@ td.num, td.t { font: 12px var(--mono); font-variant-numeric: tabular-nums; white
     function y(v) { return T + (1 - Math.max(0, Math.min(100, v)) / 100) * (H - T - B); }
     var ns = "http://www.w3.org/2000/svg";
     function s(tag, attrs) { var e = document.createElementNS(ns, tag); Object.keys(attrs).forEach(function (k) { e.setAttribute(k, attrs[k]); }); return e; }
-    var svg = s("svg", { viewBox: "0 0 " + W + " " + H, width: "100%", role: "img", "aria-label": "Percentage built over time for each open game" });
+    var svg = s("svg", { viewBox: "0 0 " + W + " " + H, width: "100%", role: "img", "aria-label": "Percentage done over time for each open item" });
     svg.style.minWidth = "480px";
     [0, 25, 50, 75, 100].forEach(function (v) {
       svg.appendChild(s("line", { x1: L, x2: W - R, y1: y(v), y2: y(v), stroke: "var(--rule)", "stroke-width": 1, fill: "none" }));
@@ -1998,7 +2006,7 @@ td.num, td.t { font: 12px var(--mono); font-variant-numeric: tabular-nums; white
     return "Viewing as " + (me.isOwner ? "the owner" : me.canEdit ? "an editor" : "a viewer (read only)");
   }
   // Read-only helpers for the page tests.
-  window.__crosstalk = Object.freeze({ dotState: dotState, viewerText: viewerText, spanText: spanText, colorOf: colorOf, canonicalGameName: canonicalGameName, parseMentions: parseMentions, extractMentionsFromText: extractMentionsFromText, setLiveSessions: setLiveSessions, setBuildMeta: function (m) { Object.assign(meta, m || {}); renderBuild(); },
+  window.__crosstalk = Object.freeze({ dotState: dotState, viewerText: viewerText, spanText: spanText, colorOf: colorOf, canonicalItemName: canonicalItemName, parseMentions: parseMentions, extractMentionsFromText: extractMentionsFromText, setLiveSessions: setLiveSessions, setBuildMeta: function (m) { Object.assign(meta, m || {}); renderBuild(); },
     reopenSince: function (t) {
       visitFrom = t == null ? null : Number(t); visitNew = { messages: null, progress: null }; digestDismissed = false;
       ["messages", "progress"].forEach(function (c) { if (loaded[c]) openVisit(c); });

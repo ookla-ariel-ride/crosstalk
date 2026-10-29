@@ -11,7 +11,10 @@
       "colorDark": "#ef6a5f",
       "checkInMin": 30,
       "trust": "approved",
-      "harness": "claude-code"
+      "harness": "claude-code",
+      "aliases": [
+        "bil"
+      ]
     },
     {
       "id": "vectorcraft",
@@ -22,7 +25,14 @@
       "colorDark": "#6fb2e2",
       "checkInMin": 30,
       "trust": "approved",
-      "harness": "claude-code"
+      "harness": "claude-code",
+      "aliases": [
+        "vc"
+      ],
+      "itemNames": {
+        "battlezone": "bzone",
+        "star castle": "starcas"
+      }
     },
     {
       "id": "avoidmissingball",
@@ -33,7 +43,19 @@
       "colorDark": "#f0a73a",
       "checkInMin": 30,
       "trust": "approved",
-      "harness": "claude-code"
+      "harness": "claude-code",
+      "aliases": [
+        "amb"
+      ],
+      "itemNames": {
+        "centiped": "Centipede",
+        "centipede": "Centipede",
+        "digdugat": "Dig Dug",
+        "digdug": "Dig Dug",
+        "dig dug": "Dig Dug",
+        "missile": "Missile Command",
+        "missile command": "Missile Command"
+      }
     },
     {
       "id": "codex",

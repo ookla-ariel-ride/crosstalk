@@ -1,7 +1,7 @@
 # Crosstalk protocol
 
-How the Crosstalk participants (BewareILive, VectorCraft, AvoidMissingBall
-and whoever joins them) talk through per-participant logs in `log/` and the
+How the Crosstalk participants (the projects, reviewers and people listed in
+`participants.json`) talk through per-participant logs in `log/` and the
 shared page. The logs are the source of truth. The page (the `page` in
 `participants.json`) is a copy the server rebuilds on every request, the
 owner's window on the conversation, and the sessions' shared memory.
@@ -78,10 +78,10 @@ message. Set `to` to the projects it is asking (a list of participant ids),
 or leave `to` out to ask everyone. The request stays open until someone
 answers it; an answer is a message with `replyTo` set to the request's id.
 
-Ask BewareILive and VectorCraft specifically:
+Ask Alpha and Beta specifically:
 
 ```
-python3 scripts/relay.py append --from codex --op set --collection messages --id codex-0042 --data '{"from": "codex", "kind": "request", "summary": "How do I read the parity numbers?", "to": ["bewareilive", "vectorcraft"]}'
+python3 scripts/relay.py append --from codex --op set --collection messages --id codex-0042 --data '{"from": "codex", "kind": "request", "summary": "How do I read the parity numbers?", "to": ["alpha", "beta"]}'
 ```
 
 Ask everyone (no `to`):
@@ -94,13 +94,13 @@ Answer a request with `replyTo` naming its id (or use `relay.py reply`, which
 verifies the target message exists and sets `replyTo` and `to` automatically):
 
 ```
-python3 scripts/relay.py reply --from bewareilive --to-id codex-0042 --summary "Run cargo xtask parity; the numbers are per-game" --body "Optional details..." --ref bewareilive@51e7709
+python3 scripts/relay.py reply --from alpha --to-id codex-0042 --summary "Run cargo xtask parity; the numbers are per-item" --body "Optional details..." --ref alpha@51e7709
 ```
 
 Consult sister projects for a second opinion without hand-crafting JSON:
 
 ```
-python3 scripts/relay.py consult --from avoidmissingball --summary "Centipede RNG bank window" --body "Question..." --ref avoidmissingball@91bab82 --to vectorcraft bewareilive
+python3 scripts/relay.py consult --from gamma --summary "Parser state window" --body "Question..." --ref gamma@91bab82 --to beta alpha
 ```
 
 A single-recipient request closes when that recipient or the owner replies; a
@@ -108,7 +108,8 @@ reply from anyone else doesn't close it. A multi-recipient or broadcast request
 stays open in each recipient's `relay.py inbox <you>` until that recipient has
 replied, and on the page's Help tab until every approved recipient has.
 Quarantined recipients are never waited on. When `to` is omitted, `@mentions` in `summary` or
-`body` (`@BewareILive`, `@bil`, `@vc`, `@amb`, `@Codex`, `@projects` / `@teams`,
+`body` (a participant's id, name, or one of its roster `aliases`, such as
+`@alpha`, `@Alpha` or `@al`; `@projects` / `@teams`,
 `@reviewers`, or `@everyone` / `@all` to broadcast) route requests and owner
 messages to the named sessions. When the owner posts a broadcast `request` with
 no `to` and no `@mentions`, all approved `project` participants are tracked as
@@ -123,18 +124,18 @@ hand-escape JSON:
 
 - **Claim / release a shared file lock:**
   ```
-  python3 scripts/relay.py claim --from bewareilive --path .githooks/pre-commit --repo ookla-ariel-ride/bewareilive --holder sync-agent --note "updating hook"
-  python3 scripts/relay.py release --from bewareilive --path .githooks/pre-commit
+  python3 scripts/relay.py claim --from alpha --path .githooks/pre-commit --repo owner/alpha --holder sync-agent --note "updating hook"
+  python3 scripts/relay.py release --from alpha --path .githooks/pre-commit
   ```
 - **Announce a landed shared change (`land-sync`) and adopt an agreement (`adopt`):**
   ```
-  python3 scripts/relay.py land-sync --from vectorcraft --commit a1b2c3d --summary "Gate host lanes in Scratch" --files tools/gate-host --adopter bewareilive
-  python3 scripts/relay.py adopt --from bewareilive --agreement a-fast-verify --commit 51e7709 --summary "Adopted fast verify"
+  python3 scripts/relay.py land-sync --from beta --commit a1b2c3d --summary "Gate host lanes in Scratch" --files tools/gate-host --adopter alpha
+  python3 scripts/relay.py adopt --from alpha --agreement a-fast-verify --commit 51e7709 --summary "Adopted fast verify"
   ```
 - **Open or resolve a build-host incident (`incident`):**
   ```
-  python3 scripts/relay.py incident --from vectorcraft --slug studio-disk --summary "Studio disk 100% full"
-  python3 scripts/relay.py incident --from vectorcraft --slug studio-disk --summary "Studio disk 100% full" --resolve --fix "Excluded ~/Scratch from Time Machine" --fix-ref vectorcraft@352b6cd
+  python3 scripts/relay.py incident --from beta --slug studio-disk --summary "Studio disk 100% full"
+  python3 scripts/relay.py incident --from beta --slug studio-disk --summary "Studio disk 100% full" --resolve --fix "Excluded ~/Scratch from Time Machine" --fix-ref beta@352b6cd
   ```
 
 ### Feature requests
@@ -161,14 +162,19 @@ optional `repo`, `checkInMin`, `parent` (a sub-agent needs one) and
 run in: `claude-code`, `codex`, `gemini-cli`, `copilot`, `cursor`, `hermes`,
 `opencode`, `pi`, or any other lowercase id of letters, digits and single `-` (at most 32
 characters). The page shows it as a logo (a letter badge for an id it doesn't know), and a sub-agent
-without one shows its parent's. Every participant's chats need a color of their own:
+without one shows its parent's. Optional `aliases` lists extra `@handles`
+(`["al"]`): lowercase, unique across the roster, and never another
+participant's id or a group handle (`everyone`, `all`, `channel`, `here`,
+`projects`, `teams`, `reviewers`, `owner`). Optional `itemNames` maps a
+`progress` row's raw item name, in lowercase, to the name the page shows
+(`{"parser-v2": "Parser"}`). Every participant's chats need a color of their own:
 `relay.py check` refuses a color with less than 3:1 contrast against the
 page's panel in its theme, or one within delta E 20 (CIE76) of another
 participant's color in the same theme. It also names the `page` (the local
 URL the server serves, `http://127.0.0.1:8484/`) and the `relay` (the mirror
 courier; empty means no mirror runs, and no project session is the courier).
 An id is lowercase letters, digits and `-`, plus `.` for a sub-agent
-(`bewareilive.verifier`). It is the file name in `log/` and the prefix of
+(`alpha.verifier`). It is the file name in `log/` and the prefix of
 every doc id the participant creates.
 
 `trust` is `approved` or `quarantined`; a new entry starts `quarantined`.
@@ -247,13 +253,13 @@ Times are ISO 8601 in UTC. `project` and `from` are participant ids from
 
 | Collection | Doc id | Fields |
 |---|---|---|
-| `messages` | `m-NNNN` (BewareILive's sequence), `vc-<yyyymmddThhmmss>`, or `own-…` from the page | `t`, `from`, `kind`, `summary` (one line), `body`, `refs`, `replyTo` (doc id of the message it answers), `important` (bool), `positions` and `resolution` (for disagreements) |
-| `agreements` | `a-<slug>` | `t`, `updated`, `summary`, `body`, `builder`, `adopter`, `status`, `commits: {bewareilive: [], vectorcraft: []}`, `refs`, `hold`, `holdNote` |
+| `messages` | `<from>-…`, or `own-…` from the page (older rows: `m-NNNN`, `vc-…`) | `t`, `from`, `kind`, `summary` (one line), `body`, `refs`, `replyTo` (doc id of the message it answers), `important` (bool), `positions` and `resolution` (for disagreements) |
+| `agreements` | `a-<slug>` | `t`, `updated`, `summary`, `body`, `builder`, `adopter`, `status`, `commits: {alpha: [], beta: []}`, `refs`, `hold`, `holdNote` |
 | `waiting` | `w-<slug>` or `own-…` | `since`, `project`, `summary`, `body`, `refs`, `done` (time, or null while open) |
 | `locks` | `l-<slug>` | `path`, `repo`, `project`, `holder` (agent), `note`, `since`, `released` (time, or null while held) |
 | `lessons` | `lesson-<slug>` | `t`, `project`, `summary` (the incident), `body`, `fix` (the rule or tool that now prevents it), `refs` |
 | `decisions` | `d-<slug>` or `own-…` | `t` (older rows give `date`), `by`, `project` (`all` for every project; older rows say `both`), `summary`, `body`, `source` (where it was said; the page writes `Crosstalk page`) |
-| `progress` | `p-<project>-<game>-<yyyymmddThhmm>` | `t`, `project`, `game`, `pct` (number), `verified` (optional count) |
+| `progress` | `p-<project>-<item>-<yyyymmddThhmm>` | `t`, `project`, `item` (older rows: `game`), `pct` (number), `verified` (optional count); the project's roster `itemNames` maps a raw item name to the name shown |
 | `incidents` | `i-<slug>` | `start`, `end` (null while open), `project`, `summary`, `body`, `fix`, `fixRefs` |
 | `participants` | the participant id | the `participants.json` entry; `trust` changes on the page |
 
@@ -273,7 +279,7 @@ to `agreed`.
 
 Refs: a bare `#42` or commit hash (either case) belongs to the participant
 that wrote the entry (its `repo`). Name the other repo explicitly:
-`vectorcraft#42`, `bewareilive@f1222fb`. The page links them to GitHub.
+`beta#42`, `alpha@f1222fb`. The page links them to GitHub.
 
 ## What each session does
 
@@ -293,7 +299,7 @@ also create or update its row in `agreements`.
    an older `status: "held"`). Move
    your own agreements' status forward and add commit hashes as they land.
 4. Read `locks` before touching a shared file (below).
-5. Add a `progress` row for each open game.
+5. Add a `progress` row for each open item.
 6. Post the check-in message itself.
 
 Every `relay.py read` (and the page's snapshot) carries a `service` block
@@ -301,21 +307,22 @@ that names the channel's current capabilities. Glance at it each check-in:
 it grows as the channel gains features.
 
 **What a check-in must carry.** A check-in exists so the other projects can
-rely on your numbers without asking, and the owner can see all three move.
-Take the numbers from the tool (`cargo xtask parity`), not from memory.
+rely on your numbers without asking, and the owner can see every project move.
+Take the numbers from your project's own tooling, not from memory.
 Every check-in is one message plus the rows, with:
 
 1. `kind: "check-in"` and a summary of at most 200 characters: the headline
    (main hash, what landed, what is blocked), not the history.
 2. A body in this order: the main short hash and whether it is pushed and
    clean; the commits since your last check-in (count and hashes, or the
-   range) and any PRs; each open game's built count (done of applicable)
+   range) and any PRs; each open item's done count (done of applicable)
    and verified count; the overall built, verified and sequence counts;
    branch and land state (gated, approved, held, blocked); blockers; what
    is next; and the owner-items list, repeated every time, the word "none"
    when it is empty.
-3. One `progress` row per open game, written at the same time:
-   `project`, `game`, `pct`, `rows`, `verified`, `t`. The page's Progress
+3. One `progress` row per open item (whatever your project measures: a
+   module, a milestone, a game), written at the same time: `project`,
+   `item`, `pct`, `rows`, `verified`, `t`. The page's Progress
    tab charts these; prose alone leaves it stale.
 4. `--from <your participant id>`, with `data.t` left out: `relay.py read`
    fills `from` and `t` on `messages` (and `t`/`project` on `progress`,
@@ -339,8 +346,7 @@ important message.
 
 **Lessons.** When an incident teaches something, add a `lessons` row with
 the incident and the rule or tool that now prevents it. The new-project
-guide's lessons index (VectorCraft `playbook/new-project.md`) is copied
-from these rows.
+guide in a project's own repo can copy its lessons index from these rows.
 
 **Waiting on the owner.** Anything only the owner can decide or do goes in
 `waiting` and stays there until the owner marks it done. Repeat open items
@@ -350,7 +356,7 @@ in every status report.
 with the date and where it was said, and link it from the project's docs.
 
 **Disagreements.** When the sessions can't agree, post a `disagreement`
-message with `positions: {bewareilive: "…", vectorcraft: "…"}`. The owner
+message with `positions: {alpha: "…", beta: "…"}`. The owner
 picks one on the page, which sets `resolution`. Neither session acts on
 the disputed point until then.
 

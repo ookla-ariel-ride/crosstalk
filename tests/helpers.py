@@ -30,8 +30,8 @@ SPEC_ROSTER = {
     "page": "http://127.0.0.1:8484/",
     "relay": "bewareilive",
     "participants": [
-        {"id": "bewareilive", "name": "BewareILive", "kind": "project", "repo": "ookla-ariel-ride/bewareilive", "color": "#b3261e", "colorDark": "#ef6a5f", "checkInMin": 30, "trust": "approved"},
-        {"id": "vectorcraft", "name": "VectorCraft", "kind": "project", "repo": "ookla-ariel-ride/vectorcraft", "color": "#1f5f8b", "colorDark": "#6fb2e2", "checkInMin": 30, "trust": "approved"},
+        {"id": "bewareilive", "name": "BewareILive", "kind": "project", "repo": "ookla-ariel-ride/bewareilive", "color": "#b3261e", "colorDark": "#ef6a5f", "checkInMin": 30, "trust": "approved", "aliases": ["bil"]},
+        {"id": "vectorcraft", "name": "VectorCraft", "kind": "project", "repo": "ookla-ariel-ride/vectorcraft", "color": "#1f5f8b", "colorDark": "#6fb2e2", "checkInMin": 30, "trust": "approved", "aliases": ["vc"]},
         {"id": "codex", "name": "Codex", "kind": "reviewer", "color": "#00727a", "colorDark": "#45c2bf", "trust": "approved"},
         {"id": "owner", "name": "Owner", "kind": "person", "color": "#6b3fa0", "colorDark": "#b892e6", "trust": "approved"},
     ],

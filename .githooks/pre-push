@@ -3,7 +3,7 @@
 # pushed commit, not only the staged diff pre-commit saw (a commit made with
 # --no-verify, or before the hook existed). Fails closed when gitleaks is
 # missing or its scan errors. `git push --no-verify` skips this; don't.
-# Adapted from VectorCraft's pre-push.
+# Adapted from a peer project's pre-push.
 # launchd runs the housekeeper with a bare PATH, so add Homebrew's bins.
 PATH="/opt/homebrew/bin:/usr/local/bin:$PATH"
 zero=0000000000000000000000000000000000000000

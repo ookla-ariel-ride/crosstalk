@@ -17,21 +17,23 @@ from .participants import load_roster
 from .replay import load_all_lines, replay
 
 EPOCH = "1970-01-01T00:00:00Z"
+# The first page's id scheme: m-NNNN rows were BewareILive's, vc-... VectorCraft's. Used only when that
+# participant is in the roster.
 PREFIX_WRITERS = (("m-", "bewareilive"), ("vc-", "vectorcraft"), ("own-", "owner"))
 
 
-def _writer(doc_id: str, fields: dict, projects, people) -> str:
+def _writer(doc_id: str, fields: dict, projects, people, fallback: str) -> str:
     for pid in people:
         if doc_id.startswith(pid + "-"):
             return pid
     for prefix, writer in PREFIX_WRITERS:
-        if doc_id.startswith(prefix):
+        if doc_id.startswith(prefix) and (writer == "owner" or writer in people):
             return writer
     for key in ("project", "by", "builder"):
         value = fields.get(key)
         if isinstance(value, str) and value in projects:
             return value
-    return "bewareilive"
+    return fallback
 
 
 def _time(fields: dict) -> str:
@@ -79,7 +81,7 @@ def import_snapshots(root: Path, snapshot_dirs: List[Path]) -> Dict[str, int]:
 
     plan = []
     for (coll, did), (fields, _src) in rows.items():
-        plan.append((_time(fields), _writer(did, fields, projects, roster.participants),
+        plan.append((_time(fields), _writer(did, fields, projects, roster.participants, roster.relay or "owner"),
                      coll, did, fields))
     plan.sort(key=lambda r: r[:4])
 
@@ -112,7 +114,7 @@ def merge_snapshots(root: Path, snapshot_dirs: List[Path]) -> Dict[str, Any]:
         if (coll, did) in have:
             skipped.append("%s/%s" % (coll, did))
             continue
-        plan.append((_time(fields), _writer(did, fields, projects, roster.participants),
+        plan.append((_time(fields), _writer(did, fields, projects, roster.participants, roster.relay or "owner"),
                      coll, did, fields))
     plan.sort(key=lambda r: r[:4])
 

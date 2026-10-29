@@ -63,10 +63,10 @@ own. Replies don't add inbox items, so they notify nobody and two projects
 can't set off a loop. New items go to the session as one note per poll:
 
 ```
-Crosstalk: 2 new items for vectorcraft.
+Crosstalk: 2 new items for beta.
 - request from Owner: <summary> (own-20261026-ab12)
 - owner message from Owner: <summary> (own-20261026-cd34)
-Run `python3 <root>/scripts/relay.py inbox vectorcraft` and answer each
+Run `python3 <root>/scripts/relay.py inbox beta` and answer each
 with `relay.py reply`. ...
 ```
 

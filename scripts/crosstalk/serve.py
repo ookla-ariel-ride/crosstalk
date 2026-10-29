@@ -66,7 +66,7 @@ LOGIN_WINDOW = 10 * 60.0
 LOGIN_MAX_FAILURES = 5
 # The fields of a roster entry the owner may write. A stale `wake` key (from the
 # removed agent-wake feature) is not one, so the API rejects it.
-ROSTER_FIELDS = ("name", "kind", "color", "colorDark", "checkInMin", "trust", "repo", "parent", "harness")
+ROSTER_FIELDS = ("name", "kind", "color", "colorDark", "checkInMin", "trust", "repo", "parent", "harness", "aliases", "itemNames")
 
 
 def now_iso() -> str:

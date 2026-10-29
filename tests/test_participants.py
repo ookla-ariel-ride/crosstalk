@@ -91,6 +91,38 @@ class RosterTests(unittest.TestCase):
         ro = self.load(self.entry(color="#8A5A00"))
         self.assertEqual(ro.participants["x"].color, "#8a5a00")
 
+    def test_aliases_loaded_lowercase(self):
+        ro = self.load(self.entry(aliases=["xp", "Ex"]))
+        self.assertEqual(ro.participants["x"].aliases, ["xp", "ex"])
+        self.assertEqual(self.load(self.entry()).participants["x"].aliases, [])
+
+    def test_bad_aliases_rejected(self):
+        for bad in ("xp", ["a b"], [""], [3], ["everyone"], ["projects"], ["owner"], ["x"]):
+            with self.assertRaises(ValueError):
+                self.load(self.entry(aliases=bad))
+
+    def test_alias_taken_by_another_participant_rejected(self):
+        a = {"id": "alpha", "name": "Alpha", "kind": "project", "color": "#8a5a00", "colorDark": "#d9b25c",
+             "aliases": ["beta"]}
+        b = {"id": "beta", "name": "Beta", "kind": "project", "color": "#1f5f8b", "colorDark": "#6fb2e2"}
+        with self.assertRaises(ValueError) as cm:
+            self.load(dict(helpers.SPEC_ROSTER, relay="", participants=[a, b]))
+        self.assertIn("beta", str(cm.exception))
+        b["aliases"] = ["al"]
+        a["aliases"] = ["al"]
+        with self.assertRaises(ValueError):
+            self.load(dict(helpers.SPEC_ROSTER, relay="", participants=[a, b]))
+
+    def test_item_names_loaded(self):
+        ro = self.load(self.entry(itemNames={"Centiped": "Centipede"}))
+        self.assertEqual(ro.participants["x"].itemNames, {"centiped": "Centipede"})
+        self.assertEqual(self.load(self.entry()).participants["x"].itemNames, {})
+
+    def test_bad_item_names_rejected(self):
+        for bad in (["a"], {"": "A"}, {"a": ""}, {"a": 3}, {"a": "<b>"}):
+            with self.assertRaises(ValueError):
+                self.load(self.entry(itemNames=bad))
+
 
 if __name__ == "__main__":
     unittest.main()

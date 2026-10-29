@@ -2,9 +2,9 @@
 import itertools
 import json
 import re
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Dict, Optional
+from typing import Dict, List, Optional
 
 ID_RE = re.compile(r"^[a-z0-9-]+(\.[a-z0-9-]+)*$")
 # A name is shown as text on the page, so it must be plain: no angle brackets and no control characters.
@@ -17,6 +17,10 @@ REPO_MAX = 120
 # page knows icons for some; any other id gets a letter badge.
 HARNESS_RE = re.compile(r"^[a-z0-9]+(-[a-z0-9]+)*$")
 HARNESS_MAX = 32
+# An alias is a short extra @handle for a participant (@bil for BewareILive). These handles are taken by the page.
+ALIAS_RESERVED = ("everyone", "all", "channel", "here", "projects", "teams", "reviewers", "owner")
+# itemNames maps a progress row's raw item name (lowercase) to the name shown, e.g. centiped -> Centipede.
+ITEM_NAME_MAX = 60
 KINDS = ("project", "agent", "reviewer", "researcher", "tool", "person")
 TRUSTS = ("approved", "quarantined")
 COLOR_RE = re.compile(r"^#[0-9a-fA-F]{6}$")
@@ -67,6 +71,8 @@ class Participant:
     checkInMin: Optional[int] = None
     trust: str = "quarantined"
     harness: Optional[str] = None
+    aliases: List[str] = field(default_factory=list)
+    itemNames: Dict[str, str] = field(default_factory=dict)
 
 
 @dataclass
@@ -133,6 +139,38 @@ def _check_color(pid: str, field: str, value, panel: str) -> str:
     return value.lower()
 
 
+def _aliases(pid: str, value) -> List[str]:
+    if value is None:
+        return []
+    if not isinstance(value, list):
+        raise ValueError("participant %s: aliases must be a list" % pid)
+    out = []  # type: List[str]
+    for a in value:
+        if not isinstance(a, str) or not ID_RE.fullmatch(a.lower()):
+            raise ValueError("participant %s: bad alias %r" % (pid, a))
+        a = a.lower()
+        if a in ALIAS_RESERVED or a == pid:
+            raise ValueError("participant %s: alias %r is reserved" % (pid, a))
+        if a not in out:
+            out.append(a)
+    return out
+
+
+def _item_names(pid: str, value) -> Dict[str, str]:
+    if value is None:
+        return {}
+    if not isinstance(value, dict):
+        raise ValueError("participant %s: itemNames must be an object" % pid)
+    out = {}  # type: Dict[str, str]
+    for raw, shown in value.items():
+        ok = (isinstance(raw, str) and raw.strip() and isinstance(shown, str) and shown.strip()
+              and len(shown) <= ITEM_NAME_MAX and not NAME_BAD_RE.search(shown))
+        if not ok:
+            raise ValueError("participant %s: bad itemNames entry %r: %r" % (pid, raw, shown))
+        out[raw.strip().lower()] = shown
+    return out
+
+
 def _parse(entry: dict, index: int) -> Participant:
     if not isinstance(entry, dict):
         raise ValueError("participants[%d]: not an object" % index)
@@ -162,7 +200,8 @@ def _parse(entry: dict, index: int) -> Participant:
     color_dark = _check_color(pid, "colorDark", entry.get("colorDark"), PANEL_DARK)
     return Participant(id=pid, name=entry["name"], kind=kind, color=color, colorDark=color_dark,
                        repo=entry.get("repo"), parent=parent, checkInMin=check, trust=trust,
-                       harness=entry.get("harness"))
+                       harness=entry.get("harness"), aliases=_aliases(pid, entry.get("aliases")),
+                       itemNames=_item_names(pid, entry.get("itemNames")))
 
 
 def load_roster(path: Path) -> Roster:
@@ -181,6 +220,13 @@ def load_roster(path: Path) -> Roster:
     for p in people.values():
         if p.parent and p.parent not in people:
             raise ValueError("participant %s: parent %s not in roster" % (p.id, p.parent))
+    # An alias must name one participant only, and never another participant's id.
+    taken = {}  # type: Dict[str, str]
+    for p in people.values():
+        for a in p.aliases:
+            if a in people or a in taken:
+                raise ValueError("participant %s: alias %r already names %s" % (p.id, a, taken.get(a, a)))
+            taken[a] = p.id
     # Every participant's chats need their own color, in both themes.
     for a, b in itertools.combinations(people.values(), 2):
         for field in ("color", "colorDark"):

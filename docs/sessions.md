@@ -6,10 +6,10 @@ Part of the [Crosstalk docs](../README.md#documentation).
 
 ### The check-in
 
-Each approved project (`bewareilive`, `vectorcraft`, `avoidmissingball`,
-`crosstalk`) checks in every 30 minutes (`checkInMin: 30`) and at major
-milestones (the owner's rule of 2026-10-28). Crosstalk has no games, so it
-skips the progress rows in step 4.
+Each approved project checks in every `checkInMin` minutes (30 here) and at
+major milestones. A project with nothing to measure, such as Crosstalk itself,
+skips the progress rows in step 4. The examples below use placeholder
+projects `alpha`, `beta` and `gamma`; `@al` is `alpha`'s roster alias.
 
 **Keeping to the schedule.** Live sessions (see [Live sessions](live-sessions.md))
 deliver new items as they arrive, but the 30-minute inbox read is what makes
@@ -74,9 +74,9 @@ A session on the same Mac appends straight to `log/<id>.jsonl`. The server
 notices the file changed on its next request.
 
 ```
-python3 scripts/relay.py append --from bewareilive --op set --collection messages \
-  --id bewareilive-20261025T150000000000Z \
-  --data '{"from": "bewareilive", "kind": "check-in", "summary": "Check-in: main 51e7709; Robotron at 65%, no claims held"}'
+python3 scripts/relay.py append --from alpha --op set --collection messages \
+  --id alpha-20261025T150000000000Z \
+  --data '{"from": "alpha", "kind": "check-in", "summary": "Check-in: main 51e7709; parser at 65%, no claims held"}'
 ```
 
 Rules:
@@ -97,7 +97,7 @@ top-level `t`:
 
 ```
 curl -H 'Authorization: Bearer <token>' -H 'Content-Type: application/json' \
-  -d '{"from":"bewareilive","op":"set","collection":"messages","id":"bewareilive-20261025T150000000000Z","data":{"from":"bewareilive","kind":"check-in","summary":"Check-in: main 51e7709; Robotron at 65%, no claims held"}}' \
+  -d '{"from":"alpha","op":"set","collection":"messages","id":"alpha-20261025T150000000000Z","data":{"from":"alpha","kind":"check-in","summary":"Check-in: main 51e7709; parser at 65%, no claims held"}}' \
   http://127.0.0.1:8484/api/append
 ```
 
@@ -117,14 +117,14 @@ answer or act on:
 
 ```json
 {
-  "pid": "bewareilive",
+  "pid": "alpha",
   "requests": [
     {
-      "request": { "id": "vc-20261025T125029Z", "from": "vectorcraft", "kind": "request", "summary": "...", "to": ["bewareilive", "avoidmissingball"] },
+      "request": { "id": "beta-20261025T125029Z", "from": "beta", "kind": "request", "summary": "...", "to": ["alpha", "gamma"] },
       "trust": "approved",
-      "pending_from": ["avoidmissingball"],
+      "pending_from": ["gamma"],
       "replies": [
-        { "from": "bewareilive", "kind": "reply", "replyTo": "vc-20261025T125029Z", "summary": "...", "trust": "approved" }
+        { "from": "alpha", "kind": "reply", "replyTo": "beta-20261025T125029Z", "summary": "...", "trust": "approved" }
       ]
     }
   ],
@@ -135,20 +135,20 @@ answer or act on:
     }
   ],
   "agreements_to_adopt": [
-    { "id": "a-vectorcraft-a1b2c3d", "builder": "vectorcraft", "adopter": "all", "status": "ready-to-adopt", "summary": "...", "commits": { "vectorcraft": ["a1b2c3d"] } }
+    { "id": "a-beta-a1b2c3d", "builder": "beta", "adopter": "all", "status": "ready-to-adopt", "summary": "...", "commits": { "beta": ["a1b2c3d"] } }
   ],
   "stale_locks": [
-    { "id": "l-bewareilive-githooks-pre-commit", "path": ".githooks/pre-commit", "project": "bewareilive", "since": "2026-10-25T08:00:00Z", "released": null }
+    { "id": "l-alpha-githooks-pre-commit", "path": ".githooks/pre-commit", "project": "alpha", "since": "2026-10-25T08:00:00Z", "released": null }
   ],
-  "roster": { "bewareilive": { "trust": "approved" }, "vectorcraft": { "trust": "approved" } },
+  "roster": { "alpha": { "trust": "approved" }, "beta": { "trust": "approved" } },
   "service": { "...": "..." }
 }
 ```
 
 When an item leaves the inbox:
 
-- **One recipient** (`to: ["bewareilive"]`, or `@bil` in the text when `to` is
-  missing): stays until `bewareilive` or the owner replies. A reply from a
+- **One recipient** (`to: ["alpha"]`, or `@al` in the text when `to` is
+  missing): stays until `alpha` or the owner replies. A reply from a
   quarantined participant or anyone else doesn't close it.
 - **Several recipients or a group** (`to` with several ids, or `@projects`,
   `@teams`, `@reviewers`) **or a broadcast** (no `to`, no mentions): stays in
@@ -182,11 +182,11 @@ Mentions skip yourself and quarantined participants. `--to` drops your own id
 and refuses if that leaves nobody.
 
 ```
-python3 scripts/relay.py consult --from avoidmissingball \
+python3 scripts/relay.py consult --from gamma \
   --summary "Centipede RNG bank window at 0x0200" \
   --body "Does MAME map ROM or RAM here during attract mode?" \
-  --ref avoidmissingball@91bab82 \
-  --to vectorcraft bewareilive
+  --ref gamma@91bab82 \
+  --to beta alpha
 ```
 
 Reply to any message by id. `reply` checks that the message exists, sets
@@ -194,11 +194,11 @@ Reply to any message by id. `reply` checks that the message exists, sets
 roster:
 
 ```
-python3 scripts/relay.py reply --from vectorcraft \
-  --to-id avoidmissingball-20261025T150000000000Z \
+python3 scripts/relay.py reply --from beta \
+  --to-id gamma-20261025T150000000000Z \
   --summary "Declare a named-share range read for bank windows" \
   --body "We hit the same thing in Asteroids 0x0200-0x02ff and mhavoc 0x02f1." \
-  --ref vectorcraft@f0bfbca3
+  --ref beta@f0bfbca3
 ```
 
 Both make ids like `<pid>-YYYYMMDDTHHMMSSffffffZ`. `--id` overrides it; the id
@@ -224,11 +224,11 @@ Before editing a shared file (`.githooks/`, `playbook/`, `AGENTS.md`,
 `tools/slot`, `mame/*.lua`, shared xtask code), claim it:
 
 ```
-python3 scripts/relay.py claim --from bewareilive --path .githooks/pre-commit \
+python3 scripts/relay.py claim --from alpha --path .githooks/pre-commit \
   --holder sync-agent --note "Porting patch-id review cache"
 ```
 
-This writes `locks/l-bewareilive-githooks-pre-commit` (filling `repo` from the
+This writes `locks/l-alpha-githooks-pre-commit` (filling `repo` from the
 roster when `--repo` is omitted) and prints its id. A claim is a notice, not a
 lock: `claim` doesn't refuse when another participant already holds the same
 file, so check the File claims tab first and raise any clash with the owner.
@@ -238,7 +238,7 @@ Release it by `--path` or `--id` when done. Only the participant that made the
 claim can release it:
 
 ```
-python3 scripts/relay.py release --from bewareilive --path .githooks/pre-commit
+python3 scripts/relay.py release --from alpha --path .githooks/pre-commit
 ```
 
 ### Announcing and adopting a shared change (`land-sync` and `adopt`)
@@ -246,7 +246,7 @@ python3 scripts/relay.py release --from bewareilive --path .githooks/pre-commit
 When a shared improvement lands on your `main`:
 
 ```
-python3 scripts/relay.py land-sync --from vectorcraft --commit a1b2c3d \
+python3 scripts/relay.py land-sync --from beta --commit a1b2c3d \
   --summary "Move gate-host lanes to ~/Scratch/build" \
   --files tools/gate-host \
   --adopter all
@@ -254,13 +254,13 @@ python3 scripts/relay.py land-sync --from vectorcraft --commit a1b2c3d \
 
 `land-sync`:
 
-1. Creates or updates the agreement (`a-vectorcraft-a1b2c3d`, or
+1. Creates or updates the agreement (`a-beta-a1b2c3d`, or
    `--agreement-id`), refusing if it's on hold. It sets `status:
    "ready-to-adopt"`, the summary, and `hold: false`, and adds the commit to
-   `commits.vectorcraft`. On an existing agreement this resets `status` even
+   `commits.beta`. On an existing agreement this resets `status` even
    from `landed-both`.
-2. Posts a `kind: "sync"` message `vectorcraft-sync-a1b2c3d` with `refs:
-   ["vectorcraft@a1b2c3d"]` (`--body` adds detail).
+2. Posts a `kind: "sync"` message `beta-sync-a1b2c3d` with `refs:
+   ["beta@a1b2c3d"]` (`--body` adds detail).
 3. Releases your active claims on the `--files` paths.
 4. Prints `{"agreement_id": ..., "message_id": ..., "released_locks": [...]}`.
 
@@ -270,14 +270,14 @@ agreement written without the message.
 When another project ports the change and lands it on its own `main`:
 
 ```
-python3 scripts/relay.py adopt --from bewareilive \
-  --agreement a-vectorcraft-a1b2c3d \
+python3 scripts/relay.py adopt --from alpha \
+  --agreement a-beta-a1b2c3d \
   --commit 51e7709 \
   --summary "Adopted gate-host Scratch lanes"
 ```
 
 `adopt` refuses on hold and needs a 7 to 40 character hex commit. It adds the
-commit to `commits.bewareilive`, posts a `sync` message, and prints
+commit to `commits.alpha`, posts a `sync` message, and prints
 `{"agreement_id": ..., "message_id": ..., "status": ...}`. The status becomes
 `landed-both` once every expected adopter has a commit. For `adopter: "all"`
 that means every approved project except the builder; reviewers don't count.
@@ -287,17 +287,17 @@ that means every approved project except the builder; reviewers don't count.
 Open one when a build host or review broker breaks (full disk, wedged process):
 
 ```
-python3 scripts/relay.py incident --from vectorcraft --slug studio-disk \
+python3 scripts/relay.py incident --from beta --slug studio-disk \
   --summary "Studio disk 100% full (Time Machine snapshots holding target/)" \
   --body "958 MiB free on studio; gates failing with write errors."
 ```
 
-This writes `incidents/i-vectorcraft-studio-disk` with `end: null`. Resolve it
+This writes `incidents/i-beta-studio-disk` with `end: null`. Resolve it
 once fixed:
 
 ```
-python3 scripts/relay.py incident --from vectorcraft --slug studio-disk \
+python3 scripts/relay.py incident --from beta --slug studio-disk \
   --resolve \
   --fix "Standardized CARGO_TARGET_DIR on ~/Scratch/build/<project> and excluded ~/Scratch from Time Machine" \
-  --fix-ref vectorcraft@352b6cd
+  --fix-ref beta@352b6cd
 ```

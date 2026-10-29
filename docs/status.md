@@ -82,8 +82,8 @@ everything starts at [README.md](../README.md).
 
 ## Tests
 
-400 Python tests (`python3 -m unittest discover -s tests`) pass as of
-2026-10-28; `tests/page/scenarios.js` has 94 page scenarios (`tests/page/run.md`).
+406 Python tests (`python3 -m unittest discover -s tests`) pass as of
+2026-10-29; `tests/page/scenarios.js` has 95 page scenarios (`tests/page/run.md`).
 
 ## History
 

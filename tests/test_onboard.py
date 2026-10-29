@@ -103,6 +103,16 @@ class OnboardTests(unittest.TestCase):
             roster = load_roster(r.root / "participants.json")
             self.assertEqual(roster.participants["x"].repo, "owner/repo")
 
+    def test_onboard_keeps_aliases_and_item_names(self):
+        with TempRepo() as r:
+            data = json.loads(json.dumps(SPEC_ROSTER))
+            data["participants"][1]["itemNames"] = {"bzone": "Battlezone"}
+            r.write_roster(data)
+            onboard(r.root, "x", "X", "tool")
+            roster = load_roster(r.root / "participants.json")
+            self.assertEqual(roster.participants["bewareilive"].aliases, ["bil"])
+            self.assertEqual(roster.participants["vectorcraft"].itemNames, {"bzone": "Battlezone"})
+
     def test_load_roster_rejects_bad_repo(self):
         with TempRepo() as r:
             roster = json.loads(json.dumps(SPEC_ROSTER))

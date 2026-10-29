@@ -65,8 +65,10 @@ history and clears the stored last-visit time, so those replies never count as n
   combines with the kind chips, keeps focus, and clears on a second click.
 - `quarantineDimmedAndApprove`: a quarantined sender's card is dimmed with a "not approved" pill; a
   failed Approve shows its error and keeps the dimming; a working one sets `trust: approved`.
+- `rosterAliasesAndItems`: `@amb`/`@VC` resolve through the roster's `aliases`; a progress row's `item`
+  shows by the project's `itemNames`.
 - `dotThresholds`: `__crosstalk.dotState` is ok at 34 min, warn at 36 and bad at 46 for
-  `checkInMin: 30`; the roster dot and the "Check-ins" strip tile agree.
+  `checkInMin: 30` (every roster participant checks in first); the roster dot and the "Check-ins" strip tile agree.
 - `toArrow`: a card with `to` shows `→ name` (or several names); without `to`, nothing.
 - `emptyRosterNoQuarantine`: with an empty `participants` collection no card is dimmed, nothing says
   "not approved", and the Check-ins tile reads "roster not loaded"; re-seeding restores quarantine.
