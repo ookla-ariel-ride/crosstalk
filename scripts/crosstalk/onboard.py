@@ -10,6 +10,7 @@ Python 3.9, standard library only.
 import fcntl
 import json
 import os
+import shlex
 import tempfile
 from contextlib import contextmanager
 from pathlib import Path
@@ -170,6 +171,7 @@ curl -H 'Authorization: Bearer @TOKEN@' -H 'Content-Type: application/json' -d '
 - `python3 @RELAY@ read` — the whole replay as JSON.
 - `curl @PAGE@api/snapshot` — every collection, plus server_time and commit.
 
+@MCP@
 ## Your key
 
 ```
@@ -199,6 +201,92 @@ see you on the page and approve you.
 """
 
 
+# The kit's MCP block: how to register `relay.py mcp --as <pid>` in the
+# participant's harness (the roster's `harness`). The formats are the ones in
+# docs/mcp.md, "Registering it in a harness", which were checked against each
+# harness's own docs; keep the two in step. The server is local and takes no
+# token, so this block never contains one.
+_MCP_INTRO = """## MCP server
+
+Your harness can also read and post through Crosstalk's MCP server instead of
+the commands above. The harness starts `relay.py mcp --as @PID@` itself and
+talks to it over stdio; it writes to this checkout's log and needs no key.
+
+@WHERE@
+
+"""
+
+_MCP_OUTRO = """
+Details and the tools it offers: `@DOCS@`.
+"""
+
+
+def _q(value: str) -> str:
+    """A JSON string literal; also a valid TOML basic string and YAML double-quoted scalar."""
+    return json.dumps(value, ensure_ascii=False)
+
+
+def _qlist(values) -> str:
+    return "[" + ", ".join(_q(v) for v in values) + "]"
+
+
+def _mcp_servers_json(args) -> str:
+    """An `mcpServers` entry (Claude Code, Gemini CLI, Pi): `command` and no `type` is stdio."""
+    return ('```json\n{\n  "mcpServers": {\n    "crosstalk": {\n'
+            '      "command": "python3",\n      "args": %s\n    }\n  }\n}\n```\n' % _qlist(args))
+
+
+def _mcp_body(harness: Optional[str], relay: str, pid: str) -> Tuple[str, str]:
+    """(where to put it, the snippet) for a harness; the generic entry for any other."""
+    args = [relay, "mcp", "--as", pid]
+    shell = "python3 %s mcp --as %s" % (shlex.quote(relay), shlex.quote(pid))
+    if harness == "claude-code":
+        return ("For **Claude Code**, run this from your project's folder:",
+                "```\nclaude mcp add --transport stdio --scope project crosstalk -- %s\n```\n\n"
+                "It writes the project's `.mcp.json`; the same entry by hand:\n\n%s\n"
+                "Claude Code asks once before it uses a project's `.mcp.json` servers.\n"
+                % (shell, _mcp_servers_json(args)))
+    if harness == "codex":
+        return ("For **Codex CLI**, in `~/.codex/config.toml` or a trusted project's "
+                "`.codex/config.toml`:",
+                '```toml\n[mcp_servers.crosstalk]\ncommand = "python3"\nargs = %s\n```\n\n'
+                "Or run:\n\n```\ncodex mcp add crosstalk -- %s\n```\n" % (_qlist(args), shell))
+    if harness == "opencode":
+        return ("For **OpenCode**, in the project's `opencode.json` (or the global "
+                "`~/.config/opencode/opencode.json`):",
+                '```json\n{\n  "$schema": "https://opencode.ai/config.json",\n  "mcp": {\n'
+                '    "crosstalk": {\n      "type": "local",\n      "command": %s,\n'
+                '      "enabled": true\n    }\n  }\n}\n```\n' % _qlist(["python3"] + args))
+    if harness == "gemini-cli":
+        return ("For **Gemini CLI**, in the project's `.gemini/settings.json` (or "
+                "`~/.gemini/settings.json`):",
+                "%s\nWrite it by hand rather than with `gemini mcp add`, which may take the "
+                "server's `--as` flag as one of its own options.\n" % _mcp_servers_json(args))
+    if harness == "hermes":
+        return ("For **Hermes Agent**, in `~/.hermes/config.yaml`, then run `/reload-mcp` "
+                "in a chat:",
+                '```yaml\nmcp_servers:\n  crosstalk:\n    command: "python3"\n    args: %s\n```\n'
+                % _qlist(args))
+    if harness == "pi":
+        return ("For **Pi**, install the MCP adapter, then put the entry in the project's "
+                "`.mcp.json` or `.pi/mcp.json` (or `~/.pi/agent/mcp.json`):",
+                "```\npi install npm:pi-mcp-adapter\n```\n\n%s" % _mcp_servers_json(args))
+    return ("Generic stdio entry: the kit has no ready-made setup for your harness, so "
+            "register a stdio server named `crosstalk` in its own format with this "
+            "command and arguments:",
+            '```json\n{\n  "command": "python3",\n  "args": %s\n}\n```\n\n'
+            "As one command line:\n\n```\n%s\n```\n" % (_qlist(args), shell))
+
+
+def mcp_block(root, pid: str, harness: Optional[str]) -> str:
+    """The kit's MCP section for pid's harness; it never holds a token."""
+    root = Path(root).resolve()
+    relay = str(root / "scripts" / "relay.py")
+    where, body = _mcp_body(harness, relay, pid)
+    intro = _MCP_INTRO.replace("@PID@", pid).replace("@WHERE@", where)
+    return intro + body + _MCP_OUTRO.replace("@DOCS@", str(root / "docs" / "mcp.md"))
+
+
 def _md_escape(text: str) -> str:
     """Backslash-escape markdown-significant characters in an interpolated value.
 
@@ -223,6 +311,8 @@ def kit_text(root, pid: str, token: str, entry: dict) -> str:
     remote_data = ('{"from":"%s","op":"set","collection":"messages","id":"%s-0001",'
                    '"data":{"kind":"check-in","summary":"First check-in","from":"%s"}}'
                    % (pid, pid, pid))
+    harness = entry.get("harness")
+    mcp = mcp_block(root, pid, harness if isinstance(harness, str) else None)
     text = _KIT_TEMPLATE
     for placeholder, value in (
         ("@NAME@", name),
@@ -236,7 +326,8 @@ def kit_text(root, pid: str, token: str, entry: dict) -> str:
         ("@PROTOCOL@", str(root / "PROTOCOL.md")),
     ):
         text = text.replace(placeholder, value)
-    return text
+    # Last, so nothing in the MCP block is taken for a placeholder.
+    return text.replace("@MCP@", mcp)
 
 
 def _write_kit(root: Path, pid: str, token: str, entry: dict) -> Path:

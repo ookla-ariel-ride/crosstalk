@@ -9,7 +9,7 @@ from pathlib import Path
 import helpers
 from helpers import SPEC_ROSTER, TempRepo
 
-from crosstalk.onboard import kit_text, onboard, pick_colors, rotate
+from crosstalk.onboard import kit_text, onboard, pick_colors, regenerate_kit, rotate
 from crosstalk.participants import load_roster
 from crosstalk.tokens import Tokens
 
@@ -305,6 +305,167 @@ class OnboardTests(unittest.TestCase):
     def test_gitignore_lists_kits(self):
         text = (REPO / ".gitignore").read_text(encoding="utf-8")
         self.assertIn("kits/", text)
+
+
+TOKEN = "sekret-token-0123456789abcdef"
+
+
+def mcp_section(text):
+    """The kit's MCP block: from its heading to the next level-2 heading."""
+    start = text.index("## MCP server")
+    end = text.find("\n## ", start + 1)
+    return text[start:] if end == -1 else text[start:end]
+
+
+def json_blocks(section):
+    """Every ```json fenced block in a section, parsed."""
+    out = []
+    parts = section.split("```json\n")
+    for part in parts[1:]:
+        out.append(json.loads(part.split("```", 1)[0]))
+    return out
+
+
+# A marker that only the harness's own snippet contains.
+HARNESS_MARKERS = {
+    "claude-code": "claude mcp add --transport stdio --scope project crosstalk",
+    "codex": "[mcp_servers.crosstalk]",
+    "opencode": '"$schema": "https://opencode.ai/config.json"',
+    "gemini-cli": ".gemini/settings.json",
+    "hermes": "/reload-mcp",
+    "pi": "pi install npm:pi-mcp-adapter",
+}
+
+
+class KitMcpTests(unittest.TestCase):
+    def kit(self, root, harness=None, pid="smoke-agent"):
+        entry = kit_entry(id=pid)
+        if harness is not None:
+            entry["harness"] = harness
+        return kit_text(root, pid, TOKEN, entry)
+
+    def test_each_covered_harness_gets_its_own_snippet(self):
+        with TempRepo() as r:
+            r.write_roster()
+            for harness, marker in HARNESS_MARKERS.items():
+                section = mcp_section(self.kit(r.root, harness))
+                self.assertIn(marker, section, harness)
+                for other, other_marker in HARNESS_MARKERS.items():
+                    if other != harness:
+                        self.assertNotIn(other_marker, section, (harness, other))
+                self.assertNotIn("Generic", section, harness)
+
+    def test_unknown_or_missing_harness_gets_generic_entry(self):
+        with TempRepo() as r:
+            r.write_roster()
+            relay = str(r.root.resolve() / "scripts" / "relay.py")
+            docs = str(r.root.resolve() / "docs" / "mcp.md")
+            for harness in (None, "copilot", "amp"):
+                section = mcp_section(self.kit(r.root, harness))
+                for marker in HARNESS_MARKERS.values():
+                    self.assertNotIn(marker, section, harness)
+                self.assertIn("Generic", section)
+                self.assertIn(docs, section)
+                (entry,) = json_blocks(section)
+                self.assertEqual(entry, {"command": "python3",
+                                         "args": [relay, "mcp", "--as", "smoke-agent"]})
+
+    def test_snippet_names_pid_and_absolute_relay_path(self):
+        with TempRepo() as r:
+            r.write_roster()
+            relay = str(r.root.resolve() / "scripts" / "relay.py")
+            for harness in list(HARNESS_MARKERS) + [None]:
+                section = mcp_section(self.kit(r.root, harness, pid="beta.helper"))
+                self.assertIn(relay, section, harness)
+                self.assertTrue(relay.startswith("/"))
+                self.assertIn("--as", section)
+                self.assertIn("beta.helper", section, harness)
+                self.assertNotIn("<id>", section, harness)
+                self.assertNotIn("<you>", section, harness)
+
+    def test_json_snippets_parse_with_exact_args(self):
+        with TempRepo() as r:
+            r.write_roster()
+            relay = str(r.root.resolve() / "scripts" / "relay.py")
+            args = [relay, "mcp", "--as", "smoke-agent"]
+            for harness in ("claude-code", "gemini-cli", "pi"):
+                (cfg,) = json_blocks(mcp_section(self.kit(r.root, harness)))
+                self.assertEqual(cfg["mcpServers"]["crosstalk"],
+                                 {"command": "python3", "args": args}, harness)
+            (cfg,) = json_blocks(mcp_section(self.kit(r.root, "opencode")))
+            server = cfg["mcp"]["crosstalk"]
+            self.assertEqual(server["type"], "local")
+            self.assertEqual(server["command"], ["python3"] + args)
+            self.assertIs(server["enabled"], True)
+
+    def test_codex_and_hermes_entries(self):
+        with TempRepo() as r:
+            r.write_roster()
+            relay = str(r.root.resolve() / "scripts" / "relay.py")
+            args = '["%s", "mcp", "--as", "smoke-agent"]' % relay
+            codex = mcp_section(self.kit(r.root, "codex"))
+            self.assertIn('[mcp_servers.crosstalk]\ncommand = "python3"\nargs = %s\n' % args, codex)
+            self.assertIn("codex mcp add crosstalk -- python3 %s mcp --as smoke-agent" % relay, codex)
+            hermes = mcp_section(self.kit(r.root, "hermes"))
+            self.assertIn('mcp_servers:\n  crosstalk:\n    command: "python3"\n    args: %s\n' % args,
+                          hermes)
+
+    def test_shell_command_quotes_a_path_with_spaces(self):
+        with TempRepo() as r:
+            root = r.root / "my checkout"
+            root.mkdir()
+            section = mcp_section(self.kit(root, "claude-code"))
+            relay = str(root.resolve() / "scripts" / "relay.py")
+            self.assertIn("-- python3 '%s' mcp --as smoke-agent" % relay, section)
+            (cfg,) = json_blocks(section)
+            self.assertEqual(cfg["mcpServers"]["crosstalk"]["args"][0], relay)
+
+    def test_no_token_in_mcp_block_and_token_not_duplicated(self):
+        with TempRepo() as r:
+            r.write_roster()
+            plain = kit_text(r.root, "smoke-agent", TOKEN, kit_entry())
+            for harness in list(HARNESS_MARKERS) + [None, "copilot"]:
+                text = self.kit(r.root, harness)
+                section = mcp_section(text)
+                self.assertNotIn(TOKEN, section, harness)
+                self.assertNotIn("Bearer", section, harness)
+                self.assertEqual(text.count(TOKEN), plain.count(TOKEN), harness)
+                self.assertEqual(text.count(TOKEN), 2, harness)
+                # The key keeps its own section, after the MCP block.
+                key = text.index("## Your key")
+                self.assertIn(TOKEN, text[key:key + 200])
+                self.assertLess(text.index("## Reading"), text.index("## MCP server"))
+                self.assertLess(text.index("## MCP server"), key)
+
+    def test_kit_keeps_existing_sections_in_order(self):
+        with TempRepo() as r:
+            r.write_roster()
+            text = self.kit(r.root, "codex")
+            heads = [ln for ln in text.splitlines() if ln.startswith("## ")]
+            self.assertEqual(heads, ["## The page", "## Writing", "## Reading", "## MCP server",
+                                     "## Your key", "## The protocol", "## Trust", "## First action"])
+
+    def test_onboard_kit_uses_harness(self):
+        with TempRepo() as r:
+            r.write_roster()
+            result = onboard(r.root, "newbie", "Newbie", "tool", harness="codex")
+            kit = (r.root / "kits" / "newbie.md").read_text(encoding="utf-8")
+            section = mcp_section(kit)
+            self.assertIn("[mcp_servers.crosstalk]", section)
+            self.assertIn('"--as", "newbie"', section)
+            self.assertNotIn(result["token"], section)
+
+    def test_regenerated_kit_uses_roster_harness(self):
+        with TempRepo() as r:
+            data = json.loads(json.dumps(SPEC_ROSTER))
+            data["participants"][2]["harness"] = "hermes"
+            r.write_roster(data)
+            result = regenerate_kit(r.root, "rev")
+            kit = (r.root / "kits" / "rev.md").read_text(encoding="utf-8")
+            section = mcp_section(kit)
+            self.assertIn("/reload-mcp", section)
+            self.assertIn('"--as", "rev"', section)
+            self.assertNotIn(result["token"], section)
 
 
 class OnboardCliTests(unittest.TestCase):

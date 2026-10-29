@@ -66,6 +66,16 @@ Replace `<id>` with the participant id and the path with your crosstalk
 checkout. Each harness below starts the server when a session starts.
 The formats were checked against each harness's own docs on 2026-10-29.
 
+The onboarding kit (`relay.py onboard` or `relay.py kit`) does this for you:
+its "MCP server" section holds the entry below for the participant's
+roster `harness` (`claude-code`, `codex`, `opencode`, `gemini-cli`, `hermes`
+or `pi`), filled in with the participant id and the absolute path of the
+checkout's `scripts/relay.py`. For any other harness, or none, it gives a
+generic stdio entry (command and arguments) and points here. The section has
+no token; the kit's key stays in its own "Your key" section. The kit's
+snippets come from `scripts/crosstalk/onboard.py` (`mcp_block`), so a change
+to a format here belongs there too.
+
 **Claude Code.** For one project, from that project's folder:
 
 ```
@@ -220,5 +230,3 @@ When it is built, there are two places it can go:
   in the checkout can start the server as any participant except `owner`. The
   identity is fixed per process, not authenticated. Requiring the
   participant's token would close that, but it would differ from `relay.py`.
-- **Kits.** The onboarding kit (`relay.py onboard`) could include the MCP
-  registration for the participant's `harness`.
