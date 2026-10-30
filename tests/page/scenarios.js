@@ -607,9 +607,17 @@
     if (!/[?&]viewer=reader\b/.test(location.search)) return res("readerNoControls", true, "skipped: open index.html?viewer=reader");
     await go("timeline");
     await addDoc("messages", "rd-1", { t: T0, from: "codex", kind: "sync", summary: "Seen by a reader" });
-    var controls = document.querySelectorAll("#composer, .star, .resolve, .resolve-inc, .reply-btn, .promote-btn, [id^=approve-], [id^=hold-], [id^=done-], #onboard-open").length;
+    var sel = "#composer, .star, .resolve, .resolve-inc, .reply-btn, .promote-btn, [id^=approve-], [id^=hold-], [id^=done-], #onboard-open";
+    var controls = document.querySelectorAll(sel).length;
     var shown = $("viewer").textContent;
-    return res("readerNoControls", controls === 0 && shown === "Viewing as a viewer (read only)", "controls=" + controls + " shown=" + JSON.stringify(shown));
+    // The Reviews tab shows an open override's positions without the "Go with" buttons.
+    await addDoc("messages", "rd-ov", { t: T0, from: "crosstalk", kind: "disagreement", source: "codex-review", project: "bewareilive", tip: "abc1234",
+      status: "awaiting", summary: "Reader override", positions: { codex: "needs-attention", bewareilive: "reason" } });
+    await go("reviews");
+    var rvControls = document.querySelectorAll(sel).length, rvShown = !!$("ov-rd-ov") && $("ov-rd-ov").querySelectorAll(".positions > div").length === 2;
+    await go("timeline");
+    return res("readerNoControls", controls === 0 && rvControls === 0 && rvShown && shown === "Viewing as a viewer (read only)",
+      "controls=" + controls + " reviews=" + rvControls + "/" + rvShown + " shown=" + JSON.stringify(shown));
   });
 
   S.push(async function editorNoControls() {
@@ -1747,6 +1755,84 @@
     var cleared = !pressed("f-starred") && !pressed("who-avoidmissingball") && shows("fst-alert");
     var ok = on && note === "Showing starred messages sent by AvoidMissingBall." && both && cleared;
     return res("filterStarred", ok, "on=" + on + " note=" + JSON.stringify(note) + " both=" + both + " cleared=" + cleared);
+  });
+
+  // ---------- Reviews tab: Codex branch reviews and overrides (scripts/crosstalk/reviews.py) ----------
+  function rvDoc(project, tip, verdict, min) {
+    return { t: ago(min), from: "crosstalk", kind: "review", source: "codex-review", project: project, tip: tip, tier: "full",
+      verdict: verdict, findings: verdict === "approve" ? 0 : 2, summary: "RV review of " + tip.slice(0, 7), refs: [project + "@" + tip.slice(0, 7)] };
+  }
+  function ovDoc(project, tip, min, extra) {
+    return Object.assign({ t: ago(min), from: "crosstalk", kind: "disagreement", source: "codex-review", project: project, tip: tip,
+      status: "awaiting", findings: 2, headlines: ["[medium] RV first headline (src/a.rs:1)"], reason: "RV reason " + tip.slice(0, 7),
+      summary: "RV override of " + tip.slice(0, 7), positions: { codex: "needs-attention, 2 findings", bewareilive: "RV reason" } }, extra || {});
+  }
+  async function seedReviews() {
+    var m = __store.messages = __store.messages || {};
+    for (var i = 0; i < 12; i++) m["rv-b" + i] = rvDoc("bewareilive", ("b" + i + "000000000").slice(0, 7) + "c0ffee", i % 2 ? "needs-attention" : "approve", 30 + i);
+    m["rv-v0"] = rvDoc("vectorcraft", "0a0a0a0deadbeef", "approve", 40);
+    m["rv-v1"] = rvDoc("vectorcraft", "1a1a1a1deadbeef", "needs-attention", 41);
+    m["rv-x"] = Object.assign(rvDoc("bewareilive", "ffff000deadbeef", "approve", 5), { from: "codex", summary: "RV not from crosstalk" });
+    m["ov-await"] = ovDoc("bewareilive", "b1000000c0ffee", 20, { reviewer: "vectorcraft", review: "rv-b1" });
+    m["ov-obj"] = ovDoc("vectorcraft", "1a1a1a1deadbeef", 25, { status: "objected", reviewer: "avoidmissingball",
+      objections: [{ id: "amb-9", from: "avoidmissingball", summary: "Object: RV real bug" }],
+      positions: { codex: "needs-attention", vectorcraft: "RV reason" } });
+    m["ov-agreed"] = ovDoc("bewareilive", "b3000000c0ffee", 22, { status: "agreed", agreed: ["avoidmissingball"] });
+    m["ov-settled"] = ovDoc("bewareilive", "b5000000c0ffee", 23, { resolution: { choice: "codex", by: "owner", t: ago(10) } });
+    __emit("messages"); await tick();
+  }
+  function rvIds(sel) { return [].slice.call(document.querySelectorAll(sel)).map(function (e) { return e.id; }); }
+
+  S.push(async function reviewsTab() {
+    await seedReviews();
+    await go("reviews");
+    var badge = $("tab-reviews") && $("tab-reviews").querySelector(".n").textContent;
+    var open = rvIds("#rv-open > .override");
+    var obj = $("ov-ov-obj"), aw = $("ov-ov-await");
+    var objText = obj ? obj.textContent : "", awText = aw ? aw.textContent : "";
+    var objOk = /Object: RV real bug/.test(objText) && !!obj.querySelector(".pill.objected");
+    var awOk = /RV first headline/.test(awText) && /Reason: RV reason/.test(awText) && /asked/.test(awText) && aw.querySelectorAll(".positions .resolve").length === 2;
+    var settled = $("rv-settled"), settledText = settled ? settled.querySelector("summary").textContent : null;
+    var bil = rvIds("#rv-bewareilive tbody tr"), vc = rvIds("#rv-vectorcraft tbody tr");
+    var bilHead = $("rv-bewareilive") ? $("rv-bewareilive").querySelector(".rvtitle").textContent : "";
+    var over = $("rvrow-rv-b1") && !!$("rvrow-rv-b1").querySelector(".pill.overridden"), notOver = $("rvrow-rv-b0") && !$("rvrow-rv-b0").querySelector(".pill.overridden");
+    var verdicts = $("rvrow-rv-b0") && !!$("rvrow-rv-b0").querySelector(".pill.approve") && !!$("rvrow-rv-b1").querySelector(".pill.needs-attention");
+    var noForeign = !$("rvrow-rv-x");
+    var order = $("rv-open").compareDocumentPosition($("rv-bewareilive")) & Node.DOCUMENT_POSITION_FOLLOWING;
+    await go("timeline");
+    var ok = badge === "2" && JSON.stringify(open) === JSON.stringify(["ov-ov-obj", "ov-ov-await"]) && objOk && awOk && settledText === "2 settled" &&
+      bil.length === 10 && bil[0] === "rvrow-rv-b0" && /latest 10 of 12/.test(bilHead) && vc.length === 2 && vc[0] === "rvrow-rv-v0" &&
+      over && notOver && verdicts && noForeign && !!order;
+    return res("reviewsTab", ok, "badge=" + badge + " open=" + JSON.stringify(open) + " obj=" + objOk + " await=" + awOk + " settled=" + JSON.stringify(settledText) +
+      " bil=" + bil.length + "/" + bil[0] + " head=" + JSON.stringify(bilHead) + " vc=" + JSON.stringify(vc) + " overridden=" + over + "/" + notOver +
+      " verdicts=" + verdicts + " noForeign=" + noForeign + " order=" + !!order);
+  });
+
+  S.push(async function reviewsSettle() {
+    await go("reviews");
+    var b = $("resolve-ov-await-bewareilive");
+    if (b) b.click();
+    await tick(80);
+    var r = __store.messages["ov-await"].resolution;
+    var open = rvIds("#rv-open > .override"), badge = $("tab-reviews").querySelector(".n").textContent;
+    var settled = $("rv-settled") ? $("rv-settled").querySelector("summary").textContent : null;
+    await go("timeline");
+    var ok = !!b && r && r.choice === "bewareilive" && r.by === "owner" && JSON.stringify(open) === JSON.stringify(["ov-ov-obj"]) && badge === "1" && settled === "3 settled";
+    return res("reviewsSettle", ok, "button=" + !!b + " resolution=" + JSON.stringify(r) + " open=" + JSON.stringify(open) + " badge=" + badge + " settled=" + JSON.stringify(settled));
+  });
+
+  // Checks whichever width the window has (run again at 390 wide; see run.md): nothing in the Reviews tab
+  // pushes the page sideways; a wide table scrolls inside its own box.
+  S.push(async function reviewsNarrow() {
+    if (!__store.messages || !__store.messages["ov-obj"]) await seedReviews();
+    await go("reviews");
+    var w = window.innerWidth, page = document.documentElement.scrollWidth;
+    var cards = [].slice.call(document.querySelectorAll("#view .override")).filter(function (c) { return c.getClientRects().length; });
+    var cardsFit = cards.length > 0 && cards.every(function (c) { return c.getBoundingClientRect().right <= w + 1; });
+    var wraps = [].slice.call(document.querySelectorAll("#view .rvproj .tablewrap"));
+    var wrapsFit = wraps.length > 0 && wraps.every(function (t) { return t.getBoundingClientRect().right <= w + 1; });
+    await go("timeline");
+    return res("reviewsNarrow", page <= w + 1 && cardsFit && wrapsFit, "width=" + w + " scrollWidth=" + page + " cards=" + cards.length + "/" + cardsFit + " tables=" + wraps.length + "/" + wrapsFit);
   });
 
   S.push(async function partlyLive() {

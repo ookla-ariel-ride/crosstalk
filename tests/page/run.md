@@ -37,7 +37,8 @@ history and clears the stored last-visit time, so those replies never count as n
    before running them again. `runAll(["name", ...])` runs only the named scenarios.
 
    Run them at a desktop width (`browser_resize` to 1100 wide) first. Then `browser_resize`
-   to 390 wide and run `await runAll(["mobileRosterFolds"])`, which checks the narrow layout.
+   to 390 wide and run `await runAll(["mobileRosterFolds", "reviewsNarrow"])`, which checks the
+   narrow layout.
 
    Then open `index.html?viewer=reader` (a read-only stub viewer) and run
    `await runAll(["readerNoControls"])`. In the normal run that scenario reports a skip.
@@ -88,7 +89,16 @@ history and clears the stored last-visit time, so those replies never count as n
   fields and shows the kit in a readonly textarea with a copy button and the token once in a readonly field. A reader or editor never sees the button (covered by `readerNoControls` and
   `editorNoControls`).
 - `readerNoControls`: at `?viewer=reader`, no composer, star, resolve, Approve, Hold or Mark done
-  control is shown, and the footer reads "Viewing as a viewer (read only)".
+  control is shown, and the footer reads "Viewing as a viewer (read only)". The Reviews tab shows an
+  open override's two positions with no "Go with" buttons.
+- `reviewsTab`: the Reviews tab counts open overrides (2), lists them objected first with the objection,
+  headlines, reason and asked project, folds resolved and agreed overrides into "2 settled", shows the
+  latest 10 of 12 BIL branch reviews newest first with verdict pills and an "overridden" mark on the
+  overridden review, and ignores review rows not written by crosstalk.
+- `reviewsSettle`: the owner's "Go with" button on an open override records a resolution; the override
+  moves to the settled list and the tab count drops to 1.
+- `reviewsNarrow`: at the window's width (run again at 390), nothing in the Reviews tab pushes the page
+  sideways; a wide table scrolls inside its own box.
 - `partlyLive`: one stopped collection shows "Partly live" and names its tab.
 - `participantsStopShown`: a stopped `participants` subscription is named too.
 - `rosterRepoLink`: a roster entry with a repo (or whose parent has one) shows a "repo ↗" link; repo-less
