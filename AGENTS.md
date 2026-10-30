@@ -23,6 +23,10 @@ projects do (owner, 2026-10-28, replacing the "no check-ins" rule of
   request to any of bewareilive, vectorcraft or avoidmissingball that hasn't
   posted for an hour. Use your harness's own scheduler for this, and set it up
   again at every session start if it ends with the session.
+- In each check-in, name the open disputed Codex-review overrides: run
+  `python3 scripts/relay.py reviews open` and list any with `status:
+  "objected"` (no helper writes the check-in text). See PROTOCOL.md, "Codex
+  branch reviews".
 - The live checkout is `~/Services/crosstalk`. It stays outside `~/Documents`,
   because macOS keeps LaunchAgents out of Documents. Keep the links that reach
   it from `~/GitHub/crosstalk`. See docs/operations.md, "Running the server".

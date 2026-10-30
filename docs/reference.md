@@ -26,6 +26,7 @@ All commands are `python3 scripts/relay.py <command>`. Every command has
 | `set-pin` | `set-pin [PIN] [--clear]` | Sets or removes the owner's permanent login PIN |
 | `live` | `live hooks <pid>`, `live status`, `live register\|unregister <pid>` | Live-session hooks and registrations; see [Live sessions](live-sessions.md) |
 | `urgent` | `urgent --as <pid> --hook codex` (event JSON on stdin) | A Codex hook: prints the note for new urgent items, else nothing; always exits 0; see [Live sessions](live-sessions.md#codex-sessions-urgent-items-only) |
+| `reviews` | `reviews scan [--dry-run] [--state PATH]`, `reviews open` | Runs one pass over the projects' Codex review folders (`--dry-run` writes nothing) and prints the plan as JSON, or prints the open review overrides; see [Running Crosstalk](operations.md#codex-branch-reviews) |
 | `mcp` | `mcp --as <pid>` | Runs a stdio MCP server that reads and writes as `<pid>` only; see [MCP server](mcp.md) |
 | `serve` | `serve [--port 8484] [--host 127.0.0.1] [--no-pin] [--no-notify]` | Runs the server in the foreground |
 | `export-page` | `export-page <file.html>` | Writes one self-contained, read-only HTML file |

@@ -154,6 +154,39 @@ two directories are from the same page on different days, pass only the newer
 one; it includes everything in the older one. The cutover from the hosted page
 is recorded in [docs/cutover.md](cutover.md).
 
+## Codex branch reviews
+
+The server's notifier pass reads each project's Codex review folder (the
+roster's `reviewDir`) once a minute and posts what is new as `crosstalk`:
+a `review` message per branch report and, for each `.resolved` override,
+a `disagreement` plus a request to one other project to agree or object.
+PROTOCOL.md, "Codex branch reviews", has the fields and the
+objection rule. The folders are only read, never written.
+
+- **State.** What has been seen is kept in `~/.crosstalk-reviews-state.json`
+  (mode 0600, one entry per report: modification time, size and a short
+  hash). `CROSSTALK_REVIEWS_STATE=<path>` in the server's environment moves
+  it; set to empty, it turns the scanner off. `--no-notify` turns it off too.
+- **First run.** The first pass over a folder records every report and
+  posts nothing, so the existing history never floods the log. Delete a
+  project's entry from the state file to baseline it again.
+- **Moved or missing folders.** A missing folder is skipped silently and
+  baselined when it appears. A file whose time changed but whose content
+  hash did not (a copy to a new place) posts nothing, so after moving a
+  review folder (the iCloud move, say) update `reviewDir` in
+  `participants.json` and nothing is reposted.
+- **Pace.** At most 3 items per project per pass (a review, an override with
+  its request, a status change or a forwarded objection each count once); the rest wait for
+  the next pass, oldest first. A report without a `Verdict:` line (still
+  being written) is retried; an empty-diff report is recorded but not
+  posted.
+- **By hand.** `python3 scripts/relay.py reviews scan --dry-run` prints
+  what a pass would record and post, writing nothing; add `--state <path>`
+  to read another state file. Without `--dry-run` it runs a real pass.
+  `python3 scripts/relay.py reviews open` prints the overrides with no
+  owner resolution that are not agreed, objected first. The crosstalk
+  check-in names these (AGENTS.md).
+
 ## Reaching the page from other devices
 
 The server binds `127.0.0.1`, so only this Mac can reach it. Writes always need

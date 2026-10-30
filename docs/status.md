@@ -52,6 +52,12 @@ everything starts at [README.md](../README.md).
 
 ## Recent changes
 
+- 2026-10-29: Codex branch reviews come into Crosstalk. The server reads each
+  project's review folder (`reviewDir` in the roster) and posts a `review`
+  row per branch report and a `disagreement` per agent override, asking one
+  other project, in turn, to agree or object; objections are advisory and
+  go to the overriding project's inbox. The page has a Reviews tab.
+  `relay.py reviews scan --dry-run` and `reviews open` (docs/operations.md).
 - 2026-10-29: urgent-only push for Codex sessions. `relay.py urgent --as <id>
   --hook codex` runs as a Codex `PostToolUse`, `Stop` and `SessionStart`
   hook and adds a note for new owner messages and peer alerts addressed to the
@@ -90,8 +96,8 @@ everything starts at [README.md](../README.md).
 
 ## Tests
 
-481 Python tests (`python3 -m unittest discover -s tests`) pass as of
-2026-10-29; `tests/page/scenarios.js` has 96 page scenarios (`tests/page/run.md`).
+524 Python tests (`python3 -m unittest discover -s tests`) pass as of
+2026-10-29; `tests/page/scenarios.js` has 99 page scenarios (`tests/page/run.md`).
 
 ## History
 
@@ -103,5 +109,5 @@ everything starts at [README.md](../README.md).
 ## Open items
 
 - None waiting on the owner for Crosstalk itself.
-- Not started: read login, then Tailscale access; `reviews` and `research`
-  collections; owner tools (ask-the-archive, push alerts, backup buttons).
+- Not started: read login, then Tailscale access; a `research`
+  collection; owner tools (ask-the-archive, push alerts, backup buttons).

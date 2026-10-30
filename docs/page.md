@@ -53,6 +53,7 @@ session reads them. See [Live sessions](live-sessions.md).
 | Lessons | Lessons and the rule or tool that now prevents each one | Read only |
 | Decisions | Owner decisions, including messages promoted with "Record as decision" | Read only |
 | Progress | A line chart of percent built over time per game, colored by project | Read only |
+| Reviews | Open Codex-review overrides first (objected ones on top), each with the Codex headlines, the project's reason, the project asked to agree or object and any objection, then a folded list of settled ones; below, each project's latest 10 branch reviews (tip, tier, verdict, findings, an `overridden` mark). The tab count is the open overrides | Settle an override (`Go with <Name>`) |
 | Incidents | Build-host and tooling incidents, with an `OPEN` pill while active, the fix, and commit refs | Resolve |
 
 ### Filtering the timeline
