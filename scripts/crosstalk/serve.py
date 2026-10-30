@@ -45,6 +45,7 @@ from .tokens import TOKEN_FILE, Result, Tokens
 from . import ownerpin
 from .notify import Notifier
 from . import urgent as urgent_mod
+from . import reviews as reviews_mod
 
 # The collections the page reads. "participants" is the owner's roster.
 KNOWN_COLLECTIONS = tuple(COLLECTIONS) + ("participants",)
@@ -866,13 +867,17 @@ class RunningServer:
     Claude Code sessions about new inbox items; its state persists at
     `notify_state` (None keeps it in memory). With `urgent_state` as well, each
     notifier pass also runs the urgent fallback (urgent.Fallback) on that file.
+    With `reviews_state`, each pass also runs the Codex review scanner
+    (reviews.Scanner) with its state in that file.
     """
 
     def __init__(self, root, port: int = 0, host: str = "127.0.0.1", tokens=None,
                  no_pin: bool = False, sessions=None, notify: bool = False,
-                 notify_state=None, notify_poll_sec: float = 5.0, urgent_state=None):
+                 notify_state=None, notify_poll_sec: float = 5.0, urgent_state=None,
+                 reviews_state=None):
         self.root = Path(root)
         self.urgent_state = urgent_state
+        self.reviews_state = reviews_state
         self.host = host
         self.port = port
         self.tokens = tokens
@@ -904,8 +909,11 @@ class RunningServer:
             state = httpd.state  # type: ignore[attr-defined]
             fallback = (urgent_mod.Fallback(Path(self.urgent_state))
                         if self.urgent_state is not None else None)
+            scanner = (reviews_mod.Scanner(self.root, Path(self.reviews_state))
+                       if self.reviews_state is not None else None)
             state.notifier = Notifier(self.root, state.cache.snapshot, self.notify_state,
-                                      poll_sec=self.notify_poll_sec, fallback=fallback)
+                                      poll_sec=self.notify_poll_sec, fallback=fallback,
+                                      reviews=scanner)
             self._notifier = state.notifier
             self._notifier.start()
         return self
@@ -984,7 +992,9 @@ def serve(root, host: str = "127.0.0.1", port: int = 8484, no_pin: bool = False,
     keeps it in memory). The same pass runs the urgent fallback: a macOS
     notification for an urgent item that no Codex hook has picked up in ten
     minutes (crosstalk/urgent.py; state ~/.crosstalk-urgent-state.json,
-    `CROSSTALK_URGENT_STATE`, empty turns the fallback off).
+    `CROSSTALK_URGENT_STATE`, empty turns the fallback off). It also runs the
+    Codex review scanner once a minute (crosstalk/reviews.py; state
+    ~/.crosstalk-reviews-state.json, `CROSSTALK_REVIEWS_STATE`, empty turns it off).
 
     SIGTERM (how launchd stops the service) shuts down like Ctrl-C: the
     notifier stops cleanly, then the process exits with status 143
@@ -996,7 +1006,8 @@ def serve(root, host: str = "127.0.0.1", port: int = 8484, no_pin: bool = False,
     server = RunningServer(root, port=port, host=host, tokens=tokens,
                            no_pin=no_pin, sessions=sessions, notify=notify,
                            notify_state=notify_state,
-                           urgent_state=urgent_mod.state_path_from_env())
+                           urgent_state=urgent_mod.state_path_from_env(),
+                           reviews_state=reviews_mod.state_path_from_env())
     server.start_server()
     if server.pin:
         print("Login PIN: %s  (one login, ten minutes)" % server.pin, flush=True)

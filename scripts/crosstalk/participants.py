@@ -21,6 +21,9 @@ HARNESS_MAX = 32
 ALIAS_RESERVED = ("everyone", "all", "channel", "here", "projects", "teams", "reviewers", "owner")
 # itemNames maps a progress row's raw item name (lowercase) to the name shown, e.g. centiped -> Centipede.
 ITEM_NAME_MAX = 60
+# reviewDir is the folder where a project's Codex review hook keeps its reports (reviews.py reads it):
+# an absolute path or one starting with ~/, on one line, without control characters.
+REVIEW_DIR_MAX = 300
 KINDS = ("project", "agent", "reviewer", "researcher", "tool", "person")
 TRUSTS = ("approved", "quarantined")
 COLOR_RE = re.compile(r"^#[0-9a-fA-F]{6}$")
@@ -59,6 +62,17 @@ def harness_problem(pid: str, harness) -> Optional[str]:
     return None
 
 
+def review_dir_problem(pid: str, value) -> Optional[str]:
+    """The reason a reviewDir value is invalid, or None when it is acceptable (or absent)."""
+    if value is None:
+        return None
+    if (not isinstance(value, str) or not value or len(value) > REVIEW_DIR_MAX
+            or NAME_BAD_RE.search(value) or not (value.startswith("/") or value.startswith("~/"))):
+        return ("participant %s: bad reviewDir %r (an absolute path or one starting with ~/, "
+                "at most %d chars)" % (pid, value, REVIEW_DIR_MAX))
+    return None
+
+
 @dataclass
 class Participant:
     id: str
@@ -73,6 +87,7 @@ class Participant:
     harness: Optional[str] = None
     aliases: List[str] = field(default_factory=list)
     itemNames: Dict[str, str] = field(default_factory=dict)
+    reviewDir: Optional[str] = None
 
 
 @dataclass
@@ -193,7 +208,8 @@ def _parse(entry: dict, index: int) -> Participant:
     check = entry.get("checkInMin")
     if check is not None and (isinstance(check, bool) or not isinstance(check, int) or check <= 0):
         raise ValueError("participant %s: bad checkInMin %r" % (pid, check))
-    problem = repo_problem(pid, entry.get("repo")) or harness_problem(pid, entry.get("harness"))
+    problem = (repo_problem(pid, entry.get("repo")) or harness_problem(pid, entry.get("harness"))
+               or review_dir_problem(pid, entry.get("reviewDir")))
     if problem:
         raise ValueError(problem)
     color = _check_color(pid, "color", entry.get("color"), PANEL_LIGHT)
@@ -201,7 +217,8 @@ def _parse(entry: dict, index: int) -> Participant:
     return Participant(id=pid, name=entry["name"], kind=kind, color=color, colorDark=color_dark,
                        repo=entry.get("repo"), parent=parent, checkInMin=check, trust=trust,
                        harness=entry.get("harness"), aliases=_aliases(pid, entry.get("aliases")),
-                       itemNames=_item_names(pid, entry.get("itemNames")))
+                       itemNames=_item_names(pid, entry.get("itemNames")),
+                       reviewDir=entry.get("reviewDir"))
 
 
 def load_roster(path: Path) -> Roster:

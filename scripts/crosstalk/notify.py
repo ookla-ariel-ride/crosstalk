@@ -168,8 +168,11 @@ class Notifier:
                  state_path: Optional[Path], clock: Callable[[], float] = time.time,
                  poll_sec: float = 5.0,
                  send: Callable[..., None] = send_to_session,
-                 fallback=None):
+                 fallback=None, reviews=None):
         self.root = Path(root)
+        # reviews.Scanner (or None): run on every pass after the fallback; it
+        # scans the review folders at most once a minute (reviews.SCAN_SEC).
+        self.reviews = reviews
         # urgent.Fallback (or None): run on every pass, so a disabled Notifier
         # (a second server) posts no desktop notifications either.
         self.fallback = fallback
@@ -388,6 +391,11 @@ class Notifier:
                     self.fallback.poll(docs, roster)
                 except Exception as e:  # the fallback never stops the live pass
                     _warn("urgent fallback failed: %s" % e.__class__.__name__)
+            if self.reviews is not None:
+                try:
+                    self.reviews.poll(docs, roster)
+                except Exception as e:  # nor does the review scan
+                    _warn("review scan failed: %s: %s" % (e.__class__.__name__, e))
 
     def _tell(self, reg: live.Registration, key: str, st: dict, new: List[str],
               docs: Dict, roster: Roster, now: float) -> None:

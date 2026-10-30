@@ -14,7 +14,8 @@
       "harness": "claude-code",
       "aliases": [
         "bil"
-      ]
+      ],
+      "reviewDir": "~/GitHub/bil-reviews"
     },
     {
       "id": "vectorcraft",
@@ -32,7 +33,8 @@
       "itemNames": {
         "battlezone": "bzone",
         "star castle": "starcas"
-      }
+      },
+      "reviewDir": "~/.cache/vectorcraft/reviews"
     },
     {
       "id": "avoidmissingball",
@@ -55,7 +57,8 @@
         "dig dug": "Dig Dug",
         "missile": "Missile Command",
         "missile command": "Missile Command"
-      }
+      },
+      "reviewDir": "~/.cache/avoidmissingball/reviews"
     },
     {
       "id": "codex",

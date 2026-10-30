@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Command line for the Crosstalk log: check, append, import, pull, pending, restore, sent, token, onboard, kit, serve, mcp, urgent."""
+"""Command line for the Crosstalk log: check, append, import, pull, pending, restore, sent, token, onboard, kit, serve, mcp, urgent, reviews."""
 import argparse
 import json
 import os
@@ -17,6 +17,7 @@ from crosstalk.exporter import export_page  # noqa: E402
 from crosstalk.importer import import_snapshots, merge_snapshots  # noqa: E402
 from crosstalk import live as live_mod  # noqa: E402
 from crosstalk import mcp as mcp_mod  # noqa: E402
+from crosstalk import reviews as reviews_mod  # noqa: E402
 from crosstalk import urgent as urgent_mod  # noqa: E402
 from crosstalk.logs import append_line, check_all, message_problems  # noqa: E402
 from crosstalk.onboard import onboard, regenerate_kit  # noqa: E402
@@ -224,6 +225,25 @@ def cmd_live(args):
         print("%s  %s  registered %s" % (r.pid, r.session_id, r.registered))
     for p in problems:
         err("live: ignored " + p)
+    return 0
+
+
+def cmd_reviews(args):
+    """reviews scan [--dry-run] [--state PATH] | reviews open: the Codex review scanner by hand."""
+    docs, roster = urgent_mod.load_snapshot(ROOT)
+    if args.reviews_cmd == "open":
+        print(json.dumps(reviews_mod.open_overrides(docs, roster), indent=2, sort_keys=True))
+        return 0
+    state = Path(args.state) if args.state else reviews_mod.state_path_from_env()
+    if state is None and not args.dry_run:
+        err("reviews scan: no state file (CROSSTALK_REVIEWS_STATE is empty); pass --state PATH")
+        return 2
+    try:
+        plan = reviews_mod.Scanner(ROOT, state).scan(docs, roster, dry_run=args.dry_run)
+    except OSError as e:
+        err("reviews scan: %s" % e)
+        return 1
+    print(json.dumps(plan, indent=2, sort_keys=True))
     return 0
 
 
@@ -569,6 +589,15 @@ def build_parser():
         lp.add_argument("pid", metavar="PARTICIPANT")
     lsub.add_parser("status", help="list live registrations (never the token)")
     lv.set_defaults(fn=cmd_live)
+    rv = sub.add_parser("reviews", help="the projects' Codex branch reviews (crosstalk/reviews.py)")
+    rsub = rv.add_subparsers(dest="reviews_cmd", required=True)
+    rs = rsub.add_parser("scan", help="one scanner pass: post new reviews and overrides; prints JSON")
+    rs.add_argument("--dry-run", action="store_true",
+                    help="post nothing and write no state; print what the pass would do")
+    rs.add_argument("--state", metavar="PATH",
+                    help="state file (default CROSSTALK_REVIEWS_STATE or ~/.crosstalk-reviews-state.json)")
+    rsub.add_parser("open", help="list overrides the owner has not settled and no one agreed to (JSON)")
+    rv.set_defaults(fn=cmd_reviews)
     mc = sub.add_parser("mcp", help="run a stdio MCP server that acts as one participant")
     mc.add_argument("--as", dest="as_", required=True, metavar="PID",
                     help="the participant every tool call reads and writes as")
