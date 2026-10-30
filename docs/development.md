@@ -26,6 +26,7 @@ Part of the [Crosstalk docs](../README.md#documentation).
 | `scripts/crosstalk/reports.py` | The inbox and recent-messages reports shared by `relay.py` and the MCP server |
 | `scripts/crosstalk/live.py` | Live-session registrations (`live register`, `unregister`, `status`, `hooks`) |
 | `scripts/crosstalk/notify.py` | Sends inbox notes to live sessions over their sockets |
+| `scripts/crosstalk/reviews.py` | Reads the projects' Codex review folders and posts reviews, overrides and objections (`relay.py reviews`) |
 | `scripts/crosstalk/urgent.py` | The Codex urgent-item hook (`relay.py urgent`) and its macOS fallback |
 | `scripts/crosstalk/logs.py` | Locked appends (`fcntl.flock`), line validation, trust and quarantine rules |
 | `scripts/crosstalk/replay.py` | `(t, from, seq)` replay and filling in missing `from`, `t`, and `project` |
@@ -81,14 +82,14 @@ token as it should, and a brainstorming tool's scratch log.
 
 ### Running the tests
 
-Python tests (481 unit, CLI, MCP, live-server, and urgent-hook tests; standard library
+Python tests (524 unit, CLI, MCP, live-server, and urgent-hook tests; standard library
 `unittest` only):
 
 ```
 python3 -m unittest discover -s tests
 ```
 
-Page scenarios (95 in `tests/page/scenarios.js`): `tests/page/run.md` builds
+Page scenarios (99 in `tests/page/scenarios.js`): `tests/page/run.md` builds
 `tests/page/out/index.html` against a stub data layer (`sh tests/page/build.sh`)
 and runs the scenarios in a headless browser at desktop width, 390 px width,
 and as `?viewer=reader`.

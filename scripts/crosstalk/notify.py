@@ -168,8 +168,11 @@ class Notifier:
                  state_path: Optional[Path], clock: Callable[[], float] = time.time,
                  poll_sec: float = 5.0,
                  send: Callable[..., None] = send_to_session,
-                 fallback=None):
+                 fallback=None, reviews=None):
         self.root = Path(root)
+        # reviews.Scanner (or None): run on every pass after the fallback; it
+        # scans the review folders at most once a minute (reviews.SCAN_SEC).
+        self.reviews = reviews
         # urgent.Fallback (or None): run on every pass, so a disabled Notifier
         # (a second server) posts no desktop notifications either.
         self.fallback = fallback
@@ -181,6 +184,7 @@ class Notifier:
         self._lock = threading.RLock()
         self._stop = threading.Event()
         self._thread = None  # type: Optional[threading.Thread]
+        self._reviews_thread = None  # type: Optional[threading.Thread]
         self._saved = None  # type: Optional[str]
         self._lock_fd = None  # type: Optional[int]
         self._reported = set()  # type: set
@@ -388,6 +392,32 @@ class Notifier:
                     self.fallback.poll(docs, roster)
                 except Exception as e:  # the fallback never stops the live pass
                     _warn("urgent fallback failed: %s" % e.__class__.__name__)
+            if self.reviews is not None:
+                self._start_review_scan(docs, roster)
+
+    def _start_review_scan(self, docs: Dict, roster: Roster) -> None:
+        # The scan reads files in the projects' review folders, and a folder in
+        # iCloud can block on a file that isn't downloaded, so it runs on its
+        # own thread; a pass skips it while the last one is still running.
+        t = self._reviews_thread
+        if t is not None and t.is_alive():
+            return
+
+        def run():
+            try:
+                self.reviews.poll(docs, roster)
+            except Exception as e:  # the review scan never stops the live pass
+                _warn("review scan failed: %s: %s" % (e.__class__.__name__, e))
+
+        t = threading.Thread(target=run, name="crosstalk-reviews", daemon=True)
+        self._reviews_thread = t
+        t.start()
+
+    def wait_reviews(self, timeout: Optional[float] = None) -> None:
+        """Wait for a running review scan to finish (tests, clean stop)."""
+        t = self._reviews_thread
+        if t is not None:
+            t.join(timeout)
 
     def _tell(self, reg: live.Registration, key: str, st: dict, new: List[str],
               docs: Dict, roster: Roster, now: float) -> None:
@@ -442,5 +472,6 @@ class Notifier:
             if self._thread is not None:
                 self._thread.join()
                 self._thread = None
+            self.wait_reviews(5)  # a stalled scan must not hold up shutdown
         finally:
             self._release_lock()

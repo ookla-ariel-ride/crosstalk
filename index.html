@@ -180,6 +180,16 @@ a.who-link { text-decoration: none; }
 #composer #reply-banner { margin: 0; }
 .pill.building, .pill.landed-builder, .pill.ready-to-adopt, .pill.agreed { background: var(--accent-soft); color: var(--fg); }
 .pill.dropped { text-decoration: line-through; }
+/* Codex reviews: verdicts and override states. */
+.pill.approve, .pill.settled { background: var(--ok); color: var(--panel); }
+.pill.needs-attention, .pill.objected { background: var(--warn); color: var(--panel); }
+.pill.overridden { background: none; border: 1px dashed var(--muted); color: var(--fg); }
+.override .heads { margin: 4px 0 6px; padding-left: 18px; font: 12px/1.45 var(--mono); overflow-wrap: anywhere; }
+.override .objection { display: flex; flex-wrap: wrap; gap: 4px 8px; align-items: baseline; margin-top: 6px; font-size: 13px; overflow-wrap: anywhere; }
+.override .asked { margin-top: 6px; }
+#view h2.rvhead { margin-top: 22px; }
+.rvproj { margin-top: 12px; }
+.rvproj .rvtitle { margin-bottom: 6px; }
 .summary { font: 600 15px/1.35 var(--body); margin: 6px 0 4px; text-wrap: balance; overflow-wrap: anywhere; }
 .body { white-space: pre-wrap; overflow-wrap: anywhere; margin: 0; font-size: 14px; }
 details summary { cursor: pointer; font: 12px var(--mono); color: var(--muted); margin-top: 4px; }
@@ -235,6 +245,9 @@ td.num, td.t { font: 12px var(--mono); font-variant-numeric: tabular-nums; white
   .msg.reply-to { margin-left: 16px; }
   .msg.reply-to::before { left: -10px; }
   .positions { grid-template-columns: 1fr; }
+  /* A review table fits a phone: tighter cells, the verdict pills stacked. */
+  .rvproj th, .rvproj td { padding: 6px 5px; }
+  .rvproj td .pill { display: table; margin-bottom: 2px; }
 }
 </style>
 
@@ -291,7 +304,7 @@ td.num, td.t { font: 12px var(--mono); font-variant-numeric: tabular-nums; white
   var TABS = [
     ["timeline", "Timeline", "messages"], ["agreements", "Agreements", "agreements"], ["waiting", "Waiting on you", "waiting"],
     ["locks", "File claims", "locks"], ["lessons", "Lessons", "lessons"], ["decisions", "Decisions", "decisions"],
-    ["progress", "Progress", "progress"], ["incidents", "Incidents", "incidents"], ["help", "Help", null]
+    ["progress", "Progress", "progress"], ["incidents", "Incidents", "incidents"], ["reviews", "Reviews", null], ["help", "Help", null]
   ];
   var STATUSES = ["proposed", "agreed", "building", "landed-builder", "ready-to-adopt", "landed-both", "held", "dropped"];
   var data = {}; COLS.forEach(function (c) { data[c] = []; });
@@ -880,6 +893,7 @@ td.num, td.t { font: 12px var(--mono); font-variant-numeric: tabular-nums; white
       b.setAttribute("role", "tab"); b.setAttribute("aria-selected", String(tab === t[0]));
       var n = t[0] === "waiting" ? data.waiting.filter(function (w) { return !w.done; }).length
         : t[0] === "help" ? openRequests().length
+        : t[0] === "reviews" ? overrideRows().filter(overrideOpen).length
         : data[t[2]].length;
       b.appendChild(el("span", "n", n));
       if (t[0] === "timeline" && nNew > 0) { var badge = el("span", "new", nNew + " new"); badge.id = "new-badge"; b.appendChild(badge); }
@@ -1723,6 +1737,101 @@ td.num, td.t { font: 12px var(--mono); font-variant-numeric: tabular-nums; white
     view.appendChild(cards);
   }
 
+  /* ---------- Codex reviews ---------- */
+  // Posted by the review scanner (scripts/crosstalk/reviews.py) as crosstalk with source "codex-review": a `review`
+  // per branch report, and a `disagreement` per override (`codex-review resolve`) whose `status` is awaiting, agreed
+  // or objected. An override is open until the owner settles it (`resolution`) or the asked project agrees.
+  var REVIEWS_SHOWN = 10;
+  function isReviewRow(m) { return m.from === "crosstalk" && m.source === "codex-review" && typeof m.project === "string"; }
+  function reviewRows() { return data.messages.filter(function (m) { return isReviewRow(m) && m.kind === "review"; }); }
+  function overrideRows() { return data.messages.filter(function (m) { return isReviewRow(m) && m.kind === "disagreement"; }); }
+  function overrideOpen(o) { return !o.resolution && o.status !== "agreed"; }
+  function shortTip(t) { return String(t == null ? "" : t).slice(0, 7); }
+  function listOf(v) { return Array.isArray(v) ? v : []; }
+  function overrideCard(o) {
+    var c = el("div", "card override"); c.id = "ov-" + o._id; c.dataset.project = o.project;
+    var meta = el("div", "meta"); meta.appendChild(who(o.project));
+    meta.appendChild(pill(o.resolution ? "settled" : o.status === "objected" || o.status === "agreed" ? o.status : "awaiting"));
+    meta.appendChild(el("code", null, shortTip(o.tip)));
+    meta.appendChild(timeEl(o.t, true)); meta.appendChild(agoEl(o.t));
+    c.appendChild(meta);
+    c.appendChild(el("div", "summary", o.summary || ""));
+    var heads = listOf(o.headlines);
+    if (heads.length) {
+      var ul = el("ul", "heads"); heads.forEach(function (h) { ul.appendChild(el("li", null, String(h))); });
+      var more = typeof o.findings === "number" ? o.findings - heads.length : 0;
+      if (more > 0) ul.appendChild(el("li", null, "and " + more + " more"));
+      c.appendChild(ul);
+    }
+    if (o.reason) c.appendChild(el("p", "body", "Reason: " + o.reason));
+    var asked = el("div", "meta asked");
+    if (o.reviewer) { asked.appendChild(el("span", null, "asked")); asked.appendChild(who(o.reviewer)); }
+    listOf(o.agreed).forEach(function (a) { asked.appendChild(who(a)); asked.appendChild(el("span", null, "agrees")); });
+    if (asked.childNodes.length) c.appendChild(asked);
+    listOf(o.objections).forEach(function (ob) {
+      var d = el("div", "objection"); d.appendChild(who(ob && ob.from)); d.appendChild(el("span", null, (ob && ob.summary) || "objects"));
+      c.appendChild(d);
+    });
+    if (o.report) c.appendChild(el("div", "ago", o.report));
+    add(c, positionsEl(o));
+    return c;
+  }
+  function renderReviews(view) {
+    toolbar(view, false);
+    var revs = reviewRows(), ovs = overrideRows();
+    if (!revs.length && !ovs.length) {
+      view.appendChild(el("div", "empty", "No Codex reviews yet. Crosstalk posts each project's branch reviews here from its review folder (reviewDir), and every override (codex-review resolve) with another project's answer."));
+      return;
+    }
+    function objFirst(a, b) { return (a.status === "objected" ? 0 : 1) - (b.status === "objected" ? 0 : 1) || byT(b, a); }
+    var open = ovs.filter(function (o) { return overrideOpen(o) && matches(o); }).sort(objFirst);
+    var settled = ovs.filter(function (o) { return !overrideOpen(o) && matches(o); }).sort(function (a, b) { return byT(b, a); });
+    view.appendChild(el("h2", null, "Open overrides"));
+    var cards = el("div", "cards"); cards.id = "rv-open";
+    if (!open.length) cards.appendChild(el("div", "empty", "No open overrides. When a project overrides its Codex review, it shows here until another project agrees or you settle it."));
+    open.forEach(function (o) { cards.appendChild(overrideCard(o)); });
+    view.appendChild(cards);
+    if (settled.length) {
+      var d = el("details"); d.id = "rv-settled"; d.appendChild(el("summary", null, settled.length + " settled"));
+      var list = el("div", "cards"); settled.forEach(function (o) { list.appendChild(overrideCard(o)); });
+      d.appendChild(list); view.appendChild(d);
+    }
+    var overridden = Object.create(null);
+    ovs.forEach(function (o) { if (typeof o.review === "string") overridden[o.review] = true; });
+    var byProject = Object.create(null);
+    revs.filter(matches).forEach(function (r) { (byProject[r.project] = byProject[r.project] || []).push(r); });
+    var projects = Object.keys(byProject).sort(byName);
+    var head = el("h2", null, "Recent branch reviews"); head.className = "rvhead"; view.appendChild(head);
+    if (!projects.length) { view.appendChild(el("div", "empty", "No reviews match.")); return; }
+    projects.forEach(function (p) {
+      var rows = byProject[p].sort(function (a, b) { return byT(b, a); });
+      var sec = el("section", "rvproj"); sec.id = "rv-" + p;
+      var sh = el("div", "meta rvtitle"); sh.appendChild(who(p));
+      sh.appendChild(el("span", null, rows.length > REVIEWS_SHOWN ? "latest " + REVIEWS_SHOWN + " of " + rows.length : rows.length + (rows.length === 1 ? " review" : " reviews")));
+      sec.appendChild(sh);
+      var wrap = el("div", "tablewrap"), table = el("table"), hr = el("tr");
+      ["Tip", "Tier", "Verdict", "Findings", "When"].forEach(function (h) { hr.appendChild(el("th", null, h)); });
+      var thead = el("thead"); thead.appendChild(hr); table.appendChild(thead);
+      var tb = el("tbody");
+      rows.slice(0, REVIEWS_SHOWN).forEach(function (r) {
+        var tr = el("tr"); tr.id = "rvrow-" + r._id;
+        var c1 = el("td", "num"), repo = repoFor(p), tipEl;
+        if (repo && /^[0-9a-f]{7,40}$/i.test(String(r.tip || ""))) {
+          tipEl = el("a", null, shortTip(r.tip)); tipEl.href = "https://github.com/" + repo + "/commit/" + r.tip; tipEl.target = "_blank"; tipEl.rel = "noopener";
+        } else tipEl = el("code", null, shortTip(r.tip));
+        c1.appendChild(tipEl); tr.appendChild(c1);
+        tr.appendChild(el("td", null, r.tier || ""));
+        var c3 = el("td"); c3.appendChild(pill(r.verdict || "unknown"));
+        if (overridden[r._id]) { c3.appendChild(document.createTextNode(" ")); c3.appendChild(pill("overridden")); }
+        tr.appendChild(c3);
+        tr.appendChild(el("td", "num", typeof r.findings === "number" ? String(r.findings) : ""));
+        var c5 = el("td", "t"); c5.appendChild(timeEl(r.t, true)); tr.appendChild(c5);
+        tb.appendChild(tr);
+      });
+      table.appendChild(tb); wrap.appendChild(table); sec.appendChild(wrap); view.appendChild(sec);
+    });
+  }
+
   /* ---------- agreements ---------- */
   function renderAgreements(view) {
     toolbar(view, false);
@@ -1945,7 +2054,7 @@ td.num, td.t { font: 12px var(--mono); font-variant-numeric: tabular-nums; white
     view.textContent = "";
     // A picked harness that left the roster has no button to unpick it, so it stops filtering.
     var hl = harnessList(); harnessPicked = harnessPicked.filter(function (h) { return hl.indexOf(h) !== -1; });
-    ({ timeline: renderTimeline, agreements: renderAgreements, waiting: renderWaiting, locks: renderLocks, lessons: renderLessons, decisions: renderDecisions, progress: renderProgress, incidents: renderIncidents, help: renderHelp }[tab] || renderTimeline)(view);
+    ({ timeline: renderTimeline, agreements: renderAgreements, waiting: renderWaiting, locks: renderLocks, lessons: renderLessons, decisions: renderDecisions, progress: renderProgress, incidents: renderIncidents, reviews: renderReviews, help: renderHelp }[tab] || renderTimeline)(view);
     restoreFocus(f);
   }
   // The heading names every project in the roster, each in its color; "Crosstalk" until the roster loads.

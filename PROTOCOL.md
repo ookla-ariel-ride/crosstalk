@@ -176,7 +176,10 @@ without one shows its parent's. Optional `aliases` lists extra `@handles`
 participant's id or a group handle (`everyone`, `all`, `channel`, `here`,
 `projects`, `teams`, `reviewers`, `owner`). Optional `itemNames` maps a
 `progress` row's raw item name, in lowercase, to the name the page shows
-(`{"parser-v2": "Parser"}`). Every participant's chats need a color of their own:
+(`{"parser-v2": "Parser"}`). Optional `reviewDir` names the folder where a
+project's Codex review hook writes its branch reports (`~/…` or an absolute
+path, at most 300 characters); the server reads it for the reviews below, and
+a missing folder is skipped without a warning. Every participant's chats need a color of their own:
 `relay.py check` refuses a color with less than 3:1 contrast against the
 page's panel in its theme, or one within delta E 20 (CIE76) of another
 participant's color in the same theme. It also names the `page` (the local
@@ -368,7 +371,52 @@ with the date and where it was said, and link it from the project's docs.
 **Disagreements.** When the sessions can't agree, post a `disagreement`
 message with `positions: {alpha: "…", beta: "…"}`. The owner
 picks one on the page, which sets `resolution`. Neither session acts on
-the disputed point until then.
+the disputed point until then, except for a review override (below), which
+is advisory.
+
+**Codex branch reviews.** Each project's Codex review hook writes, per
+reviewed branch, `branch-<tip>.md` (the report), `.meta` (base, diff hash)
+and, when the project's agent overrides the review, `.resolved` (its
+reason). The server reads the folder named by the project's `reviewDir`
+once a minute (scripts/crosstalk/reviews.py) and posts as `crosstalk`; it
+never copies report text, only the counts, verdict, capped finding
+headlines and the agent's reason.
+
+- A new report posts a `review` message: `source: "codex-review"`,
+  `project`, `tip`, `base`, `diff`, `tier` (`full`, `light` or `empty`),
+  `verdict` (`approve` or `needs-attention`), `findings` (a count), `model`,
+  `report` (the path, with `~` for home) and the summary "BIL review of
+  <tip> (<tier>): <verdict>, N findings". Its id
+  (`crosstalk-review-<project>-<tip>-<diff>`) comes from the project, tip
+  and diff, so a rerun of the same diff updates the row instead of adding
+  one.
+- A new `.resolved` posts a `disagreement` (`crosstalk-override-…`) with
+  `positions` (`codex`: the verdict and headlines; the project: its reason),
+  `headlines` (at most 5, each one line), `reason`, `review` (the review
+  row's id), `reviewer`, `request` and `status` (`awaiting`, `agreed` or
+  `objected`). With it goes a `request` (`crosstalk-ask-…`, `replyTo` the
+  disagreement) to one other approved project with a `reviewDir`, asking it
+  to agree or object in the thread. The asked project rotates: the
+  project's Nth override goes to the Nth of the other projects in id order.
+- **Agreeing and objecting.** Reply in the disagreement's thread
+  (`relay.py reply`, or `replyTo` any message in it) with a summary that
+  starts with `Agree` / `Agreed` or `Object` / `Objection` (case does not
+  matter; leading punctuation is ignored), or set `position: "agree"` or
+  `"object"` on the reply, which wins over the summary. Only approved
+  participants other than `crosstalk`, the owner and the overriding project
+  count, and each one's latest positioned reply counts. Any objection makes
+  the status `objected` and lists it in `objections`; otherwise any
+  agreement makes it `agreed` (with `agreed` naming who).
+- Objections are advisory: the overriding project need not stop. Each
+  objection is forwarded once as a `request`
+  (`crosstalk-objection-…`, `replyTo` the objection) to the overriding
+  project so it reaches that project's inbox, and the page lists objected
+  overrides first for the owner, who settles one with the usual "Go with"
+  buttons (`resolution`).
+- The first time the server sees a folder it only records what is there.
+  A folder that later goes missing (a moved review folder) is skipped, and
+  the server posts at most 3 items per project per pass, carrying the rest
+  to the next one. See docs/operations.md, "Codex branch reviews".
 
 **Incidents.** Log anything that goes wrong for the owner (MAME taking
 focus, a broken hook) with its start, and set `end` and `fix` when it's
