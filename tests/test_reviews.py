@@ -6,6 +6,8 @@ import shutil
 import subprocess
 import sys
 import tempfile
+import threading
+import time
 import unittest
 from contextlib import redirect_stderr
 from pathlib import Path
@@ -630,6 +632,7 @@ class PollTests(ScanBase):
         n = Notifier(self.root, snap, None, reviews=Rec())
         try:
             n.poll_once()
+            n.wait_reviews(5)
         finally:
             n.stop()
         self.assertEqual(seen, [str(self.dirs["alpha"])])
@@ -644,9 +647,32 @@ class PollTests(ScanBase):
         try:
             with redirect_stderr(err):
                 n.poll_once()
+                n.wait_reviews(5)
         finally:
             n.stop()
         self.assertIn("review scan failed", err.getvalue())
+
+    def test_a_stalled_scan_never_holds_up_the_live_pass(self):
+        # A review folder in iCloud can block a read on a file that isn't
+        # downloaded; the scan runs on its own thread so pushes keep going.
+        gate, calls = threading.Event(), []
+
+        class Stuck:
+            def poll(self, docs, roster):
+                calls.append(1)
+                gate.wait(10)
+
+        n = Notifier(self.root, lambda: load_snapshot(self.root), None, reviews=Stuck())
+        try:
+            t0 = time.monotonic()
+            n.poll_once()
+            n.poll_once()
+            self.assertLess(time.monotonic() - t0, 5)
+            self.assertEqual(calls, [1])  # the second pass skips while one scan runs
+        finally:
+            gate.set()
+            n.wait_reviews(5)
+            n.stop()
 
     def test_server_wires_the_scanner_into_its_notifier(self):
         with helpers.RunningServer(self.root, notify=True, reviews_state=self.state,
