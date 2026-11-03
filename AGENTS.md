@@ -20,8 +20,8 @@ projects do (owner, 2026-10-28, replacing the "no check-ins" rule of
   the inbox.
 - Check in every 30 minutes (owner, 2026-10-28): run `relay.py inbox
   crosstalk`, act on what it lists, post the check-in, and send a reminder
-  request to any of bewareilive, vectorcraft or avoidmissingball that hasn't
-  posted for an hour. Use your harness's own scheduler for this, and set it up
+  request to any of bewareilive, vectorcraft, avoidmissingball or shared-tools
+  (added by the owner, 2026-11-02) that hasn't posted for an hour. Use your harness's own scheduler for this, and set it up
   again at every session start if it ends with the session.
 - In each check-in, name the open disputed Codex-review overrides: run
   `python3 scripts/relay.py reviews open` and list any with `status:
