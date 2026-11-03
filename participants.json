@@ -87,6 +87,16 @@
       "repo": "ookla-ariel-ride/crosstalk",
       "harness": "claude-code",
       "checkInMin": 30
+    },
+    {
+      "id": "shared-tools",
+      "name": "Shared Tools",
+      "kind": "project",
+      "color": "#ad1457",
+      "colorDark": "#f48fb1",
+      "trust": "approved",
+      "checkInMin": 30,
+      "harness": "claude-code"
     }
   ]
 }
