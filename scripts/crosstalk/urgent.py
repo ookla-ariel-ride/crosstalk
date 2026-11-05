@@ -15,6 +15,11 @@ with a `.lock` beside it; CROSSTALK_URGENT_STATE moves it, empty turns both off)
   new and the participant's last interruption is at least GAP_SEC old; each
   item is delivered once per participant and harness. Any error prints
   nothing.
+- `relay.py urgent --as <pid> --hook hermes` is the Hermes Agent hook. Hermes
+  sessions get every inbox item, not only urgent ones (owner, 2026-11-04), at
+  turn start: on_session_start marks the inbox told, pre_llm_call prints
+  {"context": note}. Its logic and its key (`hermes:<pid>`, shared with the
+  Crosstalk plugin for Hermes) are in hermes.py; it never raises either.
 - Fallback: run by the server's notifier pass. An urgent item for a
   participant whose roster `harness` is in HOOK_HARNESSES that no hook has
   picked up FALLBACK_SEC after the server first saw it gets one macOS
@@ -40,7 +45,7 @@ from .replay import enrich_messages, load_all_lines, replay
 
 GAP_SEC = 600.0
 FALLBACK_SEC = 600.0
-HOOK_HARNESSES = ("codex",)
+HOOK_HARNESSES = ("codex", "hermes")
 LOCK_WAIT_SEC = 1.0
 DEFAULT_STATE = Path.home() / ".crosstalk-urgent-state.json"
 
@@ -161,6 +166,10 @@ def load_snapshot(root: Path) -> Tuple[Dict, Roster]:
 
 def _hook(root: Path, pid: str, harness: str, stdin_text: str, state_path: Optional[Path],
           clock: Callable[[], float]) -> str:
+    if harness == "hermes":
+        # Every item, not the urgent filter (owner, 2026-11-04): crosstalk/hermes.py.
+        from .hermes import hook_output as hermes_hook
+        return hermes_hook(root, pid, stdin_text, state_path, clock)
     if harness != "codex" or state_path is None:
         return ""
     event = json.loads(stdin_text).get("hook_event_name")

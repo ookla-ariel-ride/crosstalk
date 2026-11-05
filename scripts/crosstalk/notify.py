@@ -1,5 +1,10 @@
 """The notifier: tells live Claude Code sessions about new inbox items.
 
+Hermes registrations (`harness: "hermes"`, live.py) have no socket: the
+Crosstalk plugin inside Hermes delivers their items (hermes.py), so the
+notifier never sends to them. It only counts them in status() and deletes a
+file whose Hermes process has gone.
+
 Each running session registers its inbox socket (live.py). Every poll_sec the
 Notifier computes each registered participant's actionable items and posts the
 ones that session has not been told about as one user message over the socket.
@@ -291,6 +296,14 @@ class Notifier:
                 continue
             if not isinstance(doc, dict):
                 continue
+            if doc.get("harness") == live.HERMES:
+                # A Hermes session whose host process has gone (crashed, no finalize).
+                if (f.name == "%s--%s.json" % (doc.get("pid"), doc.get("session_id"))
+                        and isinstance(doc.get("host_pid"), int)
+                        and not isinstance(doc.get("host_pid"), bool)
+                        and doc["host_pid"] > 0 and not live.host_alive(doc["host_pid"])):
+                    self._unregister(f, f.name[:-len(".json")])
+                continue
             sock = doc.get("socket")
             if (f.name != "%s--%s.json" % (doc.get("pid"), doc.get("session_id"))
                     or not isinstance(sock, str) or not os.path.isabs(sock) or "\0" in sock
@@ -324,7 +337,7 @@ class Notifier:
         view = {}  # type: Dict[str, dict]
         for reg in regs:
             key = "%s--%s" % (reg.pid, reg.session_id)
-            if key not in self._state:
+            if key not in self._state and reg.harness != live.HERMES:
                 continue
             v = view.setdefault(reg.pid, {"sessions": 0, "since": None, "last": None})
             v["sessions"] += 1
@@ -332,7 +345,7 @@ class Notifier:
                 v["since"] = reg.registered
             # Any failed session wins (newest failure), so a sibling's success
             # cannot hide "couldn't reach session"; otherwise the newest told.
-            last = self._state[key].get("last")
+            last = self._state.get(key, {}).get("last")
             cur = v["last"]
             if last and (cur is None
                          or (last["status"] == "failed") > (cur["status"] == "failed")
@@ -371,6 +384,8 @@ class Notifier:
                         del self._state[key]
             now = self.clock()
             for reg in regs:
+                if reg.harness != live.CLAUDE:
+                    continue  # Hermes: its plugin delivers (hermes.py)
                 key = "%s--%s" % (reg.pid, reg.session_id)
                 items = actionable_items(docs, reg.pid, roster)
                 st = self._state.get(key)

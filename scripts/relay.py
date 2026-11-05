@@ -15,6 +15,7 @@ from crosstalk.consults import adopt_agreement, post_consult, post_reply  # noqa
 from crosstalk.courier import pending, restore, sent  # noqa: E402
 from crosstalk.exporter import export_page  # noqa: E402
 from crosstalk.importer import import_snapshots, merge_snapshots  # noqa: E402
+from crosstalk import hermes as hermes_mod  # noqa: E402
 from crosstalk import live as live_mod  # noqa: E402
 from crosstalk import mcp as mcp_mod  # noqa: E402
 from crosstalk import reviews as reviews_mod  # noqa: E402
@@ -218,11 +219,16 @@ def cmd_live(args):
             err("live: unregister failed: %s" % e.__class__.__name__)
         return 0
     if args.live_cmd == "hooks":
-        print(live_mod.hooks_json(ROOT, args.pid))
+        if args.harness == "hermes":
+            print(hermes_mod.setup_text(ROOT, args.pid), end="")
+        else:
+            print(live_mod.hooks_json(ROOT, args.pid))
         return 0
     regs, problems = live_mod.load_registrations(ROOT)
     for r in regs:
-        print("%s  %s  registered %s" % (r.pid, r.session_id, r.registered))
+        print("%s  %s  registered %s%s" % (r.pid, r.session_id, r.registered,
+                                           "" if r.harness == live_mod.CLAUDE
+                                           else "  (%s)" % r.harness))
     for p in problems:
         err("live: ignored " + p)
     return 0
@@ -580,13 +586,17 @@ def build_parser():
     sp.add_argument("pin", nargs="?", metavar="PIN", help="six digits; prompts when left out")
     sp.add_argument("--clear", action="store_true", help="remove the permanent PIN")
     sp.set_defaults(fn=cmd_set_pin)
-    lv = sub.add_parser("live", help="register running Claude Code sessions for live messages")
+    lv = sub.add_parser("live", help="register running Claude Code and Hermes sessions for live messages")
     lsub = lv.add_subparsers(dest="live_cmd", required=True)
     for name, h in (("register", "SessionStart hook: record this session's inbox socket"),
                     ("unregister", "SessionEnd hook: forget this session"),
-                    ("hooks", "print the hook JSON to paste into settings.local.json")):
+                    ("hooks", "print the hook JSON to paste into settings.local.json, or with "
+                              "--harness hermes the Hermes profile setup")):
         lp = lsub.add_parser(name, help=h)
         lp.add_argument("pid", metavar="PARTICIPANT")
+        if name == "hooks":
+            lp.add_argument("--harness", choices=["claude-code", "hermes"], default="claude-code",
+                            help="the participant's harness (default claude-code)")
     lsub.add_parser("status", help="list live registrations (never the token)")
     lv.set_defaults(fn=cmd_live)
     rv = sub.add_parser("reviews", help="the projects' Codex branch reviews (crosstalk/reviews.py)")
@@ -603,8 +613,9 @@ def build_parser():
                     help="the participant every tool call reads and writes as")
     mc.set_defaults(fn=cmd_mcp)
     # Handled in main() before argparse, so it can never exit non-zero; listed for --help.
-    sub.add_parser("urgent", help="harness hook: print an urgent-item note for a Codex "
-                   "session (urgent --as PID --hook codex; reads the event on stdin)")
+    sub.add_parser("urgent", help="harness hook: print the note for new items: urgent ones for a "
+                   "Codex session (urgent --as PID --hook codex), every one for a Hermes session "
+                   "(--hook hermes); reads the event on stdin")
     sv = sub.add_parser("serve", help="run the page host and API server")
     sv.add_argument("--port", type=int, default=8484,
                     help="port to bind (default 8484; 0 = ephemeral)")
@@ -619,7 +630,7 @@ def build_parser():
 
 
 def cmd_urgent(argv) -> int:
-    """`urgent --as <pid> --hook codex`: a harness hook; reads the event JSON on stdin.
+    """`urgent --as <pid> --hook codex|hermes`: a harness hook; reads the event JSON on stdin.
 
     Prints the hook's JSON only when an urgent item is new (crosstalk/urgent.py).
     It always exits 0 and prints nothing on any error, a bad argument included,

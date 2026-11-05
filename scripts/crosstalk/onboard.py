@@ -16,6 +16,7 @@ from contextlib import contextmanager
 from pathlib import Path
 from typing import Dict, Optional, Tuple
 
+from .hermes import setup_text as hermes_setup_text
 from .participants import ID_RE, KINDS, NAME_BAD_RE, Roster, load_roster, repo_problem, harness_problem
 from .tokens import TOKEN_FILE, Tokens, load_tokens
 
@@ -287,10 +288,13 @@ def _mcp_body(harness: Optional[str], relay: str, pid: str) -> Tuple[str, str]:
                 "%s\nWrite it by hand rather than with `gemini mcp add`, which may take the "
                 "server's `--as` flag as one of its own options.\n" % _mcp_servers_json(args))
     if harness == "hermes":
-        return ("For **Hermes Agent**, in `~/.hermes/config.yaml`, then run `/reload-mcp` "
-                "in a chat:",
-                '```yaml\nmcp_servers:\n  crosstalk:\n    command: "python3"\n    args: %s\n```\n'
-                % _qlist(args))
+        # Push, check-ins and the profile: crosstalk/hermes.py (docs/live-sessions.md,
+        # "Hermes sessions"), checked against Hermes Agent v0.22.5 on 2026-11-04.
+        return ("For **Hermes Agent**, in your participant profile's "
+                "`~/.hermes/profiles/%s/config.yaml` (step 1 below creates it), then run "
+                "`/reload-mcp` in a chat:" % pid,
+                '```yaml\nmcp_servers:\n  crosstalk:\n    command: "python3"\n    args: %s\n```\n\n%s'
+                % (_qlist(args), hermes_setup_text(Path(relay).parent.parent, pid)))
     if harness == "pi":
         return ("For **Pi**, install the MCP adapter, then put the entry in the project's "
                 "`.mcp.json` or `.pi/mcp.json` (or `~/.pi/agent/mcp.json`):",
