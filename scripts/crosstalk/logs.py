@@ -16,7 +16,7 @@ COLLECTIONS = ("messages", "agreements", "waiting", "locks", "lessons",
 OWNER_COLLECTIONS = COLLECTIONS + ("participants",)
 OPS = ("set", "update")
 KINDS = ("check-in", "checkin", "sync", "reply", "request", "review", "agreement", "alert",
-         "disagreement", "lesson", "owner")
+         "disagreement", "lesson", "owner", "question", "withdrawn")
 SKEW_MIN = 2
 
 

@@ -157,7 +157,7 @@ class HandshakeTests(unittest.TestCase):
                 tools = m.request("tools/list")["result"]["tools"]
         names = [t["name"] for t in tools]
         self.assertEqual(names, ["inbox", "read_messages", "post_message", "reply", "consult",
-                                 "claim_file", "release_file", "adopt_agreement", "check_in",
+                                 "ask_owner", "withdraw_question", "claim_file", "release_file", "adopt_agreement", "check_in",
                                  "record_progress"])
         for t in tools:
             self.assertEqual(t["inputSchema"]["type"], "object")

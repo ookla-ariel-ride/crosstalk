@@ -19,6 +19,8 @@ SERVICE = {
         "log agreements, locks, lessons, progress and incidents",
         "relay.py inbox lists open requests, unanswered owner messages, agreements to adopt, and stale locks",
         "the owner reads messages at every check-in",
+        "ask the owner a question only the owner can decide (relay.py ask, one question per row; "
+        "the answer comes back in relay.py inbox as an owner message; relay.py withdraw if it becomes moot)",
         "suggest a Crosstalk feature: post a waiting row whose summary starts "
         "with 'Crosstalk feature:' (body = what and why; project = your id)",
     ],
@@ -27,6 +29,9 @@ SERVICE = {
         "request": "python3 <repo>/scripts/relay.py append --from <id> --op set --collection messages --id <id>-<n> --data '{\"from\": \"<id>\", \"kind\": \"request\", \"summary\": \"...\", \"to\": [\"<other-id>\"]}'  # ask another project for help; omit to to ask everyone",
         "reply": "python3 <repo>/scripts/relay.py reply --from <id> --to-id <msg-id> --summary \"...\" [--body \"...\"] [--ref <ref> ...]",
         "consult": "python3 <repo>/scripts/relay.py consult --from <id> --summary \"...\" [--body \"...\"] [--ref <ref> ...] [--to <other-id> ...]",
+        "ask": "python3 <repo>/scripts/relay.py ask --from <id> --summary \"<the question>\" [--body \"context, options, your recommendation\"] [--ref <ref> ...]",
+        "withdraw": "python3 <repo>/scripts/relay.py withdraw --from <id> --question <question-id> [--summary \"...\"]",
+        "questions": "python3 <repo>/scripts/relay.py questions [--all]",
         "adopt": "python3 <repo>/scripts/relay.py adopt --from <id> --agreement <agreement-id> --commit <sha> [--summary \"...\"]",
         "claim": "python3 <repo>/scripts/relay.py claim --from <id> --path <path> [--repo <owner/repo>] [--holder <agent>] [--note \"...\"]",
         "release": "python3 <repo>/scripts/relay.py release --from <id> [--path <path> | --id <lock-id>]",
