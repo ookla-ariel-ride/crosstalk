@@ -223,6 +223,17 @@ td.num, td.t { font: 12px var(--mono); font-variant-numeric: tabular-nums; white
 .cards { display: grid; gap: 10px; }
 .card { background: var(--panel); border: 1px solid var(--rule); border-radius: 8px; padding: 12px 14px; min-width: 0; }
 .card .summary { margin-top: 2px; }
+/* Questions for the owner: one open question at a time, with the answer box under it. */
+.pill.question { background: var(--own); color: var(--panel); }
+.pill.answered { background: var(--ok); color: var(--panel); }
+.pill.withdrawn { text-decoration: line-through; }
+.qcard { border-left: 4px solid var(--who, var(--own)); display: grid; gap: 8px; }
+.qcard .summary { font-size: 17px; }
+.qcard .qpos { margin-left: auto; font: 500 12px var(--mono); color: var(--muted); }
+.qcard textarea { width: 100%; box-sizing: border-box; min-height: 96px; padding: 8px; border: 1px solid var(--rule); border-radius: 6px; background: var(--panel); resize: vertical; }
+.qrow { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
+.qanswer { margin-top: 6px; padding-left: 10px; border-left: 3px solid var(--own); }
+#q-askall { margin-bottom: 12px; }
 .chart { background: var(--panel); border: 1px solid var(--rule); border-radius: 8px; padding: 12px; overflow-x: auto; }
 .legend { display: flex; flex-wrap: wrap; gap: 6px 14px; font: 12px var(--mono); margin-top: 8px; }
 .legend svg { display: inline-block; vertical-align: middle; margin-right: 6px; }
@@ -284,6 +295,7 @@ td.num, td.t { font: 12px var(--mono); font-variant-numeric: tabular-nums; white
     <div class="tile" id="t-check"><div class="lbl">Check-ins</div><div class="val" id="checkVal">–</div><div class="hint" id="checkHint"></div></div>
     <div class="tile" id="t-agree"><div class="lbl">Open agreements</div><div class="val" id="agreeVal">–</div><div class="hint" id="agreeHint"></div></div>
     <div class="tile" id="t-wait"><div class="lbl">Waiting on you</div><div class="val" id="waitVal">–</div><div class="hint" id="waitHint"></div></div>
+    <div class="tile" id="t-ques"><div class="lbl">Questions for you</div><div class="val" id="quesVal">–</div><div class="hint" id="quesHint"></div></div>
     <div class="tile" id="t-lock"><div class="lbl">Files claimed</div><div class="val" id="lockVal">–</div><div class="hint" id="lockHint"></div></div>
   </div>
 
@@ -303,7 +315,7 @@ td.num, td.t { font: 12px var(--mono); font-variant-numeric: tabular-nums; white
   var COLS = ["messages", "agreements", "waiting", "locks", "lessons", "decisions", "progress", "incidents", "participants"];
   var TABS = [
     ["timeline", "Timeline", "messages"], ["agreements", "Agreements", "agreements"], ["waiting", "Waiting on you", "waiting"],
-    ["locks", "File claims", "locks"], ["lessons", "Lessons", "lessons"], ["decisions", "Decisions", "decisions"],
+    ["questions", "Questions", null], ["locks", "File claims", "locks"], ["lessons", "Lessons", "lessons"], ["decisions", "Decisions", "decisions"],
     ["progress", "Progress", "progress"], ["incidents", "Incidents", "incidents"], ["reviews", "Reviews", null], ["help", "Help", null]
   ];
   var STATUSES = ["proposed", "agreed", "building", "landed-builder", "ready-to-adopt", "landed-both", "held", "dropped"];
@@ -326,6 +338,11 @@ td.num, td.t { font: 12px var(--mono); font-variant-numeric: tabular-nums; white
   // The composer's state lives here, not in the DOM, so a snapshot re-render can't reset it. `id` stays the same
   // until a post succeeds, so retrying a half-failed post overwrites the same rows instead of duplicating them.
   var draft = { subject: "", text: "", kind: "owner", id: null, posting: false, status: "", replyTo: null, to: null, replySummary: "" };
+  // The Questions tab: the open question showing (`cur`, and its place `pos` for when it closes), the typed answer
+  // and the answer row's id per question (kept until the post succeeds, so a retry rewrites the same row), answers
+  // sent but not yet back from the server, and the "Ask everyone" control. In memory, so a re-render keeps it.
+  var qState = { cur: null, pos: 0, answers: Object.create(null), ids: Object.create(null), sent: Object.create(null), posting: false, status: "",
+    askConfirm: false, asking: false, askId: null, askStatus: "", answeredOpen: false };
   // The Add-participant control: open, posting, status, and the last result (kit + token).
   var onboardState = { open: false, posting: false, status: "", result: null, colorPair: null };
   // The roster is a <details>: always open on wide screens, folded into "People" below 640px until opened.
@@ -859,6 +876,11 @@ td.num, td.t { font: 12px var(--mono); font-variant-numeric: tabular-nums; white
     var wh = document.getElementById("waitHint"); wh.textContent = waits.length ? "oldest " + agoText(oldest) + " · click to see them" : "nothing waiting";
     if (waits.length) { var ul = el("ul", "items"); waits.slice(0, 3).forEach(function (w) { ul.appendChild(el("li", null, w.summary || "(no summary)")); }); if (waits.length > 3) ul.appendChild(el("li", null, "and " + (waits.length - 3) + " more")); wh.appendChild(ul); }
     document.getElementById("t-wait").className = "tile" + (waits.length ? " warn" : " ok");
+    var qs = openQuestions();
+    document.getElementById("quesVal").textContent = qs.length;
+    var qOldest = qs.length ? ts(qs[0].q.t) : NaN;
+    document.getElementById("quesHint").textContent = qs.length ? "oldest " + agoText(qOldest) + " \u00b7 click to answer" : "no open questions";
+    document.getElementById("t-ques").className = "tile" + (qs.length ? " warn" : " ok");
     var locks = data.locks.filter(function (l) { return !l.released; });
     document.getElementById("lockVal").textContent = locks.length;
     var lockHint = document.getElementById("lockHint"); lockHint.textContent = "";
@@ -893,6 +915,7 @@ td.num, td.t { font: 12px var(--mono); font-variant-numeric: tabular-nums; white
       b.setAttribute("role", "tab"); b.setAttribute("aria-selected", String(tab === t[0]));
       var n = t[0] === "waiting" ? data.waiting.filter(function (w) { return !w.done; }).length
         : t[0] === "help" ? openRequests().length
+        : t[0] === "questions" ? openQuestions().length
         : t[0] === "reviews" ? overrideRows().filter(overrideOpen).length
         : data[t[2]].length;
       b.appendChild(el("span", "n", n));
@@ -903,7 +926,7 @@ td.num, td.t { font: 12px var(--mono); font-variant-numeric: tabular-nums; white
   }
 
   /* ---------- timeline ---------- */
-  var KINDS = [["all", "All"], ["important", "Important"], ["owner", "Your notes"], ["agreement", "Agreements"], ["check-in", "Check-ins"], ["sync", "Sync"], ["alert", "Alerts"], ["disagreement", "Disagreements"], ["lesson", "Lessons"]];
+  var KINDS = [["all", "All"], ["important", "Important"], ["owner", "Your notes"], ["agreement", "Agreements"], ["check-in", "Check-ins"], ["sync", "Sync"], ["alert", "Alerts"], ["disagreement", "Disagreements"], ["lesson", "Lessons"], ["question", "Questions"]];
   function toolbar(view, withKinds) {
     var bar = el("div", "tools");
     var s = el("input"); s.type = "search"; s.id = "q"; s.placeholder = "Search summaries, text, commits, issues"; s.value = queryRaw;
@@ -1332,7 +1355,11 @@ td.num, td.t { font: 12px var(--mono); font-variant-numeric: tabular-nums; white
     var hm = harnessEl(harnessOf(from)); if (hm) meta.appendChild(hm);
     var to = toListOf(m);
     if (to.length) meta.appendChild(el("span", "to", "\u2192 " + to.map(displayName).join(", ")));
-    if (m.kind) meta.appendChild(pill(kindOf(m))); if (imp) meta.appendChild(pill("important"));
+    if (m.kind === "question") {
+      meta.appendChild(el("span", "pill question", "question for owner"));
+      var qst = questionStatus(m._id); if (qst) meta.appendChild(pill(qst));
+    } else if (m.kind) meta.appendChild(pill(kindOf(m)));
+    if (imp) meta.appendChild(pill("important"));
     if (quarantined) meta.appendChild(quarantinePill());
     if (canWrite && !isReply) {
       meta.appendChild(replyBtnEl(m));
@@ -1726,6 +1753,7 @@ td.num, td.t { font: 12px var(--mono); font-variant-numeric: tabular-nums; white
 
   function renderHelp(view) {
     toolbar(view, false);
+    view.appendChild(el("p", "order", "Requests the projects make of each other, and your own broadcast requests. Questions the projects have for you are on the Questions tab, one at a time."));
     filterNote(view, "requests", false);
     var reqs = openRequests().filter(function (r) { return peopleOk(r.request) && (matches(r.request) || r.replies.some(matches)); });
     if (!reqs.length) {
@@ -1916,6 +1944,195 @@ td.num, td.t { font: 12px var(--mono); font-variant-numeric: tabular-nums; white
     }
   }
 
+  /* ---------- questions for the owner ---------- */
+  // A `question` message (relay.py ask) is for the owner. It is open until an owner row replies to it, or its asker
+  // posts a `withdrawn` row replying to it; whichever came first closes it. The same rule as
+  // requests.owner_questions in relay.py. Quarantined askers are left out. Oldest first; cached per snapshot.
+  var ASK_SUMMARY = "Owner: post every question you have for me with relay.py ask, one question per row";
+  var ASK_BODY = "Post each question you have for me as its own row:\n\n" +
+    "python3 <crosstalk>/scripts/relay.py ask --from <your-id> --summary \"<the question>\" --body \"<context, the options, your recommendation>\"\n\n" +
+    "The summary is the question itself. The body gives the context, the options and your recommendation. " +
+    "If a question becomes moot, withdraw it: relay.py withdraw --from <your-id> --question <question-id>. " +
+    "My answers come back in relay.py inbox <your-id> as owner messages. Reply to this request once you have posted yours, or to say you have none.";
+  var oqFor = null, oqPeople = null, oqCache = null;
+  function byTId(a, b) { return byT(a, b) || (a._id < b._id ? -1 : a._id > b._id ? 1 : 0); }
+  function ownerQuestions() {
+    if (oqFor === data.messages && oqPeople === people) return oqCache;
+    var replies = Object.create(null);
+    data.messages.forEach(function (m) { if (m.replyTo) (replies[m.replyTo] = replies[m.replyTo] || []).push(m); });
+    var out = [];
+    data.messages.forEach(function (m) {
+      if (m.kind !== "question") return;
+      var asker = String(m.from == null ? "" : m.from);
+      if (!asker || asker === "owner" || isQuarantined(asker)) return;
+      var status = "open", closer = null, rs = (replies[m._id] || []).slice().sort(byTId);
+      for (var i = 0; i < rs.length; i++) {
+        if (String(rs[i].from) === "owner") { status = "answered"; closer = rs[i]; break; }
+        if (String(rs[i].from) === asker && rs[i].kind === "withdrawn") { status = "withdrawn"; closer = rs[i]; break; }
+      }
+      // The server's copy of an answer sent from here has arrived: the log says it is closed now.
+      if (status !== "open") delete qState.sent[m._id];
+      out.push({ q: m, status: status, closer: closer });
+    });
+    out.sort(function (a, b) { return byTId(a.q, b.q); });
+    oqFor = data.messages; oqPeople = people; oqCache = out;
+    return out;
+  }
+  // An answer this page sent leaves the open list at once, before the server's copy of it comes back.
+  function openQuestions() { return ownerQuestions().filter(function (x) { return x.status === "open" && !qState.sent[x.q._id]; }); }
+  function questionStatus(id) {
+    var hit = ownerQuestions().filter(function (x) { return x.q._id === id; })[0];
+    return hit ? (hit.status === "open" && qState.sent[id] ? "answered" : hit.status) : null;
+  }
+  function newOwnId(now) { return "own-" + now.replace(/[^0-9]/g, "").slice(0, 14) + "-" + Math.random().toString(36).slice(2, 6); }
+  // "Ask everyone for their questions": an owner broadcast request, confirmed in place rather than with a dialog.
+  function askAllEl(view) {
+    var row = el("div", "qrow"); row.id = "q-askall";
+    if (!qState.askConfirm) {
+      var b = el("button", "btn", "Ask everyone for their questions"); b.type = "button"; b.id = "q-ask-all"; b.disabled = qState.asking;
+      b.title = "Post a request asking every approved project to post its questions for you";
+      b.addEventListener("click", function () { qState.askConfirm = true; qState.askStatus = ""; renderView(false); var y = document.getElementById("q-ask-yes"); if (y) y.focus(); });
+      row.appendChild(b);
+    } else {
+      row.appendChild(el("span", null, "Sure? This asks every approved project to post its questions."));
+      var yes = el("button", "btn primary", "Ask all"); yes.type = "button"; yes.id = "q-ask-yes"; yes.disabled = qState.asking;
+      var no = el("button", "btn", "Cancel"); no.type = "button"; no.id = "q-ask-no"; no.disabled = qState.asking;
+      no.addEventListener("click", function () { qState.askConfirm = false; renderView(false); var a = document.getElementById("q-ask-all"); if (a) a.focus(); });
+      yes.addEventListener("click", function () {
+        if (qState.asking) return;
+        var now = new Date().toISOString();
+        if (!qState.askId) qState.askId = newOwnId(now);
+        qState.asking = true; qState.askStatus = "Posting…"; renderView(true);
+        db.collection("messages").doc(qState.askId).set({ t: now, from: "owner", kind: "request", summary: ASK_SUMMARY, body: ASK_BODY }).then(function () {
+          qState.asking = false; qState.askConfirm = false; qState.askId = null; qState.askStatus = "Asked. Their questions show here as they arrive.";
+          renderAll();
+        }).catch(function (err) {
+          qState.asking = false;
+          qState.askStatus = "Not posted: " + (err && err.message ? err.message : "try again") + ". Asking again won't duplicate it.";
+          renderView(true);
+        });
+      });
+      row.appendChild(yes); row.appendChild(no);
+    }
+    var st = el("span", "status-msg", qState.askStatus); st.id = "q-ask-status"; st.setAttribute("role", "status");
+    row.appendChild(st);
+    view.appendChild(row);
+  }
+  function sendAnswer(m, idx) {
+    if (qState.posting) return;
+    var text = String(qState.answers[m._id] || "").trim();
+    if (!text) { qState.status = "Write an answer first."; renderView(true); return; }
+    var now = new Date().toISOString();
+    var id = qState.ids[m._id] || (qState.ids[m._id] = newOwnId(now));
+    var lines = text.split("\n"), first = lines[0].trim();
+    var summary = first.slice(0, 160), body = first.length > 160 ? text : lines.slice(1).join("\n").trim();
+    var asker = String(m.from);
+    var payload = { t: now, from: "owner", kind: "owner", summary: summary, body: body, replyTo: m._id };
+    // `to` names the asker, so the answer reaches its inbox. The server refuses a `to` outside the roster; without
+    // one, an owner reply still goes to the author of the message it answers.
+    if (HAS.call(people, asker)) payload.to = [asker];
+    qState.posting = true; qState.status = "Sending…"; renderView(true);
+    db.collection("messages").doc(id).set(payload).then(function () {
+      qState.sent[m._id] = true;
+      delete qState.answers[m._id]; delete qState.ids[m._id];
+      var rest = openQuestions();
+      var nx = rest[Math.min(idx, rest.length - 1)];
+      qState.cur = nx ? nx.q._id : null; qState.pos = idx;
+      qState.posting = false; qState.status = "Answer sent to " + displayName(asker) + ".";
+      renderAll();
+      var a = document.getElementById("q-answer"); if (a) a.focus();
+    }).catch(function (err) {
+      qState.posting = false;
+      qState.status = "Not sent: " + (err && err.message ? err.message : "try again") + ". Sending again won't duplicate it.";
+      renderView(true);
+    });
+  }
+  function questionCard(m, idx, total) {
+    var from = String(m.from == null ? "" : m.from);
+    var c = el("div", "card qcard"); c.id = "q-card"; c.dataset.id = m._id;
+    c.style.setProperty("--who", colorOf(from));
+    var meta = el("div", "meta"); meta.appendChild(who(from));
+    var hm = harnessEl(harnessOf(from)); if (hm) meta.appendChild(hm);
+    meta.appendChild(timeEl(m.t, true)); meta.appendChild(agoEl(m.t));
+    var pos = el("span", "qpos", "Question " + (idx + 1) + " of " + total); pos.id = "q-pos"; meta.appendChild(pos);
+    c.appendChild(meta);
+    c.appendChild(summaryEl(m.summary || "(no question given)"));
+    var body = String(m.body || "");
+    if (body.trim() && body.trim() !== String(m.summary || "").trim()) c.appendChild(richTextInto(el("p", "body"), body));
+    add(c, refsEl(m.refs, from));
+    var nav = el("div", "qrow");
+    function navBtn(id, label, to, disabled) {
+      var b = el("button", "btn small", label); b.type = "button"; b.id = id; b.disabled = disabled;
+      b.addEventListener("click", function () {
+        var open = openQuestions(); if (!open[to]) return;
+        qState.cur = open[to].q._id; qState.pos = to; qState.status = "";
+        renderView(false);
+        var f = document.getElementById(id); if (f && !f.disabled) f.focus();
+      });
+      return b;
+    }
+    nav.appendChild(navBtn("q-prev", "Previous", idx - 1, idx === 0));
+    nav.appendChild(navBtn("q-next", "Next", idx + 1, idx >= total - 1));
+    // Skip moves on and wraps round to the first, so a skipped question comes back.
+    nav.appendChild(navBtn("q-skip", "Skip", (idx + 1) % total, total < 2));
+    c.appendChild(nav);
+    if (canWrite) {
+      var ta = el("textarea"); ta.id = "q-answer"; ta.value = qState.answers[m._id] || ""; ta.disabled = qState.posting;
+      ta.placeholder = "Your answer to " + displayName(from) + "… The first line is its summary (Cmd+Enter to send)";
+      ta.setAttribute("aria-label", "Answer");
+      ta.addEventListener("input", function () { qState.answers[m._id] = ta.value; });
+      ta.addEventListener("keydown", function (e) { if ((e.metaKey || e.ctrlKey) && e.key === "Enter") { e.preventDefault(); sendAnswer(m, idx); } });
+      c.appendChild(ta);
+      var row = el("div", "qrow");
+      var send = el("button", "btn primary", "Send answer"); send.type = "button"; send.id = "q-send"; send.disabled = qState.posting;
+      send.addEventListener("click", function () { sendAnswer(m, idx); });
+      var st = el("span", "status-msg", qState.status); st.id = "q-status"; st.setAttribute("role", "status");
+      row.appendChild(send); row.appendChild(st);
+      c.appendChild(row);
+    }
+    return c;
+  }
+  function closedQuestionCard(x) {
+    var m = x.q, c = el("div", "card"); c.dataset.id = m._id;
+    var meta = el("div", "meta"); meta.appendChild(who(m.from)); meta.appendChild(pill(x.status));
+    meta.appendChild(timeEl(m.t, true));
+    c.appendChild(meta);
+    c.appendChild(summaryEl(m.summary || ""));
+    if (x.closer) {
+      var a = el("div", "qanswer");
+      var am = el("div", "meta"); am.appendChild(el("span", null, x.status === "answered" ? "You answered" : "Withdrawn")); am.appendChild(timeEl(x.closer.t, true)); a.appendChild(am);
+      if (x.closer.summary) a.appendChild(summaryEl(x.closer.summary));
+      add(a, bodyEl(x.closer.body, x.closer.summary));
+      c.appendChild(a);
+    }
+    return c;
+  }
+  function renderQuestions(view) {
+    if (canWrite) askAllEl(view);
+    view.appendChild(el("p", "order", "Questions the projects have for you, oldest first, one at a time. Each answer goes back to the session that asked, in its inbox."));
+    var open = openQuestions();
+    if (!open.length) {
+      view.appendChild(el("div", "empty", "No open questions. A project asks you something only you can decide with relay.py ask; it waits here until you answer it or the project withdraws it."));
+      qState.cur = null;
+    } else {
+      var idx = -1;
+      for (var i = 0; i < open.length; i++) if (open[i].q._id === qState.cur) { idx = i; break; }
+      // The question showing has closed (answered elsewhere, or withdrawn): show the one that took its place.
+      if (idx === -1) idx = Math.max(0, Math.min(qState.pos, open.length - 1));
+      qState.cur = open[idx].q._id; qState.pos = idx;
+      view.appendChild(questionCard(open[idx].q, idx, open.length));
+    }
+    var all = ownerQuestions();
+    [["answered", "q-answered"], ["withdrawn", "q-withdrawn"]].forEach(function (g) {
+      var rows = all.filter(function (x) { return x.status === g[0]; }).sort(function (a, b) { return byTId(b.closer, a.closer); });
+      if (!rows.length) return;
+      var d = el("details"); d.id = g[1]; d.appendChild(el("summary", null, rows.length + " " + g[0]));
+      if (g[0] === "answered") { d.open = qState.answeredOpen; d.addEventListener("toggle", function () { qState.answeredOpen = d.open; }); }
+      var list = el("div", "cards"); rows.forEach(function (x) { list.appendChild(closedQuestionCard(x)); });
+      d.appendChild(list); view.appendChild(d);
+    });
+  }
+
   /* ---------- simple tables ---------- */
   function simpleTable(view, rows, cols, emptyText) {
     toolbar(view, false);
@@ -2054,7 +2271,7 @@ td.num, td.t { font: 12px var(--mono); font-variant-numeric: tabular-nums; white
     view.textContent = "";
     // A picked harness that left the roster has no button to unpick it, so it stops filtering.
     var hl = harnessList(); harnessPicked = harnessPicked.filter(function (h) { return hl.indexOf(h) !== -1; });
-    ({ timeline: renderTimeline, agreements: renderAgreements, waiting: renderWaiting, locks: renderLocks, lessons: renderLessons, decisions: renderDecisions, progress: renderProgress, incidents: renderIncidents, reviews: renderReviews, help: renderHelp }[tab] || renderTimeline)(view);
+    ({ timeline: renderTimeline, agreements: renderAgreements, waiting: renderWaiting, questions: renderQuestions, locks: renderLocks, lessons: renderLessons, decisions: renderDecisions, progress: renderProgress, incidents: renderIncidents, reviews: renderReviews, help: renderHelp }[tab] || renderTimeline)(view);
     restoreFocus(f);
   }
   // The heading names every project in the roster, each in its color; "Crosstalk" until the roster loads.
@@ -2076,7 +2293,7 @@ td.num, td.t { font: 12px var(--mono); font-variant-numeric: tabular-nums; white
     var h = (location.hash || "").replace(/^#/, "");
     if (TABS.some(function (t) { return t[0] === h; })) tab = h;
   }
-  [["t-check", "timeline"], ["t-agree", "agreements"], ["t-wait", "waiting"], ["t-lock", "locks"]].forEach(function (p) {
+  [["t-check", "timeline"], ["t-agree", "agreements"], ["t-wait", "waiting"], ["t-ques", "questions"], ["t-lock", "locks"]].forEach(function (p) {
     var t = document.getElementById(p[0]); t.dataset.go = p[1]; t.setAttribute("role", "button"); t.tabIndex = 0;
     function go() { tab = p[1]; query = ""; queryRaw = ""; try { history.replaceState(null, "", "#" + p[1]); } catch (e) {} renderAll(); document.getElementById("tabs").scrollIntoView({ behavior: "smooth", block: "start" }); }
     t.addEventListener("click", go);
