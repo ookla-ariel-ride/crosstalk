@@ -205,7 +205,7 @@ class RosterTests(unittest.TestCase):
     def test_live_roster_names_the_three_review_dirs(self):
         ro = load_roster(REPO / "participants.json")
         dirs = {pid: p.reviewDir for pid, p in ro.participants.items() if p.reviewDir}
-        self.assertEqual(dirs, {"bewareilive": "~/GitHub/bil-reviews",
+        self.assertEqual(dirs, {"bewareilive": "~/Developer/GitHub/bil-reviews",
                                 "vectorcraft": "~/.cache/vectorcraft/reviews",
                                 "avoidmissingball": "~/.cache/avoidmissingball/reviews"})
 
