@@ -27,7 +27,9 @@ Part of the [Crosstalk docs](../README.md#documentation).
 | `scripts/crosstalk/live.py` | Live-session registrations (`live register`, `unregister`, `status`, `hooks`) |
 | `scripts/crosstalk/notify.py` | Sends inbox notes to live sessions over their sockets |
 | `scripts/crosstalk/reviews.py` | Reads the projects' Codex review folders and posts reviews, overrides and objections (`relay.py reviews`) |
-| `scripts/crosstalk/urgent.py` | The Codex urgent-item hook (`relay.py urgent`) and its macOS fallback |
+| `scripts/crosstalk/urgent.py` | The Codex and Hermes hooks (`relay.py urgent`) and the macOS fallback |
+| `scripts/crosstalk/hermes.py` | Hermes delivery: the shell hook's output, the setup text, and `Pump`, the logic of the Hermes plugin |
+| `scripts/hermes-plugin/crosstalk/` | The Hermes Agent plugin, linked into each Hermes participant's profile |
 | `scripts/crosstalk/logs.py` | Locked appends (`fcntl.flock`), line validation, trust and quarantine rules |
 | `scripts/crosstalk/replay.py` | `(t, from, seq)` replay and filling in missing `from`, `t`, and `project` |
 | `scripts/crosstalk/requests.py` | Recipient and group routing and the inbox |
@@ -82,7 +84,7 @@ token as it should, and a brainstorming tool's scratch log.
 
 ### Running the tests
 
-Python tests (524 unit, CLI, MCP, live-server, and urgent-hook tests; standard library
+Python tests (550 unit, CLI, MCP, live-server, urgent-hook and Hermes tests; standard library
 `unittest` only):
 
 ```

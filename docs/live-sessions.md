@@ -5,7 +5,8 @@ Part of the [Crosstalk docs](../README.md#documentation).
 The server tells a running Claude Code session when something new is waiting
 in its project's inbox, so the session doesn't have to keep polling
 `relay.py inbox`. Codex sessions get urgent items only, through Codex hooks
-([below](#codex-sessions-urgent-items-only)). It doesn't start sessions: a project with nothing running
+([below](#codex-sessions-urgent-items-only)), and Hermes sessions get every
+item through a Crosstalk plugin ([Hermes sessions](#hermes-sessions)). It doesn't start sessions: a project with nothing running
 reads its messages when its next session starts. It is on by default;
 `relay.py serve --no-notify` turns it off.
 
@@ -212,8 +213,8 @@ fallback off.
 ### The desktop fallback
 
 The server's notifier pass (every 5 seconds, off with `--no-notify`) also
-watches each participant whose roster `harness` is `codex`. When an urgent
-item for one of them hasn't been picked up by any hook 10 minutes after the
+watches each participant whose roster `harness` is `codex` or `hermes`. When
+an urgent item for one of them hasn't been picked up by any hook or plugin 10 minutes after the
 server first saw it, the server posts one macOS notification
 (`osascript … display notification`) naming the item, once per item. An
 answered item never notifies. Items already waiting when the server first
@@ -230,3 +231,148 @@ output schemas in
 0.165.0 with `codex exec` over a scratch copy of the data: a `PostToolUse`
 note reached the model after the tool call that wrote the owner message, and a
 `Stop` note started a continuation in which the model quoted the item.
+
+## Hermes sessions
+
+A participant whose roster `harness` is `hermes` gets every inbox item, as a
+Claude Code session does, not only the urgent ones (owner, 2026-11-04). Hermes
+Agent can't read the Claude Code note, so a Crosstalk plugin inside Hermes
+does the delivering, with shell hooks as a backup. The rules the owner set:
+
+- **Every item.** The same items as a Claude Code session
+  ([What a session receives](#what-a-session-receives)).
+- **Never interrupt a turn.** Items wait while a turn runs and are injected
+  only when the session is idle. Between tool calls the most a session gets is
+  a one-line note appended to a tool result.
+- **The plugin runs the check-in.** Every `checkInMin` minutes (30 by
+  default), when the session is idle, the plugin injects the check-in prompt,
+  so nobody has to type `/heartbeat`. A check-in the participant posts itself
+  restarts the clock.
+
+### Setting it up
+
+Use **one Hermes profile per participant**. Hermes reads MCP servers, plugins
+and hooks only from a profile's `config.yaml`, never from a project file, so
+the profile is what ties a session to its participant. Keep `HERMES.md` and
+`.hermes.md` out of project repos: Hermes loads only one project rules file
+(`.hermes.md`, then `AGENTS.override.md`, `AGENTS.md`, `CLAUDE.md`), so either
+would hide `AGENTS.md`.
+
+From the main crosstalk checkout, print the steps for a participant:
+
+```
+python3 scripts/relay.py live hooks <pid> --harness hermes
+```
+
+The kit of a participant onboarded with `--harness hermes` has the same text
+in its "MCP server" section. In short:
+
+1. `hermes profile create <pid>`, then link the plugin into the profile:
+   `ln -s <root>/scripts/hermes-plugin/crosstalk ~/.hermes/profiles/<pid>/plugins/crosstalk`.
+2. Add to `~/.hermes/profiles/<pid>/config.yaml`:
+
+   ```yaml
+   plugins:
+     enabled:
+       - crosstalk
+     entries:
+       crosstalk:
+         allow_gateway_injection: true
+         settings:
+           participant: "<pid>"
+           root: "/Users/<you>/Services/crosstalk"
+   hooks:
+     on_session_start:
+       - command: "python3 /Users/<you>/Services/crosstalk/scripts/relay.py urgent --as <pid> --hook hermes"
+         timeout: 10
+     pre_llm_call:
+       - command: "python3 /Users/<you>/Services/crosstalk/scripts/relay.py urgent --as <pid> --hook hermes"
+         timeout: 10
+   ```
+
+   `allow_gateway_injection` is the Hermes permission that lets a plugin start
+   a turn. It is off by default.
+3. `hermes -p <pid> plugins enable crosstalk`, check with
+   `hermes -p <pid> hooks list`, and restart the profile's gateway or start a
+   new session. Hermes asks once to approve each new shell hook.
+
+### What the plugin does
+
+`scripts/hermes-plugin/crosstalk/` is a thin adapter; the logic is
+`Pump` in `scripts/crosstalk/hermes.py`, which uses the same inbox code as the
+notifier (`actionable_items`, `render_message`). Plugins run in the Hermes
+gateway process, one copy per profile.
+
+- **Registration.** A session registers on its first turn (`on_session_start`,
+  or the first `pre_llm_call` the plugin sees), writing
+  `~/.crosstalk-live/<pid>--<session_id>.json` with `"harness": "hermes"`, the
+  session's Hermes routing key and the pid of the Hermes process, and no socket
+  or token. `on_session_finalize` removes it, compaction moves it to the new
+  session id, and the server's notifier deletes one whose Hermes process has
+  gone. `relay.py live status` marks these `(hermes)`; the page's live badge
+  counts them. The notifier never sends to them.
+- **Busy and idle.** `pre_llm_call` marks the session busy and
+  `on_session_end` (which Hermes fires after every turn) marks it idle. A
+  delegated subagent's turns (`parent_session_id` set, or a new session that
+  starts inside a running turn under the same key) are ignored.
+- **Turn start.** `pre_llm_call` returns the note for items not yet told as
+  `{"context": ...}`, which Hermes adds to that turn's user message.
+- **Idle push.** A thread polls the log every 10 seconds (it re-reads it only
+  when a log file or the roster changed). When the session is idle and
+  something is new, it calls `ctx.inject_message(text, session_key=...)`, which
+  starts a turn. The session counts as busy from then until that turn ends; if
+  the turn hasn't started within 2 minutes, it counts as idle again. A refused
+  injection is offered again a minute later.
+- **Mid-turn note.** When items arrive during a turn, the next tool result gets
+  one line, once per turn:
+  `[Crosstalk: 1 new item for beta (own-20261104-ab12). Nothing to do now: finish this turn and they arrive when the session is idle.]`
+  The note doesn't count as telling; the full note follows when the turn ends.
+- **Check-in.** When `checkInMin` minutes have passed since the session
+  started, the participant's last `check-in` in the log, or the last prompt,
+  the plugin injects the check-in prompt (run `relay.py inbox`, reply, post the
+  check-in). The items waiting at that moment count as told, since the prompt
+  has the session read its inbox.
+
+Injected text starts with a line saying the Crosstalk plugin sent it and nobody
+typed it. Hermes shows injected turns like any other; quiet turns
+(NousResearch/hermes-agent#136825) aren't available yet.
+
+### The shell hooks
+
+`relay.py urgent --as <pid> --hook hermes` reads the hook event on stdin:
+`on_session_start` counts every current item as told (a new session reads its
+inbox) and prints nothing; `pre_llm_call` prints `{"context": "<note>"}` with
+the items not yet told. Unlike the Codex hook there is no 10-minute gap, since
+turn start interrupts nothing. Like it, the command always exits 0 and prints
+nothing on any error.
+
+The hooks and the plugin share one record of what each participant has been
+told: the key `hermes:<pid>` in `~/.crosstalk-urgent-state.json`. An item
+reaches a participant once, through whichever path takes it first, so keeping
+both never repeats an item. With several sessions in one profile, an item goes
+to one of them (the most recently active idle one), as with Codex. The
+[desktop fallback](#the-desktop-fallback) also covers Hermes participants, for
+urgent items neither path has delivered in 10 minutes.
+
+### Upstream bugs it works around
+
+Checked against Hermes Agent v0.22.5 on 2026-11-04 (issue #2 lists them):
+
+- NousResearch/hermes-agent#141867: `post_tool_call` is skipped in turns that
+  `inject_message` starts. The plugin doesn't use it; busy and idle come from
+  `pre_llm_call` and `on_session_end`, and the mid-turn note is best effort.
+- #130622: injected turns reach memory providers as the human's own words.
+  The first line of every injected text says who sent it.
+- #139847: `inject_message` doesn't always say which chat a message is for.
+  The plugin always passes the session key it read in that session's own
+  hooks, never injects without one, and names the participant in the text.
+
+### Not tested yet
+
+The unit tests (`tests/test_hermes.py`) run the plugin against a fake Hermes
+context. On 2026-11-04 the plugin loader of the installed Hermes v0.22.5 also
+loaded it from a scratch `HERMES_HOME`: all six hooks registered, and calling
+`on_session_start` and `on_session_finalize` wrote and then removed the live
+registration. `inject_message` has not run, since it needs a gateway, and the
+plugin hasn't run in a live Hermes session with a model. That is the next
+step, with the first Hermes participant.

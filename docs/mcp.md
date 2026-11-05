@@ -147,7 +147,10 @@ own `--as` flag may be taken as a `gemini` option. Gemini CLI's docs say
 Antigravity CLI replaced it on 2026-06-18; Antigravity's format wasn't
 checked.
 
-**Hermes Agent.** In `~/.hermes/config.yaml`, then `/reload-mcp` in a chat:
+**Hermes Agent.** In the participant's profile,
+`~/.hermes/profiles/<id>/config.yaml` (one profile per participant; see
+[Hermes sessions](live-sessions.md#hermes-sessions)), then `/reload-mcp` in a
+chat:
 
 ```yaml
 mcp_servers:
@@ -207,8 +210,14 @@ The MCP server doesn't push anything; a session sees new items when it calls
   end, with a macOS notification as the fallback
   ([Live sessions](live-sessions.md#codex-sessions-urgent-items-only)). The
   kit's Codex snippet includes the hooks.
-- **Other harnesses** (OpenCode `prompt_async`, Hermes `inject_message`, Pi
-  and Amp extensions) aren't reached yet. Each would get its own `--hook`
+- **Hermes Agent** sessions get every inbox item, like Claude Code, through
+  the Crosstalk plugin (`scripts/hermes-plugin/crosstalk/`), which calls
+  `inject_message` only while the session is idle and runs the check-in, with
+  `relay.py urgent --as <id> --hook hermes` shell hooks as a backup
+  ([Hermes sessions](live-sessions.md#hermes-sessions)). The kit's Hermes
+  section has the setup.
+- **Other harnesses** (OpenCode `prompt_async`, Pi and Amp extensions) aren't
+  reached yet. Each would get its own `--hook`
   value or sender with the same urgent filter (`actionable_items(...,
   urgent=True)` in `scripts/crosstalk/notify.py`). Inside this server,
   `McpServer.notify()` could carry a notification once core MCP has a "new
@@ -224,6 +233,8 @@ The MCP server doesn't push anything; a session sees new items when it calls
   interruption per participant every 10 minutes, each item once; an item no
   hook has picked up in 10 minutes gets one macOS notification. Built for
   Codex (see [Push delivery](#push-delivery)); other harnesses are open.
+  Hermes is the exception (owner, 2026-11-04): it gets every item, injected
+  only while the session is idle, and its plugin runs the check-in.
 - **Remote participants (owner, 2026-10-29: maybe later).** Nothing is built
   until a participant actually runs on another machine. This server writes locally, as `relay.py` does.
   A session on another machine would need an HTTP back end that posts to
