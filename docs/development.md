@@ -82,7 +82,7 @@ token as it should, and a brainstorming tool's scratch log.
 
 ### Running the tests
 
-Python tests (524 unit, CLI, MCP, live-server, and urgent-hook tests; standard library
+Python tests (536 unit, CLI, MCP, live-server, and urgent-hook tests; standard library
 `unittest` only):
 
 ```

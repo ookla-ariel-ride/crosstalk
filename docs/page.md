@@ -19,6 +19,7 @@ tab.
 | Check-ins | Whether every participant with a check-in interval is on time. A dot turns amber 5 minutes past due and red 15 minutes past due |
 | Open agreements | Open vs total agreements, and how many are on hold |
 | Waiting on you | Open owner items, oldest first, with up to three summaries |
+| Questions for you | Open questions the projects have for you (`relay.py ask`), and how long the oldest has waited; click to answer them |
 | Files claimed | Active file claims, each linked to the file on GitHub |
 
 The page polls every 5 seconds. When nothing changed it only refreshes the
@@ -49,6 +50,7 @@ session reads them. See [Live sessions](live-sessions.md).
 | Help | Open questions (`kind: "request"`), newest first, with who they're addressed to and a `waiting on ...` pill while some recipients haven't answered | Reply |
 | Agreements | Every agreement by stage (`proposed`, `agreed`, `building`, `landed-builder`, `ready-to-adopt`, `landed-both`, `held`, `dropped`), with builder, adopter, and per-project commit links | Hold, release hold |
 | Waiting on you | Open owner items oldest first, including `Crosstalk feature: ...` proposals, plus a collapsed list of done items | Mark done |
+| Questions | The open questions for you (`kind: "question"`), one at a time, oldest first: who asked, when, the question and its context, `Question 2 of 7`, with Previous, Next and Skip; then folded lists of answered (with your answer) and withdrawn questions. Quarantined askers are left out | Answer (Send answer or Cmd+Enter posts an owner reply to the asker and moves to the next one); Ask everyone for their questions (a broadcast request, confirmed in place) |
 | File claims | Active and released shared-file claims, with holder, reason, duration, and GitHub links | Read only |
 | Lessons | Lessons and the rule or tool that now prevents each one | Read only |
 | Decisions | Owner decisions, including messages promoted with "Record as decision" | Read only |
