@@ -17,8 +17,7 @@ with a `.lock` beside it; CROSSTALK_URGENT_STATE moves it, empty turns both off)
   nothing.
 - `relay.py urgent --as <pid> --hook hermes` is the Hermes Agent hook. Hermes
   sessions get every inbox item, not only urgent ones (owner, 2026-11-04), at
-  turn start: on_session_start marks the inbox told, pre_llm_call prints
-  {"context": note}. Its logic and its key (`hermes:<pid>`, shared with the
+  turn start: pre_llm_call prints {"context": note}. Its logic and its key (`hermes:<pid>`, shared with the
   Crosstalk plugin for Hermes) are in hermes.py; it never raises either.
 - Fallback: run by the server's notifier pass. An urgent item for a
   participant whose roster `harness` is in HOOK_HARNESSES that no hook has

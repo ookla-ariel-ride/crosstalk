@@ -13,17 +13,25 @@ it, empty turns both off). Each item reaches a participant once, through
 whichever path takes it first; the urgent desktop fallback sees those
 deliveries too.
 
-- Shell hooks in the profile's config.yaml run `relay.py urgent --as <pid>
-  --hook hermes` (hook_output): `on_session_start` marks every current item
-  told (a new session reads its inbox); `pre_llm_call` prints
-  `{"context": "<note>"}` with the new items, which Hermes adds to the turn's
-  user message. They work without the plugin, but only at turn start.
 - The Crosstalk plugin for Hermes (scripts/hermes-plugin/crosstalk) drives a
-  Pump inside the Hermes process: it registers each session (live.py), polls
-  the log on a thread, and calls the plugin's inject_message only while the
-  session is idle.
+  Pump inside the Hermes process: it registers each session on its first turn
+  (live.py), polls the log on a thread, and calls the plugin's inject_message
+  only while the session is idle.
+- A shell hook, for a profile that can't load the plugin, runs `relay.py urgent
+  --as <pid> --hook hermes` (hook_output) at `pre_llm_call` and prints
+  `{"context": "<note>"}` with the new items, which Hermes adds to the turn's
+  user message. It works only at turn start.
 
-Known Hermes bugs it works around (checked 2026-11-04 against v0.22.5):
+Nothing counts as told until a session has been given it. A delegated subagent
+or a cron job is not a session: on_session_start can't show which is which
+(Hermes fires it for children too, without parent_session_id, and again on a
+prompt rebuild), so neither path acts on it. pre_llm_call shows it, as
+parent_session_id for plugins and as extra.platform for shell hooks, whose
+payload drops parent_session_id.
+
+Hook, injection and delegation behaviour read from the v0.22.7 source on
+2026-11-06. Known Hermes bugs it works around (checked 2026-11-04 against
+v0.22.5, not rechecked since):
 - NousResearch/hermes-agent#141867, post_tool_call is skipped in turns that
   inject_message starts: busy/idle comes from pre_llm_call and on_session_end
   only, and the tool-result note is best effort.
@@ -31,8 +39,10 @@ Known Hermes bugs it works around (checked 2026-11-04 against v0.22.5):
   #136825, injected turns are never quiet: every injected text starts with a
   line saying the Crosstalk plugin sent it and nobody typed it.
 - #139847, inject_message doesn't always say which chat a message is for: the
-  pump always passes the session key it saw in that session's own hooks and
-  names the participant in the text; it never injects without a key.
+  pump passes the session key it saw in that session's own hooks and names the
+  participant in the text. A session with no key (the classic CLI has none)
+  passes its session id instead: the CLI ignores the value, and a gateway finds
+  no such key and refuses.
 
 Python 3.9, standard library only.
 """
@@ -51,7 +61,8 @@ from .replay import enrich_messages, load_all_lines, replay
 from .requests import thread_replies_for
 
 HARNESS = "hermes"
-HOOK_EVENTS = ("on_session_start", "pre_llm_call")
+HOOK_EVENTS = ("pre_llm_call",)
+NON_SESSION_PLATFORMS = ("subagent", "cron")  # agents that run turns but aren't sessions
 POLL_SEC = 10.0
 RETRY_SEC = 60.0
 INJECT_GRACE_SEC = 120.0
@@ -73,24 +84,12 @@ def _update(state_path: Path, fn) -> None:
     update(Path(state_path), fn)
 
 
-def seed(state_path: Path, pid: str, items: List[str]) -> None:
-    """Count every item in `items` as told (a new session, or a check-in, reads its inbox)."""
-    key = state_key(pid)
-
-    def step(state):
-        st = state["hooks"].get(key)
-        told = set(st["told"]) if st is not None else set()
-        state["hooks"][key] = {"told": sorted(told | set(items)),
-                               "last_at": st["last_at"] if st is not None else None}
-    _update(state_path, step)
-
-
 def claim(state_path: Path, pid: str, items: List[str], now: float) -> List[str]:
     """Mark the items not yet told as told and return them (sorted).
 
-    The first time a participant is seen, its items count as told and nothing
-    is returned (like the Codex hook and the notifier). Answered items leave
-    the told set.
+    The first time a participant is seen, that is all of them: nothing assumes a
+    new session reads its inbox, so a backlog is delivered, not skipped. Answered
+    items leave the told set.
     """
     key = state_key(pid)
     out = []  # type: List[str]
@@ -98,8 +97,7 @@ def claim(state_path: Path, pid: str, items: List[str], now: float) -> List[str]
     def step(state):
         st = state["hooks"].get(key)
         if st is None:
-            state["hooks"][key] = {"told": sorted(set(items)), "last_at": None}
-            return
+            st = state["hooks"][key] = {"told": [], "last_at": None}
         st["told"] = [i for i in st["told"] if i in items]
         fresh = [i for i in items if i not in st["told"]]
         if fresh:
@@ -172,8 +170,8 @@ def check_in_prompt(root: Path, pid: str, minutes: int) -> str:
             "Crosstalk check-in for %s (every %d minutes). Run `python3 %s inbox %s` and\n"
             "answer what it lists with `relay.py reply`. Then post your check-in, a\n"
             "`kind: \"check-in\"` message from %s with your commits since the last one,\n"
-            "what is in progress, and blockers (%s, \"Check-ins\"). If nothing changed,\n"
-            "a one-line check-in is enough."
+            "what is in progress, and blockers (%s, \"At every check-in\"). If nothing\n"
+            "changed, a one-line check-in is enough."
             % (pid, minutes, relay, pid, pid, Path(root) / "PROTOCOL.md"))
 
 
@@ -185,17 +183,16 @@ def hook_output(root: Path, pid: str, stdin_text: str, state_path: Optional[Path
     this inside its never-raise wrapper)."""
     if state_path is None:
         return ""
-    event = json.loads(stdin_text).get("hook_event_name")
-    if event not in HOOK_EVENTS:
+    payload = json.loads(stdin_text)
+    if payload.get("hook_event_name") not in HOOK_EVENTS:
+        return ""
+    extra = payload.get("extra")
+    if isinstance(extra, dict) and extra.get("platform") in NON_SESSION_PLATFORMS:
         return ""
     docs, roster = load_snapshot(Path(root))
     if pid not in roster.participants or pid == "owner":
         return ""
-    items = actionable_items(docs, pid, roster)
-    if event == "on_session_start":
-        seed(state_path, pid, items)
-        return ""
-    fresh = claim(state_path, pid, items, clock())
+    fresh = claim(state_path, pid, actionable_items(docs, pid, roster), clock())
     if not fresh:
         return ""
     return json.dumps({"context": note(Path(root), docs, roster, pid, fresh)})
@@ -223,7 +220,7 @@ def plugin_yaml(root: str, pid: str) -> str:
 
 
 def setup_text(root, pid: str) -> str:
-    """Markdown: how to set up a Hermes participant (one profile, plugin, hooks)."""
+    """Markdown: how to set up a Hermes participant (one profile, the plugin)."""
     root = Path(root).resolve()
     relay = str(root / "scripts" / "relay.py")
     plugin = root / "scripts" / "hermes-plugin" / PLUGIN_NAME
@@ -240,15 +237,18 @@ def setup_text(root, pid: str) -> str:
         "registers each session with Crosstalk, injects new inbox items only while the "
         "session is idle, appends a one-line note to a tool result when items arrive "
         "mid-turn, and injects the check-in prompt every checkInMin minutes. "
-        "`allow_gateway_injection` is what lets it start a turn.\n\n"
+        "`allow_gateway_injection` is what lets it start a turn in a gateway, TUI or "
+        "desktop session; the classic CLI doesn't check it.\n\n"
         "```yaml\n%(plugin_yaml)s```\n\n"
-        "3. The shell hooks deliver new items at the start of each turn even when the "
-        "plugin isn't loaded; they share the plugin's record of what was told, so keeping "
-        "both never repeats an item:\n\n"
+        "3. Enable it, then restart the profile's gateway or start a new session "
+        "(`hermes -p %(pid)s chat`).\n\n"
+        "```\nhermes -p %(pid)s plugins enable %(name)s\n```\n\n"
+        "Only if this profile can't load the plugin, add this shell hook instead. It "
+        "delivers new items at the start of a turn and does nothing else: no idle push, no "
+        "check-ins. Don't add it beside the plugin, which already does this. `hermes -p "
+        "%(pid)s chat` asks once to approve it; a gateway never asks, so approve it there "
+        "first or set `hooks_auto_accept: true`. `hermes -p %(pid)s hooks list` shows it.\n\n"
         "```yaml\n%(hooks_yaml)s```\n\n"
-        "4. Enable and check it, then restart the profile's gateway or start a new session "
-        "(`hermes -p %(pid)s chat`). Hermes asks once to approve each new shell hook.\n\n"
-        "```\nhermes -p %(pid)s plugins enable %(name)s\nhermes -p %(pid)s hooks list\n```\n\n"
         "A session registers on its first turn; `python3 %(relay)s live status` lists it "
         "with `(hermes)`. Details: `%(docs)s`, \"Hermes sessions\".\n"
         % {"pid": pid, "home": home, "plugin": shlex.quote(str(plugin)), "name": PLUGIN_NAME,
@@ -288,6 +288,7 @@ class _Session(object):
         self.last_active = now
         self.started = now
         self.noted = set()  # type: set
+        self.claimed = []  # type: List[str]  # told by an injection whose turn hasn't begun
 
 
 class Pump(object):
@@ -362,8 +363,6 @@ class Pump(object):
         s = self.sessions.get(sid)
         if s is None:
             s = self.sessions[sid] = _Session(sid, key or sid, self.clock())
-            if self.state_path is not None:
-                self._guard("seed", lambda: seed(self.state_path, self.pid, self._items()[2]))
             self._guard("register", lambda: live.register_hermes(
                 self.root, self.pid, sid, s.key, self.clock(), self.host_pid))
         elif key and key != s.key:
@@ -372,30 +371,23 @@ class Pump(object):
                 self.root, self.pid, sid, key, self.clock(), self.host_pid))
         return s
 
-    def _subagent(self, sid: str, key: str) -> bool:
-        """A delegated subagent starts inside a running turn of a known session and
-        carries that session's key; it is not a session of its own."""
-        return bool(key) and any(s.busy and s.key == key and s.sid != sid
-                                 for s in self.sessions.values())
+    def _release_claimed(self, s: _Session) -> None:
+        """Offer again what an injection claimed: its turn is not going to happen."""
+        if s.claimed and self.state_path is not None:
+            release(self.state_path, self.pid, s.claimed)
+        s.claimed = []
 
-    def on_session_start(self, sid: str, key: str = "") -> None:
-        if not sid:
-            return
-        with self._lock:
-            if not self._subagent(sid, key):
-                self._session(sid, key)
-
-    def on_turn_start(self, sid: str, key: str = "", parent: str = "") -> Optional[str]:
-        """pre_llm_call: the session is busy; returns the context note for items not yet
-        told (the plugin returns it as `{"context": ...}`), or None. A subagent's turn
-        (`parent`, its parent_session_id) is ignored."""
-        if not sid or parent:
+    def on_turn_start(self, sid: str, key: str = "", parent: str = "",
+                      platform: str = "") -> Optional[str]:
+        """pre_llm_call, the only place a session is created: it is busy; returns the context
+        note for items not yet told (the plugin returns it as `{"context": ...}`), or None.
+        A subagent's turn (`parent`, its parent_session_id) or a cron job's is ignored."""
+        if not sid or parent or platform in NON_SESSION_PLATFORMS:
             return None
         with self._lock:
-            if sid not in self.sessions and self._subagent(sid, key):
-                return None
             s = self._session(sid, key)
             s.busy, s.awaiting, s.last_active = True, None, self.clock()
+            s.claimed = []  # the injected turn began, so its items arrived
             s.noted.clear()
             if self.state_path is None:
                 return None
@@ -410,8 +402,8 @@ class Pump(object):
     def on_turn_end(self, sid: str) -> None:
         with self._lock:
             s = self.sessions.get(sid)
-            if s is not None:
-                s.busy, s.awaiting, s.last_active = False, None, self.clock()
+            if s is not None and s.awaiting is None:  # else the grace period decides
+                s.busy, s.last_active = False, self.clock()
 
     def on_tool_result(self, sid: str, result) -> Optional[str]:
         """transform_tool_result: `result` plus a one-line note when items arrived that this
@@ -445,24 +437,32 @@ class Pump(object):
 
     def on_session_finalize(self, sid: str) -> None:
         with self._lock:
-            if sid and self.sessions.pop(sid, None) is not None:
+            s = self.sessions.pop(sid, None) if sid else None
+            if s is not None:
+                self._guard("release", lambda: self._release_claimed(s))
                 self._guard("unregister", lambda: live.unregister_session(self.pid, sid))
 
     def unregister_all(self) -> None:
         with self._lock:
-            for sid in list(self.sessions):
+            for sid, s in list(self.sessions.items()):
+                self._guard("release", lambda: self._release_claimed(s))
                 self._guard("unregister", lambda: live.unregister_session(self.pid, sid))
             self.sessions.clear()
 
     # the pass
 
-    def _idle(self, now: float) -> Optional[_Session]:
-        """The most recently active idle session, or None. An injection whose turn hasn't
-        started within INJECT_GRACE_SEC no longer counts as busy."""
+    def _expire_injections(self, now: float) -> None:
+        """inject_message's True means only scheduled: an injection whose turn hasn't started
+        within INJECT_GRACE_SEC counts as lost, and its items are offered again."""
+        for s in self.sessions.values():
+            if s.awaiting is not None and now - s.awaiting >= INJECT_GRACE_SEC:
+                self._release_claimed(s)
+                s.busy, s.awaiting = False, None
+
+    def _idle(self) -> Optional[_Session]:
+        """The most recently active idle session, or None."""
         best = None
         for s in self.sessions.values():
-            if s.busy and s.awaiting is not None and now - s.awaiting >= INJECT_GRACE_SEC:
-                s.busy, s.awaiting = False, None
             if s.busy:
                 continue
             if best is None or s.last_active > best.last_active:
@@ -480,15 +480,17 @@ class Pump(object):
                 ref = t
         return minutes if now - ref >= minutes * 60 else None
 
-    def _send(self, s: _Session, text: str, now: float) -> bool:
+    def _send(self, s: _Session, text: str, now: float, claimed: List[str]) -> bool:
+        """Inject `text`, which tells the items in `claimed`; a refusal releases them."""
         try:
             ok = bool(self.inject(text, s.key))
         except Exception as e:
             self.log("crosstalk: inject_message raised %s" % e.__class__.__name__)
             ok = False
         if ok:
-            s.busy, s.awaiting = True, now
+            s.busy, s.awaiting, s.claimed = True, now, list(claimed)
         else:
+            release(self.state_path, self.pid, claimed)
             self.retry_at = now + RETRY_SEC
             self.log("crosstalk: inject_message refused; retrying in %d s" % RETRY_SEC)
         return ok
@@ -501,27 +503,27 @@ class Pump(object):
         if self.state_path is None or not self.sessions:
             return
         docs, roster, items = self._items()
-        known = told(self.state_path, self.pid)
-        self.pending = [i for i in items if known is not None and i not in known]
         now = self.clock()
-        s = self._idle(now)
+        self._expire_injections(now)
+        known = told(self.state_path, self.pid) or []
+        self.pending = [i for i in items if i not in known]
+        s = self._idle()
         if s is None or (self.retry_at is not None and now < self.retry_at):
             return
         self.retry_at = None
         minutes = self._check_in_due(docs, roster, now)
         if minutes is not None:
-            if self._send(s, check_in_prompt(self.root, self.pid, minutes), now):
+            fresh = claim(self.state_path, self.pid, items, now)  # the check-in reads the inbox
+            if self._send(s, check_in_prompt(self.root, self.pid, minutes), now, fresh):
                 self.last_check_in_sent = now
-                seed(self.state_path, self.pid, items)  # the check-in reads the inbox
                 self.pending = []
             return
         fresh = claim(self.state_path, self.pid, items, now)
         if not fresh:
             return
-        if self._send(s, note(self.root, docs, roster, self.pid, fresh, injected=True), now):
+        text = note(self.root, docs, roster, self.pid, fresh, injected=True)
+        if self._send(s, text, now, fresh):
             self.pending = [i for i in self.pending if i not in fresh]
-        else:
-            release(self.state_path, self.pid, fresh)
 
     # thread
 

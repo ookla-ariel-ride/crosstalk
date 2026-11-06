@@ -1,4 +1,4 @@
-"""Crosstalk plugin for Hermes Agent (checked against v0.22.5, 2026-11-04).
+"""Crosstalk plugin for Hermes Agent (read against the v0.22.7 source, 2026-11-06).
 
 A thin adapter: the logic is crosstalk.hermes.Pump in this checkout's
 scripts/, so it shares Crosstalk's own inbox code and is tested there.
@@ -9,13 +9,15 @@ Settings, in the participant profile's config.yaml:
       enabled: [crosstalk]
       entries:
         crosstalk:
-          allow_gateway_injection: true   # lets inject_message start a turn
+          allow_gateway_injection: true   # gateway, TUI, desktop; the CLI doesn't check it
           settings:
             participant: <pid>
             root: /path/to/crosstalk      # default: the checkout this file is in
 
-Hooks: on_session_start and pre_llm_call register a session (pre_llm_call
-also marks it busy and adds new items to the turn as context);
+Hooks: pre_llm_call registers a session on its first turn, marks it busy and
+adds new items to the turn as context, and ignores subagents and cron jobs.
+on_session_start is not used: Hermes fires it for delegated children too,
+without parent_session_id, and again on a prompt rebuild.
 on_session_end (after every turn) marks it idle; transform_tool_result
 appends a one-line note when items arrive mid-turn; post_compaction follows a
 session's new id; on_session_finalize unregisters. A background thread polls
@@ -62,7 +64,12 @@ def make_pump(ctx, root: Path, pid: str):
     ct = _load_pump_module(root)
 
     def inject(text, key):
-        # Always with the session key it saw in that session's own hooks (#139847).
+        # While the classic CLI's agent runs, inject_message puts the text on the queue that
+        # calls agent.interrupt(). Refuse here too, for a turn pre_llm_call hasn't shown yet.
+        cli = getattr(getattr(ctx, "_manager", None), "_cli_ref", None)
+        if cli is not None and getattr(cli, "_agent_running", False):
+            return False
+        # The session key it saw in that session's own hooks (#139847).
         return ctx.inject_message(text, role="user", session_key=key)
 
     return ct.Pump(root, pid, ct.state_path_from_env(), inject, log=logger.warning)
@@ -85,11 +92,9 @@ def register(ctx):
 
 
 def wire(ctx, pump):
-    def on_session_start(session_id="", **kwargs):
-        pump.on_session_start(session_id or "", _session_key())
-
-    def pre_llm_call(session_id="", parent_session_id="", **kwargs):
-        text = pump.on_turn_start(session_id or "", _session_key(), parent_session_id or "")
+    def pre_llm_call(session_id="", parent_session_id="", platform="", **kwargs):
+        text = pump.on_turn_start(session_id or "", _session_key(), parent_session_id or "",
+                                  platform or "")
         return {"context": text} if text else None
 
     def on_session_end(session_id="", **kwargs):
@@ -104,7 +109,7 @@ def wire(ctx, pump):
     def on_session_finalize(session_id=None, **kwargs):
         pump.on_session_finalize(session_id or "")
 
-    for name, fn in (("on_session_start", on_session_start), ("pre_llm_call", pre_llm_call),
+    for name, fn in (("pre_llm_call", pre_llm_call),
                      ("on_session_end", on_session_end),
                      ("transform_tool_result", transform_tool_result),
                      ("post_compaction", post_compaction),

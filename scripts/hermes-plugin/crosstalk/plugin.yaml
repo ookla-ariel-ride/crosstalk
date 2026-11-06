@@ -5,7 +5,6 @@ description: >-
   inbox items and the check-in prompt only while the session is idle, and
   notes items that arrive mid-turn on the next tool result.
 provides_hooks:
-  - on_session_start
   - pre_llm_call
   - on_session_end
   - transform_tool_result

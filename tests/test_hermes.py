@@ -82,9 +82,9 @@ class Base(unittest.TestCase):
 
 
 class HookTests(Base):
-    def test_session_start_seeds_then_pre_llm_call_gives_new_items_as_context(self):
+    def test_pre_llm_call_gives_new_items_as_context(self):
         self.append("owner", owner_msg("m-old", to=["beta"]))
-        self.assertEqual(self.hook("on_session_start"), "")
+        self.assertIn("(m-old)", json.loads(self.hook())["context"])
         self.assertEqual(self.hook(), "")
         # every item, not just urgent ones: an ordinary request comes through
         self.append("alpha", req(1, "alpha", "m-req", to=["beta"]))
@@ -98,14 +98,46 @@ class HookTests(Base):
         st = json.loads(self.state.read_text())
         self.assertEqual(sorted(st["hooks"]), ["hermes:beta"])
 
-    def test_first_sight_seeds_without_session_start(self):
+    def test_first_sight_delivers_the_backlog(self):
         self.append("owner", owner_msg("m-1", to=["beta"]))
-        self.assertEqual(self.hook(), "")
+        self.assertIn("(m-1)", json.loads(self.hook())["context"])
         self.append("owner", owner_msg("m-2", to=["beta"]))
-        self.assertIn("(m-2)", json.loads(self.hook())["context"])
+        out = json.loads(self.hook())["context"]
+        self.assertIn("(m-2)", out)
+        self.assertNotIn("(m-1)", out)
+
+    def test_on_session_start_tells_nothing(self):
+        # Hermes fires it for delegated children and on a prompt rebuild.
+        self.hook()
+        self.append("owner", owner_msg("m-1", to=["beta"]))
+        self.assertEqual(self.hook("on_session_start", session_id="child"), "")
+        self.assertEqual(hermes.told(self.state, "beta"), [])
+        self.assertIn("(m-1)", self.hook())
+
+    def test_a_subagent_or_cron_turn_claims_nothing(self):
+        self.hook()
+        self.append("owner", owner_msg("m-1", to=["beta"]))
+        for platform in ("subagent", "cron"):
+            self.assertEqual(self.hook(session_id="child", extra={"platform": platform}), "")
+        self.assertEqual(hermes.told(self.state, "beta"), [])
+        self.assertIn("(m-1)", self.hook(extra={"platform": "cli"}))
+
+    def test_an_item_a_child_skipped_still_reaches_the_fallback(self):
+        calls = []
+        fb = urgent.Fallback(self.state, clock=lambda: self.now[0],
+                             notify=lambda t, m: calls.append((t, m)))
+        fb.poll(*hermes.load_snapshot(self.root))
+        self.hook()
+        self.append("owner", owner_msg("m-1", to=["beta"]))
+        fb.poll(*hermes.load_snapshot(self.root))
+        self.hook("on_session_start", session_id="child")
+        self.hook(session_id="child", extra={"platform": "subagent"})
+        self.now[0] += urgent.FALLBACK_SEC
+        fb.poll(*hermes.load_snapshot(self.root))
+        self.assertEqual(len(calls), 1)
 
     def test_no_gap_between_turns(self):
-        self.hook("on_session_start")
+        self.hook()
         self.append("owner", owner_msg("m-1", to=["beta"]))
         self.assertNotEqual(self.hook(), "")
         self.append("owner", owner_msg("m-2", to=["beta"]))
@@ -113,7 +145,7 @@ class HookTests(Base):
         self.assertIn("(m-2)", self.hook())
 
     def test_errors_are_silent(self):
-        self.hook("on_session_start")
+        self.hook()
         self.append("owner", owner_msg("m-1", to=["beta"]))
         err = io.StringIO()
         with redirect_stderr(err):
@@ -229,11 +261,13 @@ class KitTests(Base):
         mcp = text.split("## MCP server", 1)[1].split("## Your key", 1)[0]
         for want in ("~/.hermes/profiles/beta/config.yaml", "hermes profile create beta",
                      "one Hermes profile per participant", "HERMES.md",
-                     "hooks:\n  on_session_start:\n", "  pre_llm_call:\n",
+                     "hooks:\n  pre_llm_call:\n", "Don't add it beside the plugin",
+                     "a gateway never asks", "the classic CLI doesn't check it",
                      "urgent --as beta --hook hermes", "plugins:\n  enabled:\n    - crosstalk",
                      "allow_gateway_injection: true", 'participant: "beta"',
                      "hermes -p beta plugins enable crosstalk", "mcp_servers:"):
             self.assertIn(want, mcp)
+        self.assertNotIn("on_session_start", mcp)
         self.assertNotIn("tok-XYZ", mcp)
         codex = kit_text(self.root, "beta", "t", {"name": "Beta", "kind": "project",
                                                   "harness": "codex"})
@@ -253,19 +287,25 @@ class PumpBase(Base):
         self.injected.append((text, key))
         return self.accept
 
+    def session(self, sid, key=""):
+        """A session that has had its first turn and is idle."""
+        self.pump.on_turn_start(sid, key)
+        self.pump.on_turn_end(sid)
+
 
 class PumpTests(PumpBase):
-    def test_session_start_registers_and_seeds(self):
+    def test_first_turn_registers_and_delivers_the_backlog(self):
         self.append("owner", owner_msg("m-old", to=["beta"]))
-        self.pump.on_session_start("s1", "key-1")
+        self.assertIn("(m-old)", self.pump.on_turn_start("s1", "key-1"))
         regs, _ = live.load_registrations(self.root)
         self.assertEqual([(r.session_id, r.session_key, r.harness) for r in regs],
                          [("s1", "key-1", "hermes")])
+        self.pump.on_turn_end("s1")
         self.pump.poll_once()
         self.assertEqual(self.injected, [])
 
     def test_busy_session_is_never_injected_then_idle_gets_the_items(self):
-        self.pump.on_session_start("s1", "key-1")
+        self.session("s1", "key-1")
         self.assertIsNone(self.pump.on_turn_start("s1", "key-1"))
         self.append("alpha", req(1, "alpha", "m-req", to=["beta"]))
         self.pump.poll_once()
@@ -288,7 +328,7 @@ class PumpTests(PumpBase):
         self.assertEqual(len(self.injected), 1)
 
     def test_no_second_injection_before_the_injected_turn_starts(self):
-        self.pump.on_session_start("s1", "k")
+        self.session("s1", "k")
         self.append("owner", owner_msg("m-1", to=["beta"]))
         self.pump.poll_once()
         self.append("owner", owner_msg("m-2", to=["beta"]))
@@ -297,10 +337,11 @@ class PumpTests(PumpBase):
         self.now[0] += hermes.INJECT_GRACE_SEC  # the turn never began: free again
         self.pump.poll_once()
         self.assertEqual(len(self.injected), 2)
+        self.assertIn("(m-1)", self.injected[1][0])
         self.assertIn("(m-2)", self.injected[1][0])
 
     def test_turn_start_gives_new_items_as_context_and_shares_the_told_set(self):
-        self.pump.on_session_start("s1", "k")
+        self.session("s1", "k")
         self.append("owner", owner_msg("m-1", to=["beta"]))
         text = self.pump.on_turn_start("s1", "k")
         self.assertIn("(m-1)", text)
@@ -311,7 +352,7 @@ class PumpTests(PumpBase):
         self.assertEqual(self.hook(), "")
 
     def test_refused_injection_is_released_and_retried_later(self):
-        self.pump.on_session_start("s1", "k")
+        self.session("s1", "k")
         self.append("owner", owner_msg("m-1", to=["beta"]))
         self.accept = False
         self.pump.poll_once()
@@ -326,7 +367,7 @@ class PumpTests(PumpBase):
         self.assertIn("(m-1)", self.injected[1][0])
 
     def test_check_in_prompt_when_due_and_idle(self):
-        self.pump.on_session_start("s1", "k")
+        self.session("s1", "k")
         self.pump.on_turn_start("s1", "k")
         self.now[0] += 30 * 60
         self.pump.poll_once()
@@ -346,7 +387,7 @@ class PumpTests(PumpBase):
         self.assertEqual(len(self.injected), 2)
 
     def test_a_check_in_in_the_log_resets_the_timer(self):
-        self.pump.on_session_start("s1", "k")
+        self.session("s1", "k")
         self.now[0] += 25 * 60
         self.append("beta", line(1, "beta", id_="beta-ci", t="2026-10-26T12:25:00Z",
                                  data={"from": "beta", "kind": "check-in", "summary": "ci"}))
@@ -357,15 +398,14 @@ class PumpTests(PumpBase):
         self.pump.poll_once()
         self.assertEqual(len(self.injected), 1)
 
-    def test_subagents_are_not_sessions(self):
-        self.pump.on_session_start("s1", "k")
-        self.pump.on_turn_start("s1", "k")
-        self.pump.on_session_start("child", "k")
-        self.assertIsNone(self.pump.on_turn_start("child2", "k2", parent="s1"))
-        self.assertEqual(sorted(self.pump.sessions), ["s1"])
+    def test_a_session_with_no_key_uses_its_id(self):
+        self.session("s1")  # the classic CLI has no HERMES_SESSION_KEY
+        self.append("owner", owner_msg("m-1", to=["beta"]))
+        self.pump.poll_once()
+        self.assertEqual([k for _t, k in self.injected], ["s1"])
 
     def test_compaction_and_finalize_move_and_remove_the_registration(self):
-        self.pump.on_session_start("s1", "k")
+        self.session("s1", "k")
         self.pump.on_compacted("s1", "s2")
         regs, _ = live.load_registrations(self.root)
         self.assertEqual([r.session_id for r in regs], ["s2"])
@@ -374,7 +414,6 @@ class PumpTests(PumpBase):
 
     def test_no_state_file_means_no_delivery(self):
         pump = hermes.Pump(self.root, "beta", None, self.inject, clock=lambda: self.now[0])
-        pump.on_session_start("s1", "k")
         self.append("owner", owner_msg("m-1", to=["beta"]))
         self.assertIsNone(pump.on_turn_start("s1", "k"))
         pump.on_turn_end("s1")
@@ -382,13 +421,171 @@ class PumpTests(PumpBase):
         self.assertEqual(self.injected, [])
 
     def test_broken_roster_never_raises(self):
-        self.pump.on_session_start("s1", "k")
+        self.session("s1", "k")
         (self.root / "participants.json").write_text("{nope", encoding="utf-8")
         self.assertIsNone(self.pump.on_turn_start("s1", "k"))
         self.pump.on_turn_end("s1")
         self.pump.poll_once()
         self.assertEqual(self.injected, [])
         self.assertTrue(self.log)
+
+
+class SubagentTests(PumpBase):
+    """A child is never a session, whatever its key, and whether or not main is busy."""
+
+    def child_turn(self, key=""):
+        self.assertIsNone(self.pump.on_turn_start("child", key, parent="main"))
+        self.assertIsNone(self.pump.on_tool_result("child", "r"))
+        self.pump.on_turn_end("child")
+
+    def test_classic_cli_child_never_gets_an_injection_while_main_is_busy(self):
+        self.pump.on_turn_start("main")  # no key on the classic CLI
+        self.child_turn()
+        self.assertEqual(sorted(self.pump.sessions), ["main"])
+        self.assertEqual([r.session_id for r in live.load_registrations(self.root)[0]], ["main"])
+        self.append("owner", owner_msg("m-1", to=["beta"]))
+        self.pump.poll_once()
+        self.assertEqual(self.injected, [])
+        self.assertTrue(self.pump.sessions["main"].busy)
+
+    def test_a_child_swallows_nothing(self):
+        self.pump.on_turn_start("main")
+        self.append("owner", owner_msg("m-1", to=["beta"]))
+        self.pump.poll_once()
+        self.child_turn()
+        self.assertEqual(hermes.told(self.state, "beta"), [])
+        self.pump.on_turn_end("main")
+        self.pump.poll_once()
+        self.assertEqual(len(self.injected), 1)
+        self.assertIn("(m-1)", self.injected[0][0])
+
+    def test_gateway_async_child_outlives_the_parents_turn(self):
+        self.pump.on_turn_start("main", "k")
+        self.pump.on_turn_end("main")  # delegated async: main's turn is over
+        self.child_turn("k")  # same key, main idle
+        self.assertEqual(sorted(self.pump.sessions), ["main"])
+        self.pump.on_turn_start("main", "k")
+        self.pump.on_turn_end("child")  # the child's end doesn't free main
+        self.append("owner", owner_msg("m-1", to=["beta"]))
+        self.pump.poll_once()
+        self.assertEqual(self.injected, [])
+
+    def test_a_cron_turn_is_not_a_session(self):
+        self.append("owner", owner_msg("m-1", to=["beta"]))
+        self.assertIsNone(self.pump.on_turn_start("cron_1", "", platform="cron"))
+        self.assertEqual(self.pump.sessions, {})
+        self.assertIsNone(hermes.told(self.state, "beta"))
+
+
+class LostInjectionTests(PumpBase):
+    """inject_message's True means only scheduled."""
+
+    def lost(self):
+        self.session("s1", "k")
+        self.append("owner", owner_msg("m-1", to=["beta"]))
+        self.pump.poll_once()
+        self.assertEqual(hermes.told(self.state, "beta"), ["m-1"])
+
+    def test_items_are_offered_again_after_the_grace_period(self):
+        self.lost()
+        self.now[0] += hermes.INJECT_GRACE_SEC - 1
+        self.pump.poll_once()
+        self.assertEqual(len(self.injected), 1)
+        self.now[0] += 1
+        self.pump.poll_once()
+        self.assertEqual(len(self.injected), 2)
+        self.assertIn("(m-1)", self.injected[1][0])
+
+    def test_a_turn_that_begins_settles_the_claim(self):
+        self.lost()
+        self.pump.on_turn_start("s1", "k")
+        self.pump.on_turn_end("s1")
+        self.now[0] += hermes.INJECT_GRACE_SEC
+        self.pump.poll_once()
+        self.assertEqual(len(self.injected), 1)
+        self.assertEqual(hermes.told(self.state, "beta"), ["m-1"])
+
+    def test_a_stray_turn_end_doesnt_settle_it(self):
+        self.lost()
+        self.pump.on_turn_end("s1")
+        self.pump.poll_once()
+        self.assertEqual(len(self.injected), 1)  # still awaiting: no second injection
+        self.now[0] += hermes.INJECT_GRACE_SEC
+        self.pump.poll_once()
+        self.assertEqual(len(self.injected), 2)
+
+    def test_a_lost_check_in_releases_what_it_counted_as_told(self):
+        self.session("s1", "k")
+        self.append("owner", owner_msg("m-1", to=["beta"]))
+        self.now[0] += 30 * 60
+        self.pump.poll_once()
+        self.assertIn("Crosstalk check-in", self.injected[0][0])
+        self.assertEqual(hermes.told(self.state, "beta"), ["m-1"])
+        self.now[0] += hermes.INJECT_GRACE_SEC
+        self.pump.poll_once()
+        self.assertEqual(len(self.injected), 2)
+        self.assertIn("(m-1)", self.injected[1][0])
+
+    def test_a_refused_check_in_tells_nothing(self):
+        self.session("s1", "k")
+        self.append("owner", owner_msg("m-1", to=["beta"]))
+        self.now[0] += 30 * 60
+        self.accept = False
+        self.pump.poll_once()
+        self.assertEqual(hermes.told(self.state, "beta"), [])
+
+    def test_a_session_that_ends_releases_to_the_fallback(self):
+        calls = []
+        fb = urgent.Fallback(self.state, clock=lambda: self.now[0],
+                             notify=lambda t, m: calls.append((t, m)))
+        fb.poll(*hermes.load_snapshot(self.root))
+        self.session("s1", "k")
+        self.append("owner", owner_msg("m-1", to=["beta"]))
+        fb.poll(*hermes.load_snapshot(self.root))
+        self.pump.poll_once()
+        self.pump.on_session_finalize("s1")
+        self.assertEqual(hermes.told(self.state, "beta"), [])
+        self.now[0] += urgent.FALLBACK_SEC
+        fb.poll(*hermes.load_snapshot(self.root))
+        self.assertEqual(len(calls), 1)
+
+    def test_unload_releases_too(self):
+        self.lost()
+        self.pump.unregister_all()
+        self.assertEqual(hermes.told(self.state, "beta"), [])
+
+
+class BacklogTests(PumpBase):
+    """A gateway restart or a resumed session: what came in meanwhile is delivered."""
+
+    def test_after_a_restart_only_the_outage_is_delivered(self):
+        self.session("s1", "k")
+        self.append("owner", owner_msg("m-1", to=["beta"]))
+        self.assertIn("(m-1)", self.pump.on_turn_start("s1", "k"))
+        restarted = hermes.Pump(self.root, "beta", self.state, self.inject,
+                                clock=lambda: self.now[0])
+        self.append("owner", owner_msg("m-2", to=["beta"]))
+        restarted.poll_once()  # nothing to deliver to before the first turn
+        self.assertEqual(self.injected, [])
+        text = restarted.on_turn_start("s1", "k")
+        self.assertIn("(m-2)", text)
+        self.assertNotIn("(m-1)", text)
+
+    def test_a_new_session_doesnt_swallow_what_another_was_waiting_for(self):
+        self.pump.on_turn_start("s1", "k1")
+        self.append("owner", owner_msg("m-1", to=["beta"]))
+        self.assertIn("(m-1)", self.pump.on_turn_start("s2", "k2"))
+        self.assertEqual(hermes.told(self.state, "beta"), ["m-1"])
+
+
+class FakeCli:
+    def __init__(self, running):
+        self._agent_running = running
+
+
+class FakeManager:
+    def __init__(self, cli):
+        self._cli_ref = cli
 
 
 class FakeCtx:
@@ -427,10 +624,8 @@ class PluginTests(Base):
             ctx = FakeCtx({"participant": "beta", "root": str(self.root)})
             mod.register(ctx)
             self.assertEqual(sorted(ctx.hooks),
-                             ["on_session_end", "on_session_finalize", "on_session_start",
+                             ["on_session_end", "on_session_finalize",
                               "post_compaction", "pre_llm_call", "transform_tool_result"])
-            ctx.hooks["on_session_start"](session_id="s1", model="m", platform="cli",
-                                          telemetry_schema_version="x")
             self.append("owner", owner_msg("m-1", to=["beta"]))
             out = ctx.hooks["pre_llm_call"](session_id="s1", user_message="hi",
                                             conversation_history=[], is_first_turn=False,
@@ -445,6 +640,59 @@ class PluginTests(Base):
             self.assertEqual(live.load_registrations(self.root), ([], []))
         finally:
             os.environ.pop("CROSSTALK_URGENT_STATE", None)
+
+    def test_a_classic_cli_delegate_replayed_through_the_hooks(self):
+        # The order Hermes fires them in, with no session key anywhere.
+        os.environ["CROSSTALK_URGENT_STATE"] = str(self.state)
+        try:
+            mod = self.load_plugin()
+            ctx = FakeCtx({})
+            pump = mod.make_pump(ctx, self.root, "beta")
+        finally:
+            os.environ.pop("CROSSTALK_URGENT_STATE", None)
+        mod.wire(ctx, pump)
+
+        def fire(name, **kwargs):
+            if name in ctx.hooks:
+                return ctx.hooks[name](**kwargs)
+
+        fire("on_session_start", session_id="main", model="m", platform="cli")
+        fire("pre_llm_call", session_id="main", platform="cli", parent_session_id="")
+        fire("on_session_start", session_id="child", model="m", platform="subagent")
+        fire("pre_llm_call", session_id="child", platform="subagent", parent_session_id="main")
+        fire("on_session_end", session_id="child", completed=True, interrupted=False)
+        self.append("owner", owner_msg("m-1", to=["beta"]))
+        pump.poll_once()
+        self.assertEqual(ctx.injected, [])  # main is busy
+        fire("on_session_start", session_id="child2", model="m", platform="subagent")
+        fire("on_session_end", session_id="main", completed=True, interrupted=False)
+        pump.poll_once()
+        self.assertEqual([k for _t, _r, k in ctx.injected], ["main"])
+        self.assertIn("(m-1)", ctx.injected[0][0])
+
+    def test_pre_llm_call_passes_on_what_shows_a_non_session(self):
+        mod = self.load_plugin()
+        ctx = FakeCtx({})
+        pump = mod.make_pump(ctx, self.root, "beta")
+        mod.wire(ctx, pump)
+        args = dict(user_message="hi", conversation_history=[], is_first_turn=True, model="m")
+        ctx.hooks["pre_llm_call"](session_id="c1", platform="subagent", parent_session_id="s1",
+                                  **args)
+        ctx.hooks["pre_llm_call"](session_id="c2", platform="cron", parent_session_id="", **args)
+        self.assertEqual(pump.sessions, {})
+        ctx.hooks["pre_llm_call"](session_id="s1", platform="cli", parent_session_id="", **args)
+        self.assertEqual(sorted(pump.sessions), ["s1"])
+
+    def test_inject_refuses_while_the_classic_cli_agent_runs(self):
+        mod = self.load_plugin()
+        ctx = FakeCtx({})
+        ctx._manager = FakeManager(FakeCli(True))
+        pump = mod.make_pump(ctx, self.root, "beta")
+        self.assertFalse(pump.inject("text", "s1"))
+        self.assertEqual(ctx.injected, [])
+        ctx._manager._cli_ref._agent_running = False
+        self.assertTrue(pump.inject("text", "s1"))
+        self.assertEqual(ctx.injected, [("text", "user", "s1")])
 
     def test_without_participant_it_registers_nothing(self):
         mod = self.load_plugin()

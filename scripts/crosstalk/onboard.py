@@ -289,7 +289,7 @@ def _mcp_body(harness: Optional[str], relay: str, pid: str) -> Tuple[str, str]:
                 "server's `--as` flag as one of its own options.\n" % _mcp_servers_json(args))
     if harness == "hermes":
         # Push, check-ins and the profile: crosstalk/hermes.py (docs/live-sessions.md,
-        # "Hermes sessions"), checked against Hermes Agent v0.22.5 on 2026-11-04.
+        # "Hermes sessions"), read against the Hermes Agent v0.22.7 source on 2026-11-06.
         return ("For **Hermes Agent**, in your participant profile's "
                 "`~/.hermes/profiles/%s/config.yaml` (step 1 below creates it), then run "
                 "`/reload-mcp` in a chat:" % pid,
