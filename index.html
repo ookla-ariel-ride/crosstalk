@@ -232,6 +232,7 @@ td.num, td.t { font: 12px var(--mono); font-variant-numeric: tabular-nums; white
 .qcard .qpos { margin-left: auto; font: 500 12px var(--mono); color: var(--muted); }
 .qcard textarea { width: 100%; box-sizing: border-box; min-height: 96px; padding: 8px; border: 1px solid var(--rule); border-radius: 6px; background: var(--panel); resize: vertical; }
 .qrow { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
+.qcard .qclosed { margin: 0; font-weight: 600; color: var(--warn); }
 .qanswer { margin-top: 6px; padding-left: 10px; border-left: 3px solid var(--own); }
 #q-askall { margin-bottom: 12px; }
 .chart { background: var(--panel); border: 1px solid var(--rule); border-radius: 8px; padding: 12px; overflow-x: auto; }
@@ -339,7 +340,8 @@ td.num, td.t { font: 12px var(--mono); font-variant-numeric: tabular-nums; white
   // until a post succeeds, so retrying a half-failed post overwrites the same rows instead of duplicating them.
   var draft = { subject: "", text: "", kind: "owner", id: null, posting: false, status: "", replyTo: null, to: null, replySummary: "" };
   // The Questions tab: the open question showing (`cur`, and its place `pos` for when it closes), the typed answer
-  // and the answer row's id per question (kept until the post succeeds, so a retry rewrites the same row), answers
+  // and the answer row's id per question (kept until the post succeeds, so a retry rewrites the same row; a question
+  // that closes keeps its card and draft until the owner moves on, so `cur` then names a closed question), answers
   // sent but not yet back from the server, and the "Ask everyone" control. In memory, so a re-render keeps it.
   var qState = { cur: null, pos: 0, answers: Object.create(null), ids: Object.create(null), sent: Object.create(null), posting: false, status: "",
     askConfirm: false, asking: false, askId: null, askStatus: "", answeredOpen: false };
@@ -2066,19 +2068,26 @@ td.num, td.t { font: 12px var(--mono); font-variant-numeric: tabular-nums; white
       renderView(true);
     });
   }
-  function questionCard(m, idx, total) {
+  // The card's top: who asked, when, the question and its context. `tag` goes at the end of the meta row.
+  function questionTop(m, tag) {
     var from = String(m.from == null ? "" : m.from);
     var c = el("div", "card qcard"); c.id = "q-card"; c.dataset.id = m._id;
     c.style.setProperty("--who", colorOf(from));
     var meta = el("div", "meta"); meta.appendChild(who(from));
     var hm = harnessEl(harnessOf(from)); if (hm) meta.appendChild(hm);
     meta.appendChild(timeEl(m.t, true)); meta.appendChild(agoEl(m.t));
-    var pos = el("span", "qpos", "Question " + (idx + 1) + " of " + total); pos.id = "q-pos"; meta.appendChild(pos);
+    meta.appendChild(tag);
     c.appendChild(meta);
     c.appendChild(summaryEl(m.summary || "(no question given)"));
     var body = String(m.body || "");
     if (body.trim() && body.trim() !== String(m.summary || "").trim()) c.appendChild(richTextInto(el("p", "body"), body));
     add(c, refsEl(m.refs, from));
+    return c;
+  }
+  function questionCard(m, idx, total) {
+    var from = String(m.from == null ? "" : m.from);
+    var pos = el("span", "qpos", "Question " + (idx + 1) + " of " + total); pos.id = "q-pos";
+    var c = questionTop(m, pos);
     var nav = el("div", "qrow");
     function navBtn(id, label, to, disabled) {
       var b = el("button", "btn small", label); b.type = "button"; b.id = id; b.disabled = disabled;
@@ -2111,6 +2120,42 @@ td.num, td.t { font: 12px var(--mono); font-variant-numeric: tabular-nums; white
     }
     return c;
   }
+  // The question showing, if it has closed under the owner: answered from elsewhere, withdrawn, or its asker
+  // quarantined (ownerQuestions leaves those out, so it is found in the messages).
+  function closedShowing() {
+    var id = qState.cur;
+    if (!id || openQuestions().some(function (x) { return x.q._id === id; })) return null;
+    var hit = ownerQuestions().filter(function (x) { return x.q._id === id; })[0];
+    if (hit) return hit;
+    var m = data.messages.filter(function (d) { return d._id === id; })[0];
+    return m ? { q: m, status: "closed", closer: null } : null;
+  }
+  // Another question never takes the place of a closed one by itself, because a draft typed for one project must
+  // not go to another. The card stays, with no way to send, until the owner moves on. The draft stays readable.
+  function heldQuestionCard(x, nOpen) {
+    var m = x.q, id = m._id, draft = String(qState.answers[id] || "");
+    var c = questionTop(m, pill(x.status));
+    var why = x.status === "withdrawn" ? displayName(m.from) + " withdrew it." : x.status === "answered" ? "It was answered elsewhere." : "";
+    var note = el("p", "qclosed", qState.posting ? qState.status : "This question closed." + (why ? " " + why : "") + (draft.trim() ? " Your draft was not sent." : ""));
+    note.id = "q-closed"; note.setAttribute("role", "alert");
+    c.appendChild(note);
+    if (canWrite && draft.trim()) {
+      var ta = el("textarea"); ta.id = "q-draft"; ta.value = draft; ta.readOnly = true;
+      ta.setAttribute("aria-label", "Your unsent draft");
+      c.appendChild(ta);
+    }
+    var row = el("div", "qrow");
+    var b = el("button", "btn", nOpen ? "Next question" : "Dismiss"); b.type = "button"; b.id = "q-moveon"; b.disabled = qState.posting;
+    b.addEventListener("click", function () {
+      delete qState.answers[id]; delete qState.ids[id];
+      qState.cur = null; qState.status = "";
+      renderView(false);
+      var a = document.getElementById("q-answer"); if (a) a.focus();
+    });
+    row.appendChild(b);
+    c.appendChild(row);
+    return c;
+  }
   function closedQuestionCard(x) {
     var m = x.q, c = el("div", "card"); c.dataset.id = m._id;
     var meta = el("div", "meta"); meta.appendChild(who(m.from)); meta.appendChild(pill(x.status));
@@ -2129,15 +2174,18 @@ td.num, td.t { font: 12px var(--mono); font-variant-numeric: tabular-nums; white
   function renderQuestions(view) {
     if (canWrite) askAllEl(view);
     view.appendChild(el("p", "order", "Questions the projects have for you, oldest first, one at a time. Each answer goes back to the session that asked, in its inbox."));
-    var open = openQuestions();
-    if (!open.length) {
+    var open = openQuestions(), held = closedShowing();
+    if (held) {
+      if (!qState.posting) qState.status = "";
+      view.appendChild(heldQuestionCard(held, open.length));
+    } else if (!open.length) {
       view.appendChild(el("div", "empty", "No open questions. A project asks you something only you can decide with relay.py ask; it waits here until you answer it or the project withdraws it."));
       qState.cur = null;
     } else {
       var idx = -1;
       for (var i = 0; i < open.length; i++) if (open[i].q._id === qState.cur) { idx = i; break; }
-      // The question showing has closed (answered elsewhere, or withdrawn): show the one that took its place.
-      if (idx === -1) idx = Math.max(0, Math.min(qState.pos, open.length - 1));
+      // Nothing is showing yet, or the owner moved on from a closed question: show the one in its place.
+      if (idx === -1) { idx = Math.max(0, Math.min(qState.pos, open.length - 1)); qState.status = ""; }
       qState.cur = open[idx].q._id; qState.pos = idx;
       view.appendChild(questionCard(open[idx].q, idx, open.length));
     }
@@ -2280,7 +2328,9 @@ td.num, td.t { font: 12px var(--mono); font-variant-numeric: tabular-nums; white
   }
   function restoreFocus(f) {
     if (!f) return;
-    var e = document.getElementById(f.id); if (!e || e === document.activeElement || e.disabled) return;
+    // The question being answered closed: focus stays in its read-only draft, where typing can't reach another question.
+    var e = document.getElementById(f.id) || (f.id === "q-answer" ? document.getElementById("q-draft") : null);
+    if (!e || e === document.activeElement || e.disabled) return;
     e.focus({ preventScroll: true });
     if (f.caret && e.setSelectionRange) { try { e.setSelectionRange(f.caret[0], f.caret[1]); } catch (x) {} }
   }

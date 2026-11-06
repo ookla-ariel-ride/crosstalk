@@ -1974,6 +1974,44 @@
       " first=" + JSON.stringify(firstItem) + " cards=" + JSON.stringify(cardIds) + " row=" + stillRow + " onTab=" + onTab + " shown=" + shown + " focus=" + focused);
   });
 
+  // A question that closes while the owner types keeps its card and draft, with no way to send, until the owner
+  // moves on; the draft never lands on the next question, and the status doesn't carry over.
+  S.push(async function questionsClosedHoldsDraft() {
+    await clearQuestions();
+    await seedQuestions();
+    await go("questions");
+    while (!$("q-prev").disabled) { $("q-prev").click(); await tick(); }
+    $("q-send").click(); await tick();
+    var refused = $("q-status").textContent;
+    typeAnswer("Ship it after review");
+    await addDoc("messages", "qq-1-w", { t: ago(1), from: "bewareilive", kind: "withdrawn", summary: "Withdrawn", replyTo: "qq-1" });
+    var held = $("q-card").dataset.id, note = $("q-closed").textContent, draft = $("q-draft").value, readOnly = $("q-draft").readOnly;
+    var noBox = !$("q-answer") && !$("q-send"), focus = document.activeElement && document.activeElement.id;
+    var tileNow = $("quesVal").textContent;
+    __emit("messages"); await tick();
+    var stillHeld = $("q-card").dataset.id === "qq-1" && $("q-draft").value === draft;
+    var sentNothing = ownAnswers("qq-1").length === 0 && ownAnswers("qq-2").length === 0;
+    var moveLabel = $("q-moveon").textContent;
+    $("q-moveon").click(); await tick();
+    var next = $("q-card").dataset.id, box = $("q-answer").value, status = $("q-status").textContent;
+    // The last open question closing, answered from elsewhere: no draft, and Dismiss leaves the empty state.
+    __store.messages["qq-2-own"] = { t: ago(1), from: "owner", kind: "owner", summary: "Studio", replyTo: "qq-2" };
+    __store.messages["qq-3-w"] = { t: ago(1), from: "avoidmissingball", kind: "withdrawn", summary: "Withdrawn", replyTo: "qq-3" };
+    __emit("messages"); await tick();
+    var note2 = $("q-closed").textContent, noDraft = !$("q-draft"), label2 = $("q-moveon").textContent;
+    $("q-moveon").click(); await tick();
+    var emptied = !$("q-card") && /No open questions/.test($("view").textContent);
+    delete __store.messages["qq-1-w"]; delete __store.messages["qq-2-own"]; delete __store.messages["qq-3-w"];
+    await clearQuestions();
+    await go("timeline");
+    var ok = refused === "Write an answer first." && held === "qq-1" && note === "This question closed. BewareILive withdrew it. Your draft was not sent." &&
+      draft === "Ship it after review" && readOnly && noBox && focus === "q-draft" && tileNow === "2" && stillHeld && sentNothing && moveLabel === "Next question" &&
+      next === "qq-2" && box === "" && status === "" && note2 === "This question closed. It was answered elsewhere." && noDraft && label2 === "Dismiss" && emptied;
+    return res("questionsClosedHoldsDraft", ok, "refused=" + JSON.stringify(refused) + " held=" + held + " note=" + JSON.stringify(note) + " draft=" + JSON.stringify(draft) + " ro=" + readOnly + " noBox=" + noBox +
+      " focus=" + focus + " tile=" + tileNow + " stillHeld=" + stillHeld + " sent0=" + sentNothing + " move=" + moveLabel + " next=" + next + " box=" + JSON.stringify(box) + " status=" + JSON.stringify(status) +
+      " note2=" + JSON.stringify(note2) + " noDraft=" + noDraft + " label2=" + label2 + " emptied=" + emptied);
+  });
+
   // Checks whichever width the window has (run again at 390 wide; see run.md): nothing in the Reviews tab
   // pushes the page sideways; a wide table scrolls inside its own box.
   S.push(async function reviewsNarrow() {
