@@ -346,6 +346,18 @@ class AppendTests(unittest.TestCase):
             self.assertEqual(written["seq"], 1)
             self.assertEqual(written["data"]["summary"], "hi")
 
+    def test_a_token_append_may_not_change_another_participants_message(self):
+        with TempRepo() as r:
+            r.write_roster()
+            r.write_log("alpha", [line(1, "alpha", id_="alpha-q", data={
+                "from": "alpha", "kind": "question", "summary": "Ship it?"})])
+            with self.server(r) as srv:
+                status, body = self.append(srv, self.message(op="update", id="alpha-q",
+                                                             data={"from": "rev"}), self.TOKEN)
+            self.assertEqual(status, 400)
+            self.assertIn("only its writer or the owner", json.dumps(body))
+            self.assertFalse((r.root / "log" / "rev.jsonl").exists())
+
     def test_the_server_stamps_the_lines_time(self):
         with TempRepo() as r:
             r.write_roster()

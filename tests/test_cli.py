@@ -113,6 +113,18 @@ class CliTests(unittest.TestCase):
                       "--id", "rev-0001", "--data", '{"important": true}')
             self.assertEqual((p.returncode, p.stderr), (0, ""))
 
+    def test_append_refuses_changing_another_participants_message(self):
+        with TempRepo() as r:
+            c = Cli(r)
+            r.write_log("alpha", [line(1, "alpha", id_="alpha-q", data={
+                "from": "alpha", "kind": "question", "summary": "Ship it?"})])
+            p = c.run("append", "--from", "rev", "--op", "update", "--collection", "messages",
+                      "--id", "alpha-q", "--data", '{"kind": "reply"}')
+            self.assertEqual(p.returncode, 1)
+            self.assertIn("only its writer or the owner", p.stderr)
+            self.assertFalse((r.root / "log" / "rev.jsonl").exists())
+            self.assertEqual(c.run("check").returncode, 0)
+
     def test_append_warns_unknown_kind_and_clock_skew(self):
         with TempRepo() as r:
             c = Cli(r)
