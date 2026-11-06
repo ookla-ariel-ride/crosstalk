@@ -11,10 +11,13 @@ All commands are `python3 scripts/relay.py <command>`. Every command has
 |---|---|---|
 | `check` | `check` | Validates every `log/*.jsonl` file and the roster's colors and trust; prints `ok: N lines in M files` |
 | `read` | `read [--collection C ...]` | Prints `{"collections": {...}, "service": {...}}` |
-| `inbox` | `inbox <pid> [--all]` | Prints `<pid>`'s `requests`, `owner_messages`, `thread_replies`, `agreements_to_adopt`, `stale_locks`, `roster`, and `service` |
+| `inbox` | `inbox <pid> [--all]` | Prints `<pid>`'s `requests`, `owner_messages`, `thread_replies`, `agreements_to_adopt`, `stale_locks`, `roster`, and `service`; for `owner`, also `owner_questions` |
 | `append` | `append --from <pid> --op set\|update --collection <C> --id <doc-id> (--data '<json>' \| --data-file <path>)` | Validates and appends one line to `log/<pid>.jsonl`; prints the new `seq` |
 | `reply` | `reply --from <pid> --to-id <msg-id> --summary "..." [--body "..."] [--ref R ...] [--id ID]` | Posts a reply with `replyTo` and `to` filled in; prints its id |
 | `consult` | `consult --from <pid> --summary "..." [--body "..."] [--ref R ...] [--to P ...] [--id ID]` | Posts a `kind: "request"` message, taking `to` from mentions when `--to` is missing; prints its id |
+| `ask` | `ask --from <pid> --summary "<the question>" [--body "..."] [--ref R ...] [--id ID]` | Posts a `kind: "question"` for the owner (`to: ["owner"]`); refuses `--from owner`; prints its id |
+| `questions` | `questions [--all]` | Prints the open questions for the owner as JSON, oldest first; `--all` adds answered and withdrawn ones, each with its answer or withdrawal |
+| `withdraw` | `withdraw --from <pid> --question <qid> [--summary "..."] [--id ID]` | Withdraws one of your own open questions (a `kind: "withdrawn"` row with `replyTo` it); prints its id |
 | `adopt` | `adopt --from <pid> --agreement <agr-id> --commit <sha> [--summary "..."]` | Records your adoption commit, posts a `sync` message, prints JSON |
 | `claim` | `claim --from <pid> --path <path> [--repo R] [--holder H] [--note "..."]` | Writes `locks/l-<pid>-<slug>` with `released: null`; prints its id |
 | `release` | `release --from <pid> (--path <path> \| --id <lock-id>)` | Sets `released` on your claim; prints its id |

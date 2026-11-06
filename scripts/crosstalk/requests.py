@@ -515,6 +515,48 @@ def thread_replies_for(docs: Dict, pid: str, roster=None) -> List[Tuple[str, dic
     return out
 
 
+def owner_questions(docs: Dict, roster=None) -> List[Tuple[str, dict, str, Optional[dict]]]:
+    """Every question for the owner from an approved asker, oldest first.
+
+    A question is a `kind: "question"` message from anyone but the owner. It is
+    open while no owner row has `replyTo` naming it and the asker has not posted
+    a `kind: "withdrawn"` row with `replyTo` naming it. Whichever came first
+    closes it. Returns (id, doc, status, closer): status is "open", "answered"
+    or "withdrawn"; closer is the answering or withdrawing row (with its id), or
+    None while open.
+    """
+    messages = _messages(docs)
+    replies = {}  # type: Dict[str, List[Tuple[str, dict]]]
+    for did, doc in messages.items():
+        rt = doc.get("replyTo")
+        if isinstance(rt, str) and rt:
+            replies.setdefault(rt, []).append((did, doc))
+    out = []  # type: List[Tuple[str, dict, str, Optional[dict]]]
+    for did, doc in messages.items():
+        if doc.get("kind") != "question":
+            continue
+        asker = doc.get("from")
+        if not isinstance(asker, str) or asker == "owner" or not _is_approved(asker, roster):
+            continue
+        status, closer = "open", None  # type: Tuple[str, Optional[dict]]
+        for rid, r in sorted(replies.get(did, []), key=lambda x: (_t(x[1]), x[0])):
+            if r.get("from") == "owner":
+                status, closer = "answered", dict(r, id=rid)
+                break
+            if r.get("from") == asker and r.get("kind") == "withdrawn":
+                status, closer = "withdrawn", dict(r, id=rid)
+                break
+        out.append((did, doc, status, closer))
+    out.sort(key=lambda item: (_t(item[1]), item[0]))
+    return out
+
+
+def open_owner_questions(docs: Dict, roster=None) -> List[Tuple[str, dict]]:
+    """The questions for the owner nobody has answered or withdrawn, oldest first: (id, doc)."""
+    return [(did, doc) for did, doc, status, _c in owner_questions(docs, roster=roster)
+            if status == "open"]
+
+
 def _agreement_time(doc: dict) -> str:
     u = doc.get("updated")
     if isinstance(u, str) and u:

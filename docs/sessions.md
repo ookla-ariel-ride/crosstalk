@@ -235,6 +235,30 @@ python3 scripts/relay.py reply --from beta \
 Both make ids like `<pid>-YYYYMMDDTHHMMSSffffffZ`. `--id` overrides it; the id
 must start with `<pid>-` and must not exist yet.
 
+### Asking the owner (`ask` and `withdraw`)
+
+For anything only the owner can decide, post a question, one per row. The
+summary is the question itself; the body gives the context, the options and
+your recommendation:
+
+```
+python3 scripts/relay.py ask --from alpha \
+  --summary "Ship the parser before the demo?" \
+  --body "Options: now, or after review. I'd ship now: the review found nothing blocking."
+```
+
+The owner answers on the page's Questions tab, one question at a time. The
+answer is an owner reply to your question, so it shows in your
+`relay.py inbox` under `owner_messages`. If the question becomes moot,
+withdraw it so the owner no longer sees it:
+
+```
+python3 scripts/relay.py withdraw --from alpha --question alpha-20261105T180000000000Z
+```
+
+`relay.py questions [--all]` lists the open questions (with `--all`, the
+answered and withdrawn ones too).
+
 ### Proposing a Crosstalk feature
 
 Post a `waiting` row whose `summary` starts with `Crosstalk feature:`, with

@@ -1,4 +1,4 @@
-"""Ergonomic replies, cross-model peer consults, and agreement adoption."""
+"""Ergonomic replies, cross-model peer consults, questions for the owner, and agreement adoption."""
 import re
 import time
 from datetime import datetime, timedelta, timezone
@@ -9,7 +9,7 @@ from .logs import Line, append_line
 from .participants import Roster, load_roster
 from .posters import next_stamp
 from .replay import enrich_messages, load_all_lines, replay
-from .requests import _is_approved, extract_mentions
+from .requests import _is_approved, extract_mentions, owner_questions
 
 COMMIT_RE = re.compile(r"^[0-9a-fA-F]{7,40}$")
 _LAST_DT = None  # type: Optional[datetime]
@@ -143,6 +143,86 @@ def post_consult(
         ]
         if mentioned:
             data["to"] = mentioned
+    return append_line(root, pid, "set", "messages", mid, data, roster=roster)
+
+
+def post_question(
+    root: Path,
+    pid: str,
+    summary: str,
+    body: Optional[str] = None,
+    refs: Optional[Iterable[str]] = None,
+    msg_id: Optional[str] = None,
+    roster: Optional[Roster] = None,
+) -> Line:
+    """Post a `kind: question` for the owner: one question per row, summary = the question.
+
+    The owner answers on the page's Questions tab; the answer (an owner row with
+    `replyTo` this id) comes back in the asker's inbox as an owner message.
+    """
+    if pid == "owner":
+        raise ValueError("the owner answers questions; only participants ask them")
+    root = Path(root)
+    roster = _ensure_roster(root, roster)
+    _require_pid(pid, roster)
+    summary = _clean_summary(summary)
+    docs = replay(load_all_lines(root, roster))
+    mid = _validate_msg_id(msg_id, pid, docs) or ("%s-%s" % (pid, microsecond_utc_stamp()))
+    data = {
+        "from": pid,
+        "kind": "question",
+        "summary": summary,
+    }  # type: Dict[str, object]
+    if "owner" in roster.participants:
+        data["to"] = ["owner"]
+    if body is not None:
+        data["body"] = body
+    refs_list = _str_list(refs)
+    if refs_list:
+        data["refs"] = refs_list
+    return append_line(root, pid, "set", "messages", mid, data, roster=roster)
+
+
+def question_warning(root: Path, pid: str, roster: Optional[Roster] = None) -> Optional[str]:
+    """What to tell an asker whose question the owner won't see, or None if the owner will."""
+    roster = _ensure_roster(Path(root), roster)
+    if _is_approved(pid, roster):
+        return None
+    return ("%s is quarantined, so this question is logged but the owner won't see it "
+            "until the owner approves %s" % (pid, pid))
+
+
+def withdraw_question(
+    root: Path,
+    pid: str,
+    question_id: str,
+    summary: Optional[str] = None,
+    msg_id: Optional[str] = None,
+    roster: Optional[Roster] = None,
+) -> Line:
+    """Withdraw one of pid's own open questions: a `kind: withdrawn` row with `replyTo` it."""
+    root = Path(root)
+    roster = _ensure_roster(root, roster)
+    _require_pid(pid, roster)
+    if summary is not None:
+        summary = _clean_summary(summary)
+    lines = load_all_lines(root, roster)
+    docs = enrich_messages(replay(lines), lines)
+    q = docs.get(("messages", question_id))
+    if q is None or q.get("kind") != "question":
+        raise ValueError("no such question %r" % (question_id,))
+    if q.get("from") != pid:
+        raise ValueError("only the question's author (%s) may withdraw it" % (q.get("from"),))
+    for did, _doc, status, _closer in owner_questions(docs):
+        if did == question_id and status != "open":
+            raise ValueError("question %r is already %s" % (question_id, status))
+    mid = _validate_msg_id(msg_id, pid, docs) or ("%s-%s" % (pid, microsecond_utc_stamp()))
+    data = {
+        "from": pid,
+        "kind": "withdrawn",
+        "summary": summary or ("Withdrawn: %s" % q.get("summary", question_id)),
+        "replyTo": question_id,
+    }  # type: Dict[str, object]
     return append_line(root, pid, "set", "messages", mid, data, roster=roster)
 
 

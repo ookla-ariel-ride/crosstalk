@@ -3,8 +3,8 @@
 `relay.py mcp --as <participant-id>` runs it. The server acts as exactly one
 participant, fixed at startup: no tool takes a sender, so a tool call can never
 write as anyone else. Every write goes through the same functions relay.py uses
-(`append_line`, `post_reply`, `post_consult`, `claim_file`, `release_file`,
-`adopt_agreement`), so validation, the trust and quarantine rules and the doc id
+(`append_line`, `post_reply`, `post_consult`, `post_question`,
+`withdraw_question`, `claim_file`, `release_file`, `adopt_agreement`), so validation, the trust and quarantine rules and the doc id
 rules are identical. Like relay.py, it writes straight to `log/<pid>.jsonl` in
 the checkout it runs from, so it is local only (see docs/mcp.md).
 
@@ -36,7 +36,8 @@ import time
 from pathlib import Path
 from typing import Any, Callable, Dict, List, Optional
 
-from .consults import adopt_agreement, microsecond_utc_stamp, post_consult, post_reply
+from .consults import (adopt_agreement, microsecond_utc_stamp, post_consult, post_question,
+                       post_reply, question_warning, withdraw_question)
 from .logs import KINDS, append_line, message_problems
 from .participants import ID_RE, load_roster
 from .posters import claim_file, release_file, slugify_path
@@ -63,7 +64,8 @@ UNSUPPORTED_VERSION = -32022
 IDENTITY_ARGS = ("from", "from_", "as", "pid", "participant", "sender_id", "author")
 CHECK_IN_SUMMARY_MAX = 200
 ISO_RE = re.compile(r"^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}Z$")
-POST_KINDS = [k for k in KINDS if k not in ("checkin", "owner")]
+# Questions and withdrawals go through ask_owner and withdraw_question, which check them.
+POST_KINDS = [k for k in KINDS if k not in ("checkin", "owner", "question", "withdrawn")]
 
 
 class ToolError(Exception):
@@ -291,6 +293,26 @@ class McpServer:
             raise ToolError(str(e))
         return {"id": ln.id, "seq": ln.seq, "t": ln.t, "to": ln.data.get("to")}
 
+    def _ask_owner(self, args):
+        try:
+            ln = post_question(self.root, self.pid, args["summary"], body=args.get("body"),
+                               refs=args.get("refs"))
+        except ValueError as e:
+            raise ToolError(str(e))
+        out = {"id": ln.id, "seq": ln.seq, "t": ln.t}
+        warning = question_warning(self.root, self.pid, self._roster())
+        if warning:
+            out["warnings"] = [warning]
+        return out
+
+    def _withdraw_question(self, args):
+        try:
+            ln = withdraw_question(self.root, self.pid, args["question_id"],
+                                   summary=args.get("summary"))
+        except ValueError as e:
+            raise ToolError(str(e))
+        return {"id": ln.id, "seq": ln.seq, "t": ln.t, "replyTo": args["question_id"]}
+
     def _claim(self, args):
         try:
             ln = claim_file(self.root, self.pid, args["path"], repo=args.get("repo"),
@@ -422,6 +444,21 @@ class McpServer:
                  "their inboxes until each answers.",
                  _schema({"summary": summary, "body": body, "refs": refs, "to": to}, ["summary"]),
                  self._consult),
+            Tool("ask_owner", "Ask the owner a question",
+                 "Ask the owner something only the owner can decide. One question per call: "
+                 "the summary is the question itself; the body gives the context, the options "
+                 "and your recommendation. The owner answers on the page, one question at a "
+                 "time, and the answer comes back in your inbox as an owner message.",
+                 _schema({"summary": summary, "body": body, "refs": refs}, ["summary"]),
+                 self._ask_owner),
+            Tool("withdraw_question", "Withdraw a question for the owner",
+                 "Withdraw one of your own open questions for the owner once it is moot, so "
+                 "the owner no longer sees it.",
+                 _schema({"question_id": dict(_STR, minLength=1,
+                                              description="Id of your question."),
+                          "summary": dict(_STR, description="Optional one-line reason.")},
+                         ["question_id"]),
+                 self._withdraw_question),
             Tool("claim_file", "Claim a shared file",
                  "Tell the other sessions you are editing a shared file (git hooks, shared "
                  "rules, shared tooling). A claim is a notice, not a lock: check for other "

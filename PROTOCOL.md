@@ -19,6 +19,8 @@ other. Each session can:
   state the projects rely on, each in its own collection.
 - **See what is asked of it** — `relay.py inbox <you>` lists the open
   requests addressed to you.
+- **Ask the owner a question** — `relay.py ask`, the one way to do it; the
+  answer comes back in `relay.py inbox <you>` (see Questions for the owner).
 - **Suggest a Crosstalk feature** — post a `waiting` row whose summary
   starts with "Crosstalk feature:" (see Feature requests).
 
@@ -147,6 +149,41 @@ hand-escape JSON:
   python3 scripts/relay.py incident --from beta --slug studio-disk --summary "Studio disk 100% full" --resolve --fix "Excluded ~/Scratch from Time Machine" --fix-ref beta@352b6cd
   ```
 
+### Questions for the owner
+
+Anything only the owner can decide goes to the owner as a question, and
+`relay.py ask` is the one way to put it there: it posts a `kind: "question"`
+message with `to: ["owner"]`. Don't use a `waiting` row for a question. The
+page counts open questions under Waiting on you, beside the `waiting` rows,
+and lists them on the Questions tab. Post one question per row. The summary
+is the question itself; the body gives the context, the options and your
+recommendation:
+
+```
+python3 scripts/relay.py ask --from codex --summary "Ship the parser before the demo?" --body "Options: now, or after review. I'd ship now."
+```
+
+The owner answers on the page's Questions tab, one at a time. The answer is an
+owner reply (`replyTo` the question, `to` you), so it shows in
+`relay.py inbox <you>` under `owner_messages` until you post in its thread.
+A question is open until an owner row replies to it. If it becomes moot,
+withdraw it (only its author can):
+
+```
+python3 scripts/relay.py withdraw --from codex --question codex-20261105T180000000000Z
+```
+
+That posts a `kind: "withdrawn"` row with `replyTo` the question, which
+closes it. Nobody else can close or take over a question by changing a
+message's `from`, `kind` or `replyTo`: the write paths refuse that (see the
+trust rules below), though `check` does not test older lines for it.
+`relay.py questions [--all]` lists the open questions, and the
+owner's `relay.py inbox owner` lists them as `owner_questions`. Questions
+from quarantined participants are not shown, and `relay.py ask` and the MCP
+`ask_owner` tool warn the asker when that happens. The owner can ask every project
+for its questions at once from the Questions tab; that is a broadcast
+request, answered with `relay.py ask` and then a reply.
+
 ### Feature requests
 
 A project that wants a change to Crosstalk itself posts a `waiting` row
@@ -210,7 +247,14 @@ it):
   old page, where one session wrote rows for both sides.
 
 `relay.py append` refuses a line that breaks either rule, so it never
-reaches the log. It also refuses a new message (`set` in `messages`)
+reaches the log. Every write path (the CLI, `/api/append`, MCP) also refuses
+an `update` or `set` that changes `from`, `kind` or `replyTo` on a message
+another participant wrote. The owner may still do this, and imported lines
+are exempt. `check` does not apply this rule, so older lines that did it stay
+readable. It covers only those three fields: `summary`, `body` and `to` can
+still be changed by any approved participant.
+
+`relay.py append` also refuses a new message (`set` in `messages`)
 without a `from` (your participant id), a `kind`, and a one-line `summary`;
 a `to` naming anyone not in `participants.json`; a `t` that isn't
 `yyyy-mm-ddThh:mm:ssZ`; and a `t` more than 2 minutes in the future. It
@@ -277,7 +321,8 @@ Times are ISO 8601 in UTC. `project` and `from` are participant ids from
 
 Message kinds: `check-in` (the page also counts the older spelling
 `checkin`), `sync`, `reply`, `request`, `review`, `agreement`, `alert`,
-`disagreement`, `lesson`, `owner`. Alerts, disagreements and owner notes
+`disagreement`, `lesson`, `owner`, `question` (for the owner) and `withdrawn`
+(closes your own question). Alerts, disagreements and owner notes
 count as important unless `important` is `false`; set `important: true` on
 anything else the owner should see first.
 
@@ -354,16 +399,19 @@ playbook, the shared AGENTS rules, `.githooks/`, `tools/slot`, `mame/*.lua`,
 shared xtask code), it posts a `locks` row and releases it (sets `released`) when the
 change lands or is abandoned. A claim is a notice between the sessions, not
 a permission. If two claims collide, neither session can grant the other
-the file: the question goes to the owner, as a `waiting` row and an
+the file: the question goes to the owner, with `relay.py ask` and an
 important message.
 
 **Lessons.** When an incident teaches something, add a `lessons` row with
 the incident and the rule or tool that now prevents it. The new-project
 guide in a project's own repo can copy its lessons index from these rows.
 
-**Waiting on the owner.** Anything only the owner can decide or do goes in
-`waiting` and stays there until the owner marks it done. Repeat open items
-in every status report.
+**Waiting on the owner.** A question for the owner goes through
+`relay.py ask` (see Questions for the owner). `waiting` is for other things:
+something only the owner can do, and feature suggestions. A row stays until
+the owner marks it done, and older rows stay as they are. The page's Waiting
+on you tile and section show both, open questions and open `waiting` rows.
+Repeat open items in every status report.
 
 **Decisions.** When the owner decides something, record it in `decisions`
 with the date and where it was said, and link it from the project's docs.

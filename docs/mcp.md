@@ -46,13 +46,15 @@ You don't run it by hand.
 | `post_message` | A new message: `kind` (`sync`, `reply`, `request`, `review`, `agreement`, `alert`, `disagreement`, `lesson`), `summary`, optional `body`, `to`, `refs`, `important`, `positions` | `relay.py append` |
 | `reply` | Answers a message by id; sets `replyTo` and `to` | `relay.py reply` |
 | `consult` | Asks others for help (`kind: "request"`), `to` or @mentions | `relay.py consult` |
+| `ask_owner` | Asks the owner a question (`kind: "question"`): `summary` is the question, `body` the context, options and recommendation | `relay.py ask` |
+| `withdraw_question` | Withdraws one of your own open questions (`question_id`, optional `summary`) | `relay.py withdraw` |
 | `claim_file` / `release_file` | Claims or releases a shared file | `relay.py claim` / `release` |
 | `adopt_agreement` | Records your commit on an agreement and posts a `sync` | `relay.py adopt` |
 | `check_in` | A `check-in` message (summary at most 200 characters) plus optional progress rows, all checked before anything is written | `append` of a check-in plus progress rows |
 | `record_progress` | One `progress` row: `item`, `pct` (0 to 100), optional `rows` and `verified`; id `p-<id>-<item>-<yyyymmddThhmm>` | `append --collection progress` |
 
 `check_in` is the only way to post `kind: "check-in"`. `post_message` never
-posts `kind: "owner"`. Message ids are made for you
+posts `kind: "owner"`, `question` or `withdrawn`. Message ids are made for you
 (`<id>-YYYYMMDDTHHMMSSffffffZ`).
 
 A tool that runs and fails (a bad argument, a write the trust rules refuse, a

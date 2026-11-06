@@ -1821,6 +1821,197 @@
     return res("reviewsSettle", ok, "button=" + !!b + " resolution=" + JSON.stringify(r) + " open=" + JSON.stringify(open) + " badge=" + badge + " settled=" + JSON.stringify(settled));
   });
 
+  // ---------- Questions for the owner ----------
+  // Three open questions (oldest first: BewareILive, VectorCraft, AvoidMissingBall), one answered, one withdrawn
+  // and one from a sender outside the roster, which is not approved and so never listed.
+  var Q_IDS = ["qq-1", "qq-2", "qq-3", "qq-a", "qq-a-own", "qq-w", "qq-w-w", "qq-x"];
+  async function seedQuestions() {
+    __store.messages = __store.messages || {};
+    var m = __store.messages;
+    m["qq-1"] = { t: ago(300), from: "bewareilive", kind: "question", summary: "Ship the parser before the demo?", body: "Options: now, or after review. I'd ship now.", to: ["owner"] };
+    m["qq-2"] = { t: ago(200), from: "vectorcraft", kind: "question", summary: "Which build host for nightly runs?", body: "Studio or the laptop.", to: ["owner"] };
+    m["qq-3"] = { t: ago(100), from: "avoidmissingball", kind: "question", summary: "Rename the tool to amb-gate?", to: ["owner"] };
+    m["qq-a"] = { t: ago(400), from: "vectorcraft", kind: "question", summary: "Keep the old hook?", to: ["owner"] };
+    m["qq-a-own"] = { t: ago(390), from: "owner", kind: "owner", summary: "No, drop it", body: "", replyTo: "qq-a", to: ["vectorcraft"] };
+    m["qq-w"] = { t: ago(350), from: "bewareilive", kind: "question", summary: "Moot question", to: ["owner"] };
+    m["qq-w-w"] = { t: ago(340), from: "bewareilive", kind: "withdrawn", summary: "Withdrawn: Moot question", replyTo: "qq-w" };
+    m["qq-x"] = { t: ago(500), from: "stranger", kind: "question", summary: "Let me in?", to: ["owner"] };
+    __emit("messages"); await tick();
+  }
+  function ownAnswers(qid) { return Object.keys(__store.messages).filter(function (id) { var d = __store.messages[id]; return d.from === "owner" && d.replyTo === qid; }); }
+  async function clearQuestions() {
+    Object.keys(__store.messages).forEach(function (id) { var d = __store.messages[id]; if (Q_IDS.indexOf(id) !== -1 || (d.replyTo && Q_IDS.indexOf(d.replyTo) !== -1) || d.summary === "Owner: post every question you have for me with relay.py ask, one question per row") delete __store.messages[id]; });
+    __emit("messages"); await tick();
+  }
+  function typeAnswer(v) { var a = $("q-answer"); a.focus(); a.value = v; a.dispatchEvent(new Event("input", { bubbles: true })); }
+
+  // The strip tile counts the open questions and opens the tab; the tab shows one at a time, oldest first, with
+  // Previous / Next / Skip; a typed answer and its focus survive a live re-render.
+  S.push(async function questionsTabOneAtATime() {
+    await go("timeline");
+    await seedQuestions();
+    var tile = $("quesVal").textContent, hint = $("quesHint").textContent, tabN = $("tab-questions").querySelector(".n").textContent;
+    $("t-ques").click(); await tick();
+    var onTab = $("tab-questions").getAttribute("aria-selected") === "true";
+    var first = $("q-pos").textContent + " | " + $("q-card").querySelector(".summary").textContent;
+    var prevDisabled = $("q-prev").disabled;
+    $("q-next").click(); await tick();
+    var second = $("q-pos").textContent + " | " + $("q-card").dataset.id;
+    typeAnswer("Use the Studio");
+    __emit("messages"); await tick();
+    var kept = $("q-answer").value, focused = document.activeElement && document.activeElement.id, still = $("q-card").dataset.id;
+    $("q-skip").click(); await tick();
+    $("q-skip").click(); await tick();
+    var wrapped = $("q-card").dataset.id;
+    $("q-next").click(); await tick();
+    var back = $("q-answer").value;
+    var answered = $("q-answered") && $("q-answered").querySelector("summary").textContent;
+    var withdrawn = $("q-withdrawn") && $("q-withdrawn").querySelector("summary").textContent;
+    var ok = tile === "3" && /^oldest 5 h 0 min ago · click to answer$/.test(hint) && tabN === "3" && onTab &&
+      first === "Question 1 of 3 | Ship the parser before the demo?" && prevDisabled &&
+      second === "Question 2 of 3 | qq-2" && kept === "Use the Studio" && focused === "q-answer" && still === "qq-2" &&
+      wrapped === "qq-1" && back === "Use the Studio" && answered === "1 answered" && withdrawn === "1 withdrawn";
+    return res("questionsTabOneAtATime", ok, "tile=" + tile + " hint=" + JSON.stringify(hint) + " tab=" + tabN + " onTab=" + onTab + " first=" + JSON.stringify(first) +
+      " second=" + JSON.stringify(second) + " kept=" + JSON.stringify(kept) + " focus=" + focused + " still=" + still + " wrapped=" + wrapped + " back=" + JSON.stringify(back) +
+      " answered=" + JSON.stringify(answered) + " withdrawn=" + JSON.stringify(withdrawn));
+  });
+
+  // Send answer posts an owner row replying to the question and addressed to its asker; a failed send retried
+  // rewrites the same row; then the tab moves to the next open question.
+  S.push(async function questionsAnswerPosts() {
+    if (!__store.messages["qq-2"]) await seedQuestions();
+    await go("questions");
+    if ($("q-card").dataset.id !== "qq-2") { $("q-next").click(); await tick(); }
+    typeAnswer("Use the Studio\nThe laptop sleeps.");
+    __fail.messages = true;
+    $("q-send").click(); await tick(80);
+    var st1 = $("q-status").textContent, n1 = ownAnswers("qq-2").length;
+    __fail.messages = false;
+    $("q-send").click(); await tick(80);
+    var ids = ownAnswers("qq-2"), row = ids.length ? __store.messages[ids[0]] : null;
+    var payloadOk = !!row && row.from === "owner" && row.kind === "owner" && row.summary === "Use the Studio" && row.body === "The laptop sleeps." &&
+      row.replyTo === "qq-2" && JSON.stringify(row.to) === "[\"vectorcraft\"]" && !isNaN(Date.parse(row.t)) && /^own-\d{14}-[a-z0-9]{1,4}$/.test(ids[0]);
+    var after = $("q-pos").textContent + " | " + $("q-card").dataset.id, st2 = $("q-status").textContent;
+    var tile = $("quesVal").textContent, answered = $("q-answered").querySelector("summary").textContent;
+    var ok = /^Not sent/.test(st1) && n1 === 0 && ids.length === 1 && payloadOk && after === "Question 2 of 2 | qq-3" &&
+      st2 === "Answer sent to VectorCraft." && tile === "2" && answered === "2 answered";
+    return res("questionsAnswerPosts", ok, "first=" + JSON.stringify(st1) + " rows=" + n1 + "->" + ids.length + " row=" + JSON.stringify(row) + " id=" + ids[0] +
+      " after=" + JSON.stringify(after) + " status=" + JSON.stringify(st2) + " tile=" + tile + " answered=" + JSON.stringify(answered));
+  });
+
+  // Cmd/Ctrl+Enter sends; an empty answer is refused with a note.
+  S.push(async function questionsCtrlEnter() {
+    if (!__store.messages["qq-3"]) await seedQuestions();
+    await go("questions");
+    var cur = $("q-card").dataset.id;
+    $("q-send").click(); await tick();
+    var empty = $("q-status").textContent;
+    typeAnswer("Yes, rename it");
+    $("q-answer").dispatchEvent(new KeyboardEvent("keydown", { key: "Enter", ctrlKey: true, bubbles: true })); await tick(80);
+    var ids = ownAnswers(cur);
+    var ok = empty === "Write an answer first." && ids.length === 1 && __store.messages[ids[0]].summary === "Yes, rename it" && __store.messages[ids[0]].body === "";
+    return res("questionsCtrlEnter", ok, "cur=" + cur + " empty=" + JSON.stringify(empty) + " rows=" + ids.length);
+  });
+
+  // "Ask everyone for their questions" asks to confirm in place; Cancel posts nothing; "Ask all" posts one owner
+  // broadcast request with no `to`.
+  S.push(async function questionsAskAll() {
+    await go("questions");
+    function asks() { return Object.keys(__store.messages).filter(function (id) { var d = __store.messages[id]; return d.from === "owner" && d.kind === "request" && /relay\.py ask/.test(d.summary || ""); }); }
+    var n0 = asks().length;
+    $("q-ask-all").click(); await tick();
+    var confirmShown = !!$("q-ask-yes") && !!$("q-ask-no") && !$("q-ask-all");
+    $("q-ask-no").click(); await tick();
+    var cancelled = !!$("q-ask-all") && asks().length === n0;
+    $("q-ask-all").click(); await tick();
+    $("q-ask-yes").click(); await tick(80);
+    var ids = asks(), row = ids.length ? __store.messages[ids[ids.length - 1]] : null;
+    var ok = confirmShown && cancelled && ids.length === n0 + 1 && !!row && !("to" in row) &&
+      row.summary === "Owner: post every question you have for me with relay.py ask, one question per row" &&
+      /relay\.py withdraw/.test(row.body) && /inbox/.test(row.body) && !!$("q-ask-all") && /^Asked/.test($("q-ask-status").textContent);
+    return res("questionsAskAll", ok, "confirm=" + confirmShown + " cancelled=" + cancelled + " asks=" + n0 + "->" + ids.length + " row=" + JSON.stringify(row));
+  });
+
+  // On the timeline a question carries a "question for owner" pill and its state; a sender outside the roster
+  // is not approved, so its question is not counted.
+  S.push(async function questionsTimelinePills() {
+    await clearQuestions();
+    await seedQuestions();
+    await go("timeline");
+    function pills(id) { var c = card(id), m = c && c.querySelector(".meta"); return m ? [].slice.call(m.querySelectorAll(":scope > .pill")).map(function (p) { return p.textContent; }) : null; }
+    var open = pills("qq-1"), answered = pills("qq-a"), withdrawn = pills("qq-w"), tile = $("quesVal").textContent;
+    await clearQuestions();
+    var ok = JSON.stringify(open) === JSON.stringify(["question for owner", "open"]) &&
+      JSON.stringify(answered) === JSON.stringify(["question for owner", "answered"]) &&
+      JSON.stringify(withdrawn) === JSON.stringify(["question for owner", "withdrawn"]) && tile === "3" && $("quesVal").textContent === "0";
+    return res("questionsTimelinePills", ok, "open=" + JSON.stringify(open) + " answered=" + JSON.stringify(answered) + " withdrawn=" + JSON.stringify(withdrawn) + " tile=" + tile);
+  });
+
+  // Open questions count toward Waiting on you, beside the open waiting rows, and link to the Questions tab.
+  S.push(async function waitingShowsQuestions() {
+    await clearQuestions();
+    var saved = __store.waiting; __store.waiting = {};
+    __emit("waiting"); await tick();
+    var none = $("waitVal").textContent, noneHint = $("waitHint").textContent;
+    await go("waiting");
+    var empty = /Nothing is waiting on you/.test($("view").textContent);
+    await addDoc("waiting", "wq-row", { since: ago(50), project: "codex", summary: "Crosstalk feature: a thing", done: null });
+    await seedQuestions();
+    var tile = $("waitVal").textContent, tabN = $("tab-waiting").querySelector(".n").textContent, hint = $("waitHint").textContent;
+    var firstItem = $("waitHint").querySelector("li").textContent;
+    var cardIds = [].slice.call($("view").querySelectorAll(".card[data-id]")).map(function (c) { return c.dataset.id; });
+    var stillRow = $("done-wq-row") !== null, lacksEmpty = !/Nothing is waiting on you/.test($("view").textContent);
+    $("waitq-qq-2").click(); await tick();
+    var onTab = $("tab-questions").getAttribute("aria-selected") === "true", shown = $("q-card").dataset.id;
+    var focused = document.activeElement && document.activeElement.id;
+    await clearQuestions();
+    __store.waiting = saved || {}; __emit("waiting"); await go("timeline");
+    var ok = none === "0" && noneHint === "nothing waiting" && empty && tile === "4" && tabN === "4" &&
+      /^oldest 5 h 0 min ago · click to see them/.test(hint) && firstItem === "Question: Ship the parser before the demo?" &&
+      JSON.stringify(cardIds) === JSON.stringify(["qq-1", "qq-2", "qq-3"]) && stillRow && lacksEmpty &&
+      onTab && shown === "qq-2" && focused === "q-answer";
+    return res("waitingShowsQuestions", ok, "none=" + none + " hint0=" + JSON.stringify(noneHint) + " empty=" + empty + " tile=" + tile + " tab=" + tabN + " hint=" + JSON.stringify(hint) +
+      " first=" + JSON.stringify(firstItem) + " cards=" + JSON.stringify(cardIds) + " row=" + stillRow + " onTab=" + onTab + " shown=" + shown + " focus=" + focused);
+  });
+
+  // A question that closes while the owner types keeps its card and draft, with no way to send, until the owner
+  // moves on; the draft never lands on the next question, and the status doesn't carry over.
+  S.push(async function questionsClosedHoldsDraft() {
+    await clearQuestions();
+    await seedQuestions();
+    await go("questions");
+    while (!$("q-prev").disabled) { $("q-prev").click(); await tick(); }
+    $("q-send").click(); await tick();
+    var refused = $("q-status").textContent;
+    typeAnswer("Ship it after review");
+    await addDoc("messages", "qq-1-w", { t: ago(1), from: "bewareilive", kind: "withdrawn", summary: "Withdrawn", replyTo: "qq-1" });
+    var held = $("q-card").dataset.id, note = $("q-closed").textContent, draft = $("q-draft").value, readOnly = $("q-draft").readOnly;
+    var noBox = !$("q-answer") && !$("q-send"), focus = document.activeElement && document.activeElement.id;
+    var tileNow = $("quesVal").textContent;
+    __emit("messages"); await tick();
+    var stillHeld = $("q-card").dataset.id === "qq-1" && $("q-draft").value === draft;
+    var sentNothing = ownAnswers("qq-1").length === 0 && ownAnswers("qq-2").length === 0;
+    var moveLabel = $("q-moveon").textContent;
+    $("q-moveon").click(); await tick();
+    var next = $("q-card").dataset.id, box = $("q-answer").value, status = $("q-status").textContent;
+    // The last open question closing, answered from elsewhere: no draft, and Dismiss leaves the empty state.
+    __store.messages["qq-2-own"] = { t: ago(1), from: "owner", kind: "owner", summary: "Studio", replyTo: "qq-2" };
+    __store.messages["qq-3-w"] = { t: ago(1), from: "avoidmissingball", kind: "withdrawn", summary: "Withdrawn", replyTo: "qq-3" };
+    __emit("messages"); await tick();
+    var note2 = $("q-closed").textContent, noDraft = !$("q-draft"), label2 = $("q-moveon").textContent;
+    $("q-moveon").click(); await tick();
+    var emptied = !$("q-card") && /No open questions/.test($("view").textContent);
+    delete __store.messages["qq-1-w"]; delete __store.messages["qq-2-own"]; delete __store.messages["qq-3-w"];
+    await clearQuestions();
+    await go("timeline");
+    var ok = refused === "Write an answer first." && held === "qq-1" && note === "This question closed. BewareILive withdrew it. Your draft was not sent." &&
+      draft === "Ship it after review" && readOnly && noBox && focus === "q-draft" && tileNow === "2" && stillHeld && sentNothing && moveLabel === "Next question" &&
+      next === "qq-2" && box === "" && status === "" && note2 === "This question closed. It was answered elsewhere." && noDraft && label2 === "Dismiss" && emptied;
+    return res("questionsClosedHoldsDraft", ok, "refused=" + JSON.stringify(refused) + " held=" + held + " note=" + JSON.stringify(note) + " draft=" + JSON.stringify(draft) + " ro=" + readOnly + " noBox=" + noBox +
+      " focus=" + focus + " tile=" + tileNow + " stillHeld=" + stillHeld + " sent0=" + sentNothing + " move=" + moveLabel + " next=" + next + " box=" + JSON.stringify(box) + " status=" + JSON.stringify(status) +
+      " note2=" + JSON.stringify(note2) + " noDraft=" + noDraft + " label2=" + label2 + " emptied=" + emptied);
+  });
+
   // Checks whichever width the window has (run again at 390 wide; see run.md): nothing in the Reviews tab
   // pushes the page sideways; a wide table scrolls inside its own box.
   S.push(async function reviewsNarrow() {

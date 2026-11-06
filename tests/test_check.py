@@ -149,6 +149,16 @@ class TrustTests(unittest.TestCase):
                                              data={"seen": True})])
             self.assertEqual(self.check(r), [])
 
+    def test_old_changes_to_another_writers_message_stay_tolerated(self):
+        # The append path refuses these now; lines already in the log stay readable.
+        with TempRepo() as r:
+            r.write_log("alpha", [line(1, "alpha", id_="m-1", data={"from": "alpha", "kind": "request"})])
+            r.write_log("beta", [line(1, "beta", id_="m-1", t="2026-10-21T18:10:00Z",
+                                      data={"from": "beta", "kind": "check-in"}),
+                                 line(2, "beta", id_="alpha-1", op="update", data={"kind": "reply"}),
+                                 line(3, "beta", id_="beta-3", data={"from": "beta", "kind": "sync"})])
+            self.assertEqual(self.check(r), [])
+
     def test_unknown_writer_touching_other_doc_fatal(self):
         with TempRepo() as r:
             r.write_log("stranger", [line(1, "stranger", id_="rev-1", op="update",

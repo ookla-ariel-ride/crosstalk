@@ -9,6 +9,8 @@ from .requests import (
     agreements_to_adopt_for,
     all_requests_for,
     inbox_for,
+    open_owner_questions,
+    owner_questions,
     pending_recipients,
     stale_locks_for,
     thread_replies_for,
@@ -41,14 +43,14 @@ def load_docs(root: Path, roster: Roster) -> Tuple[Optional[Dict], List[Problem]
 def inbox_report(docs: Dict, pid: str, roster: Roster, include_answered: bool = False,
                  now_iso: Optional[str] = None) -> dict:
     """What `relay.py inbox <pid>` prints: requests, owner messages, replies on pid's
-    threads, agreements, stale locks."""
+    threads, agreements, stale locks, and for the owner the open questions for it."""
     requests = (
         all_requests_for(docs, pid, roster=roster)
         if include_answered
         else inbox_for(docs, pid, roster=roster)
     )
     owner_msgs = unanswered_owner_messages(docs, pid, roster=roster)
-    return {
+    out = {
         "pid": pid,
         "roster": {p: {"trust": e.trust} for p, e in roster.participants.items()},
         "requests": [
@@ -79,6 +81,32 @@ def inbox_report(docs: Dict, pid: str, roster: Roster, include_answered: bool = 
         "stale_locks": stale_locks_for(docs, pid, now_iso=now_iso),
         "service": SERVICE,
     }
+    if pid == "owner":
+        out["owner_questions"] = [
+            {"question": dict(doc, id=did), "trust": trust_of(doc.get("from"), roster)}
+            for (did, doc) in open_owner_questions(docs, roster=roster)
+        ]
+    return out
+
+
+def questions_report(docs: Dict, roster: Roster, include_closed: bool = False) -> dict:
+    """What `relay.py questions` prints: the questions for the owner, oldest first.
+
+    Open ones only, or with include_closed also the answered and withdrawn ones,
+    each with the row that closed it.
+    """
+    rows = []
+    for did, doc, status, closer in owner_questions(docs, roster=roster):
+        if status != "open" and not include_closed:
+            continue
+        item = {"question": dict(doc, id=did), "status": status,
+                "trust": trust_of(doc.get("from"), roster)}
+        if status == "answered":
+            item["answer"] = closer
+        elif status == "withdrawn":
+            item["withdrawn"] = closer
+        rows.append(item)
+    return {"questions": rows, "open": sum(1 for r in rows if r["status"] == "open")}
 
 
 def recent_messages(docs: Dict, roster: Roster, limit: int = 20, since: Optional[str] = None,

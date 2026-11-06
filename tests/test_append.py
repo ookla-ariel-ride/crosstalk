@@ -2,10 +2,79 @@ import multiprocessing
 import time
 import unittest
 
-from helpers import TempRepo
+from helpers import TempRepo, line
 from append_worker import worker
 from crosstalk.logs import append_line, message_problems, read_log
 from crosstalk.participants import load_roster
+
+
+class MessageIdentityTests(unittest.TestCase):
+    """Nobody but a message's writer or the owner may change its from, kind or replyTo."""
+
+    def setUp(self):
+        self.r = TempRepo()
+        self.r.__enter__()
+        self.r.write_roster()
+        self.r.write_log("alpha", [line(1, "alpha", id_="alpha-q", data={
+            "from": "alpha", "kind": "question", "summary": "Ship it?", "to": ["owner"]})])
+        self.r.write_log("owner", [line(1, "owner", id_="own-1", data={
+            "from": "owner", "kind": "owner", "summary": "A note"})])
+        self.roster = load_roster(self.r.root / "participants.json")
+
+    def tearDown(self):
+        self.r.__exit__(None, None, None)
+
+    def append(self, pid, op, id_, data, **kw):
+        return append_line(self.r.root, pid, op, "messages", id_, data, roster=self.roster, **kw)
+
+    def refused(self, pid, op, id_, data):
+        with self.assertRaises(ValueError) as e:
+            self.append(pid, op, id_, data)
+        self.assertIn("only its writer or the owner", str(e.exception))
+        self.assertFalse((self.r.root / "log" / (pid + ".jsonl")).exists())
+
+    def test_cannot_hijack_or_close_another_participants_question(self):
+        self.refused("beta", "update", "alpha-q", {"from": "beta"})
+        self.refused("beta", "update", "alpha-q", {"kind": "reply"})
+        self.refused("beta", "update", "alpha-q", {"replyTo": "own-1"})
+
+    def test_cannot_turn_the_owners_row_into_an_answer(self):
+        self.refused("beta", "update", "own-1", {"replyTo": "alpha-q"})
+
+    def test_cannot_reopen_a_question_by_deleting_the_answers_reply_to(self):
+        self.r.write_log("owner", [line(1, "owner", id_="own-2", data={
+            "from": "owner", "kind": "owner", "summary": "Yes", "replyTo": "alpha-q"})])
+        self.refused("beta", "update", "own-2", {"replyTo": {"__delete__": True}})
+
+    def test_cannot_set_over_another_participants_message(self):
+        self.refused("beta", "set", "own-1", {"from": "beta", "kind": "reply", "summary": "Mine now"})
+
+    def test_an_update_that_changes_nothing_or_other_fields_passes(self):
+        self.append("beta", "update", "alpha-q", {"kind": "question", "seen": True})
+        self.append("beta", "update", "alpha-q", {"important": True})
+
+    def test_the_writer_may_change_its_own_message(self):
+        self.append("alpha", "update", "alpha-q", {"kind": "reply", "replyTo": "own-1"})
+
+    def test_the_owner_keeps_its_powers(self):
+        self.append("owner", "update", "alpha-q", {"kind": "reply", "replyTo": "own-1"})
+
+    def test_imported_lines_are_exempt(self):
+        self.append("beta", "update", "alpha-q", {"kind": "reply"}, via="import")
+
+    def test_a_new_id_passes(self):
+        self.append("beta", "update", "beta-new", {"kind": "reply"})
+        self.append("alpha", "set", "alpha-2", {"from": "alpha", "kind": "reply", "summary": "hi"})
+
+    def test_after_an_old_overwrite_the_last_set_is_the_writer(self):
+        # m-0177 in the live log: a later `set` from another participant took the id.
+        self.r.write_log("alpha", [line(1, "alpha", id_="m-1", t="2026-10-21T18:00:00Z", data={
+            "from": "alpha", "kind": "request", "summary": "First"})])
+        self.r.write_log("beta", [line(1, "beta", id_="m-1", t="2026-10-21T18:10:00Z", data={
+            "from": "beta", "kind": "check-in", "summary": "Second"})])
+        self.append("beta", "update", "m-1", {"kind": "sync"})
+        with self.assertRaises(ValueError):
+            self.append("alpha", "update", "m-1", {"kind": "request"})
 
 
 class AppendTests(unittest.TestCase):

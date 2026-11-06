@@ -16,7 +16,10 @@ COLLECTIONS = ("messages", "agreements", "waiting", "locks", "lessons",
 OWNER_COLLECTIONS = COLLECTIONS + ("participants",)
 OPS = ("set", "update")
 KINDS = ("check-in", "checkin", "sync", "reply", "request", "review", "agreement", "alert",
-         "disagreement", "lesson", "owner")
+         "disagreement", "lesson", "owner", "question", "withdrawn")
+# Who wrote a message, what it is, and what it answers: the fields the request and
+# question rules read. Only its writer (or the owner) may change them.
+MESSAGE_IDENTITY = ("from", "kind", "replyTo")
 SKEW_MIN = 2
 
 
@@ -143,6 +146,44 @@ def _trust_problem(d: dict, owner: str, roster: Roster) -> Optional[str]:
     return None
 
 
+def _identity_problem(root: Path, from_: str, op: str, collection: str, doc_id: str,
+                      data: dict, via: Optional[str], roster: Roster) -> Optional[str]:
+    """A new line that changes MESSAGE_IDENTITY on another participant's message.
+
+    The writer is whoever made the `set` the replay shows, or the first line if no
+    `set` exists. The owner keeps its powers and imported lines are exempt. This
+    judges new lines only: read_log leaves it out, so `check` accepts lines already
+    in the log and a stray one can't cut off the rest of its file.
+    """
+    from .replay import _is_delete, load_all_lines, order_key, replay  # replay imports this module
+
+    if collection != "messages" or from_ == "owner" or via == "import":
+        return None
+    if op == "update" and not any(name in data for name in MESSAGE_IDENTITY):
+        return None
+    history = sorted((ln for ln in load_all_lines(root, roster)
+                      if ln.collection == "messages" and ln.id == doc_id), key=order_key)
+    if not history:
+        return None
+    sets = [ln for ln in history if ln.op == "set"]
+    writer = sets[-1].from_ if sets else history[0].from_
+    if writer == from_:
+        return None
+    doc = replay(history)[("messages", doc_id)]
+    doc.setdefault("from", writer)
+    changed = []  # type: List[str]
+    for name in MESSAGE_IDENTITY:
+        if op == "update" and name not in data:
+            continue
+        new = None if _is_delete(data.get(name)) else data.get(name)
+        if new != doc.get(name):
+            changed.append(name)
+    if changed:
+        return ("message %r was written by %r; only its writer or the owner may change %s"
+                % (doc_id, writer, ", ".join(changed)))
+    return None
+
+
 def message_problems(collection: str, op: str, data: dict, roster: Roster,
                      now: Optional[float] = None) -> Tuple[List[str], List[str]]:
     """Shape rules for a message an appender writes now: (errors, warnings).
@@ -237,6 +278,9 @@ def append_line(root: Path, from_: str, op: str, collection: str, id: str, data:
         errors = message_problems(collection, op, data, roster)[0]
         if errors:
             raise ValueError("; ".join(errors))
+        msg = _identity_problem(root, from_, op, collection, id, data, via, roster)
+        if msg:
+            raise ValueError(msg)
     if t is None:
         t = time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime())
     log_dir = Path(root) / "log"

@@ -18,7 +18,8 @@ tab.
 | Feed | Whether the page can reach the server: `Connecting`, `Live`, `Partly live`, `Offline` (with the first fatal log problem, if any), or `Stopped` |
 | Check-ins | Whether every participant with a check-in interval is on time. A dot turns amber 5 minutes past due and red 15 minutes past due |
 | Open agreements | Open vs total agreements, and how many are on hold |
-| Waiting on you | Open owner items, oldest first, with up to three summaries |
+| Waiting on you | Open owner items and open questions, with the age of the oldest and up to three summaries, questions first |
+| Questions for you | Open questions the projects have for you (`relay.py ask`), and how long the oldest has waited; click to answer them |
 | Files claimed | Active file claims, each linked to the file on GitHub |
 
 The page polls every 5 seconds. When nothing changed it only refreshes the
@@ -48,7 +49,8 @@ session reads them. See [Live sessions](live-sessions.md).
 | Timeline | A dismissible "Since your last visit" digest of what others posted while the page was closed, the composer, search, kind filters and Show toggles, and every message ordered by latest activity. Replies are grouped under the message they answer (see below) | Post, reply, star a message, record a message as a decision, approve a participant, settle a disagreement (`Go with <Name>`) |
 | Help | Open questions (`kind: "request"`), newest first, with who they're addressed to and a `waiting on ...` pill while some recipients haven't answered | Reply |
 | Agreements | Every agreement by stage (`proposed`, `agreed`, `building`, `landed-builder`, `ready-to-adopt`, `landed-both`, `held`, `dropped`), with builder, adopter, and per-project commit links | Hold, release hold |
-| Waiting on you | Open owner items oldest first, including `Crosstalk feature: ...` proposals, plus a collapsed list of done items | Mark done |
+| Waiting on you | Open questions, each linked to the Questions tab, then open owner items oldest first, including `Crosstalk feature: ...` proposals, plus a collapsed list of done items | Mark done; Answer it opens the question on the Questions tab |
+| Questions | The open questions for you (`kind: "question"`), one at a time, oldest first: who asked, when, the question and its context, `Question 2 of 7`, with Previous, Next and Skip. A question that closes while it shows stays, with a `This question closed` notice and your unsent draft read-only, until you move on; then folded lists of answered (with your answer) and withdrawn questions. Quarantined askers are left out | Answer (Send answer or Cmd+Enter posts an owner reply to the asker and moves to the next one); Ask everyone for their questions (a broadcast request, confirmed in place) |
 | File claims | Active and released shared-file claims, with holder, reason, duration, and GitHub links | Read only |
 | Lessons | Lessons and the rule or tool that now prevents each one | Read only |
 | Decisions | Owner decisions, including messages promoted with "Record as decision" | Read only |

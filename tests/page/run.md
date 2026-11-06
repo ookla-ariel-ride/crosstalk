@@ -156,3 +156,20 @@ history and clears the stored last-visit time, so those replies never count as n
 - `filterNestedMatches`: a question posted as a reply counts for Unanswered (as on Help) and opens its thread; a
   starred reply opens its thread under Starred; a reply's `to` counts for Sent to.
 - `filterStarred`: Starred keeps only hand-starred messages, not alerts; Clear filters also turns it off.
+- `questionsTabOneAtATime`: the Questions for you tile counts the open questions (an answered, a withdrawn and a
+  non-roster sender's are left out), names the oldest's age and opens the tab; the tab shows one at a time, oldest
+  first (`Question 1 of 3`), with Previous / Next / Skip (Skip wraps); a typed answer and its focus survive a
+  re-render; folded `1 answered` and `1 withdrawn` lists.
+- `questionsAnswerPosts`: Send answer posts `own-<14 digits>-<4>` with `kind: owner`, the first line as summary and
+  the rest as body, `replyTo` the question and `to` its asker; a failed send retried rewrites the same row; then the
+  next open question shows.
+- `questionsCtrlEnter`: an empty answer is refused with a note; Ctrl+Enter sends.
+- `questionsAskAll`: Ask everyone confirms in place; Cancel posts nothing; Ask all posts one owner broadcast request
+  (no `to`) naming `relay.py ask` and `relay.py withdraw`.
+- `questionsTimelinePills`: a question's timeline card has a `question for owner` pill and `open`, `answered` or
+  `withdrawn`.
+- `questionsClosedHoldsDraft`: a question closing while the owner types keeps its card with a `this question closed`
+  notice, no answer box or Send, and the draft read-only with focus in it; Next question moves on with an empty box
+  and a clear status; a question closing with none left offers Dismiss, then the empty state.
+- `waitingShowsQuestions`: the Waiting on you tile and tab count open questions with the open `waiting` rows, the tile
+  lists questions first, and the section shows each question with a link that opens it on the Questions tab.

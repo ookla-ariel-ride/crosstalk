@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Command line for the Crosstalk log: check, append, import, pull, pending, restore, sent, token, onboard, kit, serve, mcp, urgent, reviews."""
+"""Command line for the Crosstalk log: check, append, import, pull, pending, restore, sent, token, onboard, kit, serve, mcp, urgent, reviews, ask, questions, withdraw."""
 import argparse
 import json
 import os
@@ -11,7 +11,8 @@ from typing import Dict
 ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT / "scripts"))
 
-from crosstalk.consults import adopt_agreement, post_consult, post_reply  # noqa: E402
+from crosstalk.consults import (  # noqa: E402
+    adopt_agreement, post_consult, post_question, post_reply, question_warning, withdraw_question)
 from crosstalk.courier import pending, restore, sent  # noqa: E402
 from crosstalk.exporter import export_page  # noqa: E402
 from crosstalk.importer import import_snapshots, merge_snapshots  # noqa: E402
@@ -27,7 +28,7 @@ from crosstalk.participants import load_roster  # noqa: E402
 from crosstalk.posters import claim_file, land_sync, post_incident, release_file  # noqa: E402
 from crosstalk.pull import pull  # noqa: E402
 from crosstalk.replay import enrich_messages, load_all_lines, replay  # noqa: E402
-from crosstalk.reports import inbox_report, load_docs  # noqa: E402
+from crosstalk.reports import inbox_report, load_docs, questions_report  # noqa: E402
 from crosstalk.serve import serve  # noqa: E402
 from crosstalk.service import SERVICE  # noqa: E402
 from crosstalk.tokens import TOKEN_FILE, Tokens, load_tokens  # noqa: E402
@@ -432,6 +433,52 @@ def cmd_consult(args):
     return 0
 
 
+def cmd_ask(args):
+    """Post a question for the owner; prints the new message id."""
+    try:
+        ln = post_question(
+            ROOT,
+            args.from_,
+            args.summary,
+            body=args.body,
+            refs=_flatten(args.refs),
+            msg_id=args.id,
+        )
+    except ValueError as e:
+        err(str(e))
+        return 1
+    warning = question_warning(ROOT, args.from_)
+    if warning:
+        err("warning: " + warning)
+    print(ln.id)
+    return 0
+
+
+def cmd_questions(args):
+    """Print the open questions for the owner as JSON (with --all, answered and withdrawn too)."""
+    roster = load_roster(ROOT / "participants.json")
+    docs, fatal = load_docs(ROOT, roster)
+    if fatal:
+        for p in fatal:
+            err("%s:%d: %s" % (p.file, p.line, p.message))
+        return 1
+    out = questions_report(docs, roster, include_closed=args.all)
+    print(json.dumps(out, ensure_ascii=False, sort_keys=True, indent=2))
+    return 0
+
+
+def cmd_withdraw(args):
+    """Withdraw one of your own open questions; prints the new message id."""
+    try:
+        ln = withdraw_question(ROOT, args.from_, args.question, summary=args.summary,
+                               msg_id=args.id)
+    except ValueError as e:
+        err(str(e))
+        return 1
+    print(ln.id)
+    return 0
+
+
 def cmd_adopt(args):
     try:
         res = adopt_agreement(
@@ -574,6 +621,26 @@ def build_parser():
     cs.add_argument("--to", dest="to", action="append", nargs="+")
     cs.add_argument("--id")
     cs.set_defaults(fn=cmd_consult)
+
+    ak = sub.add_parser("ask", help="post a question for the owner; prints the new message id")
+    ak.add_argument("--from", dest="from_", required=True)
+    ak.add_argument("--summary", required=True, help="the question itself, one line")
+    ak.add_argument("--body", help="context, the options, and your recommendation")
+    ak.add_argument("--ref", "--refs", dest="refs", action="append", nargs="+")
+    ak.add_argument("--id")
+    ak.set_defaults(fn=cmd_ask)
+
+    qs = sub.add_parser("questions", help="print the open questions for the owner (JSON)")
+    qs.add_argument("--all", action="store_true",
+                    help="also list answered and withdrawn questions, with their answers")
+    qs.set_defaults(fn=cmd_questions)
+
+    wd = sub.add_parser("withdraw", help="withdraw one of your own open questions; prints the new message id")
+    wd.add_argument("--from", dest="from_", required=True)
+    wd.add_argument("--question", required=True, metavar="ID", help="the question's message id")
+    wd.add_argument("--summary", help="optional one-line reason")
+    wd.add_argument("--id")
+    wd.set_defaults(fn=cmd_withdraw)
 
     ad = sub.add_parser("adopt", help="record adoption of an agreement and post a sync message")
     ad.add_argument("--from", dest="from_", required=True)
