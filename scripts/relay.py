@@ -31,6 +31,7 @@ from crosstalk.replay import enrich_messages, load_all_lines, replay  # noqa: E4
 from crosstalk.reports import inbox_report, load_docs, questions_report  # noqa: E402
 from crosstalk.serve import serve  # noqa: E402
 from crosstalk.service import SERVICE  # noqa: E402
+from crosstalk.stalls import find_stalls  # noqa: E402
 from crosstalk.tokens import TOKEN_FILE, Tokens, load_tokens  # noqa: E402
 
 
@@ -93,6 +94,17 @@ def cmd_append(args):
     return 0
 
 
+def _row_time(doc):
+    """A row's time, whichever field it keeps it in; "" when it has none."""
+    return str(doc.get("t") or doc.get("since") or "")
+
+
+def _brief_line(label, doc_id, doc, t):
+    """One line for a row: `relay.py read --brief` and `inbox --brief`."""
+    summary = " ".join(str(doc.get("summary") or doc.get("title") or "").split())
+    return "%s %s %s %s: %s" % (t[:16] or "-", label, doc.get("from", "?"), doc_id, summary[:200])
+
+
 def cmd_read(args):
     """Print the replay as JSON: the shared memory for any session that speaks JSON."""
     roster = load_roster(ROOT / "participants.json")
@@ -110,6 +122,14 @@ def cmd_read(args):
     if args.collection:
         wanted = set(args.collection)
         collections = {c: v for c, v in collections.items() if c in wanted}
+    if args.since:
+        collections = {c: {i: d for i, d in v.items() if _row_time(d) >= (args.since or "")}
+                       for c, v in collections.items()}
+    if args.brief:
+        rows = [(_row_time(d), c, i, d) for c, v in collections.items() for i, d in v.items()]
+        for t, c, i, d in sorted(rows, key=lambda r: r[:3]):
+            print(_brief_line(c, i, d, t))
+        return 0
     print(json.dumps({"collections": collections, "service": SERVICE},
                      ensure_ascii=False, sort_keys=True, indent=2))
     return 0
@@ -128,7 +148,25 @@ def cmd_inbox(args):
         return 1
     out = inbox_report(docs, args.pid, roster, include_answered=args.all,
                        now_iso=getattr(args, "now", None))
+    if args.brief:
+        for key, label in (("owner_messages", "owner"), ("requests", "request"),
+                           ("thread_replies", "reply")):
+            for item in out.get(key, []):
+                doc = item.get("request") or item.get("message") or item
+                print(_brief_line(label, doc.get("id", "?"), doc, _row_time(doc)))
+        print("adopt %d, stale locks %d" % (len(out.get("agreements_to_adopt", [])),
+                                            len(out.get("stale_locks", []))))
+        return 0
     print(json.dumps(out, ensure_ascii=False, sort_keys=True, indent=2))
+    return 0
+
+
+def cmd_stalls(args):
+    """Print agents whose last transcript row is a tool call with no result."""
+    found = find_stalls(Path(args.root).expanduser(), args.minutes, time.time())
+    for s in found:
+        print("%s %s %s: %s, %d min" % (s["project"], s["session"], s["agent"], s["tool"], s["minutes"]))
+    print("%d stalled over %d min" % (len(found), args.minutes))
     return 0
 
 
@@ -523,12 +561,21 @@ def build_parser():
     rd = sub.add_parser("read", help="print the replay as JSON")
     rd.add_argument("--collection", action="append", metavar="C",
                     help="only this collection (may be given more than once)")
+    rd.add_argument("--since", metavar="TIME",
+                    help="only rows at or after this UTC time, such as 2026-11-06T13:00")
+    rd.add_argument("--brief", action="store_true", help="one line per row, oldest first")
     rd.set_defaults(fn=cmd_read)
 
     ib = sub.add_parser("inbox", help="print the open requests addressed to a participant")
     ib.add_argument("pid", metavar="PID")
     ib.add_argument("--all", action="store_true", help="include answered requests")
+    ib.add_argument("--brief", action="store_true", help="one line per item")
     ib.set_defaults(fn=cmd_inbox)
+
+    st = sub.add_parser("stalls", help="list agents stuck on a tool call with no result")
+    st.add_argument("--minutes", type=int, default=30, help="how long a call must hang (30)")
+    st.add_argument("--root", default="~/.claude/projects", help="Claude Code's transcripts")
+    st.set_defaults(fn=cmd_stalls)
 
     p = sub.add_parser("pull", help="record the owner's page changes")
     p.add_argument("export_dir", metavar="EXPORT_DIR")

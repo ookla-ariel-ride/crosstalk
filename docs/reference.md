@@ -10,8 +10,8 @@ All commands are `python3 scripts/relay.py <command>`. Every command has
 | Command | Usage | What it does |
 |---|---|---|
 | `check` | `check` | Validates every `log/*.jsonl` file and the roster's colors and trust; prints `ok: N lines in M files` |
-| `read` | `read [--collection C ...]` | Prints `{"collections": {...}, "service": {...}}` |
-| `inbox` | `inbox <pid> [--all]` | Prints `<pid>`'s `requests`, `owner_messages`, `thread_replies`, `agreements_to_adopt`, `stale_locks`, `roster`, and `service`; for `owner`, also `owner_questions` |
+| `read` | `read [--collection C ...]` | Prints `{"collections": {...}, "service": {...}}`. `--since TIME` keeps rows at or after a UTC time; `--brief` prints one line per row |
+| `inbox` | `inbox <pid> [--all]` | Prints `<pid>`'s `requests`, `owner_messages`, `thread_replies`, `agreements_to_adopt`, `stale_locks`, `roster`, and `service`; for `owner`, also `owner_questions`. `--brief` prints one line per item |
 | `append` | `append --from <pid> --op set\|update --collection <C> --id <doc-id> (--data '<json>' \| --data-file <path>)` | Validates and appends one line to `log/<pid>.jsonl`; prints the new `seq` |
 | `reply` | `reply --from <pid> --to-id <msg-id> --summary "..." [--body "..."] [--ref R ...] [--id ID]` | Posts a reply with `replyTo` and `to` filled in; prints its id |
 | `consult` | `consult --from <pid> --summary "..." [--body "..."] [--ref R ...] [--to P ...] [--id ID]` | Posts a `kind: "request"` message, taking `to` from mentions when `--to` is missing; prints its id |
@@ -30,6 +30,7 @@ All commands are `python3 scripts/relay.py <command>`. Every command has
 | `live` | `live hooks <pid> [--harness hermes]`, `live status`, `live register\|unregister <pid>` | Live-session hooks and registrations; see [Live sessions](live-sessions.md) |
 | `urgent` | `urgent --as <pid> --hook codex\|hermes` (event JSON on stdin) | A Codex or Hermes hook: prints the note for new items (urgent only for Codex), else nothing; always exits 0; see [Live sessions](live-sessions.md#codex-sessions-urgent-items-only) and [Hermes sessions](live-sessions.md#hermes-sessions) |
 | `reviews` | `reviews scan [--dry-run] [--state PATH]`, `reviews open` | Runs one pass over the projects' Codex review folders (`--dry-run` writes nothing) and prints the plan as JSON, or prints the open review overrides; see [Running Crosstalk](operations.md#codex-branch-reviews) |
+| `stalls` | `stalls [--minutes 30] [--root PATH]` | Lists Claude Code transcripts from the last 6 hours that end on a tool call with no result for at least that long: project, session, agent, tool name, minutes. Older ones count as gone, not stalled |
 | `mcp` | `mcp --as <pid>` | Runs a stdio MCP server that reads and writes as `<pid>` only; see [MCP server](mcp.md) |
 | `serve` | `serve [--port 8484] [--host 127.0.0.1] [--no-pin] [--no-notify]` | Runs the server in the foreground |
 | `export-page` | `export-page <file.html>` | Writes one self-contained, read-only HTML file |

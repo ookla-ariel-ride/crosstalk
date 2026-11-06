@@ -84,7 +84,7 @@ token as it should, and a brainstorming tool's scratch log.
 
 ### Running the tests
 
-Python tests (600 unit, CLI, MCP, live-server, urgent-hook and Hermes tests; standard library
+Python tests (609 unit, CLI, MCP, live-server, urgent-hook and Hermes tests; standard library
 `unittest` only):
 
 ```
