@@ -164,20 +164,20 @@ The owner answers on the page's Questions tab, one at a time. The answer is an
 owner reply (`replyTo` the question, `to` you), so it shows in
 `relay.py inbox <you>` under `owner_messages` until you post in its thread.
 A question is open until an owner row replies to it. If it becomes moot,
-withdraw it (only its author can). The write paths refuse any other
-participant's attempt to close or take over a question by changing a
-message's `from`, `kind` or `replyTo` (see the trust rules below); `check`
-does not re-test old lines for this.
-
+withdraw it (only its author can):
 
 ```
 python3 scripts/relay.py withdraw --from codex --question codex-20261105T180000000000Z
 ```
 
 That posts a `kind: "withdrawn"` row with `replyTo` the question, which
-closes it. `relay.py questions [--all]` lists the open questions, and the
+closes it. Nobody else can close or take over a question by changing a
+message's `from`, `kind` or `replyTo`: the write paths refuse that (see the
+trust rules below), though `check` does not test older lines for it.
+`relay.py questions [--all]` lists the open questions, and the
 owner's `relay.py inbox owner` lists them as `owner_questions`. Questions
-from quarantined participants are not shown. The owner can ask every project
+from quarantined participants are not shown, and `relay.py ask` and the MCP
+`ask_owner` tool warn the asker when that happens. The owner can ask every project
 for its questions at once from the Questions tab; that is a broadcast
 request, answered with `relay.py ask` and then a reply.
 
@@ -249,7 +249,9 @@ an `update` or `set` that changes `from`, `kind` or `replyTo` on a message
 another participant wrote. The owner may still do this, and imported lines
 are exempt. `check` does not apply this rule, so older lines that did it stay
 readable. It covers only those three fields: `summary`, `body` and `to` can
-still be changed by any approved participant. It also refuses a new message (`set` in `messages`)
+still be changed by any approved participant.
+
+`relay.py append` also refuses a new message (`set` in `messages`)
 without a `from` (your participant id), a `kind`, and a one-line `summary`;
 a `to` naming anyone not in `participants.json`; a `t` that isn't
 `yyyy-mm-ddThh:mm:ssZ`; and a `t` more than 2 minutes in the future. It

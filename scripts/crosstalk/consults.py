@@ -183,6 +183,15 @@ def post_question(
     return append_line(root, pid, "set", "messages", mid, data, roster=roster)
 
 
+def question_warning(root: Path, pid: str, roster: Optional[Roster] = None) -> Optional[str]:
+    """What to tell an asker whose question the owner won't see, or None if the owner will."""
+    roster = _ensure_roster(Path(root), roster)
+    if _is_approved(pid, roster):
+        return None
+    return ("%s is quarantined, so this question is logged but the owner won't see it "
+            "until the owner approves %s" % (pid, pid))
+
+
 def withdraw_question(
     root: Path,
     pid: str,

@@ -12,7 +12,7 @@ ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT / "scripts"))
 
 from crosstalk.consults import (  # noqa: E402
-    adopt_agreement, post_consult, post_question, post_reply, withdraw_question)
+    adopt_agreement, post_consult, post_question, post_reply, question_warning, withdraw_question)
 from crosstalk.courier import pending, restore, sent  # noqa: E402
 from crosstalk.exporter import export_page  # noqa: E402
 from crosstalk.importer import import_snapshots, merge_snapshots  # noqa: E402
@@ -441,6 +441,9 @@ def cmd_ask(args):
     except ValueError as e:
         err(str(e))
         return 1
+    warning = question_warning(ROOT, args.from_)
+    if warning:
+        err("warning: " + warning)
     print(ln.id)
     return 0
 

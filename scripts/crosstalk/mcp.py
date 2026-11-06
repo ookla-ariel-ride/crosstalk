@@ -37,7 +37,7 @@ from pathlib import Path
 from typing import Any, Callable, Dict, List, Optional
 
 from .consults import (adopt_agreement, microsecond_utc_stamp, post_consult, post_question,
-                       post_reply, withdraw_question)
+                       post_reply, question_warning, withdraw_question)
 from .logs import KINDS, append_line, message_problems
 from .participants import ID_RE, load_roster
 from .posters import claim_file, release_file, slugify_path
@@ -299,7 +299,11 @@ class McpServer:
                                refs=args.get("refs"))
         except ValueError as e:
             raise ToolError(str(e))
-        return {"id": ln.id, "seq": ln.seq, "t": ln.t}
+        out = {"id": ln.id, "seq": ln.seq, "t": ln.t}
+        warning = question_warning(self.root, self.pid, self._roster())
+        if warning:
+            out["warnings"] = [warning]
+        return out
 
     def _withdraw_question(self, args):
         try:

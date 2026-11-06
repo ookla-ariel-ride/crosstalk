@@ -201,6 +201,18 @@ class QuestionCliTests(unittest.TestCase):
                          {qid: "withdrawn", qid2: "open"})
         self.assertEqual(self.run_cli("check").returncode, 0)
 
+    def test_ask_warns_a_quarantined_asker_the_owner_wont_see_it(self):
+        self.r.write_roster(roster_with_quarantined())
+        p = self.run_cli("ask", "--from", "qbot", "--summary", "Let me in?")
+        self.assertEqual(p.returncode, 0, p.stderr)
+        self.assertTrue(p.stdout.strip().startswith("qbot-"))
+        self.assertIn("warning: qbot is quarantined", p.stderr)
+        self.assertEqual(self.json_of("questions")["questions"], [])
+
+    def test_ask_stays_quiet_for_an_approved_asker(self):
+        p = self.run_cli("ask", "--from", "alpha", "--summary", "Ship it?")
+        self.assertEqual((p.returncode, p.stderr), (0, ""))
+
     def test_ask_refuses_owner_and_bad_summary(self):
         p = self.run_cli("ask", "--from", "owner", "--summary", "Hi")
         self.assertEqual(p.returncode, 1)
@@ -245,6 +257,15 @@ class QuestionMcpTests(unittest.TestCase):
             msgs = repo.read()["messages"]
             self.assertEqual((msgs[qid]["kind"], msgs[qid]["to"]), ("question", ["owner"]))
             self.assertEqual(repo.relay("check").returncode, 0)
+
+    def test_ask_owner_warns_a_quarantined_asker(self):
+        from test_mcp import Mcp, Repo, ok
+        with TempRepo() as r:
+            repo = Repo(r)
+            with Mcp(repo, "gamma") as g, Mcp(repo, "alpha") as a:
+                out = ok(g.call("ask_owner", {"summary": "Let me in?"}))
+                self.assertIn("gamma is quarantined", out["warnings"][0])
+                self.assertNotIn("warnings", ok(a.call("ask_owner", {"summary": "Ship it?"})))
 
 
 if __name__ == "__main__":
