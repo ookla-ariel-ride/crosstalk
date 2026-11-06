@@ -870,13 +870,15 @@ td.num, td.t { font: 12px var(--mono); font-variant-numeric: tabular-nums; white
     document.getElementById("agreeVal").textContent = open.length;
     document.getElementById("agreeHint").textContent = open.length + " open of " + data.agreements.length + (held ? " \u00b7 " + held + " on hold" : "");
     document.getElementById("t-agree").className = "tile" + (held ? " warn" : "");
-    var waits = data.waiting.filter(function (w) { return !w.done; });
-    document.getElementById("waitVal").textContent = waits.length;
-    var oldest = waits.map(function (w) { return ts(w.since); }).filter(function (t) { return !isNaN(t); }).sort()[0];
-    var wh = document.getElementById("waitHint"); wh.textContent = waits.length ? "oldest " + agoText(oldest) + " · click to see them" : "nothing waiting";
-    if (waits.length) { var ul = el("ul", "items"); waits.slice(0, 3).forEach(function (w) { ul.appendChild(el("li", null, w.summary || "(no summary)")); }); if (waits.length > 3) ul.appendChild(el("li", null, "and " + (waits.length - 3) + " more")); wh.appendChild(ul); }
-    document.getElementById("t-wait").className = "tile" + (waits.length ? " warn" : " ok");
-    var qs = openQuestions();
+    // Waiting on you holds the open questions too, so the owner sees them in the place they look.
+    var waits = data.waiting.filter(function (w) { return !w.done; }), qs = openQuestions();
+    var waitN = waits.length + qs.length;
+    document.getElementById("waitVal").textContent = waitN;
+    var oldest = waits.map(function (w) { return ts(w.since); }).concat(qs.map(function (x) { return ts(x.q.t); })).filter(function (t) { return !isNaN(t); }).sort(function (a, b) { return a - b; })[0];
+    var wh = document.getElementById("waitHint"); wh.textContent = waitN ? "oldest " + agoText(oldest) + " · click to see them" : "nothing waiting";
+    var waitItems = qs.map(function (x) { return "Question: " + (x.q.summary || "(no question given)"); }).concat(waits.map(function (w) { return w.summary || "(no summary)"; }));
+    if (waitN) { var ul = el("ul", "items"); waitItems.slice(0, 3).forEach(function (t) { ul.appendChild(el("li", null, t)); }); if (waitN > 3) ul.appendChild(el("li", null, "and " + (waitN - 3) + " more")); wh.appendChild(ul); }
+    document.getElementById("t-wait").className = "tile" + (waitN ? " warn" : " ok");
     document.getElementById("quesVal").textContent = qs.length;
     var qOldest = qs.length ? ts(qs[0].q.t) : NaN;
     document.getElementById("quesHint").textContent = qs.length ? "oldest " + agoText(qOldest) + " \u00b7 click to answer" : "no open questions";
@@ -913,7 +915,7 @@ td.num, td.t { font: 12px var(--mono); font-variant-numeric: tabular-nums; white
     TABS.forEach(function (t) {
       var b = el("button", null, t[1]); b.type = "button"; b.id = "tab-" + t[0];
       b.setAttribute("role", "tab"); b.setAttribute("aria-selected", String(tab === t[0]));
-      var n = t[0] === "waiting" ? data.waiting.filter(function (w) { return !w.done; }).length
+      var n = t[0] === "waiting" ? data.waiting.filter(function (w) { return !w.done; }).length + openQuestions().length
         : t[0] === "help" ? openRequests().length
         : t[0] === "questions" ? openQuestions().length
         : t[0] === "reviews" ? overrideRows().filter(overrideOpen).length
@@ -1917,9 +1919,26 @@ td.num, td.t { font: 12px var(--mono); font-variant-numeric: tabular-nums; white
   function renderWaiting(view) {
     var open = data.waiting.filter(function (w) { return !w.done && matches(w); }).sort(function (a, b) { return (ts(a.since) || 0) - (ts(b.since) || 0); });
     var done = data.waiting.filter(function (w) { return w.done && matches(w); }).sort(function (a, b) { return (ts(b.done) || 0) - (ts(a.done) || 0); });
+    var qs = openQuestions().filter(function (x) { return matches(x.q); });
     toolbar(view, false);
     var cards = el("div", "cards");
-    if (!open.length) cards.appendChild(el("div", "empty", "Nothing is waiting on you."));
+    if (!open.length && !qs.length) cards.appendChild(el("div", "empty", "Nothing is waiting on you."));
+    // Open questions come first; each links to its place on the Questions tab, where it is answered.
+    qs.forEach(function (x) {
+      var m = x.q, c = el("div", "card"); c.dataset.id = m._id;
+      var meta = el("div", "meta"); meta.appendChild(who(m.from)); meta.appendChild(el("span", "pill question", "question for owner")); meta.appendChild(el("span", null, "waiting since")); meta.appendChild(timeEl(m.t, true)); meta.appendChild(agoEl(m.t));
+      c.appendChild(meta);
+      c.appendChild(summaryEl(m.summary || "(no question given)"));
+      var b = el("button", "btn", canWrite ? "Answer it" : "Open it"); b.type = "button"; b.id = "waitq-" + m._id;
+      b.addEventListener("click", function () {
+        qState.cur = m._id; qState.status = ""; tab = "questions";
+        try { history.replaceState(null, "", "#questions"); } catch (e) {}
+        renderAll();
+        var a = document.getElementById("q-answer"); if (a) a.focus();
+      });
+      c.appendChild(b);
+      cards.appendChild(c);
+    });
     open.forEach(function (w) {
       var c = el("div", "card");
       var quarantined = isQuarantined(w.project);

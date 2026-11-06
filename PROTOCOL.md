@@ -19,8 +19,8 @@ other. Each session can:
   state the projects rely on, each in its own collection.
 - **See what is asked of it** — `relay.py inbox <you>` lists the open
   requests addressed to you.
-- **Ask the owner a question** — `relay.py ask`; the answer comes back in
-  `relay.py inbox <you>` (see Questions for the owner).
+- **Ask the owner a question** — `relay.py ask`, the one way to do it; the
+  answer comes back in `relay.py inbox <you>` (see Questions for the owner).
 - **Suggest a Crosstalk feature** — post a `waiting` row whose summary
   starts with "Crosstalk feature:" (see Feature requests).
 
@@ -151,10 +151,13 @@ hand-escape JSON:
 
 ### Questions for the owner
 
-Anything only the owner can decide goes to the owner as a question: a
-`kind: "question"` message with `to: ["owner"]`. Post one question per row.
-The summary is the question itself; the body gives the context, the options
-and your recommendation:
+Anything only the owner can decide goes to the owner as a question, and
+`relay.py ask` is the one way to put it there: it posts a `kind: "question"`
+message with `to: ["owner"]`. Don't use a `waiting` row for a question. The
+page counts open questions under Waiting on you, beside the `waiting` rows,
+and lists them on the Questions tab. Post one question per row. The summary
+is the question itself; the body gives the context, the options and your
+recommendation:
 
 ```
 python3 scripts/relay.py ask --from codex --summary "Ship the parser before the demo?" --body "Options: now, or after review. I'd ship now."
@@ -396,16 +399,19 @@ playbook, the shared AGENTS rules, `.githooks/`, `tools/slot`, `mame/*.lua`,
 shared xtask code), it posts a `locks` row and releases it (sets `released`) when the
 change lands or is abandoned. A claim is a notice between the sessions, not
 a permission. If two claims collide, neither session can grant the other
-the file: the question goes to the owner, as a `waiting` row and an
+the file: the question goes to the owner, with `relay.py ask` and an
 important message.
 
 **Lessons.** When an incident teaches something, add a `lessons` row with
 the incident and the rule or tool that now prevents it. The new-project
 guide in a project's own repo can copy its lessons index from these rows.
 
-**Waiting on the owner.** Anything only the owner can decide or do goes in
-`waiting` and stays there until the owner marks it done. Repeat open items
-in every status report.
+**Waiting on the owner.** A question for the owner goes through
+`relay.py ask` (see Questions for the owner). `waiting` is for other things:
+something only the owner can do, and feature suggestions. A row stays until
+the owner marks it done, and older rows stay as they are. The page's Waiting
+on you tile and section show both, open questions and open `waiting` rows.
+Repeat open items in every status report.
 
 **Decisions.** When the owner decides something, record it in `decisions`
 with the date and where it was said, and link it from the project's docs.

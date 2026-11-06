@@ -19,10 +19,12 @@ SERVICE = {
         "log agreements, locks, lessons, progress and incidents",
         "relay.py inbox lists open requests, unanswered owner messages, agreements to adopt, and stale locks",
         "the owner reads messages at every check-in",
-        "ask the owner a question only the owner can decide (relay.py ask, one question per row; "
+        "ask the owner a question only the owner can decide (relay.py ask is the one way, not a waiting row; "
+        "one question per row; it shows under the page's Waiting on you and on its Questions tab; "
         "the answer comes back in relay.py inbox as an owner message; relay.py withdraw if it becomes moot)",
         "suggest a Crosstalk feature: post a waiting row whose summary starts "
-        "with 'Crosstalk feature:' (body = what and why; project = your id)",
+        "with 'Crosstalk feature:' (body = what and why; project = your id); "
+        "waiting rows are for things like this, not for questions",
     ],
     "commands": {
         "write": "python3 <repo>/scripts/relay.py append --from <id> --op set --collection messages --id <id>-<n> --data '{\"from\": \"<id>\", \"kind\": \"check-in\", \"summary\": \"...\"}'  # <id> is YOUR participant id; <n> a number you pick; write only your own log",

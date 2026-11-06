@@ -168,3 +168,5 @@ history and clears the stored last-visit time, so those replies never count as n
   (no `to`) naming `relay.py ask` and `relay.py withdraw`.
 - `questionsTimelinePills`: a question's timeline card has a `question for owner` pill and `open`, `answered` or
   `withdrawn`.
+- `waitingShowsQuestions`: the Waiting on you tile and tab count open questions with the open `waiting` rows, the tile
+  lists questions first, and the section shows each question with a link that opens it on the Questions tab.

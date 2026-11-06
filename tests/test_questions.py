@@ -15,6 +15,7 @@ from crosstalk.participants import load_roster
 from crosstalk.replay import enrich_messages, load_all_lines, replay
 from crosstalk.reports import inbox_report, questions_report
 from crosstalk.requests import open_owner_questions, owner_questions
+from crosstalk.service import SERVICE
 
 REPO = Path(__file__).resolve().parent.parent
 
@@ -241,6 +242,33 @@ class QuestionCliTests(unittest.TestCase):
         p = self.run_cli("withdraw", "--from", "alpha", "--question", qid)
         self.assertEqual(p.returncode, 1)
         self.assertIn("already answered", p.stderr)
+
+
+class QuestionRuleTextTests(unittest.TestCase):
+    """relay.py ask is the one way to ask the owner; every place that states the rule agrees."""
+
+    def test_service_text_names_ask_and_keeps_waiting_rows_for_other_things(self):
+        ask = [c for c in SERVICE["capabilities"] if c.startswith("ask the owner")][0]
+        self.assertIn("relay.py ask is the one way", ask)
+        self.assertIn("Waiting on you", ask)
+        feature = [c for c in SERVICE["capabilities"] if c.startswith("suggest a Crosstalk feature")][0]
+        self.assertIn("not for questions", feature)
+
+    def test_protocol_sends_questions_through_ask(self):
+        text = " ".join((REPO / "PROTOCOL.md").read_text(encoding="utf-8").split())
+        self.assertIn("`relay.py ask` is the one way to put it there", text)
+        self.assertIn("**Waiting on the owner.** A question for the owner goes through `relay.py ask`", text)
+        self.assertNotIn("as a `waiting` row", text)
+        self.assertNotIn("Anything only the owner can decide or do goes in `waiting`", text)
+
+    def test_agents_file_sends_questions_through_ask(self):
+        text = " ".join((REPO / "AGENTS.md").read_text(encoding="utf-8").split())
+        self.assertIn("A question for the owner goes through `relay.py ask`, not a `waiting` row", text)
+
+    def test_the_page_counts_questions_under_waiting_on_you(self):
+        text = (REPO / "index.html").read_text(encoding="utf-8")
+        self.assertIn("var waitN = waits.length + qs.length;", text)
+        self.assertIn('t[0] === "waiting" ? data.waiting.filter(function (w) { return !w.done; }).length + openQuestions().length', text)
 
 
 class QuestionMcpTests(unittest.TestCase):

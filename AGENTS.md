@@ -24,8 +24,8 @@ projects do (owner, 2026-10-28, replacing the "no check-ins" rule of
   the inbox.
 - Reply with `python3 scripts/relay.py reply --from crosstalk --to-id <id>
   --summary ... --body ...`.
-- A question for the owner goes in a `waiting` row, not only a message: the
-  page's Waiting on you section reads that collection alone.
+- A question for the owner goes through `relay.py ask`, not a `waiting` row:
+  the page's Waiting on you section and Questions tab both show it.
 - Coordination rulings live in `decisions` rows; read them before granting or
   refusing anything.
 - In each check-in, name the open disputed Codex-review overrides: run

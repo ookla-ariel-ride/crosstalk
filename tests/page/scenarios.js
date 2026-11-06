@@ -1947,6 +1947,33 @@
     return res("questionsTimelinePills", ok, "open=" + JSON.stringify(open) + " answered=" + JSON.stringify(answered) + " withdrawn=" + JSON.stringify(withdrawn) + " tile=" + tile);
   });
 
+  // Open questions count toward Waiting on you, beside the open waiting rows, and link to the Questions tab.
+  S.push(async function waitingShowsQuestions() {
+    await clearQuestions();
+    var saved = __store.waiting; __store.waiting = {};
+    __emit("waiting"); await tick();
+    var none = $("waitVal").textContent, noneHint = $("waitHint").textContent;
+    await go("waiting");
+    var empty = /Nothing is waiting on you/.test($("view").textContent);
+    await addDoc("waiting", "wq-row", { since: ago(50), project: "codex", summary: "Crosstalk feature: a thing", done: null });
+    await seedQuestions();
+    var tile = $("waitVal").textContent, tabN = $("tab-waiting").querySelector(".n").textContent, hint = $("waitHint").textContent;
+    var firstItem = $("waitHint").querySelector("li").textContent;
+    var cardIds = [].slice.call($("view").querySelectorAll(".card[data-id]")).map(function (c) { return c.dataset.id; });
+    var stillRow = $("done-wq-row") !== null, lacksEmpty = !/Nothing is waiting on you/.test($("view").textContent);
+    $("waitq-qq-2").click(); await tick();
+    var onTab = $("tab-questions").getAttribute("aria-selected") === "true", shown = $("q-card").dataset.id;
+    var focused = document.activeElement && document.activeElement.id;
+    await clearQuestions();
+    __store.waiting = saved || {}; __emit("waiting"); await go("timeline");
+    var ok = none === "0" && noneHint === "nothing waiting" && empty && tile === "4" && tabN === "4" &&
+      /^oldest 5 h 0 min ago · click to see them/.test(hint) && firstItem === "Question: Ship the parser before the demo?" &&
+      JSON.stringify(cardIds) === JSON.stringify(["qq-1", "qq-2", "qq-3"]) && stillRow && lacksEmpty &&
+      onTab && shown === "qq-2" && focused === "q-answer";
+    return res("waitingShowsQuestions", ok, "none=" + none + " hint0=" + JSON.stringify(noneHint) + " empty=" + empty + " tile=" + tile + " tab=" + tabN + " hint=" + JSON.stringify(hint) +
+      " first=" + JSON.stringify(firstItem) + " cards=" + JSON.stringify(cardIds) + " row=" + stillRow + " onTab=" + onTab + " shown=" + shown + " focus=" + focused);
+  });
+
   // Checks whichever width the window has (run again at 390 wide; see run.md): nothing in the Reviews tab
   // pushes the page sideways; a wide table scrolls inside its own box.
   S.push(async function reviewsNarrow() {
