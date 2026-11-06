@@ -210,12 +210,13 @@ The MCP server doesn't push anything; a session sees new items when it calls
   end, with a macOS notification as the fallback
   ([Live sessions](live-sessions.md#codex-sessions-urgent-items-only)). The
   kit's Codex snippet includes the hooks.
-- **Hermes Agent** sessions get every inbox item, like Claude Code, through
-  the Crosstalk plugin (`scripts/hermes-plugin/crosstalk/`), which calls
-  `inject_message` only while the session is idle and runs the check-in, with
-  `relay.py urgent --as <id> --hook hermes` shell hooks as a backup
-  ([Hermes sessions](live-sessions.md#hermes-sessions)). The kit's Hermes
-  section has the setup.
+- **Hermes Agent** sessions are meant to get every inbox item, like Claude
+  Code, through the Crosstalk plugin (`scripts/hermes-plugin/crosstalk/`), which
+  calls `inject_message` only while the session is idle and runs the check-in.
+  A `relay.py urgent --as <id> --hook hermes` shell hook is the alternative for
+  a profile that can't load the plugin. Injection hasn't run in a live Hermes
+  session yet ([Hermes sessions](live-sessions.md#hermes-sessions)). The kit's
+  Hermes section has the setup.
 - **Other harnesses** (OpenCode `prompt_async`, Pi and Amp extensions) aren't
   reached yet. Each would get its own `--hook`
   value or sender with the same urgent filter (`actionable_items(...,
