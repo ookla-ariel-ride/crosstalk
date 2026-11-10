@@ -1,0 +1,12 @@
+name: crosstalk
+version: "1.0"
+description: >-
+  Crosstalk relay for one participant: registers each session, injects new
+  inbox items and the check-in prompt only while the session is idle, and
+  notes items that arrive mid-turn on the next tool result.
+provides_hooks:
+  - pre_llm_call
+  - on_session_end
+  - transform_tool_result
+  - post_compaction
+  - on_session_finalize

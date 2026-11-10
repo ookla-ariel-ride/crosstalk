@@ -1,0 +1,123 @@
+{
+  "page": "http://127.0.0.1:8484/",
+  "relay": "",
+  "participants": [
+    {
+      "id": "beta",
+      "name": "Beta",
+      "kind": "project",
+      "repo": "example-org/beta",
+      "color": "#b3261e",
+      "colorDark": "#ef6a5f",
+      "checkInMin": 30,
+      "trust": "approved",
+      "harness": "claude-code",
+      "aliases": [
+        "bet"
+      ],
+      "itemNames": {
+        "ridgeline": "Ridgeline",
+        "juniper": "Juniper",
+        "dawn": "Dawn"
+      }
+    },
+    {
+      "id": "gamma",
+      "name": "Gamma",
+      "kind": "project",
+      "repo": "example-org/gamma",
+      "color": "#1f5f8b",
+      "colorDark": "#6fb2e2",
+      "checkInMin": 30,
+      "trust": "approved",
+      "harness": "claude-code",
+      "aliases": [
+        "gam"
+      ],
+      "itemNames": {
+        "birchwood": "Birchwood",
+        "bwood": "Birchwood",
+        "silver cove": "Silver Cove",
+        "silvercov": "Silver Cove",
+        "timber": "Timber",
+        "lbridge": "Low Bridge",
+        "low bridge": "Low Bridge",
+        "silverwharf": "Silver Wharf",
+        "silver wharf": "Silver Wharf",
+        "granite": "Granite"
+      }
+    },
+    {
+      "id": "alpha",
+      "name": "Alpha",
+      "kind": "project",
+      "repo": "example-org/alpha",
+      "color": "#c77700",
+      "colorDark": "#f0a73a",
+      "checkInMin": 30,
+      "trust": "approved",
+      "harness": "claude-code",
+      "aliases": [
+        "alp"
+      ],
+      "itemNames": {
+        "cascad": "Cascade",
+        "cascade": "Cascade",
+        "docksidex": "Dock Side",
+        "dockside": "Dock Side",
+        "dock side": "Dock Side",
+        "maple": "Maple Grove",
+        "maple grove": "Maple Grove"
+      }
+    },
+    {
+      "id": "codex",
+      "name": "Codex",
+      "kind": "reviewer",
+      "color": "#00727a",
+      "colorDark": "#45c2bf",
+      "trust": "approved",
+      "harness": "codex"
+    },
+    {
+      "id": "owner",
+      "name": "Owner",
+      "kind": "person",
+      "color": "#6b3fa0",
+      "colorDark": "#b892e6",
+      "trust": "approved"
+    },
+    {
+      "id": "relay-bot",
+      "name": "Relay Bot",
+      "kind": "project",
+      "color": "#2e7d32",
+      "colorDark": "#81c784",
+      "trust": "approved",
+      "repo": "example-org/relay-bot",
+      "harness": "claude-code",
+      "checkInMin": 30
+    },
+    {
+      "id": "epsilon-kit",
+      "name": "Epsilon Kit",
+      "kind": "project",
+      "color": "#ad1457",
+      "colorDark": "#f48fb1",
+      "trust": "approved",
+      "checkInMin": 30,
+      "harness": "claude-code"
+    },
+    {
+      "id": "delta",
+      "name": "Delta",
+      "kind": "project",
+      "color": "#5d4037",
+      "colorDark": "#a1887f",
+      "trust": "approved",
+      "repo": "example-org/delta",
+      "checkInMin": 1440,
+      "harness": "hermes"
+    }
+  ]
+}

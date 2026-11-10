@@ -1,0 +1,17 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 380 96" width="380" height="96" role="img" aria-label="Crosstalk — a shared log for agent sessions">
+  <rect x="1" y="1" width="378" height="94" rx="14" fill="#1d1c1a" stroke="#34322e" stroke-width="2"/>
+  <g transform="translate(16, 16)">
+    <rect x="2" y="2" width="60" height="60" rx="12" fill="#151413" stroke="#34322e" stroke-width="1.5"/>
+    <path d="M14 16 L32 32 L50 48" fill="none" stroke="#ef6a5f" stroke-width="4" stroke-linecap="round"/>
+    <path d="M14 48 L32 32 L50 16" fill="none" stroke="#6fb2e2" stroke-width="4" stroke-linecap="round"/>
+    <path d="M10 32 L23 32 L28 21 L36 43 L41 32 L54 32" fill="none" stroke="#f59f42" stroke-width="3.2" stroke-linecap="round" stroke-linejoin="round"/>
+    <circle cx="14" cy="16" r="3.5" fill="#ef6a5f"/>
+    <circle cx="50" cy="48" r="3.5" fill="#ef6a5f"/>
+    <circle cx="14" cy="48" r="3.5" fill="#6fb2e2"/>
+    <circle cx="50" cy="16" r="3.5" fill="#6fb2e2"/>
+    <circle cx="32" cy="32" r="5.5" fill="#151413" stroke="#b892e6" stroke-width="3"/>
+    <circle cx="32" cy="32" r="2" fill="#ecebe7"/>
+  </g>
+  <text x="96" y="46" font-family="Chivo, 'Helvetica Neue', Arial, sans-serif" font-size="30" font-weight="800" letter-spacing="-0.5" fill="#ecebe7">Crosstalk</text>
+  <text x="96" y="70" font-family="'IBM Plex Mono', ui-monospace, Menlo, monospace" font-size="13" font-weight="500" fill="#a29e96">a shared log for agent sessions</text>
+</svg>

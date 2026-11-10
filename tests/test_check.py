@@ -1,0 +1,272 @@
+import json
+import unittest
+
+from helpers import SPEC_ROSTER, TempRepo, line
+from crosstalk.participants import load_roster
+from crosstalk.logs import check_all, read_log
+
+
+class CheckTests(unittest.TestCase):
+    def check(self, r):
+        return check_all(r.root, load_roster(r.write_roster()))
+
+    def test_clean_log_has_no_problems(self):
+        with TempRepo() as r:
+            r.write_log("rev", [line(1, "rev"), line(2, "rev")])
+            self.assertEqual(self.check(r), [])
+
+    def test_malformed_json(self):
+        with TempRepo() as r:
+            r.write_log("rev", [line(1, "rev"), "{not json"])
+            (p,) = self.check(r)
+            self.assertEqual((p.file, p.line, p.fatal), ("log/rev.jsonl", 2, True))
+
+    def test_seq_gap(self):
+        with TempRepo() as r:
+            r.write_log("rev", [line(1, "rev"), line(3, "rev")])
+            (p,) = self.check(r)
+            self.assertEqual((p.file, p.line, p.fatal), ("log/rev.jsonl", 2, True))
+            self.assertIn("seq", p.message)
+
+    def test_from_mismatch(self):
+        with TempRepo() as r:
+            r.write_log("owner", [line(1, "rev")])
+            (p,) = self.check(r)
+            self.assertEqual((p.file, p.line, p.fatal), ("log/owner.jsonl", 1, True))
+
+    def test_new_id_without_prefix(self):
+        with TempRepo() as r:
+            r.write_log("rev", [line(1, "rev", id_="x-1")])
+            (p,) = self.check(r)
+            self.assertEqual((p.file, p.line, p.fatal), ("log/rev.jsonl", 1, True))
+
+    def test_update_may_name_any_id(self):
+        with TempRepo() as r:
+            r.write_log("owner", [line(1, "owner", collection="agreements", id_="a-fast-verify",
+                                        op="update", data={"status": "hold"})])
+            self.assertEqual(self.check(r), [])
+
+    def test_legacy_ids_allowed(self):
+        with TempRepo() as r:
+            r.write_log("alpha", [line(1, "alpha", id_="m-0001")])
+            self.assertEqual(self.check(r), [])
+
+    def test_unknown_participant_warns(self):
+        with TempRepo() as r:
+            r.write_log("gemini", [line(1, "gemini")])
+            (p,) = self.check(r)
+            self.assertEqual((p.file, p.fatal), ("log/gemini.jsonl", False))
+
+    def test_unknown_collection_fatal(self):
+        with TempRepo() as r:
+            r.write_log("rev", [line(1, "rev", collection="bogus")])
+            (p,) = self.check(r)
+            self.assertTrue(p.fatal)
+
+    def test_participants_collection_owner_only(self):
+        with TempRepo() as r:
+            r.write_log("owner", [line(1, "owner", collection="participants", id_="owner-x")])
+            r.write_log("rev", [line(1, "rev", collection="participants")])
+            ps = self.check(r)
+            self.assertEqual([(p.file, p.fatal) for p in ps], [("log/rev.jsonl", True)])
+
+    def test_lines_before_bad_line_returned(self):
+        with TempRepo() as r:
+            path = r.write_log("rev", [line(1, "rev"), "oops", line(3, "rev")])
+            lines, problems = read_log(path)
+            self.assertEqual([l.seq for l in lines], [1])
+            self.assertEqual(len(problems), 1)
+            self.assertTrue(problems[0].fatal)
+
+    def test_line_to_json_roundtrip(self):
+        with TempRepo() as r:
+            path = r.write_log("owner", [line(1, "owner", data={"body": "é\n\"q\" 😀"})])
+            (l,), _ = read_log(path)
+            self.assertNotIn("\n", l.to_json())
+            self.assertNotIn("via", l.to_json())
+
+
+
+def roster_with_gemini():
+    data = json.loads(json.dumps(SPEC_ROSTER))
+    data["participants"].append(
+        {"id": "gemini", "name": "Gemini", "kind": "researcher", "color": "#8a5a00", "colorDark": "#d9b25c", "trust": "quarantined"})
+    return data
+
+
+class TrustTests(unittest.TestCase):
+    """Owning prefix and message sender, enforced where the roster is known."""
+
+    def check(self, r):
+        return check_all(r.root, load_roster(r.write_roster(roster_with_gemini())))
+
+    def test_quarantined_legacy_id_fatal(self):
+        with TempRepo() as r:
+            r.write_log("gemini", [line(1, "gemini", id_="m-0001")])
+            (p,) = self.check(r)
+            self.assertEqual((p.file, p.line, p.fatal), ("log/gemini.jsonl", 1, True))
+            self.assertIn("gemini-", p.message)
+
+    def test_quarantined_update_of_other_doc_fatal(self):
+        with TempRepo() as r:
+            r.write_log("gemini", [line(1, "gemini", id_="rev-0001", op="update",
+                                        data={"body": "x"})])
+            (p,) = self.check(r)
+            self.assertEqual((p.line, p.fatal), (1, True))
+
+    def test_quarantined_own_id_fine(self):
+        with TempRepo() as r:
+            r.write_log("gemini", [line(1, "gemini", id_="gemini-1", data={"from": "gemini"}),
+                                   line(2, "gemini", id_="gemini-1", op="update",
+                                        data={"body": "y"})])
+            self.assertEqual(self.check(r), [])
+
+    def test_message_from_must_be_writer(self):
+        with TempRepo() as r:
+            r.write_log("gemini", [line(1, "gemini", id_="gemini-1", data={"from": "owner"})])
+            (p,) = self.check(r)
+            self.assertEqual((p.file, p.line, p.fatal), ("log/gemini.jsonl", 1, True))
+            self.assertIn("from", p.message)
+
+    def test_message_from_checked_for_approved_too(self):
+        with TempRepo() as r:
+            r.write_log("rev", [line(1, "rev", id_="rev-1", op="update",
+                                       data={"from": "owner"})])
+            (p,) = self.check(r)
+            self.assertTrue(p.fatal)
+
+    def test_message_from_only_on_messages(self):
+        with TempRepo() as r:
+            r.write_log("gemini", [line(1, "gemini", collection="lessons", id_="gemini-1",
+                                        data={"from": "owner"})])
+            self.assertEqual(self.check(r), [])
+
+    def test_approved_may_set_others_ids(self):
+        with TempRepo() as r:
+            r.write_log("alpha", [line(1, "alpha", collection="agreements",
+                                             id_="a-x"),
+                                        line(2, "alpha", id_="rev-0001", op="update",
+                                             data={"seen": True})])
+            self.assertEqual(self.check(r), [])
+
+    def test_old_changes_to_another_writers_message_stay_tolerated(self):
+        # The append path refuses these now; lines already in the log stay readable.
+        with TempRepo() as r:
+            r.write_log("alpha", [line(1, "alpha", id_="m-1", data={"from": "alpha", "kind": "request"})])
+            r.write_log("beta", [line(1, "beta", id_="m-1", t="2026-10-21T18:10:00Z",
+                                      data={"from": "beta", "kind": "check-in"}),
+                                 line(2, "beta", id_="alpha-1", op="update", data={"kind": "reply"}),
+                                 line(3, "beta", id_="beta-3", data={"from": "beta", "kind": "sync"})])
+            self.assertEqual(self.check(r), [])
+
+    def test_unknown_writer_touching_other_doc_fatal(self):
+        with TempRepo() as r:
+            r.write_log("stranger", [line(1, "stranger", id_="rev-1", op="update",
+                                          data={"body": "x"})])
+            ps = self.check(r)
+            self.assertEqual([(p.line, p.fatal) for p in ps], [(0, False), (1, True)])
+
+    def test_imported_mismatched_from_fine(self):
+        with TempRepo() as r:
+            d = line(1, "alpha", id_="m-0001", data={"from": "beta"})
+            d["via"] = "import"
+            r.write_log("alpha", [d])
+            self.assertEqual(self.check(r), [])
+
+    def test_read_log_without_roster_skips_trust(self):
+        with TempRepo() as r:
+            path = r.write_log("gemini", [line(1, "gemini", id_="m-0001")])
+            lines, problems = read_log(path)
+            self.assertEqual((len(lines), problems), (1, []))
+            roster = load_roster(r.write_roster(roster_with_gemini()))
+            lines, problems = read_log(path, roster)
+            self.assertEqual((len(lines), len(problems)), (0, 1))
+
+    def test_non_owner_cannot_post_kind_owner(self):
+        from crosstalk.logs import append_line, message_problems
+
+        with TempRepo() as r:
+            roster = load_roster(r.write_roster(roster_with_gemini()))
+            errs, _ = message_problems(
+                "messages", "set",
+                {"from": "rev", "kind": "owner", "summary": "spoof"},
+                roster,
+            )
+            self.assertIn("only 'owner' may post kind 'owner'", errs)
+
+            with self.assertRaises(ValueError) as ctx:
+                append_line(
+                    r.root, "rev", "set", "messages", "rev-1",
+                    {"from": "rev", "kind": "owner", "summary": "spoof"},
+                    roster=roster,
+                )
+            self.assertIn("only 'owner' may post kind 'owner'", str(ctx.exception))
+
+            path = r.write_log("rev", [
+                line(1, "rev", id_="rev-1",
+                     data={"from": "rev", "kind": "owner", "summary": "spoof"})
+            ])
+            lines, problems = read_log(path)
+            self.assertEqual(lines, [])
+            self.assertEqual(len(problems), 1)
+            self.assertTrue(problems[0].fatal)
+            self.assertIn("only 'owner' may post kind 'owner'", problems[0].message)
+
+    def test_quarantined_collection_prefixed_own_ids_allowed(self):
+        with TempRepo() as r:
+            r.write_log("gemini", [
+                line(1, "gemini", collection="locks", id_="l-gemini-shared-rs",
+                     data={"project": "gemini", "path": "shared.rs", "since": "2026-10-25T10:00:00Z", "released": None}),
+                line(2, "gemini", collection="agreements", id_="a-gemini-1234567",
+                     data={"builder": "gemini", "adopter": "all", "status": "ready-to-adopt", "summary": "Sync"}),
+                line(3, "gemini", collection="incidents", id_="i-gemini-disk",
+                     data={"project": "gemini", "start": "2026-10-25T10:00:00Z", "end": None, "summary": "Disk"}),
+                line(4, "gemini", collection="progress", id_="p-gemini-1",
+                     data={"project": "gemini", "summary": "Progress"}),
+                line(5, "gemini", collection="locks", id_="l-rev-shared-rs",
+                     data={"project": "rev", "path": "shared.rs", "since": "2026-10-25T10:00:00Z", "released": None}),
+            ])
+            ps = self.check(r)
+            self.assertEqual([(p.line, p.fatal) for p in ps], [(5, True)])
+
+    def test_message_problems_rejects_trailing_newline_and_cr_in_summary(self):
+        from crosstalk.logs import message_problems
+
+        with TempRepo() as r:
+            roster = load_roster(r.write_roster(roster_with_gemini()))
+            for bad in ("Trailing\n", "\nLeading", "Carriage\rreturn"):
+                errs, _ = message_problems(
+                    "messages", "set",
+                    {"from": "rev", "kind": "sync", "summary": bad},
+                    roster,
+                )
+                self.assertIn("summary must be one line (put the rest in body)", errs)
+
+    def test_message_problems_rejects_bad_summary_or_kind_on_update(self):
+        from crosstalk.logs import message_problems
+
+        with TempRepo() as r:
+            roster = load_roster(r.write_roster(roster_with_gemini()))
+            for bad_val in (123, None, "", "   "):
+                errs_s, _ = message_problems(
+                    "messages", "update",
+                    {"summary": bad_val},
+                    roster,
+                )
+                self.assertTrue(errs_s, "expected error for summary=%r" % (bad_val,))
+                errs_k, _ = message_problems(
+                    "messages", "update",
+                    {"kind": bad_val},
+                    roster,
+                )
+                self.assertTrue(errs_k, "expected error for kind=%r" % (bad_val,))
+            errs_ok, _ = message_problems(
+                "messages", "update",
+                {"summary": "Valid updated summary", "kind": "sync"},
+                roster,
+            )
+            self.assertEqual(errs_ok, [])
+
+
+if __name__ == "__main__":
+    unittest.main()

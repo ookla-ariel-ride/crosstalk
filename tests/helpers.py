@@ -1,0 +1,91 @@
+import json
+import os
+import shutil
+import sys
+import tempfile
+from pathlib import Path
+
+sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "scripts"))
+
+from crosstalk.serve import RunningServer as _RunningServer  # noqa: E402
+
+
+class RunningServer(_RunningServer):
+    """A Crosstalk server on 127.0.0.1 with an ephemeral port, over a temp repo.
+
+    `with RunningServer(root) as srv:` starts the server and shuts it down
+    (and its thread) on the way out.
+    """
+
+    def __init__(self, root, **kwargs):
+        kwargs.setdefault("port", 0)
+        kwargs.setdefault("host", "127.0.0.1")
+        if "sessions" not in kwargs:
+            kwargs["sessions"] = Path(tempfile.gettempdir()) / \
+                ("crosstalk-test-sessions-" + os.urandom(6).hex() + ".json")
+        _RunningServer.__init__(self, root, **kwargs)
+
+
+SPEC_ROSTER = {
+    "page": "http://127.0.0.1:8484/",
+    "relay": "",
+    "participants": [
+        {"id": "alpha", "name": "Alpha", "kind": "project", "repo": "owner/alpha", "color": "#b3261e", "colorDark": "#ef6a5f", "checkInMin": 30, "trust": "approved", "aliases": ["al"]},
+        {"id": "beta", "name": "Beta", "kind": "project", "repo": "owner/beta", "color": "#1f5f8b", "colorDark": "#6fb2e2", "checkInMin": 30, "trust": "approved", "aliases": ["be"]},
+        {"id": "rev", "name": "Rev", "kind": "reviewer", "color": "#00727a", "colorDark": "#45c2bf", "trust": "approved"},
+        {"id": "owner", "name": "Owner", "kind": "person", "color": "#6b3fa0", "colorDark": "#b892e6", "trust": "approved"},
+    ],
+}
+
+
+def relay_in(root):
+    """Copy scripts/ into root and return its relay.py, which then reads and writes root, not the checkout."""
+    dest = Path(root) / "scripts"
+    if not dest.exists():
+        shutil.copytree(str(Path(__file__).resolve().parent.parent / "scripts"), str(dest),
+                        ignore=shutil.ignore_patterns("__pycache__"))
+    return dest / "relay.py"
+
+
+def plain_roster(relay, ids):
+    """A roster for the pure functions: `relay` coordinates, every id is an approved project."""
+    from types import SimpleNamespace
+    return SimpleNamespace(relay=relay, participants={i: {"trust": "approved", "kind": "project"} for i in ids})
+
+
+class TempRepo:
+    """A throwaway repo root with participants.json and log/."""
+
+    def __enter__(self):
+        self.root = Path(tempfile.mkdtemp(prefix="crosstalk-test-"))
+        (self.root / "log").mkdir()
+        return self
+
+    def __exit__(self, *exc):
+        shutil.rmtree(str(self.root), ignore_errors=True)
+        return False
+
+    def write_roster(self, data=None):
+        path = self.root / "participants.json"
+        path.write_text(json.dumps(SPEC_ROSTER if data is None else data), encoding="utf-8")
+        return path
+
+    def write_config(self, data):
+        """The install's config.json (scripts/crosstalk/config.py)."""
+        path = self.root / "config.json"
+        path.write_text(json.dumps(data), encoding="utf-8")
+        return path
+
+    def write_log(self, pid, lines):
+        """lines: list of dicts (JSON-encoded) or str (written raw)."""
+        path = self.root / "log" / (pid + ".jsonl")
+        out = []
+        for ln in lines:
+            out.append(ln if isinstance(ln, str) else json.dumps(ln))
+        path.write_text("".join(x + "\n" for x in out), encoding="utf-8")
+        return path
+
+
+def line(seq, frm, collection="messages", id_=None, op="set", data=None, t="2026-10-21T18:00:00Z"):
+    return {"seq": seq, "t": t, "from": frm, "op": op, "collection": collection,
+            "id": id_ if id_ is not None else "%s-%04d" % (frm, seq), "data": data if data is not None else {}}

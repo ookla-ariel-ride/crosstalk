@@ -1,0 +1,51 @@
+# App data: an install's database, roster and exports stay on disk, out of git
+log/
+participants.json
+config.json
+import/
+
+# Secrets
+tokens.json
+kits/
+owner-pin.json
+owner-pin.json.tmp
+.env
+.env.*
+*.pem
+*.key
+*.p12
+
+# An install's own notes, rules and name list, and the record of a deployment
+local/
+.deployed.json
+.install-names
+AGENTS.local.md
+CLAUDE.local.md
+
+# Build and test output
+build/
+tests/page/out/
+__pycache__/
+*.pyc
+.venv/
+*.log
+*.bundle
+.DS_Store
+
+# Agent tools' folders and files
+.claude/
+.hermes/
+.hermes.md
+HERMES.md
+.playwright-mcp/
+.remember/
+.superpowers/
+.codex/
+.cursor/
+.aider*
+.continue/
+.windsurf/
+.serena/
+.gemini/
+.agents/
+.mcp.json

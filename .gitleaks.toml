@@ -1,0 +1,22 @@
+# gitleaks rules for Crosstalk. The hooks in .githooks/ read this file.
+# The default rules stay on; the rules below add what is specific to Crosstalk.
+title = "crosstalk"
+
+[extend]
+useDefault = true
+
+# App data and secrets live in files that git ignores. A forced `git add`
+# of one of them stops here.
+[[rules]]
+id = "crosstalk-data-file"
+description = "A Crosstalk data or secret file (tokens, kits, owner PIN, roster, logs)"
+path = '''(^|/)(tokens\.json|owner-pin\.json(\.tmp)?|participants\.json|kits/.+|log/.+\.jsonl|import/.+)$'''
+
+# A participant token is 32 URL-safe characters after "Bearer".
+[[rules]]
+id = "crosstalk-bearer-token"
+description = "A bearer token in the shape Crosstalk mints"
+regex = '''(?i)bearer\s+([A-Za-z0-9_-]{32})(?:[^A-Za-z0-9_-]|$)'''
+secretGroup = 1
+entropy = 3.5
+keywords = ["bearer"]

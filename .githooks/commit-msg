@@ -1,0 +1,10 @@
+#!/bin/bash
+# Strip AI coding credit from commit messages: Co-Authored-By trailers naming
+# Claude or Anthropic, and "Generated with Claude Code" lines. The owner wants
+# no AI attribution in commits, whichever agent or harness writes them.
+msg="$1"
+tmp=$(mktemp "${TMPDIR:-/tmp}/crosstalk-msg.XXXXXX")
+grep -v -i -E '^co-authored-by:.*(claude|anthropic)|generated with \[?claude code' "$msg" > "$tmp"
+# Drop trailing blank lines left behind.
+sed -e :a -e '/^\n*$/{$d;N;ba' -e '}' "$tmp" > "$msg"
+rm -f "$tmp"

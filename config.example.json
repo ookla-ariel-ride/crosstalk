@@ -1,0 +1,9 @@
+{
+  "repoUrl": "https://example.com/owner/crosstalk",
+  "rulingsSince": "",
+  "broadcastWakesFrom": "",
+  "buildHost": {"ssh": "buildhost", "loadHigh": 12, "loadClear": 10, "diskLowGiB": 50, "diskClearGiB": 55},
+  "autogrant": {"loadLimit": 12},
+  "usage": {"glob": "~/.cache/usage/usage*.json", "limit": 90, "stopLimit": 95, "graceMin": 0, "maxAgeMin": 45},
+  "reviews": {"reviewer": "codex"}
+}
