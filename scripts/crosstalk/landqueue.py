@@ -42,7 +42,8 @@ _TOKEN_RE = re.compile(r"[A-Za-z0-9][A-Za-z0-9._/-]*")
 _MESSAGE_ID_RE = re.compile(r"-\d{8}T\d+Z?$")
 # What a project's land tool posts when it gives up its turn, landed or stopped.
 _TOOL_END_RE = re.compile(r"^land(?: --queue)?\b.*\bturn released\b")
-_DATED_BRANCH_RE = re.compile(r"\b([a-z][a-z0-9.]*(?:-[a-z0-9.]+)*-\d{4})\b")
+# The lookarounds keep "tool-fix-1110" out of the longer name "tool-fix-1110-min".
+_DATED_BRANCH_RE = re.compile(r"(?<![\w.-])([a-z][a-z0-9.]*(?:-[a-z0-9.]+)*-\d{4})(?![\w-])")
 
 
 def land_word(summary) -> Optional[str]:

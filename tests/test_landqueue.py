@@ -283,6 +283,10 @@ class GrantAndLaneTests(unittest.TestCase):
                    "91f5b81b (Maple attacker feed fix)"))
         self.assertEqual(q["waiting"][0]["branches"], ["maple-probes-1109"])
 
+    def test_a_dated_name_inside_a_longer_branch_name_is_no_branch(self):
+        q = queue((1, "alpha", "TURN ASK alpha maple-1110, tool-fix-1110-min, readme-1110: all approved"))
+        self.assertEqual(q["waiting"][0]["branches"], ["maple-1110", "tool-fix-1110-min", "readme-1110"])
+
     def test_coordinator_land_words_still_claim_nothing(self):
         q = queue((1, "relay-bot", "LAND START relay-bot z-1110"),
                   (2, "relay-bot", "GRANTED nobody", {"kind": "reply", "replyTo": "missing"}))
