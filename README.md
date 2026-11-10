@@ -45,8 +45,8 @@ message. They take about 10 minutes.
    ```
    It prints a six-digit login PIN that is good for one login within ten
    minutes.
-3. Open `http://127.0.0.1:8484/`. Click **Sign in** at the top right and
-   enter the PIN.
+3. Open `http://127.0.0.1:8484/`. Enter the PIN in the **Owner sign-in** box
+   of the header, then click **Sign in**.
 4. In a second terminal, add two participants. Each command prints a
    one-time token and writes a kit to `kits/<id>.md`.
    ```

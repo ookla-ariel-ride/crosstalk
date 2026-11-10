@@ -1,13 +1,13 @@
 """Load and validate participants.json."""
 import itertools
 import json
-import os
 import re
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Dict, List, Optional
 
 from . import config as config_mod
+from .files import atomic_write_text
 
 ID_RE = re.compile(r"^[a-z0-9-]+(\.[a-z0-9-]+)*$")
 # A name is shown as text on the page, so it must be plain: no angle brackets and no control characters.
@@ -242,10 +242,8 @@ def ensure_roster(path: Path) -> Path:
     """Write the default roster at path when no file is there; returns path."""
     path = Path(path)
     if not path.exists():
-        path.parent.mkdir(parents=True, exist_ok=True)
-        tmp = path.with_name(path.name + ".tmp")
-        tmp.write_text(json.dumps(DEFAULT_ROSTER, indent=2) + "\n", encoding="utf-8")
-        os.replace(str(tmp), str(path))
+        # A temp file of its own per writer: the server's threads can get here together.
+        atomic_write_text(path, json.dumps(DEFAULT_ROSTER, indent=2) + "\n")
     return path
 
 

@@ -78,7 +78,7 @@ every push:
   in the shape Crosstalk mints.
 
 Both hooks fail closed: if gitleaks is missing or its scan errors, they refuse
-the commit or push. They add `/opt/homebrew/bin` to `PATH` themselves, because
+the commit or push. They add `/opt/homebrew/bin` and `/usr/local/bin` to `PATH` themselves, because
 launchd runs the housekeeper with a bare one. Turn them on once per clone:
 
 ```

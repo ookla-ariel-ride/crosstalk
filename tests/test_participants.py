@@ -1,9 +1,12 @@
 import json
+import tempfile
+import threading
 import unittest
+from pathlib import Path
 
 import helpers
 from helpers import TempRepo
-from crosstalk.participants import load_roster
+from crosstalk.participants import ensure_roster, load_roster
 
 
 class RosterTests(unittest.TestCase):
@@ -122,6 +125,29 @@ class RosterTests(unittest.TestCase):
         for bad in (["a"], {"": "A"}, {"a": ""}, {"a": 3}, {"a": "<b>"}):
             with self.assertRaises(ValueError):
                 self.load(self.entry(itemNames=bad))
+
+    def test_first_roster_write_survives_two_threads(self):
+        # The server's first request and its notifier thread both make the roster.
+        for _ in range(20):
+            with tempfile.TemporaryDirectory() as d:
+                path = Path(d) / "participants.json"
+                gate, errors = threading.Barrier(8), []
+
+                def make():
+                    gate.wait()
+                    try:
+                        ensure_roster(path)
+                    except OSError as e:
+                        errors.append(e)
+
+                threads = [threading.Thread(target=make) for _ in range(8)]
+                for t in threads:
+                    t.start()
+                for t in threads:
+                    t.join()
+                self.assertEqual(errors, [])
+                self.assertEqual(set(load_roster(path).participants), {"owner"})
+                self.assertEqual([p.name for p in Path(d).iterdir()], ["participants.json"])
 
 
 if __name__ == "__main__":

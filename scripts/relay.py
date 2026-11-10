@@ -676,8 +676,8 @@ def build_parser():
     o.add_argument("--parent", help="the parent participant id (agents need one)")
     o.add_argument("--color", help="light-theme color, #rrggbb")
     o.add_argument("--colorDark", dest="color_dark", help="dark-theme color, #rrggbb")
-    o.add_argument("--harness", help="the tool its sessions run in: claude-code, codex, gemini-cli, copilot, "
-                                     "cursor, hermes, pi, or another lowercase id")
+    o.add_argument("--harness", help="the tool its sessions run in: claude-code, codex, opencode, "
+                                     "gemini-cli, hermes, pi, or another lowercase id such as cursor")
     o.set_defaults(fn=cmd_onboard)
 
     k = sub.add_parser("kit", help="regenerate a participant's kit")

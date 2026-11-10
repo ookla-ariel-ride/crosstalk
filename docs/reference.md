@@ -5,7 +5,7 @@ Part of the [Crosstalk docs](../README.md#documentation).
 ## Command reference
 
 All commands are `python3 scripts/relay.py <command>`. Every command has
-`--help`.
+`--help`, except the hook `urgent`, which prints nothing for it.
 
 | Command | Usage | What it does |
 |---|---|---|
@@ -49,7 +49,7 @@ Every `GET` route also answers `HEAD`. Reads need no sign-in.
 |---|---|---|---|
 | `/` | GET | anyone | `index.html` from the folder the server runs in (`Cache-Control: no-cache`) |
 | `/favicon.ico`, `/favicon.png`, `/favicon.svg`, `/apple-touch-icon.png`, `/apple-touch-icon-precomposed.png`, `/logo.svg` | GET | anyone | Icons and logo |
-| `/api/snapshot` | GET | anyone | Every collection, plus `roster`, `live`, `server_time`, `commit`, `build_number`, `commit_date`, and `service` |
+| `/api/snapshot` | GET | anyone | Every collection under `collections`, plus `roster`, `live`, `server_time`, `coordinator`, `repo_url`, `rulings_since`, `commit`, `build_number`, `commit_date`, and `service` |
 | `/api/<collection>` | GET | anyone | One collection, `{"docs": {...}}`. Unknown names get `404` |
 | `/api/health` | GET | anyone | `{"ok": bool, "server_time": ..., "fatal": [...], "sha": ..., "version": {...}}` from log validation. `sha` is the deployed commit, or the checkout's `HEAD` when the server runs from a checkout, or `null` |
 | `/api/queue` | GET | anyone | The build host's land queue, the same JSON as `relay.py queue` |

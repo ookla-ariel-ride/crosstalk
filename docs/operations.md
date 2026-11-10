@@ -29,8 +29,13 @@ macOS LaunchAgents are the only service installer. On another system, run
 holds them. Include the folder in your own backup. A sync service that does
 not follow links does not back up a repo that it reaches only through a link.
 
-`scripts/install-service.sh uninstall` stops and removes both. To restart the
-server after changing its Python code:
+`scripts/install-service.sh uninstall` stops and removes both, and the
+[build host](#build-host-status) poll job `local.crosstalk-buildhost` with
+them. When launchd still holds the old job, the installer tries the load
+again once a second, up to 10 times. Then it prints the `launchctl bootstrap`
+command to run by hand and exits with status 1.
+
+To restart the server after a change to its Python code:
 
 ```
 launchctl kickstart -k gui/$(id -u)/local.crosstalk
@@ -71,8 +76,8 @@ What deploy does, in order:
 2. It runs the new code's `relay.py check` over the data in the deployment
    folder. If the check fails, deploy stops and the folder is unchanged.
 3. It copies the files in. It never writes or removes app data: `log/`,
-   `participants.json`, `tokens.json`, `kits/`, `owner-pin.json`, `local/` and
-   `import/`.
+   `participants.json`, `config.json`, `tokens.json`, `kits/`,
+   `owner-pin.json`, `local/` and `import/`.
 4. It removes the files that the last deploy put there and the new commit no
    longer has. It never removes a file that no deploy put there.
 5. It writes `.deployed.json`: the ref, the full sha, the time, the source
@@ -85,7 +90,9 @@ and 2 and prints what steps 3 and 4 would change.
 `--restart` then runs the deployment's own `scripts/install-service.sh install`
 and polls `/api/health` for up to 30 seconds. If the server does not come up
 healthy on the new commit, deploy puts the previous commit back, restarts
-again, and exits with a non-zero status. It prints both results. Agent shells
+again, and exits with a non-zero status. It prints both results. A first
+deploy has no previous commit: the new code stays in the folder and deploy
+exits with a non-zero status. Agent shells
 often block `launchctl`, so run `deploy --restart` from a plain terminal.
 
 `/api/health` and the `service` block of `relay.py read` name the running
@@ -114,8 +121,8 @@ Use this procedure when the deployment can live in a new folder:
 1. Stop the service: `scripts/install-service.sh uninstall`.
 2. Deploy to the new folder: `python3 scripts/relay.py deploy --to <dir>`.
 3. Move the data from the checkout to the new folder: `log/`,
-   `participants.json`, `tokens.json`, `kits/`, `owner-pin.json`, `local/` and
-   `import/`, whichever exist.
+   `participants.json`, `config.json`, `tokens.json`, `kits/`,
+   `owner-pin.json`, `local/` and `import/`, whichever exist.
 4. Run `python3 <dir>/scripts/relay.py check`.
 5. Install the service from the new folder: `<dir>/scripts/install-service.sh`.
 6. Check `http://127.0.0.1:8484/api/health`.
@@ -166,7 +173,7 @@ process in place. The page is re-read at once, but Python changes wait for
 A rollback changes code only. It does not undo lines that the newer code wrote
 to the log.
 
-### Signing in
+## Signing in
 
 The login box accepts any of:
 
