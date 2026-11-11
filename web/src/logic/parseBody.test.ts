@@ -49,6 +49,63 @@ describe("parseBody", () => {
     expect(parseBody("```\nx\n\ny")).toEqual([{ type: "code", text: "x\n\ny" }]);
   });
 
+  test("three backticks with code on the same line are inline text, not a fence", () => {
+    expect(parseBody("```code here```")).toEqual([
+      p(text("``"), { type: "code", text: "code here" }, text("``")),
+    ]);
+  });
+
+  test("a closing line with trailing text is code, not a fence", () => {
+    expect(parseBody("```\nx\n``` trailing text\ny")).toEqual([
+      { type: "code", text: "x\n``` trailing text\ny" },
+    ]);
+  });
+
+  test("an opening line with words after the backticks is text, not a fence", () => {
+    expect(parseBody("``` some words\nx")).toEqual([p(text("``` some words\nx"))]);
+    expect(parseBody("```ts \nx\n```  ")).toEqual([{ type: "code", text: "x" }]);
+  });
+
+  test("a code block keeps the carriage returns of CRLF text", () => {
+    expect(parseBody("```\r\nx\r\ny\r\n```\r\nz")).toEqual([{ type: "code", text: "x\r\ny" }, p(text("z"))]);
+  });
+
+  test("no character is lost but the fence lines", () => {
+    // Fence lines as the parser reads them: only ``` and a language word.
+    const fence = /^[ \t]*```[A-Za-z0-9_+.#-]*[ \t]*\r?$/;
+    const listMark = /^[ \t]*([-*+]|\d{1,9}[.)])[ \t]/;
+    const inlineText = (parts: { type: string; text?: string; href?: string; id?: string }[]): string =>
+      parts.map((x) => (x.type === "code" ? "`" + x.text + "`" : x.text ?? x.href ?? x.id)).join("");
+    const inputs = [
+      "```code here```",
+      "```\nx\n``` trailing",
+      "``` words\nx\n```",
+      "a\n```\nb\n```\nc",
+      "```ts\nlet a = `x`;\n```",
+      "- one `two`\n- https://example.com/x).\n\n1. alpha-0042, see.\n   more",
+      "<img src=x onerror=alert(1)> & `` ` ``` ````",
+      "````\nfour\n````",
+      "text ```\nmore``` end",
+      "\r\n```\r\nx\r\n```\r\n- y\r\n",
+      "(https://a.b/c_(d)) [https://e.f]",
+    ];
+    for (const input of inputs) {
+      const kept = input
+        .split("\n")
+        .filter((line) => !fence.test(line))
+        .map((line) => line.replace(listMark, ""))
+        .join("")
+        .replace(/\s/g, "");
+      const joined = parseBody(input)
+        .map((b) =>
+          b.type === "code" ? b.text : b.type === "p" ? inlineText(b.parts) : b.items.map(inlineText).join(""),
+        )
+        .join("")
+        .replace(/\s/g, "");
+      expect(joined, input).toBe(kept);
+    }
+  });
+
   test("inline code", () => {
     expect(parseBody("run `relay.py ask` now")).toEqual([
       p(text("run "), { type: "code", text: "relay.py ask" }, text(" now")),

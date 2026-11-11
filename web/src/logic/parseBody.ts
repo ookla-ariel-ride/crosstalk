@@ -193,12 +193,33 @@ function listItem(line: string): { kind: "ol" | "ul"; n: number; text: string } 
   return null;
 }
 
-const isFence = (line: string): boolean => line.slice(leadingSpace(line), leadingSpace(line) + 3) === "```";
+const isLangChar = (c: string | undefined): boolean =>
+  isAlnum(c) || c === "_" || c === "+" || c === "." || c === "#" || c === "-";
+
+/**
+ * A fence is a line that holds only three backticks and an optional language
+ * word, with spaces or tabs around them. Any other line that starts with
+ * backticks is ordinary text, so no character of it is lost. The fence lines
+ * themselves are the only text of the input that no part holds. An opening
+ * fence with no closing fence takes the rest of the body as code.
+ */
+function isFence(line: string): boolean {
+  let i = leadingSpace(line);
+  if (line.slice(i, i + 3) !== "```") return false;
+  i += 3;
+  while (isLangChar(line[i])) i++;
+  while (isSpace(line[i])) i++;
+  return i === line.length;
+}
+
+const dropCR = (line: string): string => (line.endsWith("\r") ? line.slice(0, -1) : line);
 
 /** The blocks of a message body. Text that is not a string gives none. */
 export function parseBody(text: string): Block[] {
   if (typeof text !== "string") return [];
-  const lines = text.split("\n").map((line) => (line.endsWith("\r") ? line.slice(0, -1) : line));
+  // Each line without its "\r"; a code block reads `raw` and keeps them.
+  const raw = text.split("\n");
+  const lines = raw.map(dropCR);
   const blocks: Block[] = [];
   let para: string[] = [];
   let list: { kind: "ol" | "ul"; start: number; items: string[] } | null = null;
@@ -218,7 +239,9 @@ export function parseBody(text: string): Block[] {
     if (isFence(line)) {
       flush();
       const body: string[] = [];
-      for (i++; i < lines.length && !isFence(lines[i] as string); i++) body.push(lines[i] as string);
+      for (i++; i < lines.length && !isFence(lines[i] as string); i++) body.push(raw[i] as string);
+      // The "\r" before a closing fence ends the last line; it is not code.
+      if (i < lines.length && body.length) body.push(dropCR(body.pop() as string));
       blocks.push({ type: "code", text: body.join("\n") });
       continue;
     }

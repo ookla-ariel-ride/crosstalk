@@ -4,6 +4,16 @@ const LETTERED = /^[a-f][.)] /;
 
 const strip = (option: string): string => option.replace(LETTERED, "");
 
+/** The option says "recommended", and the word before it is not "not", "never" or a "n't" word. */
+function saysRecommended(option: string): boolean {
+  const text = option.toLowerCase();
+  for (let at = text.indexOf("recommended"); at !== -1; at = text.indexOf("recommended", at + 1)) {
+    const before = text.slice(Math.max(0, at - 12), at).trimEnd().split(/[^a-z']/).pop() ?? "";
+    if (before !== "not" && before !== "never" && !before.endsWith("n't")) return true;
+  }
+  return false;
+}
+
 function fromField(options: unknown): string[] {
   if (!Array.isArray(options) || !options.every((o) => typeof o === "string")) return [];
   return options.length >= 2 ? options.map(strip) : [];
@@ -30,7 +40,7 @@ export function choices(question: Message): { options: string[]; recommend: numb
   if (typeof named === "number" && Number.isInteger(named) && named >= 0 && named < options.length) {
     recommend = named;
   } else {
-    const at = options.findIndex((o) => o.toLowerCase().includes("recommended"));
+    const at = options.findIndex(saysRecommended);
     recommend = at === -1 ? null : at;
   }
   return { options, recommend };

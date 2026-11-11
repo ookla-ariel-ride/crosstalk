@@ -35,6 +35,12 @@ describe("choices", () => {
     expect(choices({ options: ["Yes", "No"] }).recommend).toBe(null);
   });
 
+  test("an option that is not recommended is not the recommended one", () => {
+    expect(choices({ options: ["Force push (not recommended)", "Merge"] }).recommend).toBe(null);
+    expect(choices({ options: ["Never recommended: skip", "Rebase, NOT  recommended", "Merge (recommended)"] }).recommend).toBe(2);
+    expect(choices({ options: ["This isn't recommended", "Merge"] }).recommend).toBe(null);
+  });
+
   test("a recommend field out of range or of the wrong type is ignored", () => {
     expect(choices({ options: ["Yes", "No (recommended)"], recommend: 5 }).recommend).toBe(1);
     expect(choices({ options: ["Yes", "No"], recommend: -1 }).recommend).toBe(null);
