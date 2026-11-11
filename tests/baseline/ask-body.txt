@@ -1,0 +1,5 @@
+Post each question you have for me as its own row:
+
+python3 <crosstalk>/scripts/relay.py ask --from <your-id> --summary "<the question>" --body "<context, the options, your recommendation>"
+
+The summary is the question itself. The body gives the context, the options and your recommendation. If a question becomes moot, withdraw it: relay.py withdraw --from <your-id> --question <question-id>. My answers come back in relay.py inbox <your-id> as owner messages. Reply to this request once you have posted yours, or to say you have none.

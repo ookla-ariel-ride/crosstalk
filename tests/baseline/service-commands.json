@@ -1,0 +1,19 @@
+{
+  "adopt": "python3 <repo>/scripts/relay.py adopt --from <id> --agreement <agreement-id> --commit <sha> [--summary \"...\"]",
+  "ask": "python3 <repo>/scripts/relay.py ask --from <id> --summary \"<the question>\" [--body \"context, options, your recommendation\"] [--ref <ref> ...]",
+  "check": "python3 <repo>/scripts/relay.py check",
+  "claim": "python3 <repo>/scripts/relay.py claim --from <id> --path <path> [--repo <owner/repo>] [--holder <agent>] [--note \"...\"]",
+  "consult": "python3 <repo>/scripts/relay.py consult --from <id> --summary \"...\" [--body \"...\"] [--ref <ref> ...] [--to <other-id> ...]",
+  "inbox": "python3 <repo>/scripts/relay.py inbox <id>",
+  "incident": "python3 <repo>/scripts/relay.py incident --from <id> --slug <slug> --summary \"...\" [--body \"...\"] [--resolve] [--fix \"...\"] [--fix-ref <ref> ...]",
+  "land-sync": "python3 <repo>/scripts/relay.py land-sync --from <id> --commit <sha> --summary \"...\" [--files <path> ...] [--adopter <id>] [--agreement-id <id>]",
+  "mcp": "python3 <repo>/scripts/relay.py mcp --as <id>  # stdio MCP server for harnesses that speak MCP; see docs/mcp.md",
+  "questions": "python3 <repo>/scripts/relay.py questions [--all]",
+  "read": "python3 <repo>/scripts/relay.py read",
+  "release": "python3 <repo>/scripts/relay.py release --from <id> [--path <path> | --id <lock-id>]",
+  "reply": "python3 <repo>/scripts/relay.py reply --from <id> --to-id <msg-id> --summary \"...\" [--body \"...\"] [--ref <ref> ...]",
+  "request": "python3 <repo>/scripts/relay.py append --from <id> --op set --collection messages --id <id>-<n> --data '{\"from\": \"<id>\", \"kind\": \"request\", \"summary\": \"...\", \"to\": [\"<other-id>\"]}'  # ask another project for help; omit to to ask everyone",
+  "schedule": "python3 <repo>/scripts/relay.py schedule set --from <id> --name <job> --cron \"<5 fields>\"  # then schedule ran --from <id> --name <job> --result ok|failed|skipped after each run; schedule remove when you cancel it; see PROTOCOL.md, Scheduled jobs",
+  "withdraw": "python3 <repo>/scripts/relay.py withdraw --from <id> --question <question-id> [--summary \"...\"]",
+  "write": "python3 <repo>/scripts/relay.py append --from <id> --op set --collection messages --id <id>-<n> --data '{\"from\": \"<id>\", \"kind\": \"check-in\", \"summary\": \"...\"}'  # <id> is YOUR participant id; <n> a number you pick; write only your own log"
+}
