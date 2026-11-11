@@ -21,12 +21,14 @@ import sys
 import tempfile
 import unittest
 import urllib.request
+from unittest import mock
 from importlib.util import module_from_spec, spec_from_file_location
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 from helpers import SPEC_ROSTER, RunningServer, TempRepo, line, relay_in  # noqa: E402
 
+from crosstalk import deploy  # noqa: E402
 from crosstalk.service import service_block  # noqa: E402
 
 REPO = Path(__file__).resolve().parent.parent
@@ -160,6 +162,42 @@ class DataRootTests(Installer):
         self.assertEqual(p.returncode, 0, p.stderr)
         self.assertNotIn(str(other), self.written("local.crosstalk"))
         self.assertIn("--data-root", self.job("local.crosstalk")["ProgramArguments"])
+
+    def env_of(self):
+        env = {k: v for k, v in os.environ.items() if k != "CROSSTALK_DATA"}
+        env.update(HOME=str(self.home), TMPDIR=str(self.tmp), CROSSTALK_RENDER_ONLY=str(self.out),
+                   PATH="%s:%s" % (self.bin, env.get("PATH", "/usr/bin:/bin")))
+        return env
+
+    def test_deploy_restart_keeps_the_installed_data_root(self):
+        code, data = self.code_folder(), self.tmp / "data"
+        data.mkdir()
+        for cmd in ("install", "buildhost"):
+            self.assertEqual(self.install(code, cmd, "--data-root", str(data)).returncode, 0)
+        # The restart path of `relay.py deploy`: the installer with no flag and no CROSSTALK_DATA.
+        with mock.patch.dict(os.environ, self.env_of(), clear=True):
+            ok, text = deploy.restart_service(code)
+        self.assertTrue(ok, text)
+        self.assertFalse(self.calls.exists(), "launchctl was called")
+        self.check_jobs(code, data)
+        self.assertIn("data %s" % data, text)
+
+    def test_with_one_folder_the_restart_writes_the_baseline_files(self):
+        code = self.code_folder()
+        self.assertEqual(self.install(code, "install").returncode, 0)
+        with mock.patch.dict(os.environ, self.env_of(), clear=True):
+            ok, text = deploy.restart_service(code)
+        self.assertTrue(ok, text)
+        self.assertFalse(self.calls.exists(), "launchctl was called")
+        for label in ("local.crosstalk", "local.crosstalk-housekeeper"):
+            self.assertEqual(self.written(label), baseline_plist(label, code, self.home), label)
+
+    def test_the_code_folder_as_data_root_clears_an_installed_one(self):
+        code, data = self.code_folder(), self.tmp / "data"
+        data.mkdir()
+        self.assertEqual(self.install(code, "install", "--data-root", str(data)).returncode, 0)
+        self.assertEqual(self.install(code, "install", "--data-root", str(code)).returncode, 0)
+        self.assertEqual(self.written("local.crosstalk"), baseline_plist("local.crosstalk", code, self.home))
 
     def test_a_missing_data_root_fails_and_writes_nothing(self):
         code = self.code_folder()

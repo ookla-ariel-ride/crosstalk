@@ -38,6 +38,27 @@ done
 if [ "$data_set" -eq 0 ]; then
     data_arg="${CROSSTALK_DATA:-}"
 fi
+RENDER_ONLY="${CROSSTALK_RENDER_ONLY:-}"
+AGENTS_DIR="${RENDER_ONLY:-$HOME/Library/LaunchAgents}"
+
+# With no data root given, keep the one the installed jobs carry, so a rerun
+# (`relay.py deploy --restart` among them) does not move the service back to
+# the data of the code folder. `--data-root <this folder>` clears it.
+if [ -z "$data_arg" ] && [ "$cmd" != uninstall ]; then
+    data_arg=$(python3 - "$AGENTS_DIR" "$SERVE_LABEL" "$HOUSEKEEPER_LABEL" "$BUILDHOST_LABEL" <<'PY' 2>/dev/null || true
+import plistlib, sys
+for label in sys.argv[2:]:
+    try:
+        with open("%s/%s.plist" % (sys.argv[1], label), "rb") as f:
+            args = plistlib.load(f).get("ProgramArguments") or []
+        i = args.index("--data-root")
+        print(args[i + 1])
+        break
+    except Exception:  # no such job, not a plist, or no data root in it
+        continue
+PY
+)
+fi
 
 # The data root the jobs carry: empty when none is set or it is this folder.
 DATA_ROOT=""
@@ -50,8 +71,6 @@ if [ -n "$data_arg" ] && [ "$cmd" != uninstall ]; then
         DATA_ROOT=""
     fi
 fi
-RENDER_ONLY="${CROSSTALK_RENDER_ONLY:-}"
-
 install_job() {
     label="$1"
     template="$2"

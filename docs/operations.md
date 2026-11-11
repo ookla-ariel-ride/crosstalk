@@ -45,11 +45,11 @@ installer stops with status 2 when `<dir>` is not a folder. Each job then runs
 `relay.py` of the repo with `--data-root <dir>`: the server, the build host
 poll, and the housekeeper, which passes the folder on to its `relay.py`
 commands and still runs git in the repo. A data root that is the repo itself
-changes nothing, and with no data root each job is what it was before. Give
-the data root again each time you run the installer, `buildhost` too: the
-installer does not remember it. `relay.py deploy --restart` runs the installer
-with no flag, so run it as `CROSSTALK_DATA=<dir> python3 scripts/relay.py
-deploy --restart` when the service has a data root.
+changes nothing, and with no data root each job is what it was before. When
+you give no data root, the installer keeps the one that the installed jobs
+carry, so a rerun and `relay.py deploy --restart` leave the service on its
+data. To go back to the data in the repo, run the installer with
+`--data-root` and the repo folder.
 `CROSSTALK_RENDER_ONLY=<folder>` makes the installer write the plists to
 `<folder>` and load nothing; the tests use it.
 
