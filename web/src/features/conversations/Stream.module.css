@@ -203,3 +203,9 @@
 .end > div {
   margin-top: 0;
 }
+
+.error {
+  align-self: center;
+  color: var(--ink);
+  font-size: var(--size-s);
+}

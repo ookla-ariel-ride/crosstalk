@@ -154,6 +154,26 @@ describe("drafts", () => {
     const [a, b] = writes(calls, "/api/append").map((c) => (c.body as { id: string }).id);
     expect(b).toBe(a);
   });
+  test("a draft of one target does not show in another target's composer", () => {
+    renderWith(page(route()), data(OWNER));
+    fireEvent.click(within(article("I can help")).getByRole("button", { name: "Reply" }));
+    fireEvent.change(screen.getByLabelText("Message"), { target: { value: "For beta only." } });
+    fireEvent.click(within(article("Pick one.")).getByRole("button", { name: "Reply" }));
+    const boxes = screen.getAllByLabelText("Message") as HTMLTextAreaElement[];
+    expect(boxes.map((b) => b.value).sort()).toEqual(["", "For beta only."]);
+    fireEvent.click(within(article("Pick one.")).getByRole("button", { name: "Write an answer" }));
+    expect((screen.getByLabelText("Your answer") as HTMLTextAreaElement).value).toBe("");
+  });
+
+  test("an answer sent with a choice leaves no answer draft behind", async () => {
+    renderWith(page(route()), data(OWNER));
+    serve({ "/api/append": [[201, {}]] });
+    fireEvent.click(within(article("Pick one.")).getByRole("button", { name: "Write an answer" }));
+    fireEvent.change(screen.getByLabelText("Your answer"), { target: { value: "Half written" } });
+    fireEvent.click(screen.getByRole("button", { name: "Keep the log" }));
+    await waitFor(() => expect(screen.getByText("Answer sent")).toBeTruthy());
+    expect(drafts.has("answer:alpha-0001")).toBe(false);
+  });
 });
 
 describe("mute", () => {
@@ -178,6 +198,16 @@ describe("mute", () => {
     ]);
   });
 
+  test("a failed mute says so next to the button and leaves the thread shown", async () => {
+    renderWith(page(route()), data(OWNER));
+    serve({ "/api/read-state": [[500, { error: "disk full" }]] });
+    fireEvent.click(screen.getByRole("button", { name: "Mute thread" }));
+    const alert = await screen.findByRole("alert");
+    expect(alert.textContent).toMatch(/not muted.*try again/i);
+    expect(screen.getByRole("button", { name: "Mute thread" })).toBeTruthy();
+    expect(screen.queryByRole("button", { name: /1 muted/ })).toBeNull();
+  });
+
   test("a viewer's mute stays in this browser", async () => {
     renderWith(page(route()), data(VIEWER));
     const calls = serve({});
@@ -199,5 +229,21 @@ describe("new thread", () => {
   test("a viewer gets no start a thread", () => {
     renderWith(page(route([])), data(VIEWER));
     expect(screen.queryByRole("button", { name: "Start a thread" })).toBeNull();
+  });
+  test("a new thread's draft keeps its kind and recipients across an unmount", async () => {
+    const { rerender, qc } = renderWith(page(route([])), data(OWNER));
+    const calls = serve({ "/api/append": [[201, {}]] });
+    fireEvent.click(screen.getByRole("button", { name: "Start a thread" }));
+    fireEvent.change(screen.getByLabelText("Kind"), { target: { value: "request" } });
+    fireEvent.click(screen.getByLabelText("Beta"));
+    fireEvent.change(screen.getByLabelText("Message"), { target: { value: "Can you check the queue?" } });
+    rerender(<QueryClientProvider client={qc}>{page({ name: "people" })}</QueryClientProvider>);
+    rerender(<QueryClientProvider client={qc}>{page(route([]))}</QueryClientProvider>);
+    expect((screen.getByLabelText("Kind") as HTMLSelectElement).value).toBe("request");
+    expect((screen.getByLabelText("Beta") as HTMLInputElement).checked).toBe(true);
+    expect((screen.getByLabelText("Message") as HTMLTextAreaElement).value).toBe("Can you check the queue?");
+    fireEvent.click(screen.getByRole("button", { name: "Send" }));
+    await waitFor(() => expect(writes(calls, "/api/append")).toHaveLength(1));
+    expect(writes(calls, "/api/append")[0]?.body).toMatchObject({ data: { kind: "request", to: ["beta"] } });
   });
 });

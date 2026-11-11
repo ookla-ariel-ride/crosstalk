@@ -6,12 +6,16 @@ export interface Draft {
   text: string;
   /** The message id of a failed send, so a retry rewrites the same row. */
   id: string | null;
+  /** A new thread's kind other than a note, and its recipients: the draft goes where it was meant to. */
+  kind?: string;
+  to?: string[];
 }
 
 export const drafts = new Map<string, Draft>();
 
-/** Keep `draft` under `key`; an empty one is dropped. */
-export function keepDraft(key: string, draft: Draft): void {
-  if (draft.subject || draft.text || draft.id) drafts.set(key, draft);
+/** Merge `patch` into the draft under `key`; a draft left with nothing in it is dropped. */
+export function keepDraft(key: string, patch: Partial<Draft>): void {
+  const draft: Draft = { subject: "", text: "", id: null, ...drafts.get(key), ...patch };
+  if (draft.subject || draft.text || draft.id || draft.kind || draft.to?.length) drafts.set(key, draft);
   else drafts.delete(key);
 }

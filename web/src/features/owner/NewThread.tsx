@@ -4,7 +4,7 @@ import { useState } from "react";
 import { nameOf } from "../../ui/Bars";
 import { type Kind, KINDS, splitPost, startThread } from "./actions";
 import { Composer } from "./Composer";
-import { drafts } from "./drafts";
+import { drafts, keepDraft } from "./drafts";
 import styles from "./owner.module.css";
 import { useIsOwner, useOwnerData } from "./shared";
 
@@ -13,9 +13,18 @@ const DRAFT = "new";
 export function NewThread() {
   const owner = useIsOwner();
   const roster = useOwnerData().roster ?? {};
+  // A kept draft opens the form again with its kind and recipients.
   const [open, setOpen] = useState(() => drafts.has(DRAFT));
-  const [kind, setKind] = useState<Kind>("owner");
-  const [to, setTo] = useState<string[]>([]);
+  const [kind, setKindState] = useState<Kind>(() => (drafts.get(DRAFT)?.kind as Kind | undefined) ?? "owner");
+  const [to, setToState] = useState<string[]>(() => drafts.get(DRAFT)?.to ?? []);
+  const setKind = (k: Kind) => {
+    keepDraft(DRAFT, { kind: k === "owner" ? undefined : k });
+    setKindState(k);
+  };
+  const setTo = (next: string[]) => {
+    keepDraft(DRAFT, { to: next });
+    setToState(next);
+  };
   if (!owner) return null;
   if (!open)
     return (
@@ -58,9 +67,10 @@ export function NewThread() {
           return startThread(to, kind, summary, body, id);
         }}
         onClose={() => {
+          // The composer dropped the draft; the form starts empty next time.
           setOpen(false);
-          setTo([]);
-          setKind("owner");
+          setToState([]);
+          setKindState("owner");
         }}
       />
     </div>

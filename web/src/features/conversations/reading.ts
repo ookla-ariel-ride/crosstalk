@@ -103,8 +103,8 @@ export interface Reading {
   state: ReadState;
   markThread(root: string, mark: ReadMark): void;
   markAll(t: string): void;
-  /** Mute or unmute a thread: the stream hides a muted one until it needs the owner. */
-  mute(root: string, muted: boolean): void;
+  /** Mute or unmute a thread: the stream hides a muted one until it needs the owner. False when the write failed. */
+  mute(root: string, muted: boolean): Promise<boolean>;
 }
 
 export function useReading(): Reading {
@@ -116,18 +116,18 @@ export function useReading(): Reading {
   const ready = me !== undefined && (!owner || server !== undefined);
   const state = owner ? (server ?? EMPTY) : local;
 
-  const send = (key: string, body: Parameters<typeof api.putReadState>[0]) => {
-    if (sending.has(key)) return;
+  /** Send one write; false when it failed. A write already in flight counts as sent. */
+  const send = (key: string, body: Parameters<typeof api.putReadState>[0]): Promise<boolean> => {
+    if (sending.has(key)) return Promise.resolve(true);
     sending.add(key);
-    api
+    return api
       .putReadState(body)
       .then((next) => {
         qc.setQueryData(keys.readState, next);
         void qc.invalidateQueries({ queryKey: ["threads"] });
+        return true;
       })
-      .catch(() => {
-        // The mark stays where it was; the next view tries again.
-      })
+      .catch(() => false)
       .finally(() => sending.delete(key));
   };
 
@@ -137,18 +137,20 @@ export function useReading(): Reading {
     state,
     markThread(root, mark) {
       if (!ready || !isLater(mark, markOf(state, root))) return;
-      if (owner) send(`${root}\n${mark.t}\n${mark.id}`, { thread: root, t: mark.t, id: mark.id });
+      // A failed mark stays where it was; the next view tries again.
+      if (owner) void send(`${root}\n${mark.t}\n${mark.id}`, { thread: root, t: mark.t, id: mark.id });
       else saveLocal({ ...state, threads: { ...state.threads, [root]: mark } });
     },
     markAll(t) {
       if (!ready || (state.all_before !== null && t <= state.all_before)) return;
-      if (owner) send(`\n${t}`, { all_before: t });
+      if (owner) void send(`\n${t}`, { all_before: t });
       else saveLocal({ ...state, all_before: t });
     },
     mute(root, muted) {
-      if (!ready || state.muted.includes(root) === muted) return;
-      if (owner) send(`${root}\nmuted\n${muted}`, { thread: root, muted });
-      else saveLocal({ ...state, muted: muted ? [...state.muted, root] : state.muted.filter((r) => r !== root) });
+      if (!ready || state.muted.includes(root) === muted) return Promise.resolve(true);
+      if (owner) return send(`${root}\nmuted\n${muted}`, { thread: root, muted });
+      saveLocal({ ...state, muted: muted ? [...state.muted, root] : state.muted.filter((r) => r !== root) });
+      return Promise.resolve(true);
     },
   };
 }

@@ -27,7 +27,8 @@ export function AnswerButtons({ question }: { question: Message }) {
 
   async function pick(text: string) {
     id.current ??= newOwnId();
-    await sending.run(() => answer(question.id, text, asker, id.current as string));
+    // An answer sent by a choice leaves no half-written answer behind.
+    if (await sending.run(() => answer(question.id, text, asker, id.current as string))) drafts.delete(draft);
   }
 
   return (

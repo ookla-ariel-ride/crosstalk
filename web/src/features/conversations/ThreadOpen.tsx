@@ -86,6 +86,7 @@ export function ThreadOpen({ thread, now, renderActions }: ThreadOpenProps) {
   const reading = useReading();
   const watch = useContext(WatchContext);
   const [showEarlier, setShowEarlier] = useState(false);
+  const [muteFailed, setMuteFailed] = useState<boolean | null>(null);
   // The split stays as it was when the thread opened, so a mark does not
   // fold the messages being read.
   const [split, setSplit] = useState<ReadMark | undefined | null>(null);
@@ -165,9 +166,23 @@ export function ThreadOpen({ thread, now, renderActions }: ThreadOpenProps) {
             Mark read
           </button>
         ) : null}
-        <button type="button" className={styles.action} onClick={() => reading.mute(thread.root, !muted)}>
+        <button
+          type="button"
+          className={styles.action}
+          onClick={() => {
+            const next = !muted;
+            setMuteFailed(null);
+            void reading.mute(thread.root, next).then((ok) => setMuteFailed(ok ? null : next));
+          }}
+        >
           {muted ? "Unmute thread" : "Mute thread"}
         </button>
+        {muteFailed !== null ? (
+          <span role="alert" className={styles.error}>
+            {muteFailed ? "The thread was not muted" : "The thread was not unmuted"}: the server did not save it. Check that the relay
+            server runs, then try again.
+          </span>
+        ) : null}
         {renderActions?.(thread, null)}
       </div>
     </div>
