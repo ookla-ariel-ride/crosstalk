@@ -6,6 +6,8 @@ The server is the page host and the database:
   GET  /api/snapshot    -> every collection replayed, plus server_time and commit
   GET  /api/threads     -> the threads in one sort order, a page at a time (threads.py)
   GET  /api/thread/<root> -> the messages of one thread, with depth and quote
+  GET  /api/read-state  -> the owner's read state (readstate.py); the owner only
+  PUT  /api/read-state  -> a thread's read mark, the mark-all time, or a mute; the owner only
   GET  /api/<collection>-> one collection replayed
   GET  /api/queue       -> the land queue of the build host (landqueue.py)
   GET  /api/me          -> the role of the caller (owner, editor, viewer)
@@ -43,7 +45,7 @@ from .logs import COLLECTIONS, append_line, check_all, check_all
 from .onboard import PALETTE, _locked_onboard, onboard
 from .participants import ensure_roster, load_roster
 from .landqueue import land_queue
-from .replay import enrich_messages, load_all_lines, replay
+from .replay import enrich_messages, first_set_map, load_all_lines, replay
 from .deploy import read_manifest
 from .service import service_block, version
 from . import config as config_mod
@@ -54,6 +56,7 @@ from . import urgent as urgent_mod
 from . import reviews as reviews_mod
 from . import autogrant as autogrant_mod
 from . import threads as threads_mod
+from . import readstate
 
 # The collections the page reads. "participants" is the owner's roster.
 KNOWN_COLLECTIONS = tuple(COLLECTIONS) + ("participants",)
@@ -194,6 +197,7 @@ class ReplayCache:
         self._docs = None
         self._entries = None
         self._roster = None
+        self._created = {}  # type: Dict[str, str]
         self._thread_key = None
         self._thread_index = None
         self.thread_builds = 0
@@ -241,7 +245,14 @@ class ReplayCache:
             self._docs = docs
             self._entries = entries
             self._roster = roster
+            # A message's first write time: an edit moves the replayed `t`, not this.
+            self._created = {did: ln.t for (coll, did), ln in first_set_map(lines).items()
+                             if coll == "messages"}
             return docs, entries
+
+    def created(self, did: str) -> Optional[str]:
+        """The time of the first `set` line of message `did` in the current snapshot."""
+        return self._created.get(did)
 
     def threads(self) -> "threads_mod.ThreadIndex":
         """The threads of the current snapshot, built once for each cache key."""
@@ -421,6 +432,11 @@ class ServerState:
             self.login_failures.append(time.time())
 
 
+def _name(value) -> bool:
+    """A non-empty string: a thread root or a message id."""
+    return isinstance(value, str) and bool(value)
+
+
 class CrosstalkHandler(BaseHTTPRequestHandler):
     """The JSON API. Every response is JSON, except the page itself."""
 
@@ -497,6 +513,8 @@ class CrosstalkHandler(BaseHTTPRequestHandler):
             self._threads()
         elif path.startswith("/api/thread/"):
             self._thread(unquote(path[len("/api/thread/"):]))
+        elif path == "/api/read-state":
+            self._read_state_get()
         elif path.startswith("/api/"):
             self._collection(path[len("/api/"):])
         elif path == "/":
@@ -600,7 +618,23 @@ class CrosstalkHandler(BaseHTTPRequestHandler):
         except ValueError as e:
             self._error(400, str(e))
             return
+        if self._role() == "owner":
+            items = self._with_unread(index, items)
         self._json(200, {"threads": items, "next": nxt, "server_time": now})
+
+    def _with_unread(self, index, items: List[dict]) -> List[dict]:
+        """Copies of the threads with the owner's `unread` count (readstate.py)."""
+        state = readstate.load(self.state.root)
+        cache = self.state.cache
+        out = []
+        for item in items:
+            messages = []
+            for did in index.members.get(item["root"], []):
+                doc = index.messages[did]
+                messages.append({"id": did, "from": doc.get("from"),
+                                 "t": cache.created(did) or doc.get("t")})
+            out.append(dict(item, unread=readstate.unread(item, messages, state)))
+        return out
 
     def _thread(self, root: str):
         try:
@@ -650,6 +684,14 @@ class CrosstalkHandler(BaseHTTPRequestHandler):
         self._error(404, "no such asset")
 
     # -- writes ------------------------------------------------------------
+
+    def do_PUT(self):
+        path = urlsplit(self.path).path
+        if path == "/api/read-state":
+            self._read_state_put()
+        else:
+            # Every other path answers PUT as it did before this route: 501.
+            self.send_error(501, "Unsupported method (%r)" % self.command)
 
     def do_POST(self):
         path = urlsplit(self.path).path
@@ -804,6 +846,47 @@ class CrosstalkHandler(BaseHTTPRequestHandler):
             self._error(500, "cannot read the kit: %s" % e)
             return
         self._json(200, {"token": result["token"], "kit": kit})
+
+    # -- the owner's read state ----------------------------------------------
+
+    def _read_state_get(self):
+        if self._role() != "owner":
+            self._error(403, "only the owner has a read state")
+            return
+        self._json(200, readstate.load(self.state.root))
+
+    def _read_state_put(self):
+        """One of {"thread", "t", "id"}, {"all_before": t} or {"thread", "muted": bool}."""
+        if self._role() != "owner":
+            self._error(403, "only the owner has a read state")
+            return
+        body = self._read_json()
+        if body is None:
+            return
+        keys = set(body) if isinstance(body, dict) else None
+        root = self.state.root
+        try:
+            if keys == {"thread", "t", "id"}:
+                if not (_name(body["thread"]) and readstate.is_time(body["t"]) and _name(body["id"])):
+                    raise ValueError("thread and id must be ids and t a time like 2026-01-02T03:04:05Z")
+                state = readstate.mark(root, body["thread"], body["t"], body["id"])
+            elif keys == {"all_before"}:
+                if not readstate.is_time(body["all_before"]):
+                    raise ValueError("all_before must be a time like 2026-01-02T03:04:05Z")
+                state = readstate.mark_all(root, body["all_before"])
+            elif keys == {"thread", "muted"}:
+                if not (_name(body["thread"]) and isinstance(body["muted"], bool)):
+                    raise ValueError("thread must be an id and muted true or false")
+                state = readstate.set_muted(root, body["thread"], body["muted"])
+            else:
+                raise ValueError('expected {"thread", "t", "id"}, {"all_before"} or {"thread", "muted"}')
+        except ValueError as e:
+            self._error(400, str(e))
+            return
+        except OSError as e:
+            self._error(500, "cannot write the read state: %s" % e)
+            return
+        self._json(200, state)
 
     def _me(self):
         role = self._role()

@@ -3,6 +3,7 @@ log/
 participants.json
 config.json
 import/
+read-state.json
 
 # Secrets
 tokens.json

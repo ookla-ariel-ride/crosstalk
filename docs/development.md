@@ -36,6 +36,7 @@ Part of the [Crosstalk docs](../README.md#documentation).
 | `scripts/crosstalk/landqueue.py` | The build host's land queue, derived from land messages (`relay.py queue`) |
 | `scripts/crosstalk/requests.py` | Recipient and group routing and the inbox |
 | `scripts/crosstalk/threads.py` | Threads built from the messages, their four sort orders, and paged reads (`/api/threads`) |
+| `scripts/crosstalk/readstate.py` | The owner's read state in `read-state.json`: read marks, muted threads, the mark-all time, and unread counts (`/api/read-state`) |
 | `scripts/crosstalk/posters.py` | `claim`, `release`, `land-sync`, `incident`, and the shared timestamp helper |
 | `scripts/crosstalk/consults.py` | `reply`, `consult`, `adopt` |
 | `scripts/crosstalk/participants.py` | Roster loading and validation |
