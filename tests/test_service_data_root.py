@@ -108,6 +108,13 @@ class NoDataRootTests(Installer):
         for label in JOBS:
             self.assertEqual(self.written(label), baseline_plist(label, code, self.home), label)
 
+    def test_uninstall_removes_the_rendered_files_and_unloads_nothing(self):
+        code = self.code_folder()
+        self.assertEqual(self.install(code, "install").returncode, 0)
+        p = self.install(code, "uninstall", "--data-root", str(self.tmp / "no-such-folder"))
+        self.assertEqual(p.returncode, 0, p.stderr)
+        self.assertEqual(list(self.out.iterdir()), [])
+
     def test_the_repo_installer_writes_the_baseline_files(self):
         p = self.install(REPO)
         self.assertEqual(p.returncode, 0, p.stderr)
