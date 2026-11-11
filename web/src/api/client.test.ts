@@ -74,4 +74,14 @@ describe("client", () => {
     ]);
     expect(new Headers(calls[0]?.init?.headers).get("Content-Type")).toBe("application/json");
   });
+
+  test("append and onboard POST their JSON body", async () => {
+    const { api, calls } = answer(200, "{}");
+    await api.append({ from: "owner", op: "update", collection: "waiting", id: "alpha-1", data: { done: "2026-11-11T10:00:00Z" } });
+    await api.onboard({ id: "beta", name: "Beta", kind: "project" });
+    expect(calls.map((c) => [c.url, c.init?.method, c.init?.body])).toEqual([
+      ["/api/append", "POST", '{"from":"owner","op":"update","collection":"waiting","id":"alpha-1","data":{"done":"2026-11-11T10:00:00Z"}}'],
+      ["/api/onboard", "POST", '{"id":"beta","name":"Beta","kind":"project"}'],
+    ]);
+  });
 });

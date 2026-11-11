@@ -1,5 +1,6 @@
 import styles from "./App.module.css";
 import { useLive } from "./api/queries";
+import { People } from "./features/owner";
 import { Conversations, NeedsYou } from "./features/conversations/Stream";
 import { SectionPage } from "./features/sections/SectionPage";
 import type { Route } from "./logic/route";
@@ -8,6 +9,7 @@ import { labelOf } from "./ui/Sidebar";
 
 /** The page of a route. Each one comes in a later step of release 1 (Tasks 12 to 14). */
 function page(route: Route) {
+  if (route.name === "people") return <People />;
   if (route.name === "conversations") return <Conversations route={route} />;
   if (route.name === "needs") return <NeedsYou />;
   if (route.name === "section") return <SectionPage section={route.section} q={route.q} />;

@@ -1,11 +1,15 @@
 // One function for each server route the page reads. Every URL is relative to
 // the page's own host, so the page works under /v2/ and under the dev proxy.
 import type {
+  AppendBody,
+  AppendResult,
   Health,
   LandQueue,
   LoginBody,
   LoginResult,
   Me,
+  OnboardBody,
+  OnboardResult,
   ReadState,
   ReadStatePut,
   SectionName,
@@ -79,6 +83,8 @@ export function createApi(fetchFn: Fetch = (input, init) => fetch(input, init)) 
     getReadState: () => call<ReadState>("/api/read-state"),
     putReadState: (body: ReadStatePut) => send<ReadState>("PUT", "/api/read-state", body),
     login: (body: LoginBody) => send<LoginResult>("POST", "/api/login", body),
+    append: (body: AppendBody) => send<AppendResult>("POST", "/api/append", body),
+    onboard: (body: OnboardBody) => send<OnboardResult>("POST", "/api/onboard", body),
   };
 }
 
