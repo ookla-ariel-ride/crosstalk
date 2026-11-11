@@ -19,7 +19,8 @@ holds no secret.
                         The thresholds of the build host's busy and disk-low flags.
     autogrant.loadLimit The auto-granter posts no GRANTED at this 1-minute load.
     usage.glob          The files that hold weekly usage as {"weeklyUsage": n}
-                        (~ is the home folder); empty turns the usage check off.
+                        (~ is the home folder); empty turns the usage check off,
+                        and the page's health line (vitals.py) shows no usage.
     usage.limit         No GRANTED at this usage or higher; the usage-guard job
                         winds down here.
     usage.stopLimit     The usage-guard job stops all work here.
@@ -28,11 +29,6 @@ holds no secret.
     usage.maxAgeMin     A usage file older than this is not trusted.
     reviews.reviewer    The key of the reviewing tool's position in an override
                         (reviews.py).
-    usageFile           The files (a glob; ~ is the home folder) whose newest holds
-                        {"weeklyUsage": n} for the page's health line (vitals.py);
-                        empty shows no usage.
-    usageLimit          The usage the page's health line shows as the limit; null
-                        shows none.
     modelFamilies       [[pattern, family], ...]: extra rows for the page's model
                         family table. A value that is not a list of two-string
                         pairs reads as the empty list.
@@ -53,8 +49,6 @@ DEFAULTS = {
     "autogrant": {"loadLimit": 12.0},
     "usage": {"glob": "", "limit": 90.0, "stopLimit": 95.0, "graceMin": 0.0, "maxAgeMin": 45.0},
     "reviews": {"reviewer": "codex"},
-    "usageFile": "",
-    "usageLimit": None,  # a number, or None
     "modelFamilies": [],  # a list of [pattern, family] string pairs
 }
 
@@ -75,9 +69,6 @@ def _merge(defaults: dict, raw) -> dict:
         elif isinstance(default, float):
             if isinstance(value, (int, float)) and not isinstance(value, bool):
                 out[key] = float(value)
-        elif default is None:
-            if isinstance(value, (int, float)) and not isinstance(value, bool):
-                out[key] = value
         elif isinstance(default, list):
             if _pairs(value):
                 out[key] = copy.deepcopy(value)

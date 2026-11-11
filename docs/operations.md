@@ -339,14 +339,12 @@ the limits; the page reads `repoUrl` and `rulingsSince` on its next poll.
 | `buildHost.loadHigh`, `buildHost.loadClear` | `12`, `10` | The 1-minute load at which the host is busy, and under which it is clear again. |
 | `buildHost.diskLowGiB`, `buildHost.diskClearGiB` | `50`, `55` | The free space under which the disk is low, and at which it is fine again. |
 | `autogrant.loadLimit` | `12` | The auto-granter posts no `GRANTED` at this load or higher. |
-| `usage.glob` | `""` | The files that hold weekly usage as `{"weeklyUsage": n}`. Empty turns the usage check off. |
+| `usage.glob` | `""` | The files that hold weekly usage as `{"weeklyUsage": n}`. The page's health line (`/api/vitals`) shows the newest. Empty turns the usage check off and shows no usage. |
 | `usage.limit` | `90` | No `GRANTED` at this usage or higher. The `usage-guard` job winds work down here. |
 | `usage.stopLimit` | `95` | The `usage-guard` job stops all work here. |
 | `usage.graceMin` | `0` | The `usage-guard` job also stops this many minutes after its wind-down began. `0` means no such clock. |
-| `usage.maxAgeMin` | `45` | A usage file older than this is not trusted. |
+| `usage.maxAgeMin` | `45` | A usage file older than this is not trusted, by the auto-granter or by the page's health line. |
 | `reviews.reviewer` | `"codex"` | The key of the reviewing tool's position in an override message. |
-| `usageFile` | `""` | The files (a glob; `~` is the home folder) whose newest holds `{"weeklyUsage": n}` for the page's health line (`/api/vitals`). A file older than 10 minutes shows no usage. Empty shows none. |
-| `usageLimit` | `null` | The usage limit the page's health line shows. `null` shows none. |
 | `modelFamilies` | `[]` | Extra `[pattern, family]` rows for the page's model family table, sent with `/api/vitals`. A value that is not a list of two-string pairs reads as `[]`. |
 
 ## Build host status

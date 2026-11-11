@@ -45,23 +45,26 @@ class VitalsTests(unittest.TestCase):
     def test_usage_comes_from_the_newest_file(self):
         self.usage_file("usage-a.json", 40, age_sec=120)
         self.usage_file("usage-b.json", 55.6)
-        out = self.read({"usageFile": str(self.root / "usage-*.json"), "usageLimit": 90})
-        self.assertEqual((out["usage"], out["usage_limit"]), (56, 90))
+        out = self.read({"usage": {"glob": str(self.root / "usage-*.json"), "limit": 85}})
+        self.assertEqual((out["usage"], out["usage_limit"]), (56, 85))
 
     def test_stale_usage_file_is_null(self):
+        usage = {"glob": str(self.root / "usage-*.json"), "maxAgeMin": 10}
         self.usage_file("usage-a.json", 40, age_sec=11 * 60)
-        out = self.read({"usageFile": str(self.root / "usage-*.json")})
-        self.assertIsNone(out["usage"])
+        self.assertIsNone(self.read({"usage": usage})["usage"])
+        # The same file is fresh under the default usage.maxAgeMin (45).
+        self.assertEqual(self.read({"usage": dict(usage, maxAgeMin=45)})["usage"], 40)
 
     def test_build_host_comes_from_the_stored_state(self):
         cfg = {"buildHost": {"ssh": "buildhost"}}
         self.assertIsNone(self.read(cfg)["build_host"])  # nothing stored yet
         self.state.write_text(json.dumps({"reachable": False, "busy": False, "disk_low": False}),
                               encoding="utf-8")
-        self.assertEqual(self.read(cfg)["build_host"], {"reachable": False, "load": None})
-        self.state.write_text(json.dumps({"reachable": True, "busy": True, "disk_low": False, "load": 13.5}),
-                              encoding="utf-8")
-        self.assertEqual(self.read(cfg)["build_host"], {"reachable": True, "load": 13.5})
+        self.assertEqual(self.read(cfg)["build_host"], {"reachable": False, "load": None, "t": None})
+        self.state.write_text(json.dumps({"reachable": True, "busy": True, "disk_low": False, "load": 13.5,
+                                          "t": "2026-11-11T10:00:00Z"}), encoding="utf-8")
+        self.assertEqual(self.read(cfg)["build_host"],
+                         {"reachable": True, "load": 13.5, "t": "2026-11-11T10:00:00Z"})
         self.assertIsNone(self.read({})["build_host"])  # no build host set
 
 
@@ -76,21 +79,18 @@ class ConfigTests(unittest.TestCase):
                 r.write_config({"modelFamilies": bad})
                 self.assertEqual(config.load(r.root)["modelFamilies"], [], bad)
 
-    def test_usage_limit_is_a_number_or_null(self):
-        with TempRepo() as r:
-            self.assertIsNone(config.load(r.root)["usageLimit"])
-            for bad in ("90", True, None):
-                r.write_config({"usageLimit": bad})
-                self.assertIsNone(config.load(r.root)["usageLimit"], bad)
-            r.write_config({"usageLimit": 85})
-            self.assertEqual(config.load(r.root)["usageLimit"], 85)
+    def test_no_second_usage_key(self):
+        cfg = config.defaults()
+        self.assertNotIn("usageFile", cfg)
+        self.assertNotIn("usageLimit", cfg)
 
 
 class VitalsRouteTests(unittest.TestCase):
     def test_vitals_route_adds_model_families(self):
         with TempRepo() as r:
             r.write_roster()
-            r.write_config({"modelFamilies": [["^gpt-", "openai"]], "usageLimit": 90})
+            r.write_config({"modelFamilies": [["^gpt-", "openai"]],
+                            "usage": {"glob": str(r.root / "usage-*.json"), "limit": 90}})
             with RunningServer(r.root) as srv:
                 srv.state.buildhost_state = r.root / "buildhost-state.json"
                 status, body = request(srv.url + "/api/vitals")

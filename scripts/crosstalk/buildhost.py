@@ -25,8 +25,9 @@ is wrong. Unreachable and disk-low posts are `important`; the others are not.
 
 State (default ~/.crosstalk-buildhost-state.json, 0600, `.lock` beside it;
 CROSSTALK_BUILDHOST_STATE moves it):
-    {"reachable": bool, "busy": bool, "disk_low": bool, "posted": "<id>", "load": float}
-`load` is the 1-minute load of the last post while reachable; vitals.py reads it.
+    {"reachable": bool, "busy": bool, "disk_low": bool, "posted": "<id>", "load": float, "t": "<UTC>"}
+`load` is the 1-minute load of the last post while reachable, and `t` the time
+of the last post; vitals.py reads both.
 """
 import json
 import os
@@ -198,6 +199,7 @@ class Poller:
         new["posted"] = did
         if p["reachable"] and p["load"] is not None:
             new["load"] = p["load"][0]  # the page's health line (vitals.py) shows it
+        new["t"] = time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime(self.clock()))
         atomic_write_text(self.state_path, json.dumps(new, sort_keys=True) + "\n")
         os.chmod(str(self.state_path), 0o600)
         return plan

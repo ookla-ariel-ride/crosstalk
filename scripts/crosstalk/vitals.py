@@ -4,28 +4,26 @@ read() returns:
 
     disk_free_gb  The free space of the volume that holds the data root, in
                   whole GB (10^9 bytes), from shutil.disk_usage.
-    usage         The `weeklyUsage` field of the newest file that matches the
-                  config key `usageFile` (a glob; ~ is the home folder),
-                  rounded to a whole number. null when the key is empty, no
-                  file matches, the newest is older than 10 minutes, or the
-                  field is not a number.
-    usage_limit   The config key `usageLimit`, a whole number, or null.
-    build_host    {"reachable", "load"} from the state that buildhost.py stored
-                  on its last post, or null when no build host is set
-                  (`buildHost.ssh`) or no state is stored yet. `load` is null
-                  when the state holds no number for it.
+    usage         The `weeklyUsage` of the newest file that matches the config
+                  key `usage.glob`, rounded to a whole number. It is read by
+                  autogrant.read_usage, the same rule the auto-granter uses, so
+                  a file older than `usage.maxAgeMin` gives null. null too when
+                  `usage.glob` is empty or no file can be read.
+    usage_limit   `usage.limit` as a whole number; null when `usage.glob` is empty.
+    build_host    {"reachable", "load", "t"} from the state that buildhost.py
+                  stored on its last post, or null when no build host is set
+                  (`buildHost.ssh`) or no state is stored yet. `load` and `t`
+                  are null when the state holds no value for them (a state
+                  written before they were stored).
 """
-import glob
 import json
-import os
 import shutil
-import time
 from pathlib import Path
 from typing import Optional
 
 from . import buildhost
+from .autogrant import read_usage
 
-USAGE_MAX_AGE_SEC = 10 * 60
 GB = 10 ** 9
 
 
@@ -33,25 +31,11 @@ def _number(value) -> bool:
     return isinstance(value, (int, float)) and not isinstance(value, bool)
 
 
-def _usage(pattern: str, now: float) -> Optional[int]:
-    if not pattern:
+def _usage(cfg: dict, now: Optional[float]) -> Optional[int]:
+    if not cfg["glob"]:
         return None
-    newest, newest_mtime = None, None
-    for name in glob.glob(os.path.expanduser(pattern)):
-        try:
-            mtime = os.stat(name).st_mtime
-        except OSError:
-            continue
-        if newest_mtime is None or mtime > newest_mtime:
-            newest, newest_mtime = name, mtime
-    if newest is None or now - newest_mtime > USAGE_MAX_AGE_SEC:
-        return None
-    try:
-        raw = json.loads(Path(newest).read_text(encoding="utf-8"))
-    except (OSError, ValueError):
-        return None
-    value = raw.get("weeklyUsage") if isinstance(raw, dict) else None
-    return int(round(value)) if _number(value) else None
+    value, _why = read_usage(cfg["glob"], now=now, max_age=cfg["maxAgeMin"] * 60)
+    return int(round(value)) if value is not None else None
 
 
 def _build_host(cfg: dict, state_path) -> Optional[dict]:
@@ -64,7 +48,9 @@ def _build_host(cfg: dict, state_path) -> Optional[dict]:
     if not isinstance(raw, dict) or not isinstance(raw.get("reachable"), bool):
         return None
     load = raw.get("load")
-    return {"reachable": raw["reachable"], "load": float(load) if _number(load) else None}
+    t = raw.get("t")
+    return {"reachable": raw["reachable"], "load": float(load) if _number(load) else None,
+            "t": t if isinstance(t, str) else None}
 
 
 def read(root, cfg: dict, buildhost_state=None, now: Optional[float] = None) -> dict:
@@ -72,8 +58,8 @@ def read(root, cfg: dict, buildhost_state=None, now: Optional[float] = None) -> 
     build host's state file (default: buildhost.state_path_from_env())."""
     if buildhost_state is None:
         buildhost_state = buildhost.state_path_from_env()
-    limit = cfg.get("usageLimit")
+    usage = cfg["usage"]
     return {"disk_free_gb": int(shutil.disk_usage(str(root)).free // GB),
-            "usage": _usage(cfg.get("usageFile", ""), time.time() if now is None else now),
-            "usage_limit": int(round(limit)) if _number(limit) else None,
+            "usage": _usage(usage, now),
+            "usage_limit": int(round(usage["limit"])) if usage["glob"] else None,
             "build_host": _build_host(cfg, buildhost_state)}
