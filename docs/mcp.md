@@ -57,6 +57,11 @@ You don't run it by hand.
 posts `kind: "owner"`, `question` or `withdrawn`. Message ids are made for you
 (`<id>-YYYYMMDDTHHMMSSffffffZ`).
 
+Each tool that posts a message adds `harness` and `model` from the server's
+`CROSSTALK_HARNESS` and `CROSSTALK_MODEL` variables, when they are set (see
+[Who spoke](../PROTOCOL.md#who-spoke)). Set them in the environment that the
+harness starts the server with.
+
 A tool that runs and fails (a bad argument, a write the trust rules refuse, a
 missing message) returns a result with `isError: true` and the reason, so the
 model can fix the call. An unknown tool or a malformed call is a JSON-RPC

@@ -2,13 +2,14 @@
 import fcntl
 import json
 import os
+import re
 import time
 from datetime import datetime, timezone
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Dict, List, Optional, Tuple
 
-from .participants import ID_RE, Roster
+from .participants import HARNESS_MAX, ID_RE, Roster, harness_problem
 
 LEGACY_PREFIXES = ("m-", "vc-", "own-", "a-", "d-", "w-", "l-", "p-", "i-", "lesson-")
 COLLECTIONS = ("messages", "agreements", "waiting", "locks", "lessons",
@@ -22,6 +23,10 @@ KINDS = ("check-in", "checkin", "sync", "reply", "request", "review", "agreement
 # Who wrote a message, what it is, and what it answers: the fields the request and
 # question rules read. Only its writer (or the owner) may change them.
 MESSAGE_IDENTITY = ("from", "kind", "replyTo")
+# Who spoke: a message may name the harness (the roster's harness rule) and the model that wrote it.
+SPEAKER_FIELDS = ("harness", "model")
+MODEL_MAX = 64
+MODEL_BAD_RE = re.compile(r"[\x00-\x1f\x7f]")
 SKEW_MIN = 2
 
 
@@ -118,12 +123,38 @@ def _validate(raw: str, owner: str, expected: int, _prior: List[Line],
     if d["collection"] == "messages" and d["data"].get("kind") == "owner" \
             and owner != "owner" and d.get("via") != "import":
         return "only 'owner' may post kind 'owner'"
+    if d["collection"] == "messages":
+        for name in SPEAKER_FIELDS:
+            if name in d["data"]:
+                msg = speaker_problem(name, d["data"][name])
+                if msg:
+                    return msg
     if roster is not None:
         msg = _trust_problem(d, owner, roster)
         if msg:
             return msg
     return Line(seq=seq, t=d["t"], from_=d["from"], op=d["op"], collection=d["collection"],
                 id=d["id"], data=d["data"], via=via)
+
+
+def speaker_problem(name: str, value) -> Optional[str]:
+    """The reason a message's `harness` or `model` value is invalid, or None when it is acceptable."""
+    if name == "harness":
+        if value is None or harness_problem("", value):
+            return ("message harness %r is not a lowercase id like claude-code of at most %d chars"
+                    % (value, HARNESS_MAX))
+        return None
+    if not isinstance(value, str) or not 1 <= len(value) <= MODEL_MAX or MODEL_BAD_RE.search(value):
+        return "message model %r must be 1 to %d chars with no control character" % (value, MODEL_MAX)
+    return None
+
+
+def check_speaker(speaker: Optional[Dict[str, str]]) -> None:
+    """Raise ValueError when a post's speaker fields are invalid: for posters that write other rows first."""
+    for name, value in (speaker or {}).items():
+        msg = speaker_problem(name, value)
+        if msg:
+            raise ValueError(msg)
 
 
 def _owns_id(doc_id: str, owner: str) -> bool:

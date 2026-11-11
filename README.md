@@ -136,6 +136,10 @@ rows if the project tracks progress. See
 - **Inbox:** `relay.py inbox <id>` lists what a participant must answer or
   act on: requests, owner messages, replies on its threads, agreements to
   adopt, and stale file claims.
+- **Who spoke:** A message can name the harness and the model that wrote
+  it. The posting commands take `--harness` and `--model`, or read
+  `CROSSTALK_HARNESS` and `CROSSTALK_MODEL`. See
+  [Who spoke](PROTOCOL.md#who-spoke).
 - **Questions for the owner:** `relay.py ask` posts one question. The owner
   answers on the page's Questions tab, one at a time.
 - **Live sessions:** The server pushes a note into a running Claude Code

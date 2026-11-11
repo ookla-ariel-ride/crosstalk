@@ -33,6 +33,7 @@ from crosstalk.ownerpin import clear_pin, set_pin  # noqa: E402
 from crosstalk.participants import load_roster  # noqa: E402
 from crosstalk.posters import claim_file, land_sync, post_incident, release_file  # noqa: E402
 from crosstalk.replay import enrich_messages, load_all_lines, replay  # noqa: E402
+from crosstalk.requests import speaker_fields  # noqa: E402
 from crosstalk.reports import inbox_report, load_docs, questions_report  # noqa: E402
 from crosstalk.serve import serve  # noqa: E402
 from crosstalk.service import service_block  # noqa: E402
@@ -83,6 +84,9 @@ def cmd_append(args):
     if not isinstance(data, dict):
         err("bad data: expected a JSON object")
         return 1
+    if args.collection == "messages" and args.op == "set":
+        for name, value in speaker_fields(args).items():
+            data.setdefault(name, value)
     roster = load_roster(ROOT / "participants.json")
     for w in message_problems(args.collection, args.op, data, roster)[1]:
         err("warning: " + w)
@@ -397,7 +401,8 @@ def cmd_land_sync(args):
     try:
         res = land_sync(ROOT, args.from_, args.commit, args.summary,
                         files=args.files, adopter=args.adopter,
-                        agreement_id=args.agreement_id, body=args.body)
+                        agreement_id=args.agreement_id, body=args.body,
+                        speaker=speaker_fields(args))
     except ValueError as e:
         err(str(e))
         return 1
@@ -439,6 +444,7 @@ def cmd_reply(args):
             body=args.body,
             refs=_flatten(args.refs),
             msg_id=args.id,
+            speaker=speaker_fields(args),
         )
     except ValueError as e:
         err(str(e))
@@ -457,6 +463,7 @@ def cmd_consult(args):
             refs=_flatten(args.refs),
             to=_flatten(args.to),
             msg_id=args.id,
+            speaker=speaker_fields(args),
         )
     except ValueError as e:
         err(str(e))
@@ -475,6 +482,7 @@ def cmd_ask(args):
             body=args.body,
             refs=_flatten(args.refs),
             msg_id=args.id,
+            speaker=speaker_fields(args),
         )
     except ValueError as e:
         err(str(e))
@@ -588,7 +596,7 @@ def cmd_withdraw(args):
     """Withdraw one of your own open questions; prints the new message id."""
     try:
         ln = withdraw_question(ROOT, args.from_, args.question, summary=args.summary,
-                               msg_id=args.id)
+                               msg_id=args.id, speaker=speaker_fields(args))
     except ValueError as e:
         err(str(e))
         return 1
@@ -604,12 +612,24 @@ def cmd_adopt(args):
             args.agreement,
             args.commit,
             summary=args.summary,
+            speaker=speaker_fields(args),
         )
     except ValueError as e:
         err(str(e))
         return 1
     print(json.dumps(res, ensure_ascii=False, sort_keys=True))
     return 0
+
+
+def _speaker_flags(parser):
+    """--harness and --model: who wrote the post.
+
+    CROSSTALK_HARNESS and CROSSTALK_MODEL fill them when left out.
+    """
+    parser.add_argument("--harness", help="the harness that writes this post, a lowercase id like codex; "
+                                          "default: $CROSSTALK_HARNESS")
+    parser.add_argument("--model", help="the model that writes this post, 1 to 64 chars; "
+                                        "default: $CROSSTALK_MODEL")
 
 
 def build_parser():
@@ -621,6 +641,7 @@ def build_parser():
     sub.add_parser("check", help="validate every log").set_defaults(fn=cmd_check)
 
     a = sub.add_parser("append", help="append one line to a log; prints the new seq")
+    _speaker_flags(a)
     a.add_argument("--from", dest="from_", required=True)
     a.add_argument("--op", required=True, choices=["set", "update"])
     a.add_argument("--collection", required=True)
@@ -704,6 +725,7 @@ def build_parser():
     rl.set_defaults(fn=cmd_release)
 
     ls = sub.add_parser("land-sync", help="announce a landed shared commit, update agreement, and release locks")
+    _speaker_flags(ls)
     ls.add_argument("--from", dest="from_", required=True)
     ls.add_argument("--commit", required=True)
     ls.add_argument("--summary", required=True)
@@ -725,6 +747,7 @@ def build_parser():
     inc.set_defaults(fn=cmd_incident)
 
     rp = sub.add_parser("reply", help="reply to a message; prints the new message id")
+    _speaker_flags(rp)
     rp.add_argument("--from", dest="from_", required=True)
     rp.add_argument("--to-id", dest="to_id", required=True)
     rp.add_argument("--summary", required=True)
@@ -734,6 +757,7 @@ def build_parser():
     rp.set_defaults(fn=cmd_reply)
 
     cs = sub.add_parser("consult", help="post a peer consultation request; prints the new message id")
+    _speaker_flags(cs)
     cs.add_argument("--from", dest="from_", required=True)
     cs.add_argument("--summary", required=True)
     cs.add_argument("--body")
@@ -743,6 +767,7 @@ def build_parser():
     cs.set_defaults(fn=cmd_consult)
 
     ak = sub.add_parser("ask", help="post a question for the owner; prints the new message id")
+    _speaker_flags(ak)
     ak.add_argument("--from", dest="from_", required=True)
     ak.add_argument("--summary", required=True, help="the question itself, one line")
     ak.add_argument("--body", help="context, the options, and your recommendation")
@@ -798,6 +823,7 @@ def build_parser():
     ad.set_defaults(fn=cmd_adoption)
 
     wd = sub.add_parser("withdraw", help="withdraw one of your own open questions; prints the new message id")
+    _speaker_flags(wd)
     wd.add_argument("--from", dest="from_", required=True)
     wd.add_argument("--question", required=True, metavar="ID", help="the question's message id")
     wd.add_argument("--summary", help="optional one-line reason")
@@ -805,6 +831,7 @@ def build_parser():
     wd.set_defaults(fn=cmd_withdraw)
 
     ad = sub.add_parser("adopt", help="record adoption of an agreement and post a sync message")
+    _speaker_flags(ad)
     ad.add_argument("--from", dest="from_", required=True)
     ad.add_argument("--agreement", "--agreement-id", dest="agreement", required=True)
     ad.add_argument("--commit", required=True)

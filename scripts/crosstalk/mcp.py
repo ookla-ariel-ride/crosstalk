@@ -44,6 +44,7 @@ from .logs import KINDS, append_line, message_problems
 from .participants import ID_RE, load_roster
 from .posters import claim_file, release_file, slugify_path
 from .reports import MESSAGES_LIMIT_MAX, inbox_report, load_docs, recent_messages, trust_of
+from .requests import speaker_fields
 
 SERVER_NAME = "crosstalk"
 SERVER_VERSION = "1.0.0"
@@ -258,6 +259,7 @@ class McpServer:
                          ("important", "important"), ("positions", "positions")):
             if args.get(src) not in (None, [], ""):
                 data[dst] = args[src]
+        data.update(speaker_fields())  # who spoke: CROSSTALK_HARNESS and CROSSTALK_MODEL
         return data
 
     def _append_message(self, data):
@@ -287,7 +289,7 @@ class McpServer:
     def _reply(self, args):
         try:
             ln = post_reply(self.root, self.pid, args["to_id"], args["summary"],
-                            body=args.get("body"), refs=args.get("refs"))
+                            body=args.get("body"), refs=args.get("refs"), speaker=speaker_fields())
         except ValueError as e:
             raise ToolError(str(e))
         return {"id": ln.id, "seq": ln.seq, "t": ln.t, "replyTo": args["to_id"]}
@@ -295,7 +297,7 @@ class McpServer:
     def _consult(self, args):
         try:
             ln = post_consult(self.root, self.pid, args["summary"], body=args.get("body"),
-                              refs=args.get("refs"), to=args.get("to"))
+                              refs=args.get("refs"), to=args.get("to"), speaker=speaker_fields())
         except ValueError as e:
             raise ToolError(str(e))
         return {"id": ln.id, "seq": ln.seq, "t": ln.t, "to": ln.data.get("to")}
@@ -303,7 +305,7 @@ class McpServer:
     def _ask_owner(self, args):
         try:
             ln = post_question(self.root, self.pid, args["summary"], body=args.get("body"),
-                               refs=args.get("refs"))
+                               refs=args.get("refs"), speaker=speaker_fields())
         except ValueError as e:
             raise ToolError(str(e))
         out = {"id": ln.id, "seq": ln.seq, "t": ln.t}
@@ -315,7 +317,7 @@ class McpServer:
     def _withdraw_question(self, args):
         try:
             ln = withdraw_question(self.root, self.pid, args["question_id"],
-                                   summary=args.get("summary"))
+                                   summary=args.get("summary"), speaker=speaker_fields())
         except ValueError as e:
             raise ToolError(str(e))
         return {"id": ln.id, "seq": ln.seq, "t": ln.t, "replyTo": args["question_id"]}
@@ -341,7 +343,7 @@ class McpServer:
     def _adopt(self, args):
         try:
             return adopt_agreement(self.root, self.pid, args["agreement_id"], args["commit"],
-                                   summary=args.get("summary"))
+                                   summary=args.get("summary"), speaker=speaker_fields())
         except ValueError as e:
             raise ToolError(str(e))
 
