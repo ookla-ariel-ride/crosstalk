@@ -29,6 +29,9 @@ With another folder, the texts that `relay.py` makes for sessions (the kits of
 `onboard` and `kit`, the hooks of `live hooks`, the urgent hook's note and
 the jobs of `schedule standard`)
 name `relay.py` in the repo and carry `--data-root <dir>`.
+
+The server also serves the v2 page at `/v2/` from `web/dist/` in the repo,
+for example `http://127.0.0.1:8484/v2/`. See [The v2 page](page-v2.md).
 The `service` block of `relay.py read`, `relay.py inbox` and the page's
 snapshot then shows each command with `--data-root <data>`, and so does the
 text that the page's "Ask all" button posts. `<data>` is a placeholder, as
