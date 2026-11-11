@@ -3,8 +3,10 @@
 //
 // The rule. tests/test_web_dist.py computes the same value; keep the two
 // rules identical.
-// 1. Inputs: web/package.json, web/package-lock.json and every file under
-//    web/src/, skipping any file or folder whose name starts with ".".
+// 1. Inputs: web/package.json, web/package-lock.json, web/index.html,
+//    web/vite.config.ts, web/tsconfig.json, and every file under web/src/ and
+//    web/public/ (when it exists), skipping any file or folder whose name
+//    starts with ".".
 // 2. Each path is relative to web/ with "/" between parts (src/ui/tokens.css).
 // 3. Order: by the UTF-8 bytes of the path, smallest first.
 // 4. Content: the file's bytes with every CRLF replaced by LF.
@@ -16,8 +18,8 @@ import { existsSync, readdirSync, readFileSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 
-const ROOTS = ["package.json", "package-lock.json"];
-const DIR = "src";
+const ROOTS = ["package.json", "package-lock.json", "index.html", "vite.config.ts", "tsconfig.json"];
+const DIRS = ["src", "public"];
 
 function walk(web, rel, out) {
   for (const entry of readdirSync(join(web, rel), { withFileTypes: true })) {
@@ -30,7 +32,7 @@ function walk(web, rel, out) {
 
 export function hashInputs(web) {
   const paths = ROOTS.filter((name) => existsSync(join(web, name)));
-  if (existsSync(join(web, DIR))) walk(web, DIR, paths);
+  for (const dir of DIRS) if (existsSync(join(web, dir))) walk(web, dir, paths);
   return paths.sort((a, b) => Buffer.compare(Buffer.from(a, "utf8"), Buffer.from(b, "utf8")));
 }
 

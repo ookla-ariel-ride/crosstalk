@@ -1,6 +1,6 @@
-"""The built v2 page in web/dist/ matches its source: this fails when a file
-under web/src/ (or web/package.json, web/package-lock.json) changes and nobody
-ran `npm run build` in web/."""
+"""The built v2 page in web/dist/ matches its source: this fails when a source
+file of web/ (see the hash rule below) changes and nobody ran `npm run build`
+in web/."""
 import hashlib
 import tempfile
 import unittest
@@ -11,23 +11,26 @@ WEB = REPO / "web"
 
 # The build hash. web/scripts/build-hash.mjs computes the same value; keep the
 # two rules identical.
-# 1. Inputs: web/package.json, web/package-lock.json and every file under
-#    web/src/, skipping any file or folder whose name starts with ".".
+# 1. Inputs: web/package.json, web/package-lock.json, web/index.html,
+#    web/vite.config.ts, web/tsconfig.json, and every file under web/src/ and
+#    web/public/ (when it exists), skipping any file or folder whose name
+#    starts with ".".
 # 2. Each path is relative to web/ with "/" between parts (src/ui/tokens.css).
 # 3. Order: by the UTF-8 bytes of the path, smallest first.
 # 4. Content: the file's bytes with every CRLF replaced by LF.
 # 5. For each file, feed SHA-256 with: the path in UTF-8, one 0x00 byte, the
 #    content length in bytes as ASCII decimal digits, one 0x00 byte, the content.
 # 6. The hash is the hex digest. web/dist/.build-hash holds it and a newline.
-HASH_ROOTS = ("package.json", "package-lock.json")
-HASH_DIR = "src"
+HASH_ROOTS = ("package.json", "package-lock.json", "index.html", "vite.config.ts", "tsconfig.json")
+HASH_DIRS = ("src", "public")
 
 
 def hash_inputs(web):
     paths = [name for name in HASH_ROOTS if (web / name).is_file()]
-    src = web / HASH_DIR
-    if src.is_dir():
-        for p in src.rglob("*"):
+    for top in HASH_DIRS:
+        if not (web / top).is_dir():
+            continue
+        for p in (web / top).rglob("*"):
             rel = p.relative_to(web)
             if p.is_file() and not any(part.startswith(".") for part in rel.parts):
                 paths.append("/".join(rel.parts))
@@ -49,6 +52,11 @@ class BuildHashTests(unittest.TestCase):
         (root / "package-lock.json").write_bytes(b"{}\n")
         (root / "src" / "main.tsx").write_bytes(b"a\nb\n")
         (root / "src" / "ui" / "tokens.css").write_bytes(b":root {}\n")
+        (root / "public").mkdir()
+        (root / "public" / "robots.txt").write_bytes(b"x\n")
+        (root / "index.html").write_bytes(b"<!doctype html>\n")
+        (root / "vite.config.ts").write_bytes(b"export default {};\n")
+        (root / "tsconfig.json").write_bytes(b"{}\n")
         return root
 
     def test_hash_follows_content_and_not_line_endings(self):
@@ -66,7 +74,19 @@ class BuildHashTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as d:
             web = self.make_web(Path(d))
             self.assertEqual(hash_inputs(web),
-                             ["package-lock.json", "package.json", "src/main.tsx", "src/ui/tokens.css"])
+                             ["index.html", "package-lock.json", "package.json", "public/robots.txt",
+                              "src/main.tsx", "src/ui/tokens.css", "tsconfig.json", "vite.config.ts"])
+
+    def test_page_and_build_config_count(self):
+        with tempfile.TemporaryDirectory() as d:
+            web = self.make_web(Path(d))
+            first = build_hash(web)
+            for rel in ("index.html", "vite.config.ts", "tsconfig.json", "public/robots.txt"):
+                old = (web / rel).read_bytes()
+                (web / rel).write_bytes(old + b"// changed\n")
+                self.assertNotEqual(build_hash(web), first, rel)
+                (web / rel).write_bytes(old)
+            self.assertEqual(build_hash(web), first)
 
     def test_known_hash(self):
         # The same tree gives this value in web/scripts/build-hash.test.mjs.
@@ -76,7 +96,7 @@ class BuildHashTests(unittest.TestCase):
 
 
 # The hash of the tree that make_web() writes.
-KNOWN_HASH = "3e4856d9e3ee22dba54cd6ef1a2631a3ab7a67cfa6e1a9e8f02a84f7ea6880c8"
+KNOWN_HASH = "4c2c071f28ee37a37c894fa1bbc27c5e760eb77047cd6c549394cdb574b4fbe7"
 
 
 @unittest.skipUnless(WEB.is_dir(), "no web/ folder")

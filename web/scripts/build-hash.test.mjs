@@ -1,11 +1,11 @@
-import { mkdtempSync, mkdirSync, writeFileSync, rmSync } from "node:fs";
+import { mkdtempSync, mkdirSync, readFileSync, writeFileSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, describe, expect, test } from "vitest";
 import { buildHash, hashInputs } from "./build-hash.mjs";
 
 // tests/test_web_dist.py builds the same tree and expects the same value.
-const KNOWN_HASH = "3e4856d9e3ee22dba54cd6ef1a2631a3ab7a67cfa6e1a9e8f02a84f7ea6880c8";
+const KNOWN_HASH = "4c2c071f28ee37a37c894fa1bbc27c5e760eb77047cd6c549394cdb574b4fbe7";
 
 let dirs = [];
 function makeWeb() {
@@ -16,6 +16,11 @@ function makeWeb() {
   writeFileSync(join(web, "package-lock.json"), "{}\n");
   writeFileSync(join(web, "src", "main.tsx"), "a\nb\n");
   writeFileSync(join(web, "src", "ui", "tokens.css"), ":root {}\n");
+  mkdirSync(join(web, "public"));
+  writeFileSync(join(web, "public", "robots.txt"), "x\n");
+  writeFileSync(join(web, "index.html"), "<!doctype html>\n");
+  writeFileSync(join(web, "vite.config.ts"), "export default {};\n");
+  writeFileSync(join(web, "tsconfig.json"), "{}\n");
   return web;
 }
 afterEach(() => {
@@ -30,8 +35,22 @@ describe("build hash", () => {
 
   test("lists sorted paths relative to web/", () => {
     expect(hashInputs(makeWeb())).toEqual([
-      "package-lock.json", "package.json", "src/main.tsx", "src/ui/tokens.css",
+      "index.html", "package-lock.json", "package.json", "public/robots.txt",
+      "src/main.tsx", "src/ui/tokens.css", "tsconfig.json", "vite.config.ts",
     ]);
+  });
+
+  test("counts the page and the build config", () => {
+    const web = makeWeb();
+    const first = buildHash(web);
+    for (const rel of ["index.html", "vite.config.ts", "tsconfig.json", "public/robots.txt"]) {
+      const file = join(web, ...rel.split("/"));
+      const old = readFileSync(file);
+      writeFileSync(file, Buffer.concat([old, Buffer.from("// changed\n")]));
+      expect(buildHash(web), rel).not.toBe(first);
+      writeFileSync(file, old);
+    }
+    expect(buildHash(web)).toBe(first);
   });
 
   test("follows content, not line endings or dot files", () => {
