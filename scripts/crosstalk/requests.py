@@ -6,6 +6,7 @@ omitted means everyone (a broadcast). Open-ness is derived, never stored, so
 it cannot drift or race.
 """
 from datetime import datetime, timezone
+import os
 import re
 import time
 from typing import Dict, List, Optional, Tuple
@@ -16,6 +17,26 @@ _MENTION_RE = re.compile(r"(?:^|[\s(\[,:;])@([A-Za-z0-9_.-]+)")
 _BROADCAST_HANDLES = ("everyone", "all", "channel", "here")
 _OWNER_MESSAGE_KINDS = ("owner", "alert", "agreement", "lesson", "decision")
 _CHECK_IN_KINDS = ("check-in", "checkin")
+
+
+# Who spoke: each field comes from its flag, then its variable, else it is left out.
+SPEAKER_SOURCES = (("harness", "CROSSTALK_HARNESS"), ("model", "CROSSTALK_MODEL"))
+
+
+def speaker_fields(args=None) -> Dict[str, str]:
+    """The `harness` and `model` a post names: the flag (args.harness, args.model), then the variable.
+
+    `args` is an argparse namespace, or None (the MCP server) for the variables alone. An empty
+    variable counts as unset. The log validator (logs.speaker_problem) judges the values.
+    """
+    out = {}  # type: Dict[str, str]
+    for name, var in SPEAKER_SOURCES:
+        value = getattr(args, name, None)
+        if value is None:
+            value = os.environ.get(var) or None
+        if value is not None:
+            out[name] = value
+    return out
 
 
 def _messages(docs: Dict) -> Dict[str, dict]:

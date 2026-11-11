@@ -5,7 +5,7 @@ from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Dict, Iterable, Optional
 
-from .logs import Line, append_line
+from .logs import Line, append_line, check_speaker
 from .participants import Roster, load_roster
 from .posters import next_stamp
 from .replay import enrich_messages, load_all_lines, replay
@@ -72,6 +72,7 @@ def post_reply(
     refs: Optional[Iterable[str]] = None,
     msg_id: Optional[str] = None,
     roster: Optional[Roster] = None,
+    speaker: Optional[Dict[str, str]] = None,
 ) -> Line:
     """Reply to an existing message `to_id`, auto-populating `replyTo` and `to`."""
     root = Path(root)
@@ -98,6 +99,7 @@ def post_reply(
     refs_list = _str_list(refs)
     if refs_list:
         data["refs"] = refs_list
+    data.update(speaker or {})
     return append_line(root, pid, "set", "messages", mid, data, roster=roster)
 
 
@@ -110,6 +112,7 @@ def post_consult(
     to: Optional[Iterable[str]] = None,
     msg_id: Optional[str] = None,
     roster: Optional[Roster] = None,
+    speaker: Optional[Dict[str, str]] = None,
 ) -> Line:
     """Post a `kind: request` peer consultation message."""
     root = Path(root)
@@ -143,6 +146,7 @@ def post_consult(
         ]
         if mentioned:
             data["to"] = mentioned
+    data.update(speaker or {})
     return append_line(root, pid, "set", "messages", mid, data, roster=roster)
 
 
@@ -154,6 +158,7 @@ def post_question(
     refs: Optional[Iterable[str]] = None,
     msg_id: Optional[str] = None,
     roster: Optional[Roster] = None,
+    speaker: Optional[Dict[str, str]] = None,
 ) -> Line:
     """Post a `kind: question` for the owner: one question per row, summary = the question.
 
@@ -180,6 +185,7 @@ def post_question(
     refs_list = _str_list(refs)
     if refs_list:
         data["refs"] = refs_list
+    data.update(speaker or {})
     return append_line(root, pid, "set", "messages", mid, data, roster=roster)
 
 
@@ -199,6 +205,7 @@ def withdraw_question(
     summary: Optional[str] = None,
     msg_id: Optional[str] = None,
     roster: Optional[Roster] = None,
+    speaker: Optional[Dict[str, str]] = None,
 ) -> Line:
     """Withdraw one of pid's own open questions: a `kind: withdrawn` row with `replyTo` it."""
     root = Path(root)
@@ -223,6 +230,7 @@ def withdraw_question(
         "summary": summary or ("Withdrawn: %s" % q.get("summary", question_id)),
         "replyTo": question_id,
     }  # type: Dict[str, object]
+    data.update(speaker or {})
     return append_line(root, pid, "set", "messages", mid, data, roster=roster)
 
 
@@ -233,8 +241,10 @@ def adopt_agreement(
     commit: str,
     summary: Optional[str] = None,
     roster: Optional[Roster] = None,
+    speaker: Optional[Dict[str, str]] = None,
 ) -> Dict[str, str]:
     """Record a project's adoption commit on an agreement and post a sync message."""
+    check_speaker(speaker)
     if not isinstance(commit, str) or not COMMIT_RE.fullmatch(commit.strip()):
         raise ValueError("bad commit %r (expected 7-40 hex chars)" % (commit,))
     commit = commit.strip()
@@ -311,7 +321,8 @@ def adopt_agreement(
         "kind": "sync",
         "summary": msg_summary,
         "refs": [agreement_id, "%s@%s" % (pid, commit.lower())],
-    }
+    }  # type: Dict[str, object]
+    msg_data.update(speaker or {})
     msg_ln = append_line(root, pid, "set", "messages", msg_id, msg_data, t=stamp, roster=roster)
     return {
         "agreement_id": agreement_id,

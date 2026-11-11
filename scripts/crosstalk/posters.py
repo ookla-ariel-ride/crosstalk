@@ -5,7 +5,7 @@ from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple
 
-from .logs import Line, append_line
+from .logs import Line, append_line, check_speaker
 from .participants import Roster, load_roster, repo_problem
 from .replay import last_line_map, load_all_lines, replay
 
@@ -126,7 +126,8 @@ def release_file(root: Path, pid: str, path: Optional[str] = None,
 def land_sync(root: Path, pid: str, commit: str, summary: str,
               files: Optional[List[str]] = None, adopter: Optional[str] = None,
               agreement_id: Optional[str] = None, body: Optional[str] = None,
-              roster: Optional[Roster] = None) -> dict:
+              roster: Optional[Roster] = None, speaker: Optional[Dict[str, str]] = None) -> dict:
+    check_speaker(speaker)
     root = Path(root)
     roster = _ensure_roster(root, roster)
     _require_pid(pid, roster)
@@ -223,6 +224,7 @@ def land_sync(root: Path, pid: str, commit: str, summary: str,
     }
     if body:
         msg_data["body"] = body
+    msg_data.update(speaker or {})
     append_line(root, pid, "set", "messages", msg_id, msg_data, t=ts, roster=roster)
 
     released_locks = []  # type: List[str]
