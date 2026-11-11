@@ -1,7 +1,7 @@
 // The stream of threads that fold (spec, "Threads"): one row for each thread,
 // opened in place; routine runs and muted threads folded into one line each.
 // The server sorts; the page never sorts a list itself.
-import { memo, useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { memo, type ReactNode, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { ApiError } from "../../api/client";
 import { useThreads } from "../../api/queries";
 import type { Thread } from "../../api/types";
@@ -84,9 +84,11 @@ export interface StreamProps {
   /** The Needs you page: only the threads that need the owner, no sort bar. */
   needsOnly?: boolean;
   renderActions?: RenderActions;
+  /** What shows above the heading, such as the owner's "Start a thread". */
+  top?: ReactNode;
 }
 
-export function Stream({ sort, open, onOpenChange, needsOnly = false, renderActions }: StreamProps) {
+export function Stream({ sort, open, onOpenChange, needsOnly = false, renderActions, top }: StreamProps) {
   const query = useThreads(sort);
   const reading = useReading();
   const now = useNow();
@@ -210,6 +212,7 @@ export function Stream({ sort, open, onOpenChange, needsOnly = false, renderActi
 
   return (
     <>
+      {top ? <div className={styles.top}>{top}</div> : null}
       <div className={styles.head}>
         <h1 className={styles.heading}>{needsOnly ? "Needs you" : "Conversations"}</h1>
         {needsOnly ? null : <SortBar sort={sort} open={open} />}
@@ -233,7 +236,15 @@ export function Stream({ sort, open, onOpenChange, needsOnly = false, renderActi
 }
 
 /** The Conversations page: the sort order and the open threads live in the route and in this tab's sessionStorage. */
-export function Conversations({ route, renderActions }: { route: Extract<Route, { name: "conversations" }>; renderActions?: RenderActions }) {
+export function Conversations({
+  route,
+  renderActions,
+  top,
+}: {
+  route: Extract<Route, { name: "conversations" }>;
+  renderActions?: RenderActions;
+  top?: ReactNode;
+}) {
   const open = useMemo(() => [...new Set(route.open)].slice(-MAX_OPEN), [route.open]);
 
   // A tab that comes back to the page with no hash goes to its last route.
@@ -264,7 +275,7 @@ export function Conversations({ route, renderActions }: { route: Extract<Route, 
     },
     [route.sort],
   );
-  return <Stream sort={route.sort} open={open} onOpenChange={onOpenChange} renderActions={renderActions} />;
+  return <Stream sort={route.sort} open={open} onOpenChange={onOpenChange} renderActions={renderActions} top={top} />;
 }
 
 /** The Needs you page: the stream in the needs order, only the threads that need the owner. */

@@ -178,4 +178,21 @@ describe("SectionPage", () => {
     expect(screen.getByText(/alpha-0042/)).toBeTruthy();
     expect(screen.getByText(/come in a later step/)).toBeTruthy();
   });
+  test("an open agreement row shows Hold or Release hold to the owner only", () => {
+    const rows = [
+      { id: "a-1", summary: "Share one queue", status: "agreed" },
+      { id: "a-2", summary: "Keep the old page", status: "agreed", hold: true },
+    ];
+    const owner: [readonly unknown[], unknown] = [keys.me, { name: "Owner", isOwner: true, canEdit: true, viewer: "owner" }];
+    const { unmount } = renderWith(<SectionPage section="agreements" q="" />, [section("agreements", page(rows, { open: 2 })), owner]);
+    fireEvent.click(screen.getByRole("button", { name: /Share one queue/ }));
+    expect(screen.getByRole("button", { name: "Hold" })).toBeTruthy();
+    fireEvent.click(screen.getByRole("button", { name: /Keep the old page/ }));
+    expect(screen.getByRole("button", { name: "Release hold" })).toBeTruthy();
+    unmount();
+    const viewer: [readonly unknown[], unknown] = [keys.me, { name: null, isOwner: false, canEdit: false, viewer: "viewer" }];
+    renderWith(<SectionPage section="agreements" q="" />, [section("agreements", page(rows, { open: 2 })), viewer]);
+    fireEvent.click(screen.getByRole("button", { name: /Share one queue/ }));
+    expect(screen.queryByRole("button", { name: "Hold" })).toBeNull();
+  });
 });

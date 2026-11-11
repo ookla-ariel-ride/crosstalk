@@ -3,20 +3,21 @@
 // server's order. A row opens in place and shows its detail. The one exception
 // to the server's order is "Lessons and incidents", which merges two
 // collections by time (merge.ts).
-import { useEffect, useId, useMemo, useRef, useState } from "react";
+import { type ReactNode, useEffect, useId, useMemo, useRef, useState } from "react";
 import { ApiError } from "../../api/client";
 import { useQueue, useSection } from "../../api/queries";
 import type { SectionName, SectionPage as Page } from "../../api/types";
 import { href, SECTIONS, type Section } from "../../logic/route";
 import { Body } from "../../ui/Body";
+import { HoldButton } from "../owner";
 import { Row } from "../../ui/Row";
 import { RowList } from "../../ui/RowList";
 import { labelOf } from "../../ui/Sidebar";
 import { useNow } from "../../ui/useNow";
 import { adoptionRow } from "./adoption";
-import { agreementRow } from "./agreements";
+import { agreementRow, isHeld } from "./agreements";
 import { decisionRow } from "./decisions";
-import type { Doc, RowView } from "./fields";
+import { type Doc, type RowView, str } from "./fields";
 import { incidentRow } from "./incidents";
 import { lessonRow } from "./lessons";
 import { lockRow } from "./locks";
@@ -28,14 +29,18 @@ import { scheduleRow } from "./schedules";
 import styles from "./SectionPage.module.css";
 
 export type Mapper = (doc: Doc, now: Date) => RowView;
+/** The owner's controls of an open row; each control shows nothing to a viewer. */
+export type Act = (doc: Doc) => ReactNode;
 
-/** The sections that read one collection: the server's name for it and its mapper. */
-const SINGLE: Partial<Record<Section, { server: SectionName; map: Mapper; notes?: string[] }>> = {
+const holdOf: Act = (doc) => <HoldButton agreement={{ id: str(doc.id), status: doc.status }} held={isHeld(doc)} />;
+
+/** The sections that read one collection: the server's name for it, its mapper, and the owner's controls of a row. */
+const SINGLE: Partial<Record<Section, { server: SectionName; map: Mapper; act?: Act; notes?: string[] }>> = {
   progress: { server: "progress", map: progressRow },
   reviews: { server: "reviews", map: reviewRow },
   schedules: { server: "schedules", map: scheduleRow },
   decisions: { server: "decisions", map: decisionRow },
-  agreements: { server: "agreements", map: agreementRow },
+  agreements: { server: "agreements", map: agreementRow, act: holdOf },
   claims: { server: "locks", map: lockRow },
   adoption: {
     server: "adoption",
@@ -47,6 +52,7 @@ const SINGLE: Partial<Record<Section, { server: SectionName; map: Mapper; notes?
 interface Item {
   key: string;
   view: RowView;
+  act?: ReactNode;
 }
 
 interface More {
@@ -165,6 +171,7 @@ export function SectionList({ label, count, items, pending, error, retry, more, 
                 onOpen={() => setOpenKey((k) => (k === item.key ? null : item.key))}
               >
                 {item.view.detail.length ? <Body blocks={item.view.detail} /> : <p className={styles.muted}>No more detail.</p>}
+                {item.act}
               </Row>
               {loadMore && index === items.length - 1 ? <NearEnd onReach={loadMore} /> : null}
             </>
@@ -233,10 +240,13 @@ function moreOf(query: SectionQuery): More {
   };
 }
 
-function SingleSection({ section, server, map, q, notes }: { section: Section; server: SectionName; map: Mapper; q: string; notes?: string[] }) {
+function SingleSection({ section, server, map, act, q, notes }: { section: Section; server: SectionName; map: Mapper; act?: Act; q: string; notes?: string[] }) {
   const query = useSection(server, q);
   const now = useNow();
-  const items = useMemo(() => rowsOf(query.data?.pages).map((doc) => ({ key: String(doc.id), view: map(doc, now) })), [query.data, map, now]);
+  const items = useMemo(
+    () => rowsOf(query.data?.pages).map((doc) => ({ key: String(doc.id), view: map(doc, now), act: act?.(doc) })),
+    [query.data, map, act, now],
+  );
   const first = query.data?.pages[0];
   return (
     <SectionList

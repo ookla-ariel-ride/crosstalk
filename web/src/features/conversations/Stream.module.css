@@ -189,3 +189,23 @@
   gap: 6px;
   margin-top: 8px;
 }
+
+/* NewThread draws nothing for a viewer: the box then takes no room. */
+.top {
+  padding: 12px 18px 0;
+}
+
+.top:empty {
+  display: none;
+}
+
+/* The owner's controls at the end of a thread line up with "Mark read" and "Mute thread". */
+.end > div {
+  margin-top: 0;
+}
+
+.error {
+  align-self: center;
+  color: var(--ink);
+  font-size: var(--size-s);
+}

@@ -2,30 +2,33 @@
 // recommended one marked in words, and always "Write an answer". A choice
 // sends what the present page's answer form sends, with the choice as text.
 import { useRef, useState } from "react";
-import { useRoster } from "../../api/queries";
 import type { Message } from "../../api/types";
 import { choices } from "../../logic/choices";
 import { answer, newOwnId } from "./actions";
 import { Composer } from "./Composer";
+import { drafts } from "./drafts";
 import styles from "./owner.module.css";
-import { Failure, useSend } from "./shared";
+import { Failure, useOwnerData, useSend } from "./shared";
 
 export function AnswerButtons({ question }: { question: Message }) {
   const { options, recommend } = choices(question);
-  const roster = useRoster().data?.roster;
+  const { roster } = useOwnerData();
   // The answer names the asker only when the roster holds it, as the present page does.
   const asker = question.from && roster && Object.hasOwn(roster, question.from) ? question.from : undefined;
   // One question gets one answer: a sent answer, by a choice or by the composer,
   // shuts every control here until the refetched thread shows it answered.
   const sending = useSend(true);
   const id = useRef<string | null>(null);
-  const [writing, setWriting] = useState(false);
+  const draft = "answer:" + question.id;
+  // A draft kept from an unmounted row opens the box again.
+  const [writing, setWriting] = useState(() => drafts.has(draft));
   const [sent, setSent] = useState(false);
   const shut = sending.busy || sending.done || sent;
 
   async function pick(text: string) {
     id.current ??= newOwnId();
-    await sending.run(() => answer(question.id, text, asker, id.current as string));
+    // An answer sent by a choice leaves no half-written answer behind.
+    if (await sending.run(() => answer(question.id, text, asker, id.current as string))) drafts.delete(draft);
   }
 
   return (
@@ -45,6 +48,7 @@ export function AnswerButtons({ question }: { question: Message }) {
         <Composer
           key={question.id}
           label="Your answer"
+          draft={draft}
           send={async (_, text, at) => {
             await answer(question.id, text, asker, at);
             setSent(true);

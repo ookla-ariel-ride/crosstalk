@@ -4,9 +4,12 @@ import { age, body, type Doc, first, line, list, projects, refs, type RowView, s
 
 const STATUSES = ["proposed", "agreed", "building", "landed-builder", "ready-to-adopt", "landed-both", "held", "dropped"];
 
+/** Whether the agreement is held: the `hold` flag, or the older status "held". */
+export const isHeld = (doc: Doc): boolean => doc.hold === true || str(doc.status) === "held";
+
 export function agreementRow(doc: Doc, now: Date): RowView {
   const status = str(doc.status);
-  const held = doc.hold === true || status === "held";
+  const held = isHeld(doc);
   // A long free-text status shows as "agreed", with the text in the detail, as the present tab does.
   const long = !held && !STATUSES.includes(status) && status.length > 20;
   const shown = held ? "held" : long ? "agreed" : status || "proposed";

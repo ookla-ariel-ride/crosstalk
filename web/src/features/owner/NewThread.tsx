@@ -1,19 +1,30 @@
 // Start a thread: the kind of the present composer, who it goes to (none
 // ticked is every session), then the summary and the text.
 import { useState } from "react";
-import { useRoster } from "../../api/queries";
 import { nameOf } from "../../ui/Bars";
 import { type Kind, KINDS, splitPost, startThread } from "./actions";
 import { Composer } from "./Composer";
+import { drafts, keepDraft } from "./drafts";
 import styles from "./owner.module.css";
-import { useIsOwner } from "./shared";
+import { useIsOwner, useOwnerData } from "./shared";
+
+const DRAFT = "new";
 
 export function NewThread() {
   const owner = useIsOwner();
-  const roster = useRoster().data?.roster ?? {};
-  const [open, setOpen] = useState(false);
-  const [kind, setKind] = useState<Kind>("owner");
-  const [to, setTo] = useState<string[]>([]);
+  const roster = useOwnerData().roster ?? {};
+  // A kept draft opens the form again with its kind and recipients.
+  const [open, setOpen] = useState(() => drafts.has(DRAFT));
+  const [kind, setKindState] = useState<Kind>(() => (drafts.get(DRAFT)?.kind as Kind | undefined) ?? "owner");
+  const [to, setToState] = useState<string[]>(() => drafts.get(DRAFT)?.to ?? []);
+  const setKind = (k: Kind) => {
+    keepDraft(DRAFT, { kind: k === "owner" ? undefined : k });
+    setKindState(k);
+  };
+  const setTo = (next: string[]) => {
+    keepDraft(DRAFT, { to: next });
+    setToState(next);
+  };
   if (!owner) return null;
   if (!open)
     return (
@@ -49,15 +60,17 @@ export function NewThread() {
       </fieldset>
       <Composer
         label="Message"
+        draft={DRAFT}
         summary
         send={(subject, text, id) => {
           const { summary, body } = splitPost(subject, text);
           return startThread(to, kind, summary, body, id);
         }}
         onClose={() => {
+          // The composer dropped the draft; the form starts empty next time.
           setOpen(false);
-          setTo([]);
-          setKind("owner");
+          setToState([]);
+          setKindState("owner");
         }}
       />
     </div>

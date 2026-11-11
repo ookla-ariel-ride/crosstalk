@@ -1,10 +1,10 @@
 // What every owner control shares: who may see it, one send at a time, the
 // error next to the control, and the owner rows the snapshot holds.
 import { useQuery, useQueryClient } from "@tanstack/react-query";
-import { type ReactNode, useRef, useState } from "react";
+import { createContext, type ReactNode, useContext, useMemo, useRef, useState } from "react";
 import { api, ApiError } from "../../api/client";
-import { keys, useMe } from "../../api/queries";
-import type { Snapshot } from "../../api/types";
+import { keys, useMe, useRoster } from "../../api/queries";
+import type { RosterEntry, Snapshot } from "../../api/types";
 import { href } from "../../logic/route";
 import styles from "./owner.module.css";
 
@@ -122,4 +122,28 @@ function recordsOf(snap: Snapshot): Records {
 /** The owner's rows of the snapshot that the roster query reads already. */
 export function useRecords() {
   return useQuery({ queryKey: keys.roster, queryFn: api.getSnapshot, select: recordsOf, refetchInterval: 60_000 });
+}
+
+export interface OwnerData {
+  roster: Record<string, RosterEntry> | undefined;
+  records: Records | undefined;
+}
+
+const OwnerDataContext = createContext<OwnerData | null>(null);
+
+/**
+ * Reads the roster and the owner rows once for every owner control inside it,
+ * so a thread of many messages adds no query observer and no poll timer.
+ */
+export function OwnerScope({ children }: { children: ReactNode }) {
+  const roster = useRoster().data?.roster;
+  const records = useRecords().data;
+  const value = useMemo(() => ({ roster, records }), [roster, records]);
+  return <OwnerDataContext value={value}>{children}</OwnerDataContext>;
+}
+
+export function useOwnerData(): OwnerData {
+  const data = useContext(OwnerDataContext);
+  if (!data) throw new Error("An owner control needs an OwnerScope above it.");
+  return data;
 }
