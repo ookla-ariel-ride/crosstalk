@@ -9,8 +9,9 @@ from datetime import datetime, timezone, timedelta
 from pathlib import Path
 from typing import Dict
 
-ROOT = Path(__file__).resolve().parent.parent
-sys.path.insert(0, str(ROOT / "scripts"))
+CODE_ROOT = Path(__file__).resolve().parent.parent  # the code: scripts/, index.html, the git checkout
+ROOT = CODE_ROOT  # the data: log/, participants.json, tokens.json, kits/; main() sets it
+sys.path.insert(0, str(CODE_ROOT / "scripts"))
 
 from crosstalk.consults import (  # noqa: E402
     adopt_agreement, post_consult, post_question, post_reply, question_warning, withdraw_question)
@@ -131,7 +132,7 @@ def cmd_read(args):
         for t, c, i, d in sorted(rows, key=lambda r: r[:3]):
             print(_brief_line(c, i, d, t))
         return 0
-    print(json.dumps({"collections": collections, "service": service_block(ROOT)},
+    print(json.dumps({"collections": collections, "service": service_block(CODE_ROOT)},
                      ensure_ascii=False, sort_keys=True, indent=2))
     return 0
 
@@ -174,7 +175,7 @@ def cmd_stalls(args):
 
 def cmd_export_page(args):
     try:
-        info = export_page(ROOT, Path(args.file))
+        info = export_page(ROOT, Path(args.file), code_root=CODE_ROOT)
     except (RuntimeError, OSError, ValueError) as e:
         err(str(e))
         return 1
@@ -183,13 +184,13 @@ def cmd_export_page(args):
 
 
 def cmd_deploy(args):
-    return deploy_mod.run(ROOT, args)
+    return deploy_mod.run(CODE_ROOT, args)
 
 
 def cmd_serve(args):
     """Run the page host and API server in the foreground until killed."""
     serve(ROOT, host=args.host, port=args.port, no_pin=args.no_pin, notify=not args.no_notify,
-          autogrant=not args.no_autogrant)
+          autogrant=not args.no_autogrant, code_root=CODE_ROOT)
     return 0
 
 
@@ -209,9 +210,9 @@ def cmd_live(args):
         return 0
     if args.live_cmd == "hooks":
         if args.harness == "hermes":
-            print(hermes_mod.setup_text(ROOT, args.pid), end="")
+            print(hermes_mod.setup_text(CODE_ROOT, args.pid), end="")
         else:
-            print(live_mod.hooks_json(ROOT, args.pid))
+            print(live_mod.hooks_json(CODE_ROOT, args.pid))
         return 0
     regs, problems = live_mod.load_registrations(ROOT)
     for r in regs:
@@ -613,6 +614,9 @@ def cmd_adopt(args):
 
 def build_parser():
     ap = argparse.ArgumentParser(prog="relay.py", description=__doc__)
+    ap.add_argument("--data-root", metavar="PATH",
+                    help="the folder that holds the data (log/, participants.json, tokens.json); "
+                         "default: $CROSSTALK_DATA, else the folder of this checkout")
     sub = ap.add_subparsers(dest="cmd", required=True)
     sub.add_parser("check", help="validate every log").set_defaults(fn=cmd_check)
 
@@ -897,8 +901,26 @@ def cmd_urgent(argv) -> int:
     return 0
 
 
+def split_data_root(argv):
+    """A leading `--data-root PATH` (or `--data-root=PATH`): (PATH or None, the rest)."""
+    if argv[:1] == ["--data-root"] and len(argv) > 1:
+        return argv[1], argv[2:]
+    if argv[:1] and argv[0].startswith("--data-root="):
+        return argv[0][len("--data-root="):], argv[1:]
+    return None, argv
+
+
 def main(argv=None):
+    global ROOT
     argv = sys.argv[1:] if argv is None else list(argv)
+    flag, argv = split_data_root(argv)
+    chosen = flag or os.environ.get("CROSSTALK_DATA")
+    ROOT = Path(chosen).expanduser().resolve() if chosen else CODE_ROOT
+    if not ROOT.is_dir():
+        if argv[:1] == ["urgent"]:  # the hook never fails and never writes to stderr
+            return 0
+        err("relay.py: the data root %s is not a folder" % ROOT)
+        return 2
     if argv[:1] == ["urgent"]:
         return cmd_urgent(argv[1:])
     args = build_parser().parse_args(argv)

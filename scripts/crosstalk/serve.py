@@ -361,10 +361,16 @@ class Sessions:
 
 
 class ServerState:
-    """What the handlers share: the served root, the replay cache, the tokens."""
+    """What the handlers share: the served root, the replay cache, the tokens.
 
-    def __init__(self, root, tokens=None, sessions=None):
+    `root` holds the data (log/, participants.json, tokens.json and the rest);
+    `code_root` holds the code (index.html, the icons, the git checkout). It
+    defaults to `root`, the layout of an install that keeps both in one folder.
+    """
+
+    def __init__(self, root, tokens=None, sessions=None, code_root=None):
         self.root = Path(root)
+        self.code_root = Path(code_root) if code_root is not None else self.root
         self.tokens = TokenStore(self.root, tokens)
         self.cache = ReplayCache(self.root)
         self.sessions = Sessions(sessions)
@@ -503,7 +509,7 @@ class CrosstalkHandler(BaseHTTPRequestHandler):
                   for pid, entry in entries.items()}
         notifier = self.state.notifier
         live = notifier.status() if notifier is not None else {}
-        info = repo_build_info(self.state.root)
+        info = repo_build_info(self.state.code_root)
         loaded = self.state.cache.roster()
         cfg = config_mod.of(loaded)
         self._json(200, {"server_time": now_iso(),
@@ -518,7 +524,7 @@ class CrosstalkHandler(BaseHTTPRequestHandler):
                          "roster": roster,
                          "live": live,
                          "collections": collections,
-                         "service": service_block(self.state.root)})
+                         "service": service_block(self.state.code_root)})
 
     def _health(self):
         """The log's health: ok when nothing fatal, plus the fatal lines named.
@@ -527,7 +533,8 @@ class CrosstalkHandler(BaseHTTPRequestHandler):
         Offline reason, and the server_time is the freshness clock.
         """
         root = self.state.root
-        ver = version(root)  # which commit runs: `relay.py deploy --restart` waits for its own
+        # which commit runs: `relay.py deploy --restart` waits for its own
+        ver = version(self.state.code_root)
         try:
             roster = load_roster(root / "participants.json")
         except (OSError, ValueError) as e:
@@ -564,7 +571,7 @@ class CrosstalkHandler(BaseHTTPRequestHandler):
         self._json(200, {"docs": out})
 
     def _index(self):
-        path = self.state.root / "index.html"
+        path = self.state.code_root / "index.html"
         try:
             body = path.read_bytes()
         except OSError:
@@ -573,7 +580,7 @@ class CrosstalkHandler(BaseHTTPRequestHandler):
         self._send(200, body, HTML_TYPE, [("Cache-Control", "no-cache")])
 
     def _static_asset(self, filename: str, content_type: str):
-        for root in (self.state.root, Path(__file__).resolve().parent.parent.parent):
+        for root in (self.state.code_root, Path(__file__).resolve().parent.parent.parent):
             path = root / filename
             if path.is_file():
                 try:
@@ -911,8 +918,9 @@ class RunningServer:
     def __init__(self, root, port: int = 0, host: str = "127.0.0.1", tokens=None,
                  no_pin: bool = False, sessions=None, notify: bool = False,
                  notify_state=None, notify_poll_sec: float = 5.0, urgent_state=None,
-                 reviews_state=None, autogrant: bool = False):
+                 reviews_state=None, autogrant: bool = False, code_root=None):
         self.root = Path(root)
+        self.code_root = code_root
         self.autogrant = autogrant
         self._granter = None  # type: Optional[autogrant_mod.Granter]
         self.urgent_state = urgent_state
@@ -936,7 +944,8 @@ class RunningServer:
             return self
         httpd = ThreadingHTTPServer((self.host, self.port), CrosstalkHandler)
         httpd.daemon_threads = True
-        httpd.state = ServerState(self.root, self.tokens, sessions=self.sessions)  # type: ignore[attr-defined]
+        httpd.state = ServerState(self.root, self.tokens, sessions=self.sessions,
+                                   code_root=self.code_root)  # type: ignore[attr-defined]
         if not self.no_pin:
             httpd.state.make_pin()  # type: ignore[attr-defined]
         self._httpd = httpd
@@ -952,7 +961,7 @@ class RunningServer:
                        if self.reviews_state is not None else None)
             state.notifier = Notifier(self.root, state.cache.snapshot, self.notify_state,
                                       poll_sec=self.notify_poll_sec, fallback=fallback,
-                                      reviews=scanner)
+                                      reviews=scanner, code_root=self.code_root)
             self._notifier = state.notifier
             self._notifier.start()
             # The granter posts as the coordinator, so only the server that owns the
@@ -1025,7 +1034,8 @@ DEFAULT_NOTIFY_STATE = Path.home() / ".crosstalk-notify-state.json"
 
 
 def serve(root, host: str = "127.0.0.1", port: int = 8484, no_pin: bool = False,
-          tokens=None, sessions=None, notify: bool = True, autogrant: bool = True) -> None:
+          tokens=None, sessions=None, notify: bool = True, autogrant: bool = True,
+          code_root=None) -> None:
     """Run the server in the foreground and print the one-time startup PIN.
 
     The PIN is how the owner logs in on the page; it is good for one login
@@ -1051,6 +1061,9 @@ def serve(root, host: str = "127.0.0.1", port: int = 8484, no_pin: bool = False,
     coordinator in the roster it does nothing. The file
     ~/.crosstalk-autogrant-off pauses it.
 
+    `root` is the data root; `code_root` (default: `root`) is the folder the
+    page, the icons and the version come from (`relay.py --data-root`).
+
     SIGTERM (how launchd stops the service) shuts down like Ctrl-C: the
     notifier stops cleanly, then the process exits with status 143
     (128 + SIGTERM).
@@ -1063,7 +1076,7 @@ def serve(root, host: str = "127.0.0.1", port: int = 8484, no_pin: bool = False,
                            notify_state=notify_state,
                            urgent_state=urgent_mod.state_path_from_env(),
                            reviews_state=reviews_mod.state_path_from_env(),
-                           autogrant=notify and autogrant)
+                           autogrant=notify and autogrant, code_root=code_root)
 
     class Terminated(Exception):
         pass

@@ -181,15 +181,20 @@ def render_page(html: str, snapshot: dict, commit: str, published: str) -> str:
 
 
 def export_page(root: Path, out_path: Path, commit: Optional[str] = None,
-                published: Optional[str] = None) -> dict:
-    """Write the self-contained page to out_path; returns what it wrote."""
+                published: Optional[str] = None, code_root: Optional[Path] = None) -> dict:
+    """Write the self-contained page to out_path; returns what it wrote.
+
+    The data comes from `root`; index.html and the commit come from
+    `code_root`, which defaults to `root`.
+    """
     root = Path(root)
-    index = root / "index.html"
+    code_root = root if code_root is None else Path(code_root)
+    index = code_root / "index.html"
     if not index.is_file():
-        raise RuntimeError("no index.html in %s" % root)
+        raise RuntimeError("no index.html in %s" % code_root)
     snapshot = build_snapshot(root)
     if commit is None:
-        commit = repo_commit(root) or UNKNOWN_COMMIT
+        commit = repo_commit(code_root) or UNKNOWN_COMMIT
     if published is None:
         published = published_now()
     snapshot["commit"] = commit

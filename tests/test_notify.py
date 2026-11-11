@@ -187,6 +187,16 @@ class NotifierTests(unittest.TestCase):
         n.poll_once()
         self.assertEqual(len(fake.drain()), 1)
 
+    def test_a_separate_code_root_names_its_relay_and_the_data_root(self):
+        fake = self.session("s1")
+        n = self.notifier(code_root=Path("/code"))
+        n.poll_once()
+        self.append("owner", owner_msg("m-1", to=["beta"]))
+        n.poll_once()
+        content = fake.drain()[0][1]["message"]["content"]
+        self.assertIn("Run `python3 /code/scripts/relay.py --data-root %s inbox beta` and answer each"
+                      % self.root, content)
+
     def test_items_in_one_poll_arrive_as_one_message(self):
         fake = self.session("s1")
         n = self.notifier()
@@ -541,6 +551,27 @@ class RenderAndSendTests(unittest.TestCase):
         text = render_message("Beta", "beta",
                               [{"_id": "m-1", "from": "ghost", "summary": "yo"}], Path("/r"))
         self.assertIn("- message from ghost: yo (m-1)", text)
+
+    def test_render_with_a_code_root(self):
+        items = [{"_id": "m-1", "from": "ghost", "summary": "yo"}]
+        text = render_message("Beta", "beta", items, Path("/data"), code_root=Path("/code"))
+        self.assertIn("`python3 /code/scripts/relay.py --data-root /data inbox beta`", text)
+        text = render_message("Beta", "beta", items, Path("/r"), code_root=Path("/r"))
+        self.assertIn("`python3 /r/scripts/relay.py inbox beta`", text)
+
+    def test_render_quotes_paths_with_spaces(self):
+        import re
+        import shlex
+        items = [{"_id": "m-1", "from": "ghost", "summary": "yo"}]
+        text = render_message("Beta", "beta", items, Path("/a b/data"), code_root=Path("/c d/code"))
+        cmd = re.search(r"Run `([^`]*)`", text).group(1)
+        self.assertEqual(shlex.split(cmd), ["python3", "/c d/code/scripts/relay.py",
+                                            "--data-root", "/a b/data", "inbox", "beta"])
+
+    def test_render_without_a_code_root_is_unchanged(self):
+        items = [{"_id": "m-1", "from": "ghost", "summary": "yo"}]
+        text = render_message("Beta", "beta", items, Path("/r s"))
+        self.assertIn("Run `python3 /r s/scripts/relay.py inbox beta` and answer each\n", text)
 
     def test_render_caps_item_lines(self):
         items = [{"_id": "m-%d" % i, "from": "ghost", "summary": "s%d" % i} for i in range(13)]

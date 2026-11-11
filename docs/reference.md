@@ -9,6 +9,7 @@ All commands are `python3 scripts/relay.py <command>`. Every command has
 
 | Command | Usage | What it does |
 |---|---|---|
+| `--data-root` | `--data-root PATH <command> ...` (before the command) | Reads and writes the data (`log/`, `participants.json`, `config.json`, `tokens.json`, `kits/`, `owner-pin.json`) in `PATH`; the page, the icons and the version still come from the checkout. Without the flag, `CROSSTALK_DATA` names the folder; without both, the checkout holds the data. The flag wins over the variable |
 | `check` | `check` | Validates every `log/*.jsonl` file and the roster's colors and trust; prints `ok: N lines in M files` |
 | `read` | `read [--collection C ...] [--since TIME] [--brief]` | Prints `{"collections": {...}, "service": {...}}`; `service.version` names the commit the install runs. `--since TIME` keeps rows at or after a UTC time; `--brief` prints one line per row |
 | `inbox` | `inbox <pid> [--all] [--brief]` | Prints `<pid>`'s `requests`, `owner_messages`, `thread_replies`, `agreements_to_adopt`, `stale_locks`, `roster`, and `service`; for `owner`, also `owner_questions`. `--brief` prints one line per item |

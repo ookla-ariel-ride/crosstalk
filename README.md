@@ -171,7 +171,9 @@ without either. See [Local settings](docs/operations.md#local-settings).
 
 `participants.json`, `log/`, `config.json`, `tokens.json`, `kits/` and
 `owner-pin.json` are git-ignored. They are the data of your install, and no
-git remote holds them. Back them up yourself.
+git remote holds them. Back them up yourself. They live in the checkout unless
+`relay.py --data-root <dir>` or `CROSSTALK_DATA=<dir>` names another folder
+(docs/operations.md, "Running the server").
 
 The housekeeper never commits. It runs `git push origin HEAD` only after you
 run `git config crosstalk.autopush true` in the checkout, and never in a

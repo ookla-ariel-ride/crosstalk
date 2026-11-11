@@ -20,6 +20,12 @@ it again after you move the repo. The repo must not live under `~/Documents`,
 finds the repo from its own resolved path, so a command run through a link to
 the repo writes to the same logs.
 
+`relay.py` keeps its data (`log/`, `participants.json`, `config.json` and the
+secrets) in the repo unless you name another folder: `relay.py --data-root
+<dir> serve`, or `CROSSTALK_DATA=<dir>` in the environment. The flag wins
+over the variable. The page, the icons and the version still come from the
+repo, so a development server can run from a checkout over a copy of the data.
+
 macOS LaunchAgents are the only service installer. On another system, run
 `relay.py serve` (below) under your own service manager, and run
 `scripts/housekeeper.sh` from your own scheduler if you want the check.
