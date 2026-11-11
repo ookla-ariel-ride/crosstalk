@@ -14,14 +14,19 @@ export interface RowListProps<T> {
   itemKey?: (item: T, index: number) => string;
   /** The list's name for a screen reader. */
   label: string;
+  /**
+   * A short list (the right column): it draws every row in the flow of the
+   * page, with the same markup, instead of a box that scrolls on its own.
+   */
+  short?: boolean;
 }
 
-export function RowList<T>({ items, renderRow, estimateSize, itemKey, label }: RowListProps<T>) {
+export function RowList<T>({ items, renderRow, estimateSize, itemKey, label, short = false }: RowListProps<T>) {
   const scroller = useRef<HTMLDivElement>(null);
   const [focused, setFocused] = useState<number | null>(null);
 
   const virtualizer = useVirtualizer({
-    count: items.length,
+    count: short ? 0 : items.length,
     getScrollElement: () => scroller.current,
     estimateSize: typeof estimateSize === "number" ? () => estimateSize : estimateSize,
     getItemKey: (index) => {
@@ -45,6 +50,18 @@ export function RowList<T>({ items, renderRow, estimateSize, itemKey, label }: R
   const onBlur = (e: FocusEvent<HTMLDivElement>) => {
     if (!e.currentTarget.contains(e.relatedTarget as Node | null)) setFocused(null);
   };
+
+  if (short) {
+    return (
+      <div role="list" aria-label={label}>
+        {items.map((item, index) => (
+          <div key={itemKey ? itemKey(item, index) : index} role="listitem">
+            {renderRow(item, index)}
+          </div>
+        ))}
+      </div>
+    );
+  }
 
   return (
     <div ref={scroller} className={styles.scroller} onFocus={onFocus} onBlur={onBlur}>

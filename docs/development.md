@@ -66,7 +66,7 @@ Part of the [Crosstalk docs](../README.md#documentation).
 | `web/src/ui/Shell.tsx` | The frame: sidebar, main part and right column; under 900 px a menu button opens the sidebar (Escape closes it) and the right column sits above the main part; `useHashRoute` |
 | `web/src/ui/Sidebar.tsx` | The mark, the name and the tagline; the 12 entries in their groups with counts of open or new items; the projects with the age of each last check-in; the four health lines |
 | `web/src/ui/RightColumn.tsx` | Needs you (threads with `needs_owner`) and the land queue |
-| `web/src/ui/Row.tsx`, `web/src/ui/RowList.tsx` | The one row shape (colour bars, title, one line, note; one button or link) and the one list, which draws only the rows in view and keeps the focused row drawn |
+| `web/src/ui/Row.tsx`, `web/src/ui/RowList.tsx` | The one row shape (colour bars, title, one line, note; one button or link) and the one list, which draws only the rows in view and keeps the focused row drawn; a `short` list (the right column) draws every row |
 | `web/src/ui/Bars.tsx` | One 3 px bar for each project in its roster colour, at most 5, with the names as text |
 | `web/src/ui/Body.tsx` | A message body as React elements from `parseBody`: links open in a new tab, an id links to its thread |
 | `web/src/ui/useNow.ts` | The time now, renewed each minute, for ages such as "6 min" |

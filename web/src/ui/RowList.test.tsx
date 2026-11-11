@@ -55,4 +55,12 @@ describe("RowList", () => {
     expect(document.activeElement?.textContent).toBe("Row 0");
     expect(screen.getAllByRole("listitem").length).toBeLessThan(60);
   });
+
+  test("a short list draws every row, with the same list semantics", () => {
+    renderWith(
+      <RowList short label="Land queue" items={ITEMS.slice(0, 3)} estimateSize={44} renderRow={(item) => <a href="#/queue">{item.title}</a>} />,
+    );
+    expect(screen.getByRole("list", { name: "Land queue" })).toBeTruthy();
+    expect(screen.getAllByRole("listitem").map((li) => li.textContent)).toEqual(["Row 0", "Row 1", "Row 2"]);
+  });
 });

@@ -1,11 +1,13 @@
 // The right column, on every screen (spec, "Layout"): the threads that need
-// the owner, and the land queue. Both lists are short, so they draw every row.
+// the owner, and the land queue. Both lists are short: their boxes grow to
+// hold every row.
 import { useQueue, useRoster, useThreads } from "../api/queries";
 import { ago } from "../logic/ago";
 import { href } from "../logic/route";
 import { nameOf } from "./Bars";
 import styles from "./RightColumn.module.css";
 import { Row } from "./Row";
+import { RowList } from "./RowList";
 import { useNow } from "./useNow";
 
 const QUEUE_HREF = href({ name: "section", section: "queue", q: "" });
@@ -20,18 +22,23 @@ function NeedsYou({ now }: { now: Date }) {
   else if (needs.length === 0) body = <p className={styles.empty}>Nothing needs you now.</p>;
   else
     body = (
-      <ul className={styles.list}>
-        {needs.map((t) => (
-          <li key={t.root}>
+      <div className={styles.list}>
+        <RowList
+          short
+          label="Needs you"
+          items={needs}
+          itemKey={(t) => t.root}
+          estimateSize={64}
+          renderRow={(t) => (
             <Row
               projects={t.projects}
               title={t.title}
               text={[t.projects[0] ? nameOf(t.projects[0], roster) : "", ago(t.last_t, now)].filter(Boolean).join(", ")}
               href={href({ name: "conversations", sort: "needs", open: [t.root] })}
             />
-          </li>
-        ))}
-      </ul>
+          )}
+        />
+      </div>
     );
   return (
     <section className={styles.part} aria-labelledby="right-needs">
@@ -54,23 +61,24 @@ function LandQueue({ now }: { now: Date }) {
   else if (queue.holders.length + queue.waiting.length === 0) body = <p className={styles.empty}>No land runs and no one waiting.</p>;
   else
     body = (
-      <ul className={styles.list}>
-        {queue.holders.map((h) => (
-          <li key={h.id}>
-            <Row projects={[h.project]} title={label(h.project, h.branches)} note={ago(h.since, now)} href={QUEUE_HREF} />
-          </li>
-        ))}
-        {queue.waiting.map((w, i) => (
-          <li key={w.id}>
-            <Row
-              projects={[w.project]}
-              title={(i === 0 ? "Next: " : "Then: ") + label(w.project, w.branches)}
-              note={w.granted ? "granted" : ago(w.t, now)}
-              href={QUEUE_HREF}
-            />
-          </li>
-        ))}
-      </ul>
+      <div className={styles.list}>
+        <RowList
+          short
+          label="Land queue"
+          items={[
+            ...queue.holders.map((h) => ({ id: h.id, project: h.project, title: label(h.project, h.branches), note: ago(h.since, now) })),
+            ...queue.waiting.map((w, i) => ({
+              id: w.id,
+              project: w.project,
+              title: (i === 0 ? "Next: " : "Then: ") + label(w.project, w.branches),
+              note: w.granted ? "granted" : ago(w.t, now),
+            })),
+          ]}
+          itemKey={(item) => item.id}
+          estimateSize={44}
+          renderRow={(item) => <Row projects={[item.project]} title={item.title} note={item.note} href={QUEUE_HREF} />}
+        />
+      </div>
     );
   return (
     <section className={styles.part} aria-labelledby="right-queue">
