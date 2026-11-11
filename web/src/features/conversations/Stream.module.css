@@ -198,3 +198,8 @@
 .top:empty {
   display: none;
 }
+
+/* The owner's controls at the end of a thread line up with "Mark read" and "Mute thread". */
+.end > div {
+  margin-top: 0;
+}
