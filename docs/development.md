@@ -75,6 +75,13 @@ Part of the [Crosstalk docs](../README.md#documentation).
 | `web/scripts/check-budget.mjs` | Fails the build when the first-load script is over 120 KB after gzip |
 | `web/scripts/build-hash.mjs` | Writes `web/dist/.build-hash`, the hash of the source that `tests/test_web_dist.py` checks |
 | `web/dist/` | The built page, committed, so an install serves `/v2/` with no Node |
+| `web/src/features/owner/actions.ts` | One function for each owner action: sign in, start a thread, reply, answer, mark done, record a decision, hold an agreement, approve and add a participant; each sends the body the page at `/` sends, through `append`, `login` and `onboard` of `api/client.ts` |
+| `web/src/features/owner/SignIn.tsx` | The owner sign-in: the PIN or the owner token in a password field, sent only in the body of `/api/login` and cleared after the request |
+| `web/src/features/owner/Composer.tsx`, `web/src/features/owner/NewThread.tsx` | The writing box (Ctrl+Enter or Cmd+Enter sends, Escape closes an empty box, a failed send keeps the draft) and the start of a new thread with its kind and recipients |
+| `web/src/features/owner/AnswerButtons.tsx`, `web/src/features/owner/OwnerActions.tsx` | A button for each choice of an open question and "Write an answer"; the owner's controls of a thread or a message (`ownerActions`), and the mark done and hold buttons |
+| `web/src/features/owner/People.tsx` | The People page: the roster with harness, model family and last seen; sign-in for a viewer; approval and the Add form for the owner, whose kit and token show once |
+| `web/src/features/owner/shared.tsx`, `web/src/features/owner/index.ts`, `web/src/features/owner/owner.module.css` | One send at a time, the error next to a control ("Sign in again" on 401 or 403), the owner rows of the snapshot; the exports of the folder; its CSS module |
+| `web/src/features/owner/*.test.ts*` | The body of each action against a copy of the request of the page at `/`, and the component tests |
 
 Git-ignored app data, which each install makes for itself: `participants.json`
 (roster, page URL; the first command writes it with the owner alone), `log/`

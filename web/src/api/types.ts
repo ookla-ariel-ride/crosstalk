@@ -246,3 +246,43 @@ export interface RowRef {
   collection: string | null;
   id: string | null;
 }
+
+/** POST /api/append (serve._append): one log line. The owner writes as "owner". */
+export interface AppendBody {
+  from: string;
+  op: "set" | "update";
+  collection: string;
+  id: string;
+  data: Record<string, unknown>;
+}
+
+/** The line POST /api/append wrote (serve._line). */
+export interface AppendResult {
+  seq: number;
+  t: string;
+  from: string;
+  op: string;
+  collection: string;
+  id: string;
+  data: Record<string, unknown>;
+  via?: string;
+}
+
+/** POST /api/onboard (serve._onboard): the fields of the present page's Add form. */
+export interface OnboardBody {
+  id: string;
+  name: string;
+  kind: string;
+  repo?: string;
+  parent?: string;
+  harness?: string;
+  color?: string;
+  colorDark?: string;
+  checkInMin?: number | string;
+}
+
+/** The new participant's token, shown once, and its kit. */
+export interface OnboardResult {
+  token: string;
+  kit: string;
+}
