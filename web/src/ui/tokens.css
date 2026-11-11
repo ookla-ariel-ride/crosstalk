@@ -1,0 +1,54 @@
+/* Design tokens of the v2 page: the spec's "Visual language" and "Layout".
+   Light values come from the spec. The spec leaves the dark values to the
+   builder; each text colour below has 4.5 to 1 or more against paper and
+   surface. Amber (#B45F06) on light paper is 4.0 to 1: use amber text on
+   surface, or amber as a mark next to ink text. */
+:root {
+  color-scheme: light;
+  --paper: #edf0f3;
+  --surface: #ffffff;
+  --ink: #17222e;
+  --muted: #5a6a79;
+  --rule: #d5dbe1;
+  --signal: #2450b8;
+  --amber: #b45f06;
+
+  --font-heading: "Archivo", system-ui, sans-serif;
+  --font-text: "Atkinson Hyperlegible Next", system-ui, sans-serif;
+  --size-xs: 12.5px;
+  --size-s: 13.5px;
+  --size-m: 15px;
+  --size-l: 18px;
+  --size-xl: 20px;
+
+  --radius-control: 6px;
+  --radius-card: 8px;
+
+  --width-sidebar: 232px;
+  --width-stream: 780px;
+  --width-right: 290px;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    color-scheme: dark;
+    --paper: #12181f;
+    --surface: #1a222c;
+    --ink: #e6ebf0;
+    --muted: #9aa8b6;
+    --rule: #2c3743;
+    --signal: #86a8f2;
+    --amber: #e9a048;
+  }
+}
+
+:root[data-theme="dark"] {
+  color-scheme: dark;
+  --paper: #12181f;
+  --surface: #1a222c;
+  --ink: #e6ebf0;
+  --muted: #9aa8b6;
+  --rule: #2c3743;
+  --signal: #86a8f2;
+  --amber: #e9a048;
+}

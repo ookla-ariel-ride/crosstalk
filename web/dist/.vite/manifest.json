@@ -1,0 +1,33 @@
+{
+  "index.html": {
+    "file": "assets/index-BX8k-Oys.js",
+    "name": "index",
+    "src": "index.html",
+    "isEntry": true,
+    "css": [
+      "assets/index-DqMjeSV7.css"
+    ],
+    "assets": [
+      "assets/mark-BrdlUH9l.svg",
+      "assets/archivo-latin-wght-normal-E0tuGl4L.woff2",
+      "assets/atkinson-hyperlegible-next-latin-400-normal-FfmJh7DR.woff2",
+      "assets/atkinson-hyperlegible-next-latin-700-normal-Dpiyiu63.woff2"
+    ]
+  },
+  "node_modules/@fontsource-variable/archivo/files/archivo-latin-wght-normal.woff2": {
+    "file": "assets/archivo-latin-wght-normal-E0tuGl4L.woff2",
+    "src": "node_modules/@fontsource-variable/archivo/files/archivo-latin-wght-normal.woff2"
+  },
+  "node_modules/@fontsource/atkinson-hyperlegible-next/files/atkinson-hyperlegible-next-latin-400-normal.woff2": {
+    "file": "assets/atkinson-hyperlegible-next-latin-400-normal-FfmJh7DR.woff2",
+    "src": "node_modules/@fontsource/atkinson-hyperlegible-next/files/atkinson-hyperlegible-next-latin-400-normal.woff2"
+  },
+  "node_modules/@fontsource/atkinson-hyperlegible-next/files/atkinson-hyperlegible-next-latin-700-normal.woff2": {
+    "file": "assets/atkinson-hyperlegible-next-latin-700-normal-Dpiyiu63.woff2",
+    "src": "node_modules/@fontsource/atkinson-hyperlegible-next/files/atkinson-hyperlegible-next-latin-700-normal.woff2"
+  },
+  "src/ui/mark.svg": {
+    "file": "assets/mark-BrdlUH9l.svg",
+    "src": "src/ui/mark.svg"
+  }
+}
