@@ -68,13 +68,18 @@ Part of the [Crosstalk docs](../README.md#documentation).
 | `web/src/ui/RightColumn.tsx` | Needs you (threads with `needs_owner`) and the land queue |
 | `web/src/ui/Row.tsx`, `web/src/ui/RowList.tsx` | The one row shape (colour bars, title, one line, note; one button or link) and the one list, which draws only the rows in view and keeps the focused row drawn; a `short` list (the right column) draws every row |
 | `web/src/ui/Bars.tsx` | One 3 px bar for each project in its roster colour, at most 5, with the names as text |
-| `web/src/ui/Body.tsx` | A message body as React elements from `parseBody`: links open in a new tab, an id links to its thread |
+| `web/src/ui/Body.tsx` | A message body as React elements from `parseBody`, or blocks already built (a section row's detail): links open in a new tab, an id links to its thread |
 | `web/src/ui/useNow.ts` | The time now, renewed each minute, for ages such as "6 min" |
 | `web/src/ui/*.module.css` | The CSS module of each component; colours, type sizes and radii come from `tokens.css` |
 | `web/src/ui/*.test.tsx`, `web/src/ui/testing.tsx` | The component tests (jsdom and Testing Library) and what they share: a query client filled by hand and no network |
 | `web/scripts/check-budget.mjs` | Fails the build when the first-load script is over 120 KB after gzip |
 | `web/scripts/build-hash.mjs` | Writes `web/dist/.build-hash`, the hash of the source that `tests/test_web_dist.py` checks |
 | `web/dist/` | The built page, committed, so an install serves `/v2/` with no Node |
+| `web/src/features/sections/SectionPage.tsx` | The route `section`: every section on the shared list, with the server's open and total counts, a search box that puts `q` in the route after a 300 ms pause, one row open in place, the next page near the end of the list or with Load more, and a plain line for a failed load, a 403 or an unknown section; "Lessons and incidents" merges two collections by time; the land queue reads `/api/queue` |
+| `web/src/features/sections/merge.ts` | Merges the loaded pages of two collections by time, open rows first, each row once, and names the collection whose next page it needs |
+| `web/src/features/sections/fields.ts` | The row a mapper returns, and readers of doc fields that never throw |
+| `web/src/features/sections/agreements.ts`, `decisions.ts`, `lessons.ts`, `incidents.ts`, `locks.ts`, `progress.ts`, `reviews.ts`, `schedules.ts`, `adoption.ts`, `queue.ts` | One mapper for each section: a doc to a row (projects, title, text, note, open, detail), with the fields the present page's tab shows |
+| `web/src/features/sections/*.test.ts*`, `SectionPage.module.css` | The tests of the mappers, the merge and the page, and the page's CSS module |
 
 Git-ignored app data, which each install makes for itself: `participants.json`
 (roster, page URL; the first command writes it with the owner alone), `log/`

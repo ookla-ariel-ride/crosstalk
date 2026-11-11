@@ -44,4 +44,13 @@ describe("Body", () => {
     expect(ref.getAttribute("href")).toBe("#/conversations?sort=needs&open=alpha-0042");
     expect(ref.hasAttribute("target")).toBe(false);
   });
+
+  test("Body draws blocks it is given, as text", () => {
+    const { container } = render(
+      <Body blocks={[{ type: "p", parts: [{ type: "text", text: "Why: <b>x</b>" }] }, { type: "ul", items: [[{ type: "text", text: "one" }]] }]} />,
+    );
+    expect(container.querySelector("b")).toBeNull();
+    expect(container.querySelector("p")?.textContent).toBe("Why: <b>x</b>");
+    expect(container.querySelector("li")?.textContent).toBe("one");
+  });
 });
