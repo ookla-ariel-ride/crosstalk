@@ -8,6 +8,8 @@ The server is the page host and the database:
   GET  /api/thread/<root> -> the messages of one thread, with depth and quote
   GET  /api/read-state  -> the owner's read state (readstate.py); the owner only
   PUT  /api/read-state  -> a thread's read mark, the mark-all time, or a mute; the owner only
+  GET  /api/events      -> a Server-Sent Events stream of the ids of new log rows (events.py)
+  GET  /api/vitals      -> the health numbers: disk, usage, build host (vitals.py)
   GET  /api/<collection>-> one collection replayed
   GET  /api/queue       -> the land queue of the build host (landqueue.py)
   GET  /api/me          -> the role of the caller (owner, editor, viewer)
@@ -57,6 +59,9 @@ from . import reviews as reviews_mod
 from . import autogrant as autogrant_mod
 from . import threads as threads_mod
 from . import readstate
+from . import events as events_mod
+from . import vitals as vitals_mod
+from . import buildhost as buildhost_mod
 
 # The collections the page reads. "participants" is the owner's roster.
 KNOWN_COLLECTIONS = tuple(COLLECTIONS) + ("participants",)
@@ -79,6 +84,10 @@ LOGIN_WINDOW = 10 * 60.0
 LOGIN_MAX_FAILURES = 5
 # The fields of a roster entry the owner may write. A stale `wake` key (from the
 # removed agent-wake feature) is not one, so the API rejects it.
+# The push channel (/api/events) looks at the log this often, and with no new
+# row sends a comment line this often, so a proxy or the browser keeps it open.
+EVENTS_CHECK_SEC = 1.0
+EVENTS_PING_SEC = 15.0
 ROSTER_FIELDS = ("name", "kind", "color", "colorDark", "checkInMin", "trust", "repo", "parent", "harness", "aliases", "itemNames")
 
 
@@ -408,6 +417,11 @@ class ServerState:
         self.login_failures = []  # type: List[float]
         self.login_lock = threading.Lock()
         self.notifier = None  # type: Optional[Notifier]
+        self.events_check_sec = EVENTS_CHECK_SEC
+        self.events_ping_sec = EVENTS_PING_SEC
+        # Set when the server stops, so an open event stream ends.
+        self.stopping = threading.Event()
+        self.buildhost_state = buildhost_mod.state_path_from_env()
 
     def make_pin(self) -> str:
         """The one-time startup PIN: six digits, good for ten minutes."""
@@ -515,6 +529,10 @@ class CrosstalkHandler(BaseHTTPRequestHandler):
             self._thread(unquote(path[len("/api/thread/"):]))
         elif path == "/api/read-state":
             self._read_state_get()
+        elif path == "/api/events":
+            self._events()
+        elif path == "/api/vitals":
+            self._vitals()
         elif path.startswith("/api/"):
             self._collection(path[len("/api/"):])
         elif path == "/":
@@ -647,6 +665,52 @@ class CrosstalkHandler(BaseHTTPRequestHandler):
             self._error(404, "no thread with the root %r" % root)
             return
         self._json(200, {"root": root, "messages": messages})
+
+    def _events(self):
+        """The push channel: Server-Sent Events, open until the client goes or the server stops.
+
+        `: open` once the start mark is taken; then each check that finds new
+        log lines sends `event: rows` with `data: {"rows": [...]}` (ids only,
+        events.py), and a quiet stream sends `: ping` every events_ping_sec.
+        A write error ends it.
+        """
+        state = self.state
+        self.close_connection = True
+        self.send_response(200)
+        self.send_header("Content-Type", "text/event-stream")
+        self.send_header("Cache-Control", "no-cache")
+        self.send_header("Connection", "close")
+        self.end_headers()
+        if self.command == "HEAD":
+            return
+        # The stamp before the mark: a line written between the two shows as a
+        # changed stamp on the next check, and since() then finds it.
+        seen = events_mod.stamp(state.root)
+        mark = events_mod.mark(state.root)
+        try:
+            self.wfile.write(b": open\n\n")
+            last = time.monotonic()
+            while not state.stopping.wait(state.events_check_sec):
+                now_stamp = events_mod.stamp(state.root)
+                if now_stamp != seen:
+                    seen = now_stamp
+                    rows, mark = events_mod.since(state.root, mark)
+                    if rows:
+                        body = json.dumps({"rows": rows}, ensure_ascii=False)
+                        self.wfile.write(("event: rows\ndata: %s\n\n" % body).encode("utf-8"))
+                        last = time.monotonic()
+                        continue
+                if time.monotonic() - last >= state.events_ping_sec:
+                    self.wfile.write(b": ping\n\n")
+                    last = time.monotonic()
+        except OSError:
+            return  # the client went away
+
+    def _vitals(self):
+        cfg = config_mod.load(self.state.root)
+        out = vitals_mod.read(self.state.root, cfg, buildhost_state=self.state.buildhost_state)
+        out["model_families"] = cfg["modelFamilies"]
+        self._json(200, out)
 
     def _collection(self, name: str):
         if name not in KNOWN_COLLECTIONS:
@@ -1125,6 +1189,7 @@ class RunningServer:
         httpd, self._httpd = self._httpd, None
         thread, self._thread = self._thread, None
         if httpd is not None:
+            httpd.state.stopping.set()  # type: ignore[attr-defined]
             httpd.shutdown()
             httpd.server_close()
         if thread is not None:

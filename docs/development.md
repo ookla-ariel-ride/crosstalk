@@ -37,6 +37,8 @@ Part of the [Crosstalk docs](../README.md#documentation).
 | `scripts/crosstalk/requests.py` | Recipient and group routing and the inbox |
 | `scripts/crosstalk/threads.py` | Threads built from the messages, their four sort orders, and paged reads (`/api/threads`) |
 | `scripts/crosstalk/readstate.py` | The owner's read state in `read-state.json`: read marks, muted threads, the mark-all time, and unread counts (`/api/read-state`) |
+| `scripts/crosstalk/events.py` | The ids of the log lines added since a mark: what the push channel sends (`/api/events`) |
+| `scripts/crosstalk/vitals.py` | The health numbers: free disk, weekly usage, the build host's last state (`/api/vitals`) |
 | `scripts/crosstalk/posters.py` | `claim`, `release`, `land-sync`, `incident`, and the shared timestamp helper |
 | `scripts/crosstalk/consults.py` | `reply`, `consult`, `adopt` |
 | `scripts/crosstalk/participants.py` | Roster loading and validation |
