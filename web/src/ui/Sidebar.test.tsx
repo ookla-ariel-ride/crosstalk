@@ -112,13 +112,24 @@ describe("Sidebar", () => {
     ]);
     const count = (name: string) => screen.getByRole("link", { name: new RegExp("^" + name) }).querySelector("[data-count]")?.textContent ?? null;
     expect(count("Needs you")).toBe("2");
-    expect(count("Conversations")).toBe("2 new");
+    // No route gives a total of unread threads, so Conversations shows no count.
+    expect(count("Conversations")).toBeNull();
     expect(count("Land queue")).toBe("2");
     expect(count("Agreements")).toBe("16 open");
     expect(count("Lessons and incidents")).toBe("1 open");
     expect(count("File claims")).toBeNull();
     expect(count("Reviews")).toBeNull();
     expect(count("Progress")).toBeNull();
+  });
+
+  test("a full first page of the needs sort shows the count with a plus", () => {
+    const page = threads(...Array.from({ length: 50 }, (_, i) => thread("alpha-" + (1000 + i), { needs_owner: true })));
+    renderWith(<Sidebar route={HOME} mode="push" />, [
+      [keys.threads("needs"), { ...page, pages: [{ ...page.pages[0], next: "50" }] }],
+    ]);
+    const badge = screen.getByRole("link", { name: /^Needs you/ }).querySelector("[data-count]");
+    expect(badge?.textContent).toBe("50+");
+    expect(screen.getByRole("link", { name: "Needs you 50 or more" })).toBeTruthy();
   });
 
   test("projects show their colour bar and the age of the last check-in", () => {

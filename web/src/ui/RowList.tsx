@@ -2,7 +2,7 @@
 // list"), measures each drawn row, and keeps the row that holds the keyboard
 // focus drawn while it is out of view, so the focus is never lost.
 import { defaultRangeExtractor, type Range, useVirtualizer } from "@tanstack/react-virtual";
-import { type FocusEvent, type ReactNode, useCallback, useRef, useState } from "react";
+import { type FocusEvent, type ReactNode, useCallback, useMemo, useRef, useState } from "react";
 import styles from "./RowList.module.css";
 
 export interface RowListProps<T> {
@@ -10,8 +10,8 @@ export interface RowListProps<T> {
   renderRow: (item: T, index: number) => ReactNode;
   /** A row's height before it is measured, in px. */
   estimateSize: number | ((index: number) => number);
-  /** A stable key for each item, so a row keeps its node and its measure when the list changes. */
-  itemKey?: (item: T, index: number) => string;
+  /** A stable key for each item: a row keeps its node, its measure and its focus when the list changes. */
+  itemKey: (item: T, index: number) => string;
   /** The list's name for a screen reader. */
   label: string;
   /**
@@ -23,7 +23,14 @@ export interface RowListProps<T> {
 
 export function RowList<T>({ items, renderRow, estimateSize, itemKey, label, short = false }: RowListProps<T>) {
   const scroller = useRef<HTMLDivElement>(null);
-  const [focused, setFocused] = useState<number | null>(null);
+  // The key of the item that holds the focus, not its index: an insert or a
+  // reorder moves the item, and the row must stay drawn where it now is.
+  const [focusedKey, setFocusedKey] = useState<string | null>(null);
+  const focused = useMemo(() => {
+    if (focusedKey === null) return null;
+    const index = items.findIndex((item, i) => itemKey(item, i) === focusedKey);
+    return index === -1 ? null : index;
+  }, [items, itemKey, focusedKey]);
 
   const virtualizer = useVirtualizer({
     count: short ? 0 : items.length,
@@ -31,7 +38,7 @@ export function RowList<T>({ items, renderRow, estimateSize, itemKey, label, sho
     estimateSize: typeof estimateSize === "number" ? () => estimateSize : estimateSize,
     getItemKey: (index) => {
       const item = items[index];
-      return itemKey && item !== undefined ? itemKey(item, index) : index;
+      return item !== undefined ? itemKey(item, index) : index;
     },
     rangeExtractor: useCallback(
       (range: Range) => {
@@ -45,17 +52,18 @@ export function RowList<T>({ items, renderRow, estimateSize, itemKey, label, sho
 
   const onFocus = (e: FocusEvent<HTMLDivElement>) => {
     const index = Number((e.target as HTMLElement).closest("[data-index]")?.getAttribute("data-index"));
-    setFocused(Number.isInteger(index) ? index : null);
+    const item = Number.isInteger(index) ? items[index] : undefined;
+    setFocusedKey(item !== undefined ? itemKey(item, index) : null);
   };
   const onBlur = (e: FocusEvent<HTMLDivElement>) => {
-    if (!e.currentTarget.contains(e.relatedTarget as Node | null)) setFocused(null);
+    if (!e.currentTarget.contains(e.relatedTarget as Node | null)) setFocusedKey(null);
   };
 
   if (short) {
     return (
       <div role="list" aria-label={label}>
         {items.map((item, index) => (
-          <div key={itemKey ? itemKey(item, index) : index} role="listitem">
+          <div key={itemKey(item, index)} role="listitem">
             {renderRow(item, index)}
           </div>
         ))}

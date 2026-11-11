@@ -1,5 +1,5 @@
 // @vitest-environment jsdom
-import { act, fireEvent, screen } from "@testing-library/react";
+import { act, fireEvent, render, screen } from "@testing-library/react";
 import { beforeEach, describe, expect, test, vi } from "vitest";
 import { RowList } from "./RowList";
 import { renderWith } from "./testing";
@@ -17,11 +17,11 @@ beforeEach(() => {
   return () => vi.restoreAllMocks();
 });
 
-function list() {
+function list(items = ITEMS) {
   return (
     <RowList
       label="Conversations"
-      items={ITEMS}
+      items={items}
       itemKey={(item) => item.id}
       estimateSize={56}
       renderRow={(item) => <button type="button">{item.title}</button>}
@@ -58,9 +58,31 @@ describe("RowList", () => {
 
   test("a short list draws every row, with the same list semantics", () => {
     renderWith(
-      <RowList short label="Land queue" items={ITEMS.slice(0, 3)} estimateSize={44} renderRow={(item) => <a href="#/queue">{item.title}</a>} />,
+      <RowList short label="Land queue" items={ITEMS.slice(0, 3)} itemKey={(item) => item.id} estimateSize={44} renderRow={(item) => <a href="#/queue">{item.title}</a>} />,
     );
     expect(screen.getByRole("list", { name: "Land queue" })).toBeTruthy();
     expect(screen.getAllByRole("listitem").map((li) => li.textContent)).toEqual(["Row 0", "Row 1", "Row 2"]);
+  });
+
+  /** Focus "Row 0", then give the list `next`; the same item must keep the focus and stay drawn. */
+  function keepsFocus(next: typeof ITEMS) {
+    const { rerender } = render(list());
+    const first = screen.getByRole("button", { name: "Row 0" });
+    first.focus();
+    fireEvent.focus(first);
+    act(() => rerender(list(next)));
+    const row = screen.getByRole("button", { name: "Row 0" });
+    expect(document.activeElement).toBe(row);
+    expect(row).toBe(first);
+    expect(screen.getAllByRole("listitem").length).toBeLessThan(60);
+  }
+
+  test("the focused item keeps the focus when items are inserted before it", () => {
+    const fresh = Array.from({ length: 500 }, (_, i) => ({ id: "beta-" + i, title: "New " + i }));
+    keepsFocus([...fresh, ...ITEMS]);
+  });
+
+  test("the focused item keeps the focus when the list is reordered", () => {
+    keepsFocus([...ITEMS].reverse());
   });
 });

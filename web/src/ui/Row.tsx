@@ -42,10 +42,11 @@ export function Row({ projects, title, text, note, open = false, onOpen, href, c
   }
 
   // A button opens on Enter and Space by itself. Enter is also handled here,
-  // with its default stopped so no second click follows.
+  // with its default stopped so no second click follows; a held key opens once.
   const onKeyDown = (e: KeyboardEvent<HTMLButtonElement>) => {
     if (e.key !== "Enter") return;
     e.preventDefault();
+    if (e.repeat) return;
     onOpen?.();
   };
   const shown = open && children != null;

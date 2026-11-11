@@ -70,12 +70,16 @@ function useOpenCount(name: SectionName): number {
 
 interface Count {
   text: string;
+  /** What a screen reader hears when it differs from `text`. */
+  spoken?: string;
   needs?: boolean;
 }
 
 /** The counts of open or new items; an entry with none is left out. */
 function useCounts(): Map<string, Count> {
-  const threads: Thread[] = useThreads("needs").data?.pages.flatMap((p) => p.threads) ?? [];
+  // The first page of the needs sort: threads that need the owner come first.
+  const first = useThreads("needs").data?.pages[0];
+  const threads: Thread[] = first?.threads ?? [];
   const queue = useQueue().data;
   const open: Record<string, number> = {
     reviews: useOpenCount("reviews"),
@@ -85,10 +89,11 @@ function useCounts(): Map<string, Count> {
   };
   const counts = new Map<string, Count>();
   const needs = threads.filter((t) => t.needs_owner).length;
-  const fresh = threads.filter((t) => (t.unread ?? 0) > 0).length;
+  // A next page whose first page needs the owner throughout may hold more.
+  const more = first?.next != null && needs === threads.length;
   const waiting = queue ? queue.holders.length + queue.waiting.length : 0;
-  if (needs) counts.set("Needs you", { text: String(needs), needs: true });
-  if (fresh) counts.set("Conversations", { text: fresh + " new" });
+  if (needs) counts.set("Needs you", more ? { text: needs + "+", spoken: needs + " or more", needs: true } : { text: String(needs), needs: true });
+  // Conversations shows no count: an unread total needs a server route that gives it.
   if (waiting) counts.set("Land queue", { text: String(waiting) });
   for (const g of GROUPS) {
     for (const entry of g.entries) {
@@ -112,6 +117,7 @@ function NavList({ entries, route, counts, onNavigate }: { entries: Entry[]; rou
               className={styles.entry}
               href={href(entry.route)}
               aria-current={isCurrent(entry.route, route) ? "page" : undefined}
+              aria-label={count?.spoken ? entry.label + " " + count.spoken : undefined}
               onClick={onNavigate}
             >
               <span>{entry.label}</span>

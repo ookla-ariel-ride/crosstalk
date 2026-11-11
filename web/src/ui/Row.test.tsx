@@ -19,6 +19,9 @@ describe("Row", () => {
     expect(enter).toBe(false);
     fireEvent.keyDown(control, { key: "a" });
     expect(onOpen).toHaveBeenCalledTimes(2);
+    // A held key repeats; only the first press opens.
+    fireEvent.keyDown(control, { key: "Enter", repeat: true });
+    expect(onOpen).toHaveBeenCalledTimes(2);
   });
 
   test("an open row shows its content and says so", () => {
