@@ -1,0 +1,82 @@
+// One function for each server route the page reads. Every URL is relative to
+// the page's own host, so the page works under /v2/ and under the dev proxy.
+import type {
+  Health,
+  LoginBody,
+  LoginResult,
+  Me,
+  ReadState,
+  ReadStatePut,
+  SectionName,
+  SectionPage,
+  Sort,
+  ThreadDetail,
+  ThreadsPage,
+  Vitals,
+} from "./types";
+
+/** A failed call: the HTTP status (0 when the server was not reached) and the server's message. */
+export class ApiError extends Error {
+  readonly status: number;
+
+  constructor(status: number, message: string) {
+    super(message);
+    this.name = "ApiError";
+    this.status = status;
+  }
+}
+
+export type Fetch = (input: string, init?: RequestInit) => Promise<Response>;
+
+function query(params: Record<string, string | number | undefined>): string {
+  const search = new URLSearchParams();
+  for (const [key, value] of Object.entries(params)) {
+    if (value !== undefined && value !== "") search.set(key, String(value));
+  }
+  const text = search.toString();
+  return text ? "?" + text : "";
+}
+
+export function createApi(fetchFn: Fetch = (input, init) => fetch(input, init)) {
+  async function call<T>(path: string, init: RequestInit = {}): Promise<T> {
+    let response: Response;
+    try {
+      response = await fetchFn(path, { ...init, credentials: "same-origin" });
+    } catch (e) {
+      throw new ApiError(0, e instanceof Error ? e.message : String(e));
+    }
+    let body: unknown;
+    try {
+      body = await response.json();
+    } catch {
+      throw new ApiError(response.status, response.ok ? "the response is not JSON" : "HTTP " + response.status);
+    }
+    if (!response.ok) {
+      const error = (body as { error?: unknown } | null)?.error;
+      throw new ApiError(response.status, typeof error === "string" ? error : "HTTP " + response.status);
+    }
+    return body as T;
+  }
+
+  function send<T>(method: string, path: string, body: unknown): Promise<T> {
+    return call<T>(path, { method, headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) });
+  }
+
+  return {
+    getThreads: (sort: Sort, cursor?: string, limit?: number) =>
+      call<ThreadsPage>("/api/threads" + query({ sort, cursor, limit })),
+    getThread: (root: string) => call<ThreadDetail>("/api/thread/" + encodeURIComponent(root)),
+    getSection: (name: SectionName, opts: { cursor?: string; limit?: number; q?: string } = {}) =>
+      call<SectionPage>("/api/section/" + name + query(opts)),
+    getVitals: () => call<Vitals>("/api/vitals"),
+    getHealth: () => call<Health>("/api/health"),
+    getMe: () => call<Me>("/api/me"),
+    getReadState: () => call<ReadState>("/api/read-state"),
+    putReadState: (body: ReadStatePut) => send<ReadState>("PUT", "/api/read-state", body),
+    login: (body: LoginBody) => send<LoginResult>("POST", "/api/login", body),
+  };
+}
+
+export type Api = ReturnType<typeof createApi>;
+
+export const api: Api = createApi();
