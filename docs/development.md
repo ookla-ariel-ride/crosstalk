@@ -142,7 +142,10 @@ npm run build
 ```
 `npm run build` runs `vite build`, then `scripts/check-budget.mjs` (prints the
 `budget:` line and fails above 122,880 bytes of first-load script after
-gzip), then `scripts/build-hash.mjs`. Commit `web/dist/` with the source
+gzip), then `scripts/build-hash.mjs`. The budget counts the chunks in Vite's
+`web/dist/.vite/manifest.json`: the entry, what it imports, and every chunk
+behind a dynamic import unless `NOT_AT_FIRST_PAINT` in the script names it.
+The server does not read the manifest. Commit `web/dist/` with the source
 change: `tests/test_web_dist.py` fails when one of `web/package.json`,
 `web/package-lock.json`, `web/index.html`, `web/vite.config.ts` and
 `web/tsconfig.json`, or a file under `web/src/` or `web/public/`, changed

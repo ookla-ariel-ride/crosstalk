@@ -13,5 +13,8 @@ export default defineConfig({
     // Every asset is its own file under assets/, named by its content, so
     // the server can cache it for a year. No data: URLs in the CSS or HTML.
     assetsInlineLimit: 0,
+    // dist/.vite/manifest.json: the chunk graph that scripts/check-budget.mjs
+    // counts. The server never reads it.
+    manifest: true,
   },
 });
