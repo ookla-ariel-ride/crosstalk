@@ -55,6 +55,7 @@ Part of the [Crosstalk docs](../README.md#documentation).
 | `tests/` | Python tests (`test_*.py`), page scenarios (`tests/page/`), live-server end-to-end tests (`tests/server/`), and the one-folder kits, hooks and standard jobs that `test_data_root_texts.py` compares against (`tests/baseline/`) |
 | `web/` | The v2 page: React and TypeScript source in `web/src/`, built by Vite (see [The v2 page](#the-v2-page)) |
 | `web/src/ui/tokens.css`, `web/src/ui/fonts.css` | The design tokens (colours, light and dark; type sizes; radii; widths) and the two fonts, Archivo and Atkinson Hyperlegible Next, taken from npm |
+| `web/src/logic/` | The page's rules as pure functions, each with a Vitest file beside it: `family.ts` (model family), `speaker.ts` (who spoke), `foldRoutine.ts` (routine runs), `splitRead.ts` (read and new messages), `parseBody.ts` (message text as data, never markup), `choices.ts` (answer choices), `ago.ts` (age), `route.ts` (hash routes), and `types.ts` (the fields they read) |
 | `web/scripts/check-budget.mjs` | Fails the build when the first-load script is over 120 KB after gzip |
 | `web/scripts/build-hash.mjs` | Writes `web/dist/.build-hash`, the hash of the source that `tests/test_web_dist.py` checks |
 | `web/dist/` | The built page, committed, so an install serves `/v2/` with no Node |
