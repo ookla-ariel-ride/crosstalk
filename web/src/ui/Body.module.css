@@ -1,0 +1,33 @@
+.body {
+  max-width: 68ch;
+  overflow-wrap: anywhere;
+}
+
+.body p,
+.body ol,
+.body ul,
+.body pre {
+  margin: 4px 0 0;
+}
+
+.body ol,
+.body ul {
+  padding-left: 22px;
+}
+
+.body a {
+  color: var(--signal);
+}
+
+.body code {
+  font-size: var(--size-s);
+}
+
+.body pre {
+  padding: 8px 10px;
+  border: 1px solid var(--rule);
+  border-radius: var(--radius-control);
+  background: var(--surface);
+  overflow-x: auto;
+  white-space: pre;
+}

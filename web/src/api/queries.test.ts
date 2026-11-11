@@ -3,8 +3,8 @@ import { beforeEach, describe, expect, test } from "vitest";
 import { ApiError } from "./client";
 import { RETRY_MS } from "./events";
 import { FakeClock, FakeEventSource, fakeDeps, flush } from "./fakes";
-import { connectLive, createQueryClient, invalidateForRows, keys, shouldRetry } from "./queries";
-import type { Message, RowRef, ThreadDetail } from "./types";
+import { connectLive, createQueryClient, invalidateAll, invalidateForRows, keys, rosterOf, shouldRetry } from "./queries";
+import type { Message, RowRef, Snapshot, ThreadDetail } from "./types";
 
 function message(id: string): Message {
   return { id, depth: 0, quote: null, from: "alpha", kind: "note", summary: id };
@@ -81,7 +81,7 @@ describe("queries", () => {
     expect(invalidated()).toEqual([]);
     FakeEventSource.latest().emit("error");
 
-    // A poll in poll mode invalidates the thread list only.
+    // A poll in poll mode invalidates the thread list (and the land queue, not cached here).
     clock.advance(15_000);
     await flush();
     expect(invalidated()).toEqual([JSON.stringify(keys.threads("new")), JSON.stringify(keys.threads("hot"))]);
@@ -91,6 +91,53 @@ describe("queries", () => {
     expect(modes).toEqual(["push", "poll", "push"]);
     expect(invalidated()).toEqual(CACHED.filter(([k]) => k[0] !== "vitals").map(([k]) => JSON.stringify(k)));
     stop();
+  });
+
+  test("a message invalidates the land queue; another collection does not", () => {
+    qc.setQueryData(keys.queue, { holders: [], waiting: [] });
+    invalidateForRows(qc, [row("agreements", "a-parser")]);
+    expect(qc.getQueryState(keys.queue)?.isInvalidated).toBe(false);
+    invalidateForRows(qc, [row("messages", "beta-0003")]);
+    expect(qc.getQueryState(keys.queue)?.isInvalidated).toBe(true);
+  });
+
+  test("a return to push and each poll refetch the land queue", async () => {
+    qc.setQueryData(keys.queue, { holders: [], waiting: [] });
+    const clock = new FakeClock();
+    const stop = connectLive(qc, () => {}, fakeDeps(clock));
+    FakeEventSource.latest().emit("open");
+    FakeEventSource.latest().emit("error");
+    clock.advance(15_000);
+    await flush();
+    expect(qc.getQueryState(keys.queue)?.isInvalidated).toBe(true);
+    stop();
+    qc.setQueryData(keys.queue, { holders: [], waiting: [] });
+    invalidateAll(qc);
+    expect(qc.getQueryState(keys.queue)?.isInvalidated).toBe(true);
+  });
+
+  test("the roster comes from the snapshot with each participant's newest check-in", () => {
+    const snapshot: Snapshot = {
+      server_time: "2026-11-11T10:00:00Z",
+      roster: {
+        alpha: { id: "alpha", kind: "project", color: "#2e7d32", colorDark: "#81c784" },
+        beta: { id: "beta", kind: "project" },
+      },
+      collections: {
+        messages: {
+          m1: { from: "alpha", kind: "check-in", t: "2026-11-11T09:00:00Z" },
+          m2: { from: "alpha", kind: "checkin", t: "2026-11-11T09:30:00Z" },
+          m3: { from: "alpha", kind: "note", t: "2026-11-11T09:50:00Z" },
+          m4: { from: "beta", kind: "check-in", t: "not a time" },
+          m5: { from: "relay-bot", kind: "check-in", t: "2026-11-11T09:40:00Z" },
+          m6: null,
+        },
+      },
+    };
+    const people = rosterOf(snapshot);
+    expect(people.roster).toBe(snapshot.roster);
+    expect(people.checkIns).toEqual({ alpha: "2026-11-11T09:30:00Z", "relay-bot": "2026-11-11T09:40:00Z" });
+    expect(rosterOf({ server_time: "", roster: {}, collections: {} } as Snapshot).checkIns).toEqual({});
   });
 
   test("401 and 403 are not retried; other errors are, three times", () => {
