@@ -31,18 +31,23 @@ function parse(text: string | null): ReadState {
 }
 
 let memo: { text: string | null; state: ReadState } = { text: null, state: EMPTY };
-/** A state the storage refused to keep. */
-let unsaved: ReadState | null = null;
+/** A state the storage refused to keep, and the stored text it stands over; a change of that text drops it. */
+let unsaved: { over: string | null; state: ReadState } | null = null;
 const listeners = new Set<() => void>();
 
-function localState(): ReadState {
-  if (unsaved) return unsaved;
-  let text: string | null = null;
+function storedText(): string | null {
   try {
-    text = window.localStorage.getItem(STORAGE_KEY);
+    return window.localStorage.getItem(STORAGE_KEY);
   } catch {
     // No storage: the empty state.
+    return null;
   }
+}
+
+function localState(): ReadState {
+  const text = storedText();
+  if (unsaved && unsaved.over === text) return unsaved.state;
+  unsaved = null;
   if (text !== memo.text) memo = { text, state: parse(text) };
   return memo.state;
 }
@@ -52,7 +57,7 @@ function saveLocal(next: ReadState): void {
     window.localStorage.setItem(STORAGE_KEY, JSON.stringify(next));
     unsaved = null;
   } catch {
-    unsaved = next;
+    unsaved = { over: storedText(), state: next };
   }
   for (const fn of listeners) fn();
 }
@@ -83,9 +88,18 @@ export function markOf(state: ReadState, root: string): ReadMark | undefined {
 /** Writes in flight, so one mark is sent once. */
 const sending = new Set<string>();
 
+/**
+ * The owner's participant id in the log (readstate.OWNER on the server, which
+ * leaves the owner's own posts out of `unread`). /api/me names only the role,
+ * so the page knows the id from the role.
+ */
+export const OWNER_ID = "owner";
+
 export interface Reading {
   /** False while the role or the owner's state loads; nothing is written then. */
   ready: boolean;
+  /** The reader's own participant id: the owner's, or null for a viewer, who posts nothing. */
+  self: string | null;
   state: ReadState;
   markThread(root: string, mark: ReadMark): void;
   markAll(t: string): void;
@@ -117,6 +131,7 @@ export function useReading(): Reading {
 
   return {
     ready,
+    self: owner ? OWNER_ID : null,
     state,
     markThread(root, mark) {
       if (!ready || !isLater(mark, markOf(state, root))) return;

@@ -311,10 +311,111 @@ describe("Stream with 5,000 threads", () => {
   });
 });
 
+describe("the reader's own messages", () => {
+  // The owner's mark sits at alpha-0001; `own` lists which later messages the owner wrote.
+  function open(own: string[], me: Me = OWNER) {
+    const messages = MESSAGES.map((m) => (own.includes(m.id) ? { ...m, from: "owner" } : m));
+    const state = { ...EMPTY_STATE, threads: { "alpha-0001": { t: "2026-11-11T09:00:00Z", id: "alpha-0001" } } };
+    const data = base(me, me.isOwner ? state : null, [Q1]);
+    data.push([keys.thread("alpha-0001"), { root: "alpha-0001", messages }]);
+    renderWith(<Stream sort="needs" open={["alpha-0001"]} onOpenChange={() => {}} />, data);
+  }
+  const before = (a: Element, b: Element) => (a.compareDocumentPosition(b) & Node.DOCUMENT_POSITION_FOLLOWING) !== 0;
+
+  test("an own message last is not new; the line sits above the first message by another", () => {
+    open(["beta-0004"]);
+    const line = screen.getByText("New since " + hhmm("2026-11-11T09:00:00Z"));
+    expect(before(line, screen.getByText("Read reply"))).toBe(true);
+    expect(screen.getByRole("button", { name: "Mark read" })).toBeTruthy();
+  });
+
+  test("an own message first is folded with the read ones; the line sits above the next message by another", () => {
+    open(["beta-0002"]);
+    expect(screen.getByRole("button", { name: "Show 2 earlier messages" })).toBeTruthy();
+    expect(screen.queryByText("Read reply")).toBeNull();
+    const line = screen.getByText("New since " + hhmm("2026-11-11T09:00:00Z"));
+    expect(before(line, screen.getByText("Fresh reply"))).toBe(true);
+  });
+
+  test("an own message between two others stays under the line", () => {
+    open(["alpha-0003"]);
+    const line = screen.getByText("New since " + hhmm("2026-11-11T09:00:00Z"));
+    expect(before(line, screen.getByText("Read reply"))).toBe(true);
+    expect(before(line, screen.getByText("Fresh reply"))).toBe(true);
+  });
+
+  test("a thread whose only new messages are the reader's own is read: no line, no mark read", () => {
+    open(["beta-0002", "alpha-0003", "beta-0004"]);
+    expect(screen.getByRole("button", { name: "Show 4 earlier messages" })).toBeTruthy();
+    expect(screen.queryByText(/New since/)).toBeNull();
+    expect(screen.queryByRole("button", { name: "Mark read" })).toBeNull();
+  });
+
+  test("a viewer has no own messages", () => {
+    open(["beta-0004"], VIEWER);
+    expect(screen.getByRole("button", { name: "Mark read" })).toBeTruthy();
+  });
+});
+
+describe("the mark race", () => {
+  test("a reply that lands after the row was seen and before the write stays new", async () => {
+    const { watch, watched } = fakeWatch();
+    const { qc } = renderWith(
+      <WatchContext value={watch}>
+        <Stream sort="needs" open={["alpha-0001"]} onOpenChange={() => {}} />
+      </WatchContext>,
+      base(OWNER, EMPTY_STATE, [Q1]),
+    );
+    const calls = spyFetch({ ...EMPTY_STATE, threads: { "alpha-0001": { t: "2026-11-11T09:30:00Z", id: "beta-0004" } } });
+    const seen = watched[0]?.onSeen;
+    // The new reply is drawn; the second that ran out was for beta-0004.
+    await act(async () => {
+      qc.setQueryData(keys.thread("alpha-0001"), {
+        root: "alpha-0001",
+        messages: [...MESSAGES, message("beta-0005", "2026-11-11T09:40:00Z", { from: "beta", body: "Late reply" })],
+      });
+    });
+    await screen.findByText("Late reply");
+    await act(async () => seen?.());
+    expect(calls.filter((c) => c.method === "PUT").map((c) => c.body)).toEqual([
+      { thread: "alpha-0001", t: "2026-11-11T09:30:00Z", id: "beta-0004" },
+    ]);
+    expect(screen.getByRole("button", { name: "Mark read" })).toBeTruthy();
+    expect(watched.at(-1)?.el.textContent).toContain("Late reply");
+  });
+});
+
+describe("open ids", () => {
+  test("two fast clicks open two threads", () => {
+    const onOpenChange = vi.fn();
+    renderWith(<Stream sort="needs" open={[]} onOpenChange={onOpenChange} />, base(OWNER, EMPTY_STATE, [Q1, thread("beta-0009", { title: "Second" })]));
+    fireEvent.click(screen.getByRole("button", { name: /Does the rebuild go on\?/ }));
+    fireEvent.click(screen.getByRole("button", { name: /Second/ }));
+    expect(onOpenChange).toHaveBeenLastCalledWith(["alpha-0001", "beta-0009"]);
+  });
+
+  test("an id that is not in the stream does not count: fold all stays off and a toggle drops it", () => {
+    const onOpenChange = vi.fn();
+    renderWith(<Stream sort="needs" open={["gone-0001"]} onOpenChange={onOpenChange} />, base(OWNER, EMPTY_STATE, [Q1]));
+    expect((screen.getByRole("button", { name: "Fold all" }) as HTMLButtonElement).disabled).toBe(true);
+    fireEvent.click(screen.getByRole("button", { name: /Does the rebuild go on\?/ }));
+    expect(onOpenChange).toHaveBeenCalledWith(["alpha-0001"]);
+  });
+
+  test("a duplicate id in the route counts once", () => {
+    renderWith(
+      <Conversations route={{ name: "conversations", sort: "new", open: ["alpha-0001", "alpha-0001"] }} />,
+      base(OWNER, EMPTY_STATE, [Q1], "new"),
+    );
+    fireEvent.click(screen.getByRole("button", { name: /Does the rebuild go on\?/ }));
+    expect(decodeURIComponent(window.location.hash)).toBe("#/conversations?sort=new");
+  });
+});
+
 describe("Conversations", () => {
   test("opening a row puts it in the route and in sessionStorage; the route keeps 20 ids at most", () => {
     const open = Array.from({ length: 20 }, (_, i) => "beta-" + i);
-    renderWith(<Conversations route={{ name: "conversations", sort: "new", open }} />, base(OWNER, EMPTY_STATE, [Q1], "new"));
+    renderWith(<Conversations route={{ name: "conversations", sort: "new", open }} />, base(OWNER, EMPTY_STATE, [Q1, ...open.map((id) => thread(id))], "new"));
     fireEvent.click(screen.getByRole("button", { name: /Does the rebuild go on\?/ }));
     const hash = decodeURIComponent(window.location.hash);
     expect(hash.startsWith("#/conversations?sort=new")).toBe(true);

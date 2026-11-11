@@ -57,6 +57,23 @@ function MessageView({ message, roster, now, children }: { message: Message; ros
   );
 }
 
+/**
+ * The messages split at the mark, with the reader's own posts never new: a
+ * run of own posts at the start of the new part joins the earlier part, so
+ * the line "New since" sits above the first new post by someone else.
+ */
+export function splitOwn(messages: Message[], mark: ReadMark | undefined, self: string | null) {
+  const freshSet = new Set(splitRead(messages, mark).fresh);
+  const fresh = messages.filter((m) => freshSet.has(m));
+  const first = fresh.findIndex((m) => self === null || m.from !== self);
+  const cut = first === -1 ? fresh.length : first;
+  const moved = new Set(fresh.slice(0, cut));
+  return {
+    earlier: messages.filter((m) => !freshSet.has(m) || moved.has(m)),
+    fresh: fresh.slice(cut),
+  };
+}
+
 export interface ThreadOpenProps {
   thread: Thread;
   now: Date;
@@ -78,24 +95,24 @@ export function ThreadOpen({ thread, now, renderActions }: ThreadOpenProps) {
   const ready = messages !== undefined && reading.ready;
   if (ready && split === null) setSplit(markOf(reading.state, thread.root));
 
+  // splitRead keeps each message object; its fresh part names which of ours are new.
+  const parts = useMemo(() => (messages && split !== null ? splitOwn(messages, split, reading.self) : null), [messages, split, reading.self]);
+
+  // A mark names the newest message drawn when it is made, never one of a later fetch.
   const top = messages ? newest(messages) : undefined;
   const markRead = () => {
     if (top) reading.markThread(thread.root, top);
   };
-  const markReadRef = useRef(markRead);
-  markReadRef.current = markRead;
-
-  // splitRead keeps each message object; its fresh part names which of ours are new.
-  const parts = useMemo(() => {
-    if (!messages || split === null) return null;
-    const fresh = new Set(splitRead(messages, split).fresh);
-    return { earlier: messages.filter((m) => !fresh.has(m)), fresh: messages.filter((m) => fresh.has(m)) };
-  }, [messages, split]);
-  const freshCount = parts?.fresh.length ?? 0;
+  const markThreadRef = useRef(reading.markThread);
+  markThreadRef.current = reading.markThread;
+  const lastId = parts?.fresh[parts.fresh.length - 1]?.id;
+  const topT = top?.t;
+  const topId = top?.id;
   useEffect(() => {
-    if (!lastFresh.current || freshCount === 0) return;
-    return watch(lastFresh.current, () => markReadRef.current());
-  }, [watch, freshCount]);
+    if (!lastFresh.current || lastId === undefined || topT === undefined || topId === undefined) return;
+    const drawn = { t: topT, id: topId };
+    return watch(lastFresh.current, () => markThreadRef.current(thread.root, drawn));
+  }, [watch, lastId, topT, topId, thread.root]);
 
   if (query.isError) {
     const denied = query.error instanceof ApiError && query.error.status === 403;
@@ -113,7 +130,11 @@ export function ThreadOpen({ thread, now, renderActions }: ThreadOpenProps) {
       {renderActions?.(thread, m)}
     </MessageView>
   );
-  const unread = top !== undefined && isLater(top, markOf(reading.state, thread.root));
+  // The reader's own posts are never new to the reader.
+  const current = markOf(reading.state, thread.root);
+  const unread = (messages ?? []).some(
+    (m) => m.from !== reading.self && typeof m.t === "string" && isLater({ t: m.t, id: m.id }, current),
+  );
 
   return (
     <div className={styles.thread}>

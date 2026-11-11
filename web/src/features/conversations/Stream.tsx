@@ -91,19 +91,34 @@ export function Stream({ sort, open, onOpenChange, needsOnly = false, renderActi
   const reading = useReading();
   const now = useNow();
 
-  const openRef = useRef(open);
-  openRef.current = open;
+  const pages = query.data?.pages;
+  const muted = reading.state.muted;
+  const loaded = useMemo(() => pages?.flatMap((p) => p.threads) ?? [], [pages]);
+  // The open ids that name a loaded thread, each once: a gone id or a
+  // duplicate does not count toward the cap and does not enable "Fold all".
+  const shownOpen = useMemo(() => {
+    const roots = new Set(loaded.map((t) => t.root));
+    return [...new Set(open)].filter((root) => roots.has(root));
+  }, [open, loaded]);
+
+  // The set the next toggle starts from. A toggle sets it at once, so a second
+  // click before the route changes builds on the first; a new route resets it.
+  const openRef = useRef(shownOpen);
+  const seenOpen = useRef(shownOpen);
+  if (seenOpen.current !== shownOpen) {
+    seenOpen.current = shownOpen;
+    openRef.current = shownOpen;
+  }
   const changeRef = useRef(onOpenChange);
   changeRef.current = onOpenChange;
   const onToggle = useCallback((root: string) => {
     const current = openRef.current;
-    changeRef.current(current.includes(root) ? current.filter((r) => r !== root) : [...current, root].slice(-MAX_OPEN));
+    const next = current.includes(root) ? current.filter((r) => r !== root) : [...current, root].slice(-MAX_OPEN);
+    openRef.current = next;
+    changeRef.current(next);
   }, []);
-  const openSet = useMemo(() => new Set(open), [open]);
+  const openSet = useMemo(() => new Set(shownOpen), [shownOpen]);
 
-  const pages = query.data?.pages;
-  const muted = reading.state.muted;
-  const loaded = useMemo(() => pages?.flatMap((p) => p.threads) ?? [], [pages]);
   // The needs order puts the threads that need the owner first: past them, no page holds more.
   const more = query.hasNextPage && (!needsOnly || loaded.every((t) => t.needs_owner));
   const items = useMemo(() => {
@@ -124,7 +139,7 @@ export function Stream({ sort, open, onOpenChange, needsOnly = false, renderActi
 
   const renderThread = useCallback(
     (thread: Thread) => (
-      <ThreadRow thread={thread} open={openRef.current.includes(thread.root)} onToggle={onToggle} now={now} renderActions={renderActions} />
+      <ThreadRow thread={thread} open={seenOpen.current.includes(thread.root)} onToggle={onToggle} now={now} renderActions={renderActions} />
     ),
     [onToggle, now, renderActions],
   );
@@ -199,7 +214,7 @@ export function Stream({ sort, open, onOpenChange, needsOnly = false, renderActi
         <h1 className={styles.heading}>{needsOnly ? "Needs you" : "Conversations"}</h1>
         {needsOnly ? null : <SortBar sort={sort} open={open} />}
         <div className={styles.tools}>
-          <button type="button" className={styles.action} onClick={() => onOpenChange([])} disabled={open.length === 0}>
+          <button type="button" className={styles.action} onClick={() => onOpenChange([])} disabled={shownOpen.length === 0}>
             Fold all
           </button>
           <button
@@ -219,7 +234,7 @@ export function Stream({ sort, open, onOpenChange, needsOnly = false, renderActi
 
 /** The Conversations page: the sort order and the open threads live in the route and in this tab's sessionStorage. */
 export function Conversations({ route, renderActions }: { route: Extract<Route, { name: "conversations" }>; renderActions?: RenderActions }) {
-  const open = useMemo(() => route.open.slice(-MAX_OPEN), [route.open]);
+  const open = useMemo(() => [...new Set(route.open)].slice(-MAX_OPEN), [route.open]);
 
   // A tab that comes back to the page with no hash goes to its last route.
   useEffect(() => {
