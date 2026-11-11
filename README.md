@@ -169,7 +169,8 @@ rows if the project tracks progress. See
 
 The land queue, the build host status and the reviews need a coordinator: one
 participant that the roster's `relay` field names. The git-ignored
-`config.json` holds the build host, the limits and the repo URL. A clone runs
+`config.json` holds the build host, the limits, the repo URL and the usage
+file of the page's health line. A clone runs
 without either. See [Local settings](docs/operations.md#local-settings).
 
 ## App data and backups

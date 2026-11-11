@@ -345,6 +345,9 @@ the limits; the page reads `repoUrl` and `rulingsSince` on its next poll.
 | `usage.graceMin` | `0` | The `usage-guard` job also stops this many minutes after its wind-down began. `0` means no such clock. |
 | `usage.maxAgeMin` | `45` | A usage file older than this is not trusted. |
 | `reviews.reviewer` | `"codex"` | The key of the reviewing tool's position in an override message. |
+| `usageFile` | `""` | The files (a glob; `~` is the home folder) whose newest holds `{"weeklyUsage": n}` for the page's health line (`/api/vitals`). A file older than 10 minutes shows no usage. Empty shows none. |
+| `usageLimit` | `null` | The usage limit the page's health line shows. `null` shows none. |
+| `modelFamilies` | `[]` | Extra `[pattern, family]` rows for the page's model family table, sent with `/api/vitals`. A value that is not a list of two-string pairs reads as `[]`. |
 
 ## Build host status
 
