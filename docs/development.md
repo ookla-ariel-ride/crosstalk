@@ -60,6 +60,7 @@ Part of the [Crosstalk docs](../README.md#documentation).
 | `web/src/api/events.ts` | The push channel (`/api/events`); when it fails, a read of `/api/health` every 15 seconds and a new try of the stream every 30 seconds |
 | `web/src/api/queries.ts` | The React Query hooks, the retry rule (never a 401 or 403), and the live updates: a `rows` event invalidates what its collections change, and a return from poll to push refetches the thread list, every thread and every section |
 | `web/src/api/fakes.ts` | A fake `EventSource` and a clock driven by hand, for the tests of `events.ts` and `queries.ts` |
+| `web/src/logic/` | The page's rules as pure functions, each with a Vitest file beside it: `family.ts` (model family), `speaker.ts` (who spoke), `foldRoutine.ts` (routine runs), `splitRead.ts` (read and new messages), `parseBody.ts` (message text as data, never markup), `choices.ts` (answer choices), `ago.ts` (age), `route.ts` (hash routes), and `types.ts` (the fields they read) |
 | `web/scripts/check-budget.mjs` | Fails the build when the first-load script is over 120 KB after gzip |
 | `web/scripts/build-hash.mjs` | Writes `web/dist/.build-hash`, the hash of the source that `tests/test_web_dist.py` checks |
 | `web/dist/` | The built page, committed, so an install serves `/v2/` with no Node |
