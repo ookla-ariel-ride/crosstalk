@@ -103,6 +103,8 @@ export interface Reading {
   state: ReadState;
   markThread(root: string, mark: ReadMark): void;
   markAll(t: string): void;
+  /** Mute or unmute a thread: the stream hides a muted one until it needs the owner. */
+  mute(root: string, muted: boolean): void;
 }
 
 export function useReading(): Reading {
@@ -142,6 +144,11 @@ export function useReading(): Reading {
       if (!ready || (state.all_before !== null && t <= state.all_before)) return;
       if (owner) send(`\n${t}`, { all_before: t });
       else saveLocal({ ...state, all_before: t });
+    },
+    mute(root, muted) {
+      if (!ready || state.muted.includes(root) === muted) return;
+      if (owner) send(`${root}\nmuted\n${muted}`, { thread: root, muted });
+      else saveLocal({ ...state, muted: muted ? [...state.muted, root] : state.muted.filter((r) => r !== root) });
     },
   };
 }

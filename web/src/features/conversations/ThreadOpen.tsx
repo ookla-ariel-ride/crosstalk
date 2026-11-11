@@ -13,7 +13,7 @@ import { isLater, markOf, useReading } from "./reading";
 import { WatchContext } from "./seen";
 import styles from "./Stream.module.css";
 
-/** What Task 13 adds: the owner's actions under a message, or at the end of the thread (message null). */
+/** The owner's actions under a message, or at the end of the thread (message null). */
 export type RenderActions = (thread: Thread, message: Message | null) => ReactNode;
 
 const pad = (n: number) => String(n).padStart(2, "0");
@@ -135,6 +135,7 @@ export function ThreadOpen({ thread, now, renderActions }: ThreadOpenProps) {
   const unread = (messages ?? []).some(
     (m) => m.from !== reading.self && typeof m.t === "string" && isLater({ t: m.t, id: m.id }, current),
   );
+  const muted = reading.state.muted.includes(thread.root);
 
   return (
     <div className={styles.thread}>
@@ -164,6 +165,9 @@ export function ThreadOpen({ thread, now, renderActions }: ThreadOpenProps) {
             Mark read
           </button>
         ) : null}
+        <button type="button" className={styles.action} onClick={() => reading.mute(thread.root, !muted)}>
+          {muted ? "Unmute thread" : "Mute thread"}
+        </button>
         {renderActions?.(thread, null)}
       </div>
     </div>

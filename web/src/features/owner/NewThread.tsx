@@ -1,17 +1,19 @@
 // Start a thread: the kind of the present composer, who it goes to (none
 // ticked is every session), then the summary and the text.
 import { useState } from "react";
-import { useRoster } from "../../api/queries";
 import { nameOf } from "../../ui/Bars";
 import { type Kind, KINDS, splitPost, startThread } from "./actions";
 import { Composer } from "./Composer";
+import { drafts } from "./drafts";
 import styles from "./owner.module.css";
-import { useIsOwner } from "./shared";
+import { useIsOwner, useOwnerData } from "./shared";
+
+const DRAFT = "new";
 
 export function NewThread() {
   const owner = useIsOwner();
-  const roster = useRoster().data?.roster ?? {};
-  const [open, setOpen] = useState(false);
+  const roster = useOwnerData().roster ?? {};
+  const [open, setOpen] = useState(() => drafts.has(DRAFT));
   const [kind, setKind] = useState<Kind>("owner");
   const [to, setTo] = useState<string[]>([]);
   if (!owner) return null;
@@ -49,6 +51,7 @@ export function NewThread() {
       </fieldset>
       <Composer
         label="Message"
+        draft={DRAFT}
         summary
         send={(subject, text, id) => {
           const { summary, body } = splitPost(subject, text);

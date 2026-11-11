@@ -1,18 +1,20 @@
 // The owner's controls for one message of a thread, or for the thread when
-// `message` is null. Task 12's ThreadOpen takes them through its
-// `renderActions` slot. A viewer gets a "Sign in" link where an action waits
-// (the thread, an open question) and nothing else; while the role loads,
-// nothing shows. The server still guards each write.
+// `message` is null. ThreadOpen takes them through its `renderActions` slot,
+// inside an OwnerScope that reads the roster once for all of them. A viewer
+// gets a "Sign in" link where an action waits (the thread, an open question)
+// and nothing else; while the role loads, nothing shows. The server still guards each write.
 import { useQuery } from "@tanstack/react-query";
 import { useState } from "react";
 import { api } from "../../api/client";
-import { keys, useRoster } from "../../api/queries";
+import { keys } from "../../api/queries";
 import type { Message, RosterEntry, Thread } from "../../api/types";
-import { holdAgreement, markDone, recordDecision, reply, splitPost } from "./actions";
+import { nameOf } from "../../ui/Bars";
+import { approveParticipant, holdAgreement, markDone, recordDecision, reply, splitPost } from "./actions";
 import { AnswerButtons } from "./AnswerButtons";
 import { Composer } from "./Composer";
+import { drafts } from "./drafts";
 import styles from "./owner.module.css";
-import { ActionButton, SIGN_IN, useIsOwner, useRecords } from "./shared";
+import { ActionButton, SIGN_IN, useIsOwner, useOwnerData } from "./shared";
 
 type Roster = Record<string, RosterEntry> | undefined;
 
@@ -30,8 +32,10 @@ export function questionState(q: Message, messages: Message[], roster: Record<st
   return closer ? (closer.from === "owner" ? "answered" : "withdrawn") : "open";
 }
 
-function ReplyControl({ id, from, roster }: { id: string; from?: string; roster: Roster }) {
-  const [open, setOpen] = useState(false);
+/** A reply to `id`; `draft` keys its draft: the thread's end and its root message each keep their own. */
+function ReplyControl({ id, draft, from, roster }: { id: string; draft: string; from?: string; roster: Roster }) {
+  // A draft kept from an unmounted row opens the box again.
+  const [open, setOpen] = useState(() => drafts.has(draft));
   const to = from !== "owner" && has(roster, from) ? [from] : [];
   return (
     <>
@@ -42,6 +46,7 @@ function ReplyControl({ id, from, roster }: { id: string; from?: string; roster:
         <Composer
           key={id}
           label="Message"
+          draft={draft}
           summary
           send={(subject, text, at) => {
             const { summary, body } = splitPost(subject, text);
@@ -56,8 +61,7 @@ function ReplyControl({ id, from, roster }: { id: string; from?: string; roster:
 
 export function OwnerActions({ thread, message }: { thread: Thread; message: Message | null }) {
   const owner = useIsOwner();
-  const roster = useRoster().data?.roster;
-  const records = useRecords().data;
+  const { roster, records } = useOwnerData();
   // The open thread is in the cache already; the thread level needs no fetch.
   const detail = useQuery({ queryKey: keys.thread(thread.root), queryFn: () => api.getThread(thread.root), enabled: message !== null });
   // Until the thread and the roster are both in, no answer control shows: an
@@ -75,16 +79,25 @@ export function OwnerActions({ thread, message }: { thread: Thread; message: Mes
   if (!message)
     return (
       <div className={styles.actions}>
-        <ReplyControl id={thread.root} from={thread.projects[0]} roster={roster} />
+        <ReplyControl id={thread.root} draft={"thread:" + thread.root} from={thread.projects[0]} roster={roster} />
       </div>
     );
 
+  const from = message.from ?? "";
   const recorded = !!records && (records.decisions.has(message.id) || records.decisions.has("d-from-" + message.id));
   return (
     <div className={styles.actions}>
       {state === "open" ? <AnswerButtons question={message} /> : null}
       {state === "answered" || state === "withdrawn" ? <span className={styles.state}>{state === "answered" ? "Answered" : "Withdrawn"}</span> : null}
-      <ReplyControl id={message.id} from={message.from} roster={roster} />
+      <ReplyControl id={message.id} draft={"reply:" + message.id} from={message.from} roster={roster} />
+      {from !== "owner" && has(roster, from) && roster?.[from]?.trust !== "approved" ? (
+        <ActionButton
+          label={"Approve " + nameOf(from, roster)}
+          done="Approved"
+          failed="Not approved"
+          act={() => approveParticipant(from)}
+        />
+      ) : null}
       {message.kind !== "decision" ? (
         recorded ? (
           <button type="button" className={styles.button} disabled>

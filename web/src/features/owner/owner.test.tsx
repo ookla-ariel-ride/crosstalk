@@ -3,8 +3,13 @@ import { act, fireEvent, screen, waitFor } from "@testing-library/react";
 import { beforeEach, describe, expect, test, vi } from "vitest";
 import { keys } from "../../api/queries";
 import type { Me, Message, Snapshot, ThreadDetail } from "../../api/types";
-import { renderWith, thread } from "../../ui/testing";
-import { HoldButton, NewThread, ownerActions, People, SignIn } from "./index";
+import type { ReactNode } from "react";
+import { renderWith as renderBare, thread } from "../../ui/testing";
+import { drafts } from "./drafts";
+import { HoldButton, NewThread, ownerActions, OwnerScope, People, SignIn } from "./index";
+
+/** The page puts every owner control inside one OwnerScope. */
+const renderWith = (ui: ReactNode, data?: Parameters<typeof renderBare>[1]) => renderBare(<OwnerScope>{ui}</OwnerScope>, data);
 
 const OWNER: Me = { name: "Owner", isOwner: true, canEdit: true, viewer: "owner" };
 const VIEWER: Me = { name: null, isOwner: false, canEdit: false, viewer: "viewer" };
@@ -72,6 +77,7 @@ function renderActions(me: Me | undefined, message: Message | null = QUESTION, d
 }
 
 beforeEach(() => {
+  drafts.clear();
   localStorage.clear();
   sessionStorage.clear();
   // jsdom has no layout: give the list a 600 px view and each row 56 px.
