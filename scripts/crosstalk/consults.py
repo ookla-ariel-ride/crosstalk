@@ -3,7 +3,7 @@ import re
 import time
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
-from typing import Dict, Iterable, Optional
+from typing import Dict, Iterable, List, Optional
 
 from .logs import Line, append_line, check_speaker
 from .participants import Roster, load_roster
@@ -159,11 +159,15 @@ def post_question(
     msg_id: Optional[str] = None,
     roster: Optional[Roster] = None,
     speaker: Optional[Dict[str, str]] = None,
+    options: Optional[List[str]] = None,
+    recommend: Optional[int] = None,
 ) -> Line:
     """Post a `kind: question` for the owner: one question per row, summary = the question.
 
     The owner answers on the page's Questions tab; the answer (an owner row with
     `replyTo` this id) comes back in the asker's inbox as an owner message.
+    `options` (trimmed) are choices the page can show as buttons; `recommend` is
+    the index of one of them, from 0. The log validator checks both.
     """
     if pid == "owner":
         raise ValueError("the owner answers questions; only participants ask them")
@@ -185,6 +189,11 @@ def post_question(
     refs_list = _str_list(refs)
     if refs_list:
         data["refs"] = refs_list
+    if options is not None:
+        data["options"] = ([o.strip() if isinstance(o, str) else o for o in options]
+                           if isinstance(options, list) else options)
+    if recommend is not None:
+        data["recommend"] = recommend
     data.update(speaker or {})
     return append_line(root, pid, "set", "messages", mid, data, roster=roster)
 

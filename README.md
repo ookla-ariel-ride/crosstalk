@@ -141,7 +141,8 @@ rows if the project tracks progress. See
   `CROSSTALK_HARNESS` and `CROSSTALK_MODEL`. See
   [Who spoke](PROTOCOL.md#who-spoke).
 - **Questions for the owner:** `relay.py ask` posts one question. The owner
-  answers on the page's Questions tab, one at a time.
+  answers on the page's Questions tab, one at a time. A question can list
+  choices with `--option` and mark one with `--recommend`.
 - **Live sessions:** The server pushes a note into a running Claude Code
   session when something new waits in its inbox. A Codex hook delivers urgent
   items only. A Hermes Agent plugin in `scripts/hermes-plugin/crosstalk/`
