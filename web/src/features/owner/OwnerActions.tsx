@@ -19,11 +19,11 @@ type Roster = Record<string, RosterEntry> | undefined;
 const has = (roster: Roster, id: string | undefined): id is string => !!id && !!roster && Object.hasOwn(roster, id);
 
 /** "open", "answered" or "withdrawn" for a question to the owner; null for any other message. */
-export function questionState(q: Message, messages: Message[], roster: Roster): string | null {
+export function questionState(q: Message, messages: Message[], roster: Record<string, RosterEntry>): string | null {
   const asker = q.from;
   if (q.kind !== "question" || !asker || asker === "owner") return null;
   // A question from a participant the owner has not approved is not listed for an answer (isQuarantined).
-  if (roster && roster[asker]?.trust !== "approved") return null;
+  if (roster[asker]?.trust !== "approved") return null;
   const closer = messages
     .filter((m) => m.replyTo === q.id && (m.from === "owner" || (m.from === asker && m.kind === "withdrawn")))
     .sort((a, b) => String(a.t ?? "").localeCompare(String(b.t ?? "")) || a.id.localeCompare(b.id))[0];
@@ -60,8 +60,9 @@ export function OwnerActions({ thread, message }: { thread: Thread; message: Mes
   const records = useRecords().data;
   // The open thread is in the cache already; the thread level needs no fetch.
   const detail = useQuery({ queryKey: keys.thread(thread.root), queryFn: () => api.getThread(thread.root), enabled: message !== null });
-  const messages = detail.data?.messages ?? [];
-  const state = message ? questionState(message, messages, roster) : null;
+  // Until the thread and the roster are both in, no answer control shows: an
+  // answered question, or one whose asker is not approved, must not look open.
+  const state = message && detail.data && roster ? questionState(message, detail.data.messages, roster) : null;
 
   if (owner === null) return null;
   if (!owner)
@@ -107,7 +108,8 @@ export function MarkDoneButton({ id }: { id: string }) {
 /** Hold or release an agreement (the present page's Agreements tab). The owner alone sees it. */
 export function HoldButton({ agreement, held }: { agreement: { id: string; status?: unknown }; held: boolean }) {
   if (!useIsOwner()) return null;
-  return <ActionButton label={held ? "Release hold" : "Hold"} act={() => holdAgreement(agreement, !held)} />;
+  // The key opens a fresh button once the refetched agreement shows the new hold.
+  return <ActionButton key={String(held)} label={held ? "Release hold" : "Hold"} done="Sent" act={() => holdAgreement(agreement, !held)} />;
 }
 
 /** The owner's controls for the `renderActions` slot of Task 12's ThreadOpen. */

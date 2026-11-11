@@ -294,6 +294,12 @@ describe("people", () => {
     expect((screen.getByLabelText("Kit") as HTMLTextAreaElement).value).toBe("kit text for relay-bot");
     expect((screen.getByLabelText("Token (shown once)") as HTMLInputElement).value).toBe("made-up-token");
     expect(localStorage.length + sessionStorage.length).toBe(0);
+    // Close and open again: the kit and the token are gone.
+    fireEvent.click(screen.getByRole("button", { name: "Close" }));
+    fireEvent.click(screen.getByRole("button", { name: "Add participant" }));
+    expect(screen.queryByLabelText("Kit")).toBeNull();
+    expect(screen.queryByLabelText("Token (shown once)")).toBeNull();
+    expect(document.body.textContent).not.toContain("made-up-token");
   });
 
   test("a failed add keeps the form and shows the server message", async () => {
@@ -344,5 +350,105 @@ describe("start a thread and hold", () => {
     fireEvent.click(screen.getByRole("button", { name: "Hold" }));
     await waitFor(() => expect(posts(calls, "/api/append")).toHaveLength(1));
     expect(posts(calls, "/api/append")[0]?.body).toMatchObject({ collection: "agreements", op: "update", data: { hold: true } });
+  });
+});
+
+describe("one answer for one question", () => {
+  test("a click after the send resolved and before the refetch sends nothing", async () => {
+    // The thread refetch never lands: the question stays open in the cache.
+    renderActions(OWNER);
+    const calls = serve({ "/api/append": [201, {}] });
+    fireEvent.click(screen.getByRole("button", { name: "Keep the log" }));
+    expect(await screen.findByText("Answer sent")).toBeTruthy();
+    const again = screen.getByRole("button", { name: /Use SQLite/ }) as HTMLButtonElement;
+    expect(again.disabled).toBe(true);
+    expect((screen.getByRole("button", { name: "Write an answer" }) as HTMLButtonElement).disabled).toBe(true);
+    fireEvent.click(again);
+    fireEvent.click(screen.getByRole("button", { name: "Keep the log" }));
+    await act(async () => {});
+    expect(posts(calls, "/api/append")).toHaveLength(1);
+  });
+
+  test("an answer written in the composer also locks the choices", async () => {
+    renderActions(OWNER);
+    const calls = serve({ "/api/append": [201, {}] });
+    fireEvent.click(screen.getByRole("button", { name: "Write an answer" }));
+    fireEvent.change(screen.getByLabelText("Your answer"), { target: { value: "Neither" } });
+    fireEvent.click(screen.getByRole("button", { name: "Send" }));
+    expect(await screen.findByText("Answer sent")).toBeTruthy();
+    fireEvent.click(screen.getByRole("button", { name: "Keep the log" }));
+    await act(async () => {});
+    expect(posts(calls, "/api/append")).toHaveLength(1);
+  });
+
+  test("a failed answer brings the choices back and shows the error once stopped", async () => {
+    renderActions(OWNER);
+    const calls = serve({ "/api/append": [400, { error: "Bad reply." }] });
+    fireEvent.click(screen.getByRole("button", { name: "Keep the log" }));
+    const alert = await screen.findByRole("alert");
+    expect(alert.textContent).toContain("Not sent: Bad reply. Check it");
+    expect(alert.textContent).not.toContain("..");
+    const button = screen.getByRole("button", { name: "Keep the log" }) as HTMLButtonElement;
+    expect(button.disabled).toBe(false);
+    fireEvent.click(button);
+    await waitFor(() => expect(posts(calls, "/api/append")).toHaveLength(2));
+  });
+
+  test("mark done, record and approve send once until the refetch lands", async () => {
+    const NOTE: Message = { id: "own-7", depth: 1, quote: null, from: "beta", kind: "note", summary: "Renew the key" };
+    renderActions(OWNER, NOTE);
+    const calls = serve({ "/api/append": [201, {}] });
+    fireEvent.click(screen.getByRole("button", { name: "Mark done" }));
+    fireEvent.click(screen.getByRole("button", { name: "Record as decision" }));
+    await screen.findByRole("button", { name: "Recorded" });
+    await screen.findByRole("button", { name: "Done" });
+    fireEvent.click(screen.getByRole("button", { name: "Recorded" }));
+    fireEvent.click(screen.getByRole("button", { name: "Done" }));
+    await act(async () => {});
+    expect(posts(calls, "/api/append")).toHaveLength(2);
+  });
+
+  test("approve sends once until the refetch lands", async () => {
+    renderWith(<People />, [
+      [keys.me, OWNER],
+      [keys.roster, SNAP],
+    ]);
+    const calls = serve({ "/api/append": [201, {}] });
+    fireEvent.click(screen.getByRole("button", { name: /Beta/ }));
+    fireEvent.click(screen.getByRole("button", { name: "Approve" }));
+    const done = await screen.findByRole("button", { name: "Approved" });
+    fireEvent.click(done);
+    await act(async () => {});
+    expect(posts(calls, "/api/append")).toHaveLength(1);
+  });
+
+  test("a failed mark done comes back for another try", async () => {
+    const NOTE: Message = { id: "own-7", depth: 1, quote: null, from: "beta", kind: "note", summary: "Renew the key" };
+    renderActions(OWNER, NOTE);
+    const calls = serve({ "/api/append": [500, { error: "cannot write the log: disk full" }] });
+    fireEvent.click(screen.getByRole("button", { name: "Mark done" }));
+    expect(await screen.findByText(/cannot write the log: disk full\. Check it/)).toBeTruthy();
+    fireEvent.click(screen.getByRole("button", { name: "Mark done" }));
+    await waitFor(() => expect(posts(calls, "/api/append")).toHaveLength(2));
+  });
+});
+
+describe("no answer control while the data loads", () => {
+  test("the thread has not loaded", () => {
+    renderWith(<>{ownerActions(thread("alpha-0001"), QUESTION)}</>, [
+      [keys.me, OWNER],
+      [keys.roster, SNAP],
+    ]);
+    expect(screen.queryByRole("button", { name: "Keep the log" })).toBeNull();
+    expect(screen.queryByRole("button", { name: "Write an answer" })).toBeNull();
+  });
+
+  test("the roster has not loaded", () => {
+    renderWith(<>{ownerActions(thread("alpha-0001"), QUESTION)}</>, [
+      [keys.me, OWNER],
+      [keys.thread("alpha-0001"), DETAIL],
+    ]);
+    expect(screen.queryByRole("button", { name: "Keep the log" })).toBeNull();
+    expect(screen.queryByRole("button", { name: "Write an answer" })).toBeNull();
   });
 });

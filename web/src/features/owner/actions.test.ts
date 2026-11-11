@@ -140,6 +140,25 @@ describe("owner actions send the present page's bodies", () => {
   });
 });
 
+describe("the time a row carries", () => {
+  test("append's TS_KEYS rule: the page makes t with toISOString and sends it without the milliseconds", async () => {
+    // index.html append(): `if (HAS.call(TS_KEYS, k) && typeof v === "string") v = v.replace(/\.\d{3}Z$/, "Z")`
+    // for t, updated, since, done, start, end and released. The clock reads 10:00:00.123Z.
+    await reply("beta-0002", "Yes", "", [], ID);
+    await markDone("own-1");
+    await holdAgreement({ id: "a-1" }, true);
+    await startThread([], "incident", "S", "", ID);
+    await startThread([], "waiting", "S", "", ID);
+    const times = sent.flatMap((s) => {
+      const d = (s.body as { data: Record<string, unknown> }).data;
+      return ["t", "updated", "since", "done", "start"].filter((k) => k in d).map((k) => d[k]);
+    });
+    // Seven times; the new waiting row's `done: null` is no time.
+    expect(times.filter((t) => t !== null)).toHaveLength(7);
+    for (const t of times.filter((t) => t !== null)) expect(t).toBe("2026-11-11T10:00:00Z");
+  });
+});
+
 describe("summary and body", () => {
   test("splitPost: a subject is the summary; else the first line, and the body only when it says more", () => {
     expect(splitPost("Subject", "Text")).toEqual({ summary: "Subject", body: "Text" });

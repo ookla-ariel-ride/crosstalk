@@ -90,7 +90,15 @@ function Add() {
           <button type="submit" className={styles.primary} disabled={sending.busy}>
             Add
           </button>
-          <button type="button" className={styles.button} onClick={() => setOpen(false)}>
+          <button
+            type="button"
+            className={styles.button}
+            onClick={() => {
+              // The kit and the token show once: Close drops them.
+              setOpen(false);
+              setResult(null);
+            }}
+          >
             Close
           </button>
           <Failure error={sending.error} />

@@ -22,11 +22,17 @@ export interface Failed {
   auth: boolean;
 }
 
-/** Run one request at a time: a second call while one runs does nothing. On success the owner's data is fetched again. */
-export function useSend() {
+/**
+ * Run one request at a time: a second call while one runs does nothing. On
+ * success the owner's data is fetched again. With `once` (a one-shot action:
+ * an answer, mark done, record, approve) a success keeps the control shut, so
+ * a click before the refetch lands sends nothing; only a failure opens it.
+ */
+export function useSend(once = false) {
   const qc = useQueryClient();
   const running = useRef(false);
   const [busy, setBusy] = useState(false);
+  const [done, setDone] = useState(false);
   const [error, setError] = useState<Failed | null>(null);
   async function run(fn: () => Promise<unknown>, failed = "Not sent"): Promise<boolean> {
     if (running.current) return false;
@@ -36,17 +42,20 @@ export function useSend() {
     try {
       await fn();
       for (const key of [["threads"], ["thread"], ["section"], keys.roster]) void qc.invalidateQueries({ queryKey: key });
+      if (once) setDone(true);
+      else running.current = false;
       return true;
     } catch (e) {
+      running.current = false;
       const auth = e instanceof ApiError && (e.status === 401 || e.status === 403);
-      setError({ text: `${failed}: ${e instanceof Error ? e.message : String(e)}.`, auth });
+      const text = e instanceof Error ? e.message : String(e);
+      setError({ text: `${failed}: ${text}${text.endsWith(".") ? "" : "."}`, auth });
       return false;
     } finally {
-      running.current = false;
       setBusy(false);
     }
   }
-  return { busy, error, run, fail: (text: string) => setError({ text, auth: false }) };
+  return { busy, done, error, run, fail: (text: string) => setError({ text, auth: false }) };
 }
 
 /** The error of a control, with what to do next. */
@@ -60,19 +69,17 @@ export function Failure({ error }: { error: Failed | null }) {
   );
 }
 
-/** One button that sends one action; `done` is its label after a success. */
-export function ActionButton({ label, done, act, failed }: { label: ReactNode; done?: string; act: () => Promise<unknown>; failed?: string }) {
-  const send = useSend();
-  const [ok, setOk] = useState(false);
+/**
+ * One button for one one-shot action. After a success it stays shut with its
+ * `done` label until the refetched data replaces it (give it a `key` that
+ * changes with that data); a failure opens it again.
+ */
+export function ActionButton({ label, done, act, failed }: { label: ReactNode; done: string; act: () => Promise<unknown>; failed?: string }) {
+  const send = useSend(true);
   return (
     <span className={styles.inline}>
-      <button
-        type="button"
-        className={styles.button}
-        disabled={send.busy || (ok && !!done)}
-        onClick={() => void send.run(act, failed).then(setOk)}
-      >
-        {ok && done ? done : label}
+      <button type="button" className={styles.button} disabled={send.busy || send.done} onClick={() => void send.run(act, failed)}>
+        {send.done ? done : label}
       </button>
       <Failure error={send.error} />
     </span>
