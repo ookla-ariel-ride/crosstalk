@@ -10,15 +10,31 @@ SCRIPT_DIR=$(cd "$(dirname "$0")" && pwd)
 REPO_ROOT=$(cd "$SCRIPT_DIR/.." && pwd)
 LOG_FILE="$HOME/Library/Logs/crosstalk-check.log"
 
+# housekeeper.sh [--dry-run] [--data-root DIR]: with a data root, each
+# relay.py command reads that folder; git still runs in this checkout.
 dry_run=0
-if [ "${1:-}" = "--dry-run" ]; then
-    dry_run=1
-fi
+data_args=0
+while [ $# -gt 0 ]; do
+    case "$1" in
+      --dry-run) dry_run=1; shift ;;
+      --data-root) [ $# -ge 2 ] || { echo "housekeeper: --data-root needs a folder" >&2; exit 2; }
+                   DATA_ROOT="$2"; data_args=1; shift 2 ;;
+      *) shift ;;  # as before: any other argument is ignored
+    esac
+done
+
+relay() {
+    if [ "$data_args" -eq 1 ]; then
+        python3 "$REPO_ROOT/scripts/relay.py" --data-root "$DATA_ROOT" "$@"
+    else
+        python3 "$REPO_ROOT/scripts/relay.py" "$@"
+    fi
+}
 
 cd "$REPO_ROOT"
 
 # Run the check, capturing its output so a failure can be logged.
-if check_output=$(python3 "$REPO_ROOT/scripts/relay.py" check 2>&1); then
+if check_output=$(relay check 2>&1); then
     check_status=0
 else
     check_status=$?
@@ -61,9 +77,9 @@ fi
 
 # The run is reported as the coordinator (the roster's relay). With none set
 # there is nobody to report as, and the step is skipped.
-coordinator=$(python3 "$REPO_ROOT/scripts/relay.py" coordinator 2>/dev/null || true)
+coordinator=$(relay coordinator 2>/dev/null || true)
 if [ -n "$coordinator" ]; then
-    python3 "$REPO_ROOT/scripts/relay.py" schedule ran --from "$coordinator" --name housekeeper-launchd --result ok \
+    relay schedule ran --from "$coordinator" --name housekeeper-launchd --result ok \
         >/dev/null 2>&1 || echo "housekeeper: could not report the run" >&2
 fi
 
