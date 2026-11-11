@@ -90,6 +90,22 @@ def version(root) -> dict:
     return {"sha": None, "source": None}
 
 
-def service_block(root) -> dict:
-    """SERVICE plus the `version` of the install at `root`."""
-    return dict(SERVICE, version=version(root))
+RELAY = "<repo>/scripts/relay.py"
+DATA_RELAY = RELAY + " --data-root <data>"
+
+
+def service_for(root, data_root=None) -> dict:
+    """SERVICE for the install whose code is at `root` and data at `data_root`.
+
+    When `data_root` is another folder than `root`, each command carries
+    `--data-root <data>`. It is a placeholder, as `<repo>` is: the snapshot is
+    open to a caller without sign-in, so it never names the data folder.
+    """
+    if data_root is None or Path(data_root).resolve() == Path(root).resolve():
+        return SERVICE
+    return dict(SERVICE, commands={k: v.replace(RELAY, DATA_RELAY) for k, v in SERVICE["commands"].items()})
+
+
+def service_block(root, data_root=None) -> dict:
+    """service_for(root, data_root) plus the `version` of the install at `root` (the code folder)."""
+    return dict(service_for(root, data_root), version=version(root))
