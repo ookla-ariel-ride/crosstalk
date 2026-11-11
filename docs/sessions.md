@@ -252,6 +252,20 @@ python3 scripts/relay.py ask --from alpha \
   --body "Options: now, or after review. I'd ship now: the review found nothing blocking."
 ```
 
+To give the owner answer buttons, list the choices with `--option` (2 to 6,
+in order, each 1 to 200 characters on one line, no two the same). Mark the one
+you recommend with `--recommend`, where 1 is the first `--option`:
+
+```
+python3 scripts/relay.py ask --from alpha \
+  --summary "Ship the parser before the demo?" \
+  --option "Now" --option "After review" --recommend 1 \
+  --body "The review found nothing blocking."
+```
+
+The question then holds `options` and `recommend` (counted from 0, so `0`
+here). The MCP `ask_owner` tool takes the same two, also counting from 1.
+
 The owner answers on the page's Questions tab, one question at a time. The
 answer is an owner reply to your question, so it shows in your
 `relay.py inbox` under `owner_messages`. If the question becomes moot,

@@ -243,6 +243,118 @@ class QuestionCliTests(unittest.TestCase):
         self.assertEqual(p.returncode, 1)
         self.assertIn("already answered", p.stderr)
 
+    def last_row(self, pid="alpha"):
+        text = (self.r.root / "log" / (pid + ".jsonl")).read_text(encoding="utf-8")
+        return json.loads(text.strip().split("\n")[-1])["data"]
+
+    def test_ask_with_options_stores_them_in_order(self):
+        p = self.run_cli("ask", "--from", "alpha", "--summary", "Which parser?",
+                         "--option", "B first", "--option", "  A second  ", "--option", "C")
+        self.assertEqual(p.returncode, 0, p.stderr)
+        row = self.last_row()
+        self.assertEqual(row["options"], ["B first", "A second", "C"])
+        self.assertNotIn("recommend", row)
+        q = self.json_of("questions")["questions"][0]["question"]
+        self.assertEqual(q["options"], ["B first", "A second", "C"])
+        self.assertEqual(self.run_cli("check").returncode, 0)
+
+    def test_recommend_is_an_index(self):
+        p = self.run_cli("ask", "--from", "alpha", "--summary", "Ship it?",
+                         "--option", "A", "--option", "B", "--recommend", "1")
+        self.assertEqual(p.returncode, 0, p.stderr)
+        row = self.last_row()
+        self.assertEqual((row["options"], row["recommend"]), (["A", "B"], 0))
+        q = self.json_of("questions")["questions"][0]["question"]
+        self.assertEqual((q["options"], q["recommend"]), (["A", "B"], 0))
+        p = self.run_cli("ask", "--from", "alpha", "--summary", "And this?",
+                         "--option", "A", "--option", "B", "--recommend", "2")
+        self.assertEqual(p.returncode, 0, p.stderr)
+        self.assertEqual(self.last_row()["recommend"], 1)
+
+    def test_one_option_is_rejected(self):
+        for opts in (["A"], ["A", "A"], ["A", " "], ["A", "x" * 201], ["A", "B", "C", "D", "E", "F", "G"]):
+            args = ["ask", "--from", "alpha", "--summary", "Ship it?"]
+            for o in opts:
+                args += ["--option", o]
+            p = self.run_cli(*args)
+            self.assertEqual(p.returncode, 1, opts)
+            self.assertIn("options", p.stderr)
+        self.assertEqual(sorted(x.name for x in (self.r.root / "log").iterdir()), [])
+
+    def test_recommend_out_of_range_is_rejected(self):
+        for rec in ("0", "3", "-1"):
+            p = self.run_cli("ask", "--from", "alpha", "--summary", "Ship it?",
+                             "--option", "A", "--option", "B", "--recommend", rec)
+            self.assertEqual(p.returncode, 1, rec)
+            self.assertIn("--recommend", p.stderr)
+        p = self.run_cli("ask", "--from", "alpha", "--summary", "Ship it?", "--recommend", "1")
+        self.assertEqual(p.returncode, 1)
+        self.assertIn("--recommend", p.stderr)
+        self.assertEqual(sorted(x.name for x in (self.r.root / "log").iterdir()), [])
+
+    def test_ask_without_options_is_unchanged(self):
+        p = self.run_cli("ask", "--from", "alpha", "--summary", "Ship it?", "--body", "Context")
+        self.assertEqual(p.returncode, 0, p.stderr)
+        self.assertEqual(sorted(self.last_row()), ["body", "from", "kind", "summary", "to"])
+        q = self.json_of("questions")["questions"][0]["question"]
+        self.assertNotIn("options", q)
+        self.assertNotIn("recommend", q)
+
+    def test_check_and_append_apply_the_options_rule(self):
+        self.r.write_log("alpha", [q(1, "alpha", "alpha-q1", "Ship it?", "2026-10-21T18:00:00Z",
+                                     options=["A", "B"], recommend=2)])
+        p = self.run_cli("check")
+        self.assertNotEqual(p.returncode, 0)
+        self.assertIn("recommend", p.stdout + p.stderr)
+        p = self.run_cli("append", "--from", "beta", "--op", "set", "--collection", "messages",
+                         "--id", "beta-1", "--data",
+                         json.dumps({"from": "beta", "kind": "question", "summary": "Hi", "options": ["A"]}))
+        self.assertEqual(p.returncode, 1)
+        self.assertIn("options", p.stderr)
+
+
+class QuestionOptionRuleTests(unittest.TestCase):
+    """The options rule lives in the log validator: post_question, append and check all apply it."""
+
+    def setUp(self):
+        self.r = TempRepo()
+        self.r.__enter__()
+        self.r.write_roster()
+        self.roster = load_roster(self.r.root / "participants.json")
+
+    def tearDown(self):
+        self.r.__exit__(None, None, None)
+
+    def test_post_question_stores_options_and_recommend(self):
+        ln = post_question(self.r.root, "alpha", "Ship it?", options=[" now ", "later"], recommend=1,
+                           roster=self.roster)
+        self.assertEqual((ln.data["options"], ln.data["recommend"]), (["now", "later"], 1))
+        ln = post_question(self.r.root, "alpha", "Ship it?", roster=self.roster)
+        self.assertNotIn("options", ln.data)
+        self.assertNotIn("recommend", ln.data)
+
+    def test_post_question_refuses_bad_options(self):
+        bad = ((["A"], None), (["A", "B"], 2), (["A", "B"], -1), (["A", "B"], True), (["A", "B"], "0"),
+               (None, 0), (["A", "two\nlines"], None), (["A", " A"], None),
+               (["A", 3], None), ("AB", None), (["A", ""], None))
+        for options, recommend in bad:
+            with self.assertRaises(ValueError, msg=(options, recommend)):
+                post_question(self.r.root, "alpha", "Ship it?", options=options, recommend=recommend,
+                              roster=self.roster)
+        self.assertEqual(sorted(p.name for p in (self.r.root / "log").iterdir()), [])
+        # "a" and "A" differ; six options of 200 chars each are fine.
+        post_question(self.r.root, "alpha", "Ship it?", options=["A", "a"], roster=self.roster)
+        post_question(self.r.root, "alpha", "Ship it?", options=[str(i) * 200 for i in range(6)],
+                      recommend=5, roster=self.roster)
+
+    def test_options_only_on_a_question(self):
+        from crosstalk.logs import append_line
+        with self.assertRaises(ValueError) as cm:
+            append_line(self.r.root, "alpha", "set", "messages", "alpha-1",
+                        {"from": "alpha", "kind": "request", "summary": "Hi", "options": ["A", "B"]},
+                        roster=self.roster)
+        self.assertIn("question", str(cm.exception))
+
 
 class QuestionRuleTextTests(unittest.TestCase):
     """relay.py ask is the one way to ask the owner; every place that states the rule agrees."""
@@ -284,6 +396,23 @@ class QuestionMcpTests(unittest.TestCase):
                 ok(a.call("withdraw_question", {"question_id": qid, "summary": "Moot"}))
             msgs = repo.read()["messages"]
             self.assertEqual((msgs[qid]["kind"], msgs[qid]["to"]), ("question", ["owner"]))
+            self.assertEqual(repo.relay("check").returncode, 0)
+
+    def test_ask_owner_takes_options_and_a_one_based_recommend(self):
+        from test_mcp import Mcp, Repo, ok
+        with TempRepo() as r:
+            repo = Repo(r)
+            with Mcp(repo, "alpha") as a:
+                qid = ok(a.call("ask_owner", {"summary": "Ship it?", "options": ["now", "later"],
+                                              "recommend": 2}))["id"]
+                plain = ok(a.call("ask_owner", {"summary": "Rename it?"}))["id"]
+                self.assertTrue(a.call("ask_owner", {"summary": "X?", "options": ["only"]})["isError"])
+                self.assertTrue(a.call("ask_owner", {"summary": "X?", "options": ["a", "b"],
+                                                     "recommend": 0})["isError"])
+                self.assertTrue(a.call("ask_owner", {"summary": "X?", "recommend": 1})["isError"])
+            msgs = repo.read()["messages"]
+            self.assertEqual((msgs[qid]["options"], msgs[qid]["recommend"]), (["now", "later"], 1))
+            self.assertNotIn("options", msgs[plain])
             self.assertEqual(repo.relay("check").returncode, 0)
 
     def test_ask_owner_warns_a_quarantined_asker(self):

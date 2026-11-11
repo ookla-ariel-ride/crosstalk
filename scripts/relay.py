@@ -474,6 +474,16 @@ def cmd_consult(args):
 
 def cmd_ask(args):
     """Post a question for the owner; prints the new message id."""
+    recommend = None
+    if args.recommend is not None:
+        n = len(args.options or [])
+        if not n:
+            err("--recommend needs --option")
+            return 1
+        if not 1 <= args.recommend <= n:
+            err("--recommend must be 1 to %d (1 is the first --option)" % n)
+            return 1
+        recommend = args.recommend - 1
     try:
         ln = post_question(
             ROOT,
@@ -483,6 +493,8 @@ def cmd_ask(args):
             refs=_flatten(args.refs),
             msg_id=args.id,
             speaker=speaker_fields(args),
+            options=args.options,
+            recommend=recommend,
         )
     except ValueError as e:
         err(str(e))
@@ -773,6 +785,10 @@ def build_parser():
     ak.add_argument("--body", help="context, the options, and your recommendation")
     ak.add_argument("--ref", "--refs", dest="refs", action="append", nargs="+")
     ak.add_argument("--id")
+    ak.add_argument("--option", dest="options", action="append",
+                    help="one choice for the owner; give 2 to 6, in order")
+    ak.add_argument("--recommend", type=int,
+                    help="the choice you recommend, by number: 1 is the first --option")
     ak.set_defaults(fn=cmd_ask)
 
     qs = sub.add_parser("questions", help="print the open questions for the owner (JSON)")
