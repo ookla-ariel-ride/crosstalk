@@ -26,7 +26,8 @@ secrets) in the repo unless you name another folder: `relay.py --data-root
 over the variable. The page, the icons and the version still come from the
 repo, so a development server can run from a checkout over a copy of the data.
 With another folder, the texts that `relay.py` makes for sessions (the kits of
-`onboard` and `kit`, the hooks of `live hooks` and the urgent hook's note)
+`onboard` and `kit`, the hooks of `live hooks`, the urgent hook's note and
+the jobs of `schedule standard`)
 name `relay.py` in the repo and carry `--data-root <dir>`.
 
 macOS LaunchAgents are the only service installer. On another system, run

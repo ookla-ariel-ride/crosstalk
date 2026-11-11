@@ -587,7 +587,7 @@ def cmd_schedule(args):
         have = [] if args.all else [j["name"] for p in view["participants"] if p["id"] == args.from_ for j in p["jobs"] if j["status"] != "stale"]
         peers = [pid for pid, p in roster.participants.items() if p.kind == "project" and p.trust == "approved"]
         print(schedules_mod.standard_text(args.from_, roster.participants[args.from_].harness, have, peers,
-                                            cfg=config_mod.of(roster)))
+                                            cfg=config_mod.of(roster), root=ROOT, code_root=CODE_ROOT))
         return 0
     try:
         if args.schedule_cmd == "set":

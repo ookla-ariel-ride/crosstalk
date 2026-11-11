@@ -272,6 +272,93 @@ class CliTests(Roots):
         self.assertIn("m-1", r.stdout)
 
 
+def schedule_roster():
+    """SPEC_ROSTER with alpha on Claude Code and beta on Hermes, as the baseline was taken."""
+    roster = json.loads(json.dumps(SPEC_ROSTER))
+    for e in roster["participants"]:
+        e["harness"] = {"alpha": "claude-code", "beta": "hermes"}.get(e["id"], e.get("harness"))
+    return roster
+
+
+def relay_heads(text):
+    """The first three words after each `python3 ` in text, shell-split.
+
+    A Hermes line is split first, so the commands inside its quoted prompt are
+    found too. The words are read lazily: the prose after them may hold an
+    apostrophe that is not shell quoting.
+    """
+    out = []
+    for raw in text.splitlines():
+        if raw.startswith("hermes cron create "):
+            parts = shlex.split(raw)
+        else:
+            parts = [raw]
+        for part in parts:
+            for chunk in part.split("python3 ")[1:]:
+                lex = shlex.shlex(chunk, posix=True)
+                lex.whitespace_split = True
+                out.append([lex.get_token() for _ in range(3)])
+    return out
+
+
+class ScheduleTests(Roots):
+    """`relay.py schedule standard`: the standard jobs name relay.py and the data root."""
+
+    def setUp(self):
+        Roots.setUp(self)
+        self.env = {k: v for k, v in os.environ.items() if k != "CROSSTALK_DATA"}
+
+    def data_folder(self, name):
+        d = self.tmp / name
+        d.mkdir()
+        (d / "participants.json").write_text(json.dumps(schedule_roster()), encoding="utf-8")
+        (d / "log").mkdir()
+        return d
+
+    def run_relay(self, relay, *args):
+        p = subprocess.run([sys.executable, str(relay)] + list(args), stdout=subprocess.PIPE,
+                           stderr=subprocess.PIPE, universal_newlines=True, cwd="/",
+                           env=self.env, timeout=60)
+        self.assertEqual(p.returncode, 0, p.stderr)
+        return p.stdout
+
+    def test_with_one_folder_the_text_is_what_it_was(self):
+        root = self.data_folder("root")
+        relay = relay_in(root)
+        for pid in ("alpha", "beta"):
+            self.assertEqual(self.run_relay(relay, "schedule", "standard", "--from", pid),
+                             baseline("schedule-standard-%s.txt" % pid, root))
+
+    def test_without_roots_the_text_names_this_checkout_as_before(self):
+        from crosstalk import schedules
+        peers = ["alpha", "beta"]
+        self.assertEqual(schedules.standard_text("alpha", "claude-code", peers=peers),
+                         schedules.standard_text("alpha", "claude-code", peers=peers,
+                                                 root=REPO, code_root=REPO))
+
+    def test_with_a_data_root_each_command_names_the_code_and_the_data(self):
+        code = self.tmp / "code dir"
+        code.mkdir()
+        relay = relay_in(code)
+        data = self.data_folder("data dir")
+        for pid in ("alpha", "beta"):
+            text = self.run_relay(relay, "--data-root", str(data), "schedule", "standard", "--from", pid)
+            self.assertNotIn(str(data / "scripts"), text)
+            heads = relay_heads(text)
+            self.assertEqual(len(heads), text.count("scripts/relay.py"), pid)
+            for head in heads:
+                self.assertEqual(head, [str(relay), "--data-root", str(data)], pid)
+            # The `schedule set` line runs in a shell and reports into the data folder.
+            line_ = next(x for x in text.splitlines() if " schedule set " in x)
+            p = subprocess.run(["/bin/sh", "-c", line_], stdout=subprocess.PIPE,
+                               stderr=subprocess.PIPE, universal_newlines=True, cwd="/",
+                               env=self.env, timeout=60)
+            self.assertEqual(p.returncode, 0, p.stderr)
+            self.assertIn('"%s-sched-check-in"' % pid,
+                          (data / "log" / (pid + ".jsonl")).read_text(encoding="utf-8"))
+        self.assertFalse((code / "log").exists())
+
+
 class OneRootCliTests(Roots):
     """relay.py with no data root: what it writes and prints matches the baseline."""
 
