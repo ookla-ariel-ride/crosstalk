@@ -76,15 +76,20 @@ def _flags(messages: Dict[str, dict], roster) -> Tuple[set, set]:
     """(ids that need the owner, ids of open requests), by the rules of requests.py."""
     # Each helper reads only its own kind of message and the replies to it: hand it no more.
     by_kind = {"question": {}, "request": {}}  # type: Dict[str, Dict]
+    kind_of = {}  # type: Dict[str, Dict]
+    replies = []  # type: List[Tuple[str, str, dict]]
     for did, doc in messages.items():
-        if doc.get("kind") in by_kind:
-            by_kind[doc["kind"]][("messages", did)] = doc
-    for did, doc in messages.items():
+        kind = doc.get("kind")
+        if kind in by_kind:
+            by_kind[kind][("messages", did)] = doc
+            kind_of[did] = by_kind[kind]
         parent = doc.get("replyTo")
         if isinstance(parent, str):
-            for docs in by_kind.values():
-                if ("messages", parent) in docs:
-                    docs[("messages", did)] = doc
+            replies.append((parent, did, doc))
+    for parent, did, doc in replies:
+        docs = kind_of.get(parent)
+        if docs is not None:
+            docs[("messages", did)] = doc
     questions, asks = by_kind["question"], by_kind["request"]
     needs = {did for did, _doc in requests_mod.open_owner_questions(questions, roster=roster)}
     # inbox_for also lists a broadcast request; the owner needs it only when named.
@@ -104,6 +109,9 @@ def _hot_cutoff(now: str) -> str:
 
 class ThreadIndex:
     """The threads of one replay: built once, with `hot` recomputed for each `now`.
+
+    `hot` counts the messages of the last hour when two or more participants
+    wrote in it, and is 0 for a routine thread.
 
     The log's `t` is always `%Y-%m-%dT%H:%M:%SZ` (logs.py checks it), so times
     compare as strings and the last hour is a bisect over the sorted times.
@@ -145,6 +153,8 @@ class ThreadIndex:
                 "hot": 0,
                 "kind": root_doc.get("kind") if isinstance(root_doc.get("kind"), str) else "",
             }
+        # The spec: a routine line never counts as hot.
+        self._routine = {root for root, t in self.by_root.items() if t["routine"]}
         self._hot = {}  # type: Dict[str, int]
         self._sorted = {}  # type: Dict[str, List[str]]
 
@@ -156,7 +166,8 @@ class ThreadIndex:
         for frm, root in self._recent[lo:hi]:
             counts[root] = counts.get(root, 0) + 1
             authors.setdefault(root, set()).add(frm)
-        return {root: n for root, n in counts.items() if len(authors[root]) >= 2}
+        return {root: n for root, n in counts.items()
+                if len(authors[root]) >= 2 and root not in self._routine}
 
     def _refresh_hot(self, now: str) -> None:
         """Set `hot` as of `now`. Only the threads whose `hot` changed are copied; none is changed in place."""

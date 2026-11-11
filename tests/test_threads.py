@@ -95,6 +95,17 @@ class BuildTests(unittest.TestCase):
         }, NOW)[0]
         self.assertFalse(t["routine"])
 
+    def test_routine_thread_is_never_hot(self):
+        unnamed = msg("alpha", "2026-10-21T17:50:00Z", "no writer", reply_to="k")
+        del unnamed["from"]  # a row with no `from` names no second participant
+        t = build_threads({
+            "k": msg("alpha", "2026-10-21T17:30:00Z", "checking in", kind="check-in"),
+            "k2": msg("alpha", "2026-10-21T17:40:00Z", "still here", reply_to="k"),
+            "k3": unnamed,
+        }, NOW)[0]
+        self.assertTrue(t["routine"])
+        self.assertEqual(t["hot"], 0)
+
     def test_hot_counts_the_last_hour_when_two_participants_wrote(self):
         threads = by_root(build_threads({
             "a": msg("alpha", "2026-10-21T16:00:00Z"),  # older than an hour
@@ -186,7 +197,7 @@ class SortTests(unittest.TestCase):
                 doc["to"] = ["owner"]
             messages["m%06d" % i] = doc
         best = None
-        for _ in range(3):  # the best of three, so a loaded machine does not fail it
+        for _ in range(5):  # the best of five, so a loaded machine does not fail it
             start = time.perf_counter()
             threads = build_threads(messages, "2026-10-28T00:00:00Z")
             for order in ("needs", "new", "hot", "unanswered"):
