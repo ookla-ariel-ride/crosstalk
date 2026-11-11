@@ -199,6 +199,92 @@ class DataRootTests(Installer):
         self.assertEqual(self.install(code, "install", "--data-root", str(code)).returncode, 0)
         self.assertEqual(self.written("local.crosstalk"), baseline_plist("local.crosstalk", code, self.home))
 
+    def test_a_cleared_data_root_stays_cleared_with_the_buildhost_job(self):
+        code, data = self.code_folder(), self.tmp / "data"
+        data.mkdir()
+        for cmd in ("install", "buildhost"):
+            self.assertEqual(self.install(code, cmd, "--data-root", str(data)).returncode, 0)
+        self.assertEqual(self.install(code, "install", "--data-root", str(code)).returncode, 0)
+        p = self.install(code, "install")
+        self.assertEqual(p.returncode, 0, p.stderr)
+        for label in ("local.crosstalk", "local.crosstalk-housekeeper"):
+            self.assertEqual(self.written(label), baseline_plist(label, code, self.home), label)
+        with mock.patch.dict(os.environ, self.env_of(), clear=True):
+            ok, text = deploy.restart_service(code)
+        self.assertTrue(ok, text)
+        for label in ("local.crosstalk", "local.crosstalk-housekeeper"):
+            self.assertNotIn("--data-root", self.job(label)["ProgramArguments"], label)
+
+    def test_a_gone_installed_data_root_names_its_source_and_the_way_out(self):
+        code, data = self.code_folder(), self.tmp / "data"
+        data.mkdir()
+        self.assertEqual(self.install(code, "install", "--data-root", str(data)).returncode, 0)
+        data.rmdir()
+        p = self.install(code, "install")
+        self.assertEqual(p.returncode, 2)
+        self.assertIn("installed job", p.stderr)
+        self.assertIn("--data-root", p.stderr)
+        self.assertIn("uninstall", p.stderr)
+
+    def test_a_data_root_with_a_leading_dash_and_cdpath(self):
+        code = self.code_folder()
+        data = self.tmp / "-data"
+        data.mkdir()
+        (self.tmp / "elsewhere" / "-data").mkdir(parents=True)
+        env = {k: v for k, v in os.environ.items() if k != "CROSSTALK_DATA"}
+        env.update(HOME=str(self.home), TMPDIR=str(self.tmp), CROSSTALK_RENDER_ONLY=str(self.out),
+                   PATH="%s:%s" % (self.bin, env.get("PATH", "/usr/bin:/bin")),
+                   CDPATH=str(self.tmp / "elsewhere"))
+        p = subprocess.run(["/bin/sh", str(code / "scripts" / "install-service.sh"), "install",
+                            "--data-root", "-data"], cwd=str(self.tmp), env=env,
+                           stdout=subprocess.PIPE, stderr=subprocess.PIPE, universal_newlines=True)
+        self.assertEqual(p.returncode, 0, p.stderr)
+        args = self.job("local.crosstalk")["ProgramArguments"]
+        self.assertEqual(args[2:4], ["--data-root", str(data)])
+
+    def test_relay_parses_each_job_command_with_the_data_root(self):
+        """Every relay.py command line a job runs, parsed by relay.py with the data root in front."""
+        import relay
+        code, data = self.code_folder(), self.tmp / "data"
+        data.mkdir()
+        for cmd in ("install", "buildhost"):
+            self.assertEqual(self.install(code, cmd, "--data-root", str(data)).returncode, 0)
+        relay_py = str(code / "scripts" / "relay.py")
+        lines = []
+        for label in ("local.crosstalk", "local.crosstalk-buildhost"):
+            argv = self.job(label)["ProgramArguments"]
+            self.assertEqual(argv[:2], ["python3", relay_py], label)
+            lines.append((label, argv[2:]))
+        # The housekeeper's own calls: a fake python3 records them (it runs nothing).
+        rec = self.tmp / "python3-calls.jsonl"
+        fake = self.bin / "python3"
+        fake.write_text("#!/bin/sh\n%s - \"$@\" <<'PY'\nimport json, sys\n"
+                        "open(%r, 'a').write(json.dumps(sys.argv[1:]) + '\\n')\n"
+                        "print('alpha' if 'coordinator' in sys.argv else 'ok')\nPY\n"
+                        % (sys.executable, str(rec)), encoding="utf-8")
+        fake.chmod(0o755)
+        hk = self.job("local.crosstalk-housekeeper")
+        env = {k: v for k, v in os.environ.items() if k != "CROSSTALK_DATA"}
+        env.update(HOME=str(self.home), TMPDIR=str(self.tmp),
+                   PATH="%s:%s" % (self.bin, env.get("PATH", "/usr/bin:/bin")))
+        r = subprocess.run(hk["ProgramArguments"], cwd=hk["WorkingDirectory"], env=env,
+                           stdout=subprocess.PIPE, stderr=subprocess.PIPE, universal_newlines=True)
+        self.assertEqual(r.returncode, 0, r.stderr)
+        calls = [json.loads(x) for x in rec.read_text(encoding="utf-8").splitlines()]
+        self.assertEqual([c[3] for c in calls], ["check", "coordinator", "schedule"])
+        for argv in calls:
+            self.assertEqual(argv[0], relay_py)
+            lines.append(("housekeeper", argv[1:]))
+        want = {"serve": relay.cmd_serve, "buildhost": relay.cmd_buildhost, "check": relay.cmd_check,
+                "coordinator": relay.cmd_coordinator, "schedule": relay.cmd_schedule}
+        for label, argv in lines:
+            flag, rest = relay.split_data_root(argv)
+            self.assertEqual(flag, str(data), (label, argv))
+            ns = relay.build_parser().parse_args(rest)
+            self.assertIs(ns.fn, want[rest[0]], (label, rest))
+        self.assertEqual(relay.build_parser().parse_args(lines[1][1][2:]).buildhost_cmd, "poll")
+        self.assertEqual(relay.build_parser().parse_args(lines[-1][1][2:]).schedule_cmd, "ran")
+
     def test_a_missing_data_root_fails_and_writes_nothing(self):
         code = self.code_folder()
         p = self.install(code, "install", "--data-root", str(self.tmp / "no-such-folder"))

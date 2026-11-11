@@ -44,8 +44,17 @@ AGENTS_DIR="${RENDER_ONLY:-$HOME/Library/LaunchAgents}"
 # With no data root given, keep the one the installed jobs carry, so a rerun
 # (`relay.py deploy --restart` among them) does not move the service back to
 # the data of the code folder. `--data-root <this folder>` clears it.
+# Only the jobs of this command count: `install --data-root <this folder>`
+# clears the server and the housekeeper, and an older buildhost job must not
+# bring the old folder back.
+data_from=""
 if [ -z "$data_arg" ] && [ "$cmd" != uninstall ]; then
-    data_arg=$(python3 - "$AGENTS_DIR" "$SERVE_LABEL" "$HOUSEKEEPER_LABEL" "$BUILDHOST_LABEL" <<'PY' 2>/dev/null || true
+    case "$cmd" in
+      buildhost) labels="$BUILDHOST_LABEL" ;;
+      *) labels="$SERVE_LABEL $HOUSEKEEPER_LABEL" ;;
+    esac
+    # shellcheck disable=SC2086  # the labels hold no spaces
+    data_arg=$(python3 - "$AGENTS_DIR" $labels <<'PY' 2>/dev/null || true
 import plistlib, sys
 for label in sys.argv[2:]:
     try:
@@ -58,16 +67,23 @@ for label in sys.argv[2:]:
         continue
 PY
 )
+    [ -z "$data_arg" ] || data_from="the installed job in $AGENTS_DIR"
 fi
 
 # The data root the jobs carry: empty when none is set or it is this folder.
 DATA_ROOT=""
 if [ -n "$data_arg" ] && [ "$cmd" != uninstall ]; then
-    if ! DATA_ROOT=$(cd "$data_arg" 2>/dev/null && pwd -P); then
-        echo "$0: the data root $data_arg is not a folder" >&2
+    if ! DATA_ROOT=$(CDPATH='' cd -- "$data_arg" >/dev/null 2>&1 && pwd -P); then
+        if [ -n "$data_from" ]; then
+            echo "$0: the data root $data_arg of $data_from is not a folder;" \
+                 "give one with --data-root DIR (--data-root $REPO_ROOT for the data in this folder)," \
+                 "or run $0 uninstall first" >&2
+        else
+            echo "$0: the data root $data_arg is not a folder" >&2
+        fi
         exit 2
     fi
-    if [ "$DATA_ROOT" = "$(cd "$REPO_ROOT" && pwd -P)" ]; then
+    if [ "$DATA_ROOT" = "$(CDPATH='' cd -- "$REPO_ROOT" >/dev/null 2>&1 && pwd -P)" ]; then
         DATA_ROOT=""
     fi
 fi

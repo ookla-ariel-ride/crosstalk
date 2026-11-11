@@ -46,10 +46,12 @@ installer stops with status 2 when `<dir>` is not a folder. Each job then runs
 poll, and the housekeeper, which passes the folder on to its `relay.py`
 commands and still runs git in the repo. A data root that is the repo itself
 changes nothing, and with no data root each job is what it was before. When
-you give no data root, the installer keeps the one that the installed jobs
-carry, so a rerun and `relay.py deploy --restart` leave the service on its
-data. To go back to the data in the repo, run the installer with
-`--data-root` and the repo folder.
+you give no data root, the installer keeps the one that the installed jobs of
+the same command carry (`install`: the server and the housekeeper;
+`buildhost`: the build host poll), so a rerun and `relay.py deploy --restart`
+leave the service on its data. To go back to the data in the repo, run the
+installer with `--data-root` and the repo folder. When the kept folder is
+gone, the installer stops with status 2 and says so.
 `CROSSTALK_RENDER_ONLY=<folder>` makes the installer write the plists to
 `<folder>` and load nothing; the tests use it.
 
