@@ -606,7 +606,7 @@ class CrosstalkHandler(BaseHTTPRequestHandler):
                          "roster": roster,
                          "live": live,
                          "collections": collections,
-                         "service": service_block(self.state.code_root)})
+                         "service": service_block(self.state.code_root, data_root=self.state.root)})
 
     def _health(self):
         """The log's health: ok when nothing fatal, plus the fatal lines named.

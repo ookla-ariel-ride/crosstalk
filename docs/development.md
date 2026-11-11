@@ -50,9 +50,9 @@ Part of the [Crosstalk docs](../README.md#documentation).
 | `scripts/crosstalk/exporter.py` | `export-page` |
 | `scripts/crosstalk/deploy.py` | `deploy`: copies one commit into the deployment folder, with the pre-check, the manifest and the rollback |
 | `scripts/crosstalk/files.py` | The atomic file writer the other modules use |
-| `scripts/install-service.sh`, `scripts/launchd/` | LaunchAgent installer and plist templates |
+| `scripts/install-service.sh`, `scripts/launchd/` | LaunchAgent installer (`--data-root <dir>` for a data folder) and plist templates |
 | `scripts/housekeeper.sh` | The 30-minute check, and the push when `crosstalk.autopush` is on |
-| `tests/` | Python tests (`test_*.py`), page scenarios (`tests/page/`), live-server end-to-end tests (`tests/server/`), and the one-folder kits, hooks and standard jobs that `test_data_root_texts.py` compares against (`tests/baseline/`) |
+| `tests/` | Python tests (`test_*.py`), page scenarios (`tests/page/`), live-server end-to-end tests (`tests/server/`), and the one-folder kits, hooks and standard jobs that `test_data_root_texts.py` compares against, and the launchd jobs, service commands and ask template that `test_service_data_root.py` compares against (`tests/baseline/`) |
 | `web/` | The v2 page: React and TypeScript source in `web/src/`, built by Vite (see [The v2 page](#the-v2-page)) |
 | `web/src/ui/tokens.css`, `web/src/ui/fonts.css` | The design tokens (colours, light and dark; type sizes; radii; widths) and the two fonts, Archivo and Atkinson Hyperlegible Next, taken from npm |
 | `web/src/api/types.ts` | The shapes the server sends, field for field: threads, messages, sections, vitals, the caller's role, the read state, health, and the rows of the push channel |

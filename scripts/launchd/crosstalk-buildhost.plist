@@ -8,6 +8,7 @@
     <array>
         <string>python3</string>
         <string>__REPO__/scripts/relay.py</string>
+        __DATA_ROOT_ARGS__
         <string>buildhost</string>
         <string>poll</string>
     </array>

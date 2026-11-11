@@ -36,7 +36,7 @@ from crosstalk.replay import enrich_messages, load_all_lines, replay  # noqa: E4
 from crosstalk.requests import speaker_fields  # noqa: E402
 from crosstalk.reports import inbox_report, load_docs, questions_report  # noqa: E402
 from crosstalk.serve import serve  # noqa: E402
-from crosstalk.service import service_block  # noqa: E402
+from crosstalk.service import service_block, service_for  # noqa: E402
 from crosstalk.stalls import find_stalls  # noqa: E402
 from crosstalk.tokens import TOKEN_FILE, Tokens, load_tokens  # noqa: E402
 
@@ -136,7 +136,7 @@ def cmd_read(args):
         for t, c, i, d in sorted(rows, key=lambda r: r[:3]):
             print(_brief_line(c, i, d, t))
         return 0
-    print(json.dumps({"collections": collections, "service": service_block(CODE_ROOT)},
+    print(json.dumps({"collections": collections, "service": service_block(CODE_ROOT, data_root=ROOT)},
                      ensure_ascii=False, sort_keys=True, indent=2))
     return 0
 
@@ -153,7 +153,7 @@ def cmd_inbox(args):
             err("%s:%d: %s" % (p.file, p.line, p.message))
         return 1
     out = inbox_report(docs, args.pid, roster, include_answered=args.all,
-                       now_iso=getattr(args, "now", None))
+                       now_iso=getattr(args, "now", None), service=service_for(CODE_ROOT, ROOT))
     if args.brief:
         for key, label in (("owner_messages", "owner"), ("requests", "request"),
                            ("thread_replies", "reply")):

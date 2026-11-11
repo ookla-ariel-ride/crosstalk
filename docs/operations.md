@@ -29,6 +29,31 @@ With another folder, the texts that `relay.py` makes for sessions (the kits of
 `onboard` and `kit`, the hooks of `live hooks`, the urgent hook's note and
 the jobs of `schedule standard`)
 name `relay.py` in the repo and carry `--data-root <dir>`.
+The `service` block of `relay.py read`, `relay.py inbox` and the page's
+snapshot then shows each command with `--data-root <data>`, and so does the
+text that the page's "Ask all" button posts. `<data>` is a placeholder, as
+`<repo>` is: the snapshot is open to a caller that has not signed in, so it
+never names the data folder.
+
+**Install with a data root.** Give the installer the folder:
+
+```
+scripts/install-service.sh install --data-root <dir>
+```
+`CROSSTALK_DATA=<dir>` at install time does the same; the flag wins. The
+installer stops with status 2 when `<dir>` is not a folder. Each job then runs
+`relay.py` of the repo with `--data-root <dir>`: the server, the build host
+poll, and the housekeeper, which passes the folder on to its `relay.py`
+commands and still runs git in the repo. A data root that is the repo itself
+changes nothing, and with no data root each job is what it was before. When
+you give no data root, the installer keeps the one that the installed jobs of
+the same command carry (`install`: the server and the housekeeper;
+`buildhost`: the build host poll), so a rerun and `relay.py deploy --restart`
+leave the service on its data. To go back to the data in the repo, run the
+installer with `--data-root` and the repo folder. When the kept folder is
+gone, the installer stops with status 2 and says so.
+`CROSSTALK_RENDER_ONLY=<folder>` makes the installer write the plists to
+`<folder>` and load nothing; the tests use it.
 
 macOS LaunchAgents are the only service installer. On another system, run
 `relay.py serve` (below) under your own service manager, and run
@@ -160,6 +185,23 @@ folder and `B` is the new home of the checkout:
 After this, work on the code in `B`. Every path that pointed at `A` still
 reaches the running install. The housekeeper in `A` no longer pushes, so push
 from `B` by hand.
+
+### Moving the data out of an install that runs from one folder
+Use this procedure to keep the code where it is and move the data to its own
+folder `D`. Here `A` is the folder that holds both now.
+
+1. Stop the service: `A/scripts/install-service.sh uninstall`.
+2. Make `D` outside `~/Documents`, `~/Desktop` and `~/Downloads`.
+3. Move the data from `A` to `D`: `log/`, `participants.json`,
+   `config.json`, `tokens.json`, `kits/`, `owner-pin.json`,
+   `read-state.json`, `local/` and `import/`, whichever exist.
+4. Run `python3 A/scripts/relay.py --data-root D check`.
+5. Install the service with the data root:
+   `A/scripts/install-service.sh install --data-root D`.
+6. Check `http://127.0.0.1:8484/api/health`: `ok` is true.
+7. Make the kits and hooks again, so that they carry `--data-root D`:
+   `python3 A/scripts/relay.py --data-root D kit <id>` for each participant,
+   and `live hooks <pid>` for each live session.
 
 ### Update
 
