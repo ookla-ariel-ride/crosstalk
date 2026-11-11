@@ -69,10 +69,11 @@ function BlockView({ block }: { block: Block }) {
   }
 }
 
-export function Body({ text }: { text: string }) {
+/** `text` goes through parseBody; `blocks` are its output, already built (a section row's detail). */
+export function Body({ text, blocks }: { text?: string; blocks?: Block[] }) {
   return (
     <div className={styles.body}>
-      {parseBody(text).map((block, i) => (
+      {(blocks ?? parseBody(text ?? "")).map((block, i) => (
         <BlockView key={i} block={block} />
       ))}
     </div>

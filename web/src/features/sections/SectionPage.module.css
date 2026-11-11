@@ -1,0 +1,96 @@
+/* A column that fills the main part, so the list below can scroll in its own box. */
+.page {
+  display: flex;
+  flex: 1 1 auto;
+  flex-direction: column;
+  min-height: 0;
+  padding: 12px 18px;
+  gap: 10px;
+}
+
+.head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 4px 12px;
+}
+
+.heading {
+  margin: 0;
+  font-family: var(--font-heading);
+  font-weight: 700;
+  font-size: var(--size-l);
+}
+
+.count {
+  margin: 0;
+  color: var(--muted);
+  font-size: var(--size-s);
+}
+
+.search {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px 10px;
+  font-size: var(--size-s);
+}
+
+.input {
+  flex: 1 1 220px;
+  min-width: 0;
+  padding: 6px 10px;
+  border: 1px solid var(--rule);
+  border-radius: var(--radius-control);
+  background: var(--surface);
+  color: var(--ink);
+  font: inherit;
+}
+
+.input:focus-visible,
+.button:focus-visible {
+  outline: 2px solid var(--signal);
+  outline-offset: 2px;
+}
+
+.muted {
+  margin: 0;
+  color: var(--muted);
+  font-size: var(--size-s);
+}
+
+.line {
+  margin: 0;
+  font-size: var(--size-s);
+}
+
+.button {
+  padding: 4px 10px;
+  border: 1px solid var(--rule);
+  border-radius: var(--radius-control);
+  background: var(--surface);
+  color: var(--ink);
+  font: inherit;
+  cursor: pointer;
+}
+
+.button:disabled {
+  color: var(--muted);
+  cursor: default;
+}
+
+/* The rows sit in one card on surface, as in the approved mockup. */
+.list {
+  display: flex;
+  flex: 1 1 auto;
+  flex-direction: column;
+  min-height: 0;
+  border: 1px solid var(--rule);
+  border-radius: var(--radius-card);
+  background: var(--surface);
+  overflow: hidden;
+}
+
+.more {
+  margin: 0;
+}

@@ -1,6 +1,7 @@
 import styles from "./App.module.css";
 import { useLive } from "./api/queries";
 import { Conversations, NeedsYou } from "./features/conversations/Stream";
+import { SectionPage } from "./features/sections/SectionPage";
 import type { Route } from "./logic/route";
 import { Shell, useHashRoute } from "./ui/Shell";
 import { labelOf } from "./ui/Sidebar";
@@ -9,6 +10,7 @@ import { labelOf } from "./ui/Sidebar";
 function page(route: Route) {
   if (route.name === "conversations") return <Conversations route={route} />;
   if (route.name === "needs") return <NeedsYou />;
+  if (route.name === "section") return <SectionPage section={route.section} q={route.q} />;
   return (
     <div className={styles.placeholder}>
       <h1 className={styles.heading}>{labelOf(route)}</h1>
