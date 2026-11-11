@@ -140,9 +140,9 @@ def load_snapshot(root: Path) -> Tuple[Dict, Roster]:
 
 
 def note(root: Path, docs: Dict, roster: Roster, pid: str, ids: List[str],
-         injected: bool = False) -> str:
+         injected: bool = False, code_root: Optional[Path] = None) -> str:
     """The Claude Code note (notify.render_message) for `ids`; with `injected`, a first
-    line says the plugin sent it."""
+    line says the plugin sent it. code_root: as in render_message."""
     threaded = {did for did, _d, _r in thread_replies_for(docs, pid, roster)}
     items = []
     for did in ids:
@@ -152,7 +152,8 @@ def note(root: Path, docs: Dict, roster: Roster, pid: str, ids: List[str],
         items.append(dict(doc, _id=did, from_name=sender_label(p, sender),
                           _thread_reply=did in threaded))
     me = roster.participants.get(pid)
-    text = render_message(me.name if me is not None else pid, pid, items, Path(root))
+    text = render_message(me.name if me is not None else pid, pid, items, Path(root),
+                          code_root=code_root)
     return (INJECTED_LABEL % pid + "\n" + text) if injected else text
 
 
@@ -164,21 +165,25 @@ def tool_note(pid: str, ids: List[str]) -> str:
             "and they arrive when the session is idle.]" % (n, "" if n == 1 else "s", pid, shown))
 
 
-def check_in_prompt(root: Path, pid: str, minutes: int) -> str:
-    relay = Path(root) / "scripts" / "relay.py"
+def check_in_prompt(root: Path, pid: str, minutes: int, code_root: Optional[Path] = None) -> str:
+    """The check-in prompt; it names `<code_root>/scripts/relay.py` (code_root
+    defaults to root) and carries `--data-root <root>` when the two differ."""
+    code = Path(root) if code_root is None else Path(code_root)
+    relay = live.relay_command(Path(root), code, quote=False)
     return (INJECTED_LABEL % pid + "\n"
             "Crosstalk check-in for %s (every %d minutes). Run `python3 %s inbox %s` and\n"
             "answer what it lists with `relay.py reply`. Then post your check-in, a\n"
             "`kind: \"check-in\"` message from %s with your commits since the last one,\n"
             "what is in progress, and blockers (%s, \"At every check-in\"). If nothing\n"
             "changed, a one-line check-in is enough."
-            % (pid, minutes, relay, pid, pid, Path(root) / "PROTOCOL.md"))
+            % (pid, minutes, relay, pid, pid, code / "PROTOCOL.md"))
 
 
 # the shell hook
 
 def hook_output(root: Path, pid: str, stdin_text: str, state_path: Optional[Path],
-                clock: Callable[[], float] = time.time) -> str:
+                clock: Callable[[], float] = time.time,
+                code_root: Optional[Path] = None) -> str:
     """stdout for `relay.py urgent --as <pid> --hook hermes` (urgent.hook_output calls
     this inside its never-raise wrapper)."""
     if state_path is None:
@@ -195,7 +200,8 @@ def hook_output(root: Path, pid: str, stdin_text: str, state_path: Optional[Path
     fresh = claim(state_path, pid, actionable_items(docs, pid, roster), clock())
     if not fresh:
         return ""
-    return json.dumps({"context": note(Path(root), docs, roster, pid, fresh)})
+    return json.dumps({"context": note(Path(root), docs, roster, pid, fresh,
+                                       code_root=code_root)})
 
 
 # setup text (kit and `relay.py live hooks <pid> --harness hermes`)
@@ -205,24 +211,33 @@ def _q(value: str) -> str:
 
 
 def hooks_yaml(relay: str, pid: str) -> str:
-    command = "python3 %s urgent --as %s --hook hermes" % (shlex.quote(relay), shlex.quote(pid))
+    """relay: the quoted command fragment that runs relay.py (live.relay_command)."""
+    command = "python3 %s urgent --as %s --hook hermes" % (relay, shlex.quote(pid))
     out = ["hooks:"]
     for event in HOOK_EVENTS:
         out += ["  %s:" % event, "    - command: %s" % _q(command), "      timeout: 10"]
     return "\n".join(out) + "\n"
 
 
-def plugin_yaml(root: str, pid: str) -> str:
+def plugin_yaml(root: str, pid: str, data_root: Optional[str] = None) -> str:
+    """The plugin's settings: root is the code; data_root only when the data is elsewhere."""
+    data = "        data_root: %s\n" % _q(data_root) if data_root not in (None, root) else ""
     return ("plugins:\n  enabled:\n    - %s\n  entries:\n    %s:\n"
             "      allow_gateway_injection: true\n      settings:\n"
-            "        participant: %s\n        root: %s\n"
-            % (PLUGIN_NAME, PLUGIN_NAME, _q(pid), _q(root)))
+            "        participant: %s\n        root: %s\n%s"
+            % (PLUGIN_NAME, PLUGIN_NAME, _q(pid), _q(root), data))
 
 
-def setup_text(root, pid: str) -> str:
-    """Markdown: how to set up a Hermes participant (one profile, the plugin)."""
-    root = Path(root).resolve()
-    relay = str(root / "scripts" / "relay.py")
+def setup_text(root, pid: str, code_root: Optional[Path] = None) -> str:
+    """Markdown: how to set up a Hermes participant (one profile, the plugin).
+
+    root is the data folder. The plugin, relay.py and the docs are named in
+    code_root (default root); the commands and the plugin settings carry the
+    data root when the two differ.
+    """
+    data = Path(root).resolve()
+    root = data if code_root is None else Path(code_root).resolve()
+    relay = live.relay_command(data, root)
     plugin = root / "scripts" / "hermes-plugin" / PLUGIN_NAME
     home = "~/.hermes/profiles/%s" % pid
     return (
@@ -249,11 +264,13 @@ def setup_text(root, pid: str) -> str:
         "%(pid)s chat` asks once to approve it; a gateway never asks, so approve it there "
         "first or set `hooks_auto_accept: true`. `hermes -p %(pid)s hooks list` shows it.\n\n"
         "```yaml\n%(hooks_yaml)s```\n\n"
-        "A session registers on its first turn; `python3 %(relay)s live status` lists it "
+        "A session registers on its first turn; `python3 %(status)s live status` lists it "
         "with `(hermes)`. Details: `%(docs)s`, \"Hermes sessions\".\n"
         % {"pid": pid, "home": home, "plugin": shlex.quote(str(plugin)), "name": PLUGIN_NAME,
-           "plugin_yaml": plugin_yaml(str(root), pid), "hooks_yaml": hooks_yaml(relay, pid),
-           "relay": relay, "docs": root / "docs" / "live-sessions.md"})
+           "plugin_yaml": plugin_yaml(str(root), pid, str(data)),
+           "hooks_yaml": hooks_yaml(relay, pid),
+           "status": live.relay_command(data, root, quote=False),
+           "docs": root / "docs" / "live-sessions.md"})
 
 
 # the plugin's pump
@@ -300,8 +317,9 @@ class Pump(object):
     def __init__(self, root: Path, pid: str, state_path: Optional[Path],
                  inject: Callable[[str, str], bool], clock: Callable[[], float] = time.time,
                  poll_sec: float = POLL_SEC, log: Callable[[str], None] = lambda m: None,
-                 host_pid: Optional[int] = None):
-        self.root = Path(root)
+                 host_pid: Optional[int] = None, code_root: Optional[Path] = None):
+        self.root = Path(root)  # the data
+        self.code_root = self.root if code_root is None else Path(code_root)  # names relay.py
         self.pid = pid
         self.state_path = Path(state_path) if state_path is not None else None
         self.inject = inject
@@ -396,7 +414,8 @@ class Pump(object):
                 docs, roster, items = self._items()
                 fresh = claim(self.state_path, self.pid, items, self.clock())
                 self.pending = [i for i in self.pending if i not in fresh]
-                return note(self.root, docs, roster, self.pid, fresh) if fresh else None
+                return note(self.root, docs, roster, self.pid, fresh,
+                            code_root=self.code_root) if fresh else None
             return self._guard("turn note", run)
 
     def on_turn_end(self, sid: str) -> None:
@@ -514,14 +533,15 @@ class Pump(object):
         minutes = self._check_in_due(docs, roster, now)
         if minutes is not None:
             fresh = claim(self.state_path, self.pid, items, now)  # the check-in reads the inbox
-            if self._send(s, check_in_prompt(self.root, self.pid, minutes), now, fresh):
+            if self._send(s, check_in_prompt(self.root, self.pid, minutes, self.code_root), now, fresh):
                 self.last_check_in_sent = now
                 self.pending = []
             return
         fresh = claim(self.state_path, self.pid, items, now)
         if not fresh:
             return
-        text = note(self.root, docs, roster, self.pid, fresh, injected=True)
+        text = note(self.root, docs, roster, self.pid, fresh, injected=True,
+                    code_root=self.code_root)
         if self._send(s, text, now, fresh):
             self.pending = [i for i in self.pending if i not in fresh]
 

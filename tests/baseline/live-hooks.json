@@ -1,0 +1,24 @@
+{
+  "hooks": {
+    "SessionStart": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "python3 @ROOT@/scripts/relay.py live register alpha"
+          }
+        ]
+      }
+    ],
+    "SessionEnd": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "python3 @ROOT@/scripts/relay.py live unregister alpha"
+          }
+        ]
+      }
+    ]
+  }
+}

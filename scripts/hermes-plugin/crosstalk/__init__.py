@@ -13,6 +13,7 @@ Settings, in the participant profile's config.yaml:
           settings:
             participant: <pid>
             root: /path/to/crosstalk      # default: the checkout this file is in
+            data_root: /path/to/data      # default: root (relay.py --data-root)
 
 Hooks: pre_llm_call registers a session on its first turn, marks it busy and
 adds new items to the turn as context, and ignores subagents and cron jobs.
@@ -59,8 +60,10 @@ def _load_pump_module(root: Path):
     return hermes
 
 
-def make_pump(ctx, root: Path, pid: str):
-    """The Pump wired to ctx (separate so tests can build it with a fake ctx)."""
+def make_pump(ctx, root: Path, pid: str, data_root=None):
+    """The Pump wired to ctx (separate so tests can build it with a fake ctx).
+
+    root is the code; the Pump reads data_root (default: root)."""
     ct = _load_pump_module(root)
 
     def inject(text, key):
@@ -72,18 +75,22 @@ def make_pump(ctx, root: Path, pid: str):
         # The session key it saw in that session's own hooks (#139847).
         return ctx.inject_message(text, role="user", session_key=key)
 
-    return ct.Pump(root, pid, ct.state_path_from_env(), inject, log=logger.warning)
+    data = root if data_root is None else Path(data_root)
+    return ct.Pump(data, pid, ct.state_path_from_env(), inject, log=logger.warning,
+                   code_root=root)
 
 
 def register(ctx):
     pid = ctx.get_config("participant")
     root = Path(ctx.get_config("root") or DEFAULT_ROOT).expanduser()
+    data_root = ctx.get_config("data_root")
+    data_root = Path(data_root).expanduser() if data_root else None
     if not isinstance(pid, str) or not pid:
         logger.warning("crosstalk: set plugins.entries.crosstalk.settings.participant; "
                        "the plugin stays idle")
         return
     try:
-        pump = make_pump(ctx, root, pid)
+        pump = make_pump(ctx, root, pid, data_root)
     except Exception as e:
         logger.warning("crosstalk: cannot load Crosstalk from %s: %s", root, e)
         return

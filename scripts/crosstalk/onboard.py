@@ -16,6 +16,7 @@ from contextlib import contextmanager
 from pathlib import Path
 from typing import Dict, Optional, Tuple
 
+from . import live
 from .hermes import setup_text as hermes_setup_text
 from .participants import (ID_RE, KINDS, NAME_BAD_RE, Roster, ensure_roster, load_roster,
                            repo_problem, harness_problem)
@@ -248,8 +249,10 @@ _CODEX_HOOK_EVENTS = (("SessionStart", "startup|clear"), ("PostToolUse", None), 
 
 
 def codex_hooks_block(relay: str, pid: str) -> str:
-    """The kit's Codex hooks snippet: urgent items interrupt a running session."""
-    command = "python3 %s urgent --as %s --hook codex" % (shlex.quote(relay), shlex.quote(pid))
+    """The kit's Codex hooks snippet: urgent items interrupt a running session.
+
+    relay: the quoted command fragment that runs relay.py (live.relay_command)."""
+    command = "python3 %s urgent --as %s --hook codex" % (relay, shlex.quote(pid))
     toml = []
     for event, matcher in _CODEX_HOOK_EVENTS:
         toml.append("[[hooks.%s]]" % event)
@@ -281,10 +284,13 @@ CLAUDE_INBOUND_STEP = (
     "settings. Leave it out, or set `hold`, to approve each message by hand.\n")
 
 
-def _mcp_body(harness: Optional[str], relay: str, pid: str) -> Tuple[str, str]:
-    """(where to put it, the snippet) for a harness; the generic entry for any other."""
-    args = [relay, "mcp", "--as", pid]
-    shell = "python3 %s mcp --as %s" % (shlex.quote(relay), shlex.quote(pid))
+def _mcp_body(harness: Optional[str], root: Path, code: Path, pid: str) -> Tuple[str, str]:
+    """(where to put it, the snippet) for a harness; the generic entry for any other.
+
+    root is the data, code the folder that holds relay.py (live.relay_args)."""
+    relay = live.relay_command(root, code)
+    args = live.relay_args(root, code) + ["mcp", "--as", pid]
+    shell = "python3 %s mcp --as %s" % (relay, shlex.quote(pid))
     if harness == "claude-code":
         return ("For **Claude Code**, run this from your project's folder:",
                 "```\nclaude mcp add --transport stdio --scope project crosstalk -- %s\n```\n\n"
@@ -315,7 +321,7 @@ def _mcp_body(harness: Optional[str], relay: str, pid: str) -> Tuple[str, str]:
                 "`~/.hermes/profiles/%s/config.yaml` (step 1 below creates it), then run "
                 "`/reload-mcp` in a chat:" % pid,
                 '```yaml\nmcp_servers:\n  crosstalk:\n    command: "python3"\n    args: %s\n```\n\n%s'
-                % (_qlist(args), hermes_setup_text(Path(relay).parent.parent, pid)))
+                % (_qlist(args), hermes_setup_text(root, pid, code_root=code)))
     if harness == "pi":
         return ("For **Pi**, install the MCP adapter, then put the entry in the project's "
                 "`.mcp.json` or `.pi/mcp.json` (or `~/.pi/agent/mcp.json`):",
@@ -327,13 +333,15 @@ def _mcp_body(harness: Optional[str], relay: str, pid: str) -> Tuple[str, str]:
             "As one command line:\n\n```\n%s\n```\n" % (_qlist(args), shell))
 
 
-def mcp_block(root, pid: str, harness: Optional[str]) -> str:
-    """The kit's MCP section for pid's harness; it never holds a token."""
+def mcp_block(root, pid: str, harness: Optional[str], code_root=None) -> str:
+    """The kit's MCP section for pid's harness; it never holds a token.
+
+    root is the data folder; code_root (default root) holds relay.py and docs/."""
     root = Path(root).resolve()
-    relay = str(root / "scripts" / "relay.py")
-    where, body = _mcp_body(harness, relay, pid)
+    code = root if code_root is None else Path(code_root).resolve()
+    where, body = _mcp_body(harness, root, code, pid)
     intro = _MCP_INTRO.replace("@PID@", pid).replace("@WHERE@", where)
-    return intro + body + _MCP_OUTRO.replace("@DOCS@", str(root / "docs" / "mcp.md"))
+    return intro + body + _MCP_OUTRO.replace("@DOCS@", str(code / "docs" / "mcp.md"))
 
 
 def _md_escape(text: str) -> str:
@@ -351,9 +359,15 @@ def _md_escape(text: str) -> str:
     return "".join(out)
 
 
-def kit_text(root, pid: str, token: str, entry: dict) -> str:
-    """The generated kit block for a participant, with no placeholders left."""
+def kit_text(root, pid: str, token: str, entry: dict, code_root=None) -> str:
+    """The generated kit block for a participant, with no placeholders left.
+
+    root is the data folder (the page address comes from its roster). The kit
+    names relay.py, PROTOCOL.md and docs/ in code_root (default root), and its
+    commands carry `--data-root <root>` when the two differ.
+    """
     root = Path(root).resolve()
+    code = root if code_root is None else Path(code_root).resolve()
     name = _md_escape(entry.get("name", pid))
     kind = entry.get("kind", "")
     data = '{"kind":"check-in","summary":"First check-in","from":"%s"}' % pid
@@ -361,46 +375,49 @@ def kit_text(root, pid: str, token: str, entry: dict) -> str:
                    '"data":{"kind":"check-in","summary":"First check-in","from":"%s"}}'
                    % (pid, pid, pid))
     harness = entry.get("harness")
-    mcp = mcp_block(root, pid, harness if isinstance(harness, str) else None)
+    mcp = mcp_block(root, pid, harness if isinstance(harness, str) else None, code)
     text = _KIT_TEMPLATE
     for placeholder, value in (
         ("@NAME@", name),
         ("@PID@", pid),
         ("@KIND@", kind),
         ("@PAGE@", _page_url(root)),
-        ("@RELAY@", str(root / "scripts" / "relay.py")),
+        ("@RELAY@", live.relay_command(root, code, quote=False)),
         ("@DATA@", data),
         ("@REMOTE_DATA@", remote_data),
         ("@TOKEN@", token),
-        ("@PROTOCOL@", str(root / "PROTOCOL.md")),
+        ("@PROTOCOL@", str(code / "PROTOCOL.md")),
     ):
         text = text.replace(placeholder, value)
     # Last, so nothing in the MCP block is taken for a placeholder.
     return text.replace("@MCP@", mcp)
 
 
-def _write_kit(root: Path, pid: str, token: str, entry: dict) -> Path:
+def _write_kit(root: Path, pid: str, token: str, entry: dict, code_root=None) -> Path:
     kit_path = root / "kits" / (pid + ".md")
     kit_path.parent.mkdir(parents=True, exist_ok=True)
-    kit_path.write_text(kit_text(root, pid, token, entry), encoding="utf-8")
+    kit_path.write_text(kit_text(root, pid, token, entry, code_root), encoding="utf-8")
     os.chmod(kit_path, 0o600)
     return kit_path
 
 
 def onboard(root, id, name, kind, repo=None, check_in_min=None, parent=None,
-            color=None, color_dark=None, harness=None) -> Dict[str, str]:
+            color=None, color_dark=None, harness=None, code_root=None) -> Dict[str, str]:
     """Add a participant: roster entry, minted key, kit.
 
     Returns {"kit_path", "token"}. Refuses (ValueError) a duplicate id or
     name, a bad id, kind or harness, an agent without a parent, or colors the
-    roster's validation rejects.
+    roster's validation rejects. root is the data folder; code_root (default
+    root) is where the kit says relay.py is (kit_text).
     """
     root = Path(root)
     with _locked_onboard(root):
-        return _onboard(root, id, name, kind, repo, check_in_min, parent, color, color_dark, harness)
+        return _onboard(root, id, name, kind, repo, check_in_min, parent, color, color_dark,
+                        harness, code_root)
 
 
-def _onboard(root, id, name, kind, repo, check_in_min, parent, color, color_dark, harness):
+def _onboard(root, id, name, kind, repo, check_in_min, parent, color, color_dark, harness,
+             code_root=None):
     """The onboard body, run under the exclusive flock (see _locked_onboard)."""
     roster_path = root / "participants.json"
     roster = load_roster(roster_path)
@@ -470,7 +487,7 @@ def _onboard(root, id, name, kind, repo, check_in_min, parent, color, color_dark
     except OSError as e:
         raise ValueError("cannot write %s: %s" % (TOKEN_FILE, e))
 
-    kit_path = _write_kit(root, id, token, entry)
+    kit_path = _write_kit(root, id, token, entry, code_root)
     return {"kit_path": str(kit_path), "token": token}
 
 
@@ -492,15 +509,17 @@ def rotate(root, pid: str) -> str:
     return token
 
 
-def regenerate_kit(root, pid: str) -> Dict[str, str]:
-    """Regenerate kits/<pid>.md with a fresh key; returns {"kit_path", "token"}."""
+def regenerate_kit(root, pid: str, code_root=None) -> Dict[str, str]:
+    """Regenerate kits/<pid>.md with a fresh key; returns {"kit_path", "token"}.
+
+    root is the data folder; code_root as in kit_text."""
     root = Path(root)
     roster = load_roster(root / "participants.json")
     if pid not in roster.participants:
         raise ValueError("unknown participant %r" % pid)
     entry = _entry_raw(roster.participants[pid])
     token = rotate(root, pid)
-    kit_path = _write_kit(root, pid, token, entry)
+    kit_path = _write_kit(root, pid, token, entry, code_root)
     return {"kit_path": str(kit_path), "token": token}
 
 
