@@ -17,6 +17,7 @@ import fcntl
 import json
 import os
 import re
+import shlex
 import socket
 import sys
 import threading
@@ -145,11 +146,14 @@ def render_message(name: str, pid: str, items: List[dict], root: Path,
     lines.extend(item_lines(items))
     if n > MAX_ITEM_LINES:
         lines.append("- and %d more" % (n - MAX_ITEM_LINES))
-    code_root = root if code_root is None else code_root
-    data = "" if Path(code_root) == Path(root) else " --data-root %s" % root
-    lines.append("Run `python3 %s/scripts/relay.py%s inbox %s` and answer each\n"
+    if code_root is None or Path(code_root) == Path(root):
+        command = "%s/scripts/relay.py" % root  # the text as it always was
+    else:  # quoted: a shell must split it back into these arguments
+        command = "%s --data-root %s" % (shlex.quote(str(Path(code_root) / "scripts" / "relay.py")),
+                                         shlex.quote(str(root)))
+    lines.append("Run `python3 %s inbox %s` and answer each\n"
                  "with `relay.py reply`. If one asks for substantial work, say in your reply\n"
-                 "what you will do and when." % (code_root, data, pid))
+                 "what you will do and when." % (command, pid))
     if any(it.get("_thread_reply") for it in items):
         lines.append('A reply on your thread that asks nothing gets one short answer asking whether it needs anything, unless it says "No answer needed".')
     return "\n".join(lines)

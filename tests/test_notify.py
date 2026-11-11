@@ -559,6 +559,20 @@ class RenderAndSendTests(unittest.TestCase):
         text = render_message("Beta", "beta", items, Path("/r"), code_root=Path("/r"))
         self.assertIn("`python3 /r/scripts/relay.py inbox beta`", text)
 
+    def test_render_quotes_paths_with_spaces(self):
+        import re
+        import shlex
+        items = [{"_id": "m-1", "from": "ghost", "summary": "yo"}]
+        text = render_message("Beta", "beta", items, Path("/a b/data"), code_root=Path("/c d/code"))
+        cmd = re.search(r"Run `([^`]*)`", text).group(1)
+        self.assertEqual(shlex.split(cmd), ["python3", "/c d/code/scripts/relay.py",
+                                            "--data-root", "/a b/data", "inbox", "beta"])
+
+    def test_render_without_a_code_root_is_unchanged(self):
+        items = [{"_id": "m-1", "from": "ghost", "summary": "yo"}]
+        text = render_message("Beta", "beta", items, Path("/r s"))
+        self.assertIn("Run `python3 /r s/scripts/relay.py inbox beta` and answer each\n", text)
+
     def test_render_caps_item_lines(self):
         items = [{"_id": "m-%d" % i, "from": "ghost", "summary": "s%d" % i} for i in range(13)]
         text = render_message("Beta", "beta", items, Path("/r"))
