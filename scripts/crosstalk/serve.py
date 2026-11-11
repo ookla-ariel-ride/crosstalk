@@ -4,6 +4,8 @@ The server is the page host and the database:
 
   GET  /                -> index.html, as it sits in the checkout
   GET  /api/snapshot    -> every collection replayed, plus server_time and commit
+  GET  /api/threads     -> the threads in one sort order, a page at a time (threads.py)
+  GET  /api/thread/<root> -> the messages of one thread, with depth and quote
   GET  /api/<collection>-> one collection replayed
   GET  /api/queue       -> the land queue of the build host (landqueue.py)
   GET  /api/me          -> the role of the caller (owner, editor, viewer)
@@ -34,7 +36,7 @@ from http.cookies import CookieError, SimpleCookie
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from typing import Dict, List, Optional, Tuple
-from urllib.parse import urlsplit
+from urllib.parse import parse_qs, unquote, urlsplit
 
 from .files import atomic_write_text
 from .logs import COLLECTIONS, append_line, check_all, check_all
@@ -51,6 +53,7 @@ from .notify import Notifier
 from . import urgent as urgent_mod
 from . import reviews as reviews_mod
 from . import autogrant as autogrant_mod
+from . import threads as threads_mod
 
 # The collections the page reads. "participants" is the owner's roster.
 KNOWN_COLLECTIONS = tuple(COLLECTIONS) + ("participants",)
@@ -191,6 +194,9 @@ class ReplayCache:
         self._docs = None
         self._entries = None
         self._roster = None
+        self._thread_key = None
+        self._thread_index = None
+        self.thread_builds = 0
 
     def roster(self):
         """The Roster of the current snapshot, with the install's config (participants.py)."""
@@ -236,6 +242,17 @@ class ReplayCache:
             self._entries = entries
             self._roster = roster
             return docs, entries
+
+    def threads(self) -> "threads_mod.ThreadIndex":
+        """The threads of the current snapshot, built once for each cache key."""
+        self.snapshot()
+        with self._lock:
+            if self._thread_key != self._key or self._thread_index is None:
+                messages = {did: doc for (coll, did), doc in self._docs.items() if coll == "messages"}
+                self._thread_index = threads_mod.ThreadIndex(messages, self._roster)
+                self._thread_key = self._key
+                self.thread_builds += 1
+            return self._thread_index
 
 
 def roster_problem(raw, directory) -> Optional[str]:
@@ -476,6 +493,10 @@ class CrosstalkHandler(BaseHTTPRequestHandler):
             self._palette()
         elif path == "/api/queue":
             self._queue()
+        elif path == "/api/threads":
+            self._threads()
+        elif path.startswith("/api/thread/"):
+            self._thread(unquote(path[len("/api/thread/"):]))
         elif path.startswith("/api/"):
             self._collection(path[len("/api/"):])
         elif path == "/":
@@ -554,6 +575,44 @@ class CrosstalkHandler(BaseHTTPRequestHandler):
             return
         self._json(200, land_queue(docs, projects=entries, now=time.time(),
                                    coordinator=config_mod.coordinator(self.state.cache.roster())))
+
+    def _threads(self):
+        """One page of threads: ?sort=needs|new|hot|unanswered (default new), &cursor=, &limit=."""
+        query = parse_qs(urlsplit(self.path).query)
+        order = query.get("sort", ["new"])[-1] or "new"
+        if order not in threads_mod.ORDERS:
+            self._error(400, "unknown sort %r: use one of %s" % (order, ", ".join(threads_mod.ORDERS)))
+            return
+        raw_limit = query.get("limit", [""])[-1]
+        try:
+            limit = int(raw_limit) if raw_limit else None
+        except ValueError:
+            self._error(400, "the limit must be a whole number")
+            return
+        try:
+            index = self.state.cache.threads()
+        except (OSError, ValueError) as e:
+            self._error(500, "cannot read the log: %s" % e)
+            return
+        now = now_iso()
+        try:
+            items, nxt = index.page(order, now, query.get("cursor", [""])[-1], limit)
+        except ValueError as e:
+            self._error(400, str(e))
+            return
+        self._json(200, {"threads": items, "next": nxt, "server_time": now})
+
+    def _thread(self, root: str):
+        try:
+            index = self.state.cache.threads()
+        except (OSError, ValueError) as e:
+            self._error(500, "cannot read the log: %s" % e)
+            return
+        messages = index.thread(root)
+        if messages is None:
+            self._error(404, "no thread with the root %r" % root)
+            return
+        self._json(200, {"root": root, "messages": messages})
 
     def _collection(self, name: str):
         if name not in KNOWN_COLLECTIONS:

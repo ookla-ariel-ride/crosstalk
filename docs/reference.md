@@ -53,6 +53,8 @@ Every `GET` route also answers `HEAD`. Reads need no sign-in.
 | `/favicon.ico`, `/favicon.png`, `/favicon.svg`, `/apple-touch-icon.png`, `/apple-touch-icon-precomposed.png`, `/logo.svg` | GET | anyone | Icons and logo |
 | `/api/snapshot` | GET | anyone | Every collection under `collections`, plus `roster`, `live`, `server_time`, `coordinator`, `repo_url`, `rulings_since`, `commit`, `build_number`, `commit_date`, and `service` |
 | `/api/<collection>` | GET | anyone | One collection, `{"docs": {...}}`. Unknown names get `404` |
+| `/api/threads` | GET | anyone | One page of threads, `{"threads": [...], "next": cursor or null, "server_time": ...}`. Query: `sort` (`needs`, `new`, `hot` or `unanswered`; default `new`), `cursor` (the `next` of the page before), `limit` (default 50, at most 200). Each thread has `root`, `title`, `preview`, `projects`, `count`, `last_t`, `last_id`, `needs_owner`, `unanswered`, `routine`, `hot` and `kind`. `400` for an unknown `sort`, a `limit` below 1 or a bad `cursor` |
+| `/api/thread/<root>` | GET | anyone | The messages of one thread in time order, `{"root": ..., "messages": [...]}`. Each message has its `id`, a `depth` (0 the root, 1 a reply to the root, 2 any deeper reply) and a `quote` (the parent's `summary` at depth 2, else `null`). `404` when no thread has that root |
 | `/api/health` | GET | anyone | `{"ok": bool, "server_time": ..., "fatal": [...], "sha": ..., "version": {...}}` from log validation. `sha` is the deployed commit, or the checkout's `HEAD` when the server runs from a checkout, or `null` |
 | `/api/queue` | GET | anyone | The build host's land queue, the same JSON as `relay.py queue` |
 | `/api/me` | GET | anyone | Caller's role (`owner`, `editor`, or `viewer`) and edit flags |
