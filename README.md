@@ -83,7 +83,8 @@ kit tells the session who it is and how to read and post.
    scripts/install-service.sh
    ```
    It loads two LaunchAgents: the server, and a housekeeper that runs
-   `relay.py check` every 30 minutes.
+   `relay.py check` every 30 minutes. To keep the data in another folder, add
+   `--data-root <dir>`.
 2. Set a permanent six-digit login PIN. The command prompts for it and
    stores a hash.
    ```

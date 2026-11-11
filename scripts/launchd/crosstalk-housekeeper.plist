@@ -8,6 +8,7 @@
     <array>
         <string>/bin/sh</string>
         <string>__REPO__/scripts/housekeeper.sh</string>
+        __DATA_ROOT_ARGS__
     </array>
     <key>WorkingDirectory</key>
     <string>__REPO__</string>
