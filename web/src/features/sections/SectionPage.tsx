@@ -56,6 +56,7 @@ interface More {
 }
 
 export function countText(open: number, total: number): string {
+  if (total <= 0) return "None open";
   return (open > 0 ? `${open} open` : "None open") + ` of ${total}`;
 }
 

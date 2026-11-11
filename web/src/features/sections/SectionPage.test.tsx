@@ -83,6 +83,7 @@ describe("SectionPage", () => {
     window.location.hash = "#/claims?q=zzz";
     renderWith(<SectionPage section="claims" q="zzz" />, [section("locks", page([]), "zzz")]);
     expect(screen.getByText('No row matches "zzz".')).toBeTruthy();
+    expect(screen.getByText("None open")).toBeTruthy();
     fireEvent.click(screen.getByRole("button", { name: "Clear the search" }));
     expect(window.location.hash).toBe("#/claims");
   });
