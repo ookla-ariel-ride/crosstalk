@@ -38,6 +38,7 @@ from pathlib import Path
 from typing import Callable, Dict, List, Optional, Tuple
 
 from .files import atomic_write_text
+from .live import relay_command
 from .notify import MAX_ITEM_LINES, _one_line, actionable_items, item_lines, sender_label
 from .participants import Roster, load_roster
 from .replay import enrich_messages, load_all_lines, replay
@@ -131,17 +132,23 @@ def _items(docs: Dict, ids: List[str], roster: Roster) -> List[dict]:
     return out
 
 
-def render_urgent(pid: str, items: List[dict], root: Path) -> str:
-    """The note injected into the session: one line per item, then what to do."""
+def render_urgent(pid: str, items: List[dict], root: Path,
+                  code_root: Optional[Path] = None) -> str:
+    """The note injected into the session: one line per item, then what to do.
+
+    Its command names `<code_root>/scripts/relay.py` (code_root defaults to
+    root) and carries `--data-root <root>` when the two differ.
+    """
     n = len(items)
     lines = ["Crosstalk: %d urgent item%s for %s." % (n, "" if n == 1 else "s", pid)]
     lines.extend(item_lines(items))
     if n > MAX_ITEM_LINES:
         lines.append("- and %d more" % (n - MAX_ITEM_LINES))
     lines.append("Finish the step you are on, then answer each with `relay.py reply`.\n"
-                 "Owner messages are in `python3 %s/scripts/relay.py inbox %s`; an alert's\n"
+                 "Owner messages are in `python3 %s inbox %s`; an alert's\n"
                  "full text is under its id in `relay.py read --collection messages`.\n"
-                 "Other inbox items wait for your next check-in." % (root, pid))
+                 "Other inbox items wait for your next check-in."
+                 % (relay_command(root, code_root, quote=False), pid))
     return "\n".join(lines)
 
 
@@ -164,11 +171,11 @@ def load_snapshot(root: Path) -> Tuple[Dict, Roster]:
 
 
 def _hook(root: Path, pid: str, harness: str, stdin_text: str, state_path: Optional[Path],
-          clock: Callable[[], float]) -> str:
+          clock: Callable[[], float], code_root: Optional[Path]) -> str:
     if harness == "hermes":
         # Every item, not the urgent filter: crosstalk/hermes.py.
         from .hermes import hook_output as hermes_hook
-        return hermes_hook(root, pid, stdin_text, state_path, clock)
+        return hermes_hook(root, pid, stdin_text, state_path, clock, code_root=code_root)
     if harness != "codex" or state_path is None:
         return ""
     event = json.loads(stdin_text).get("hook_event_name")
@@ -201,16 +208,19 @@ def _hook(root: Path, pid: str, harness: str, stdin_text: str, state_path: Optio
     _update(Path(state_path), step)
     if not new:
         return ""
-    return _codex_output(event, render_urgent(pid, _items(docs, new, roster), Path(root)))
+    return _codex_output(event, render_urgent(pid, _items(docs, new, roster), Path(root),
+                                              code_root))
 
 
 def hook_output(root: Path, pid: str, harness: str, stdin_text: str,
-                state_path: Optional[Path], clock: Callable[[], float] = time.time) -> str:
+                state_path: Optional[Path], clock: Callable[[], float] = time.time,
+                code_root: Optional[Path] = None) -> str:
     """The hook's stdout for this event: the event's JSON when something urgent is
     new and may interrupt now, else "". Never raises and never writes to stderr,
-    so a broken setup can't disturb the session."""
+    so a broken setup can't disturb the session. root is the data folder;
+    code_root (default root) is where the text says relay.py is."""
     try:
-        return _hook(root, pid, harness, stdin_text, state_path, clock)
+        return _hook(root, pid, harness, stdin_text, state_path, clock, code_root)
     except Exception:
         return ""
 
