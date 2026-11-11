@@ -305,9 +305,36 @@ def load_registrations(root: Path) -> Tuple[List[Registration], List[str]]:
     return regs, problems
 
 
-def hooks_json(root: Path, pid: str) -> str:
-    """The settings.local.json hook block for `pid`, with absolute paths."""
-    relay = shlex.quote(str(Path(root).resolve() / "scripts" / "relay.py"))
+def relay_args(root, code_root=None) -> List[str]:
+    """`<code_root>/scripts/relay.py`, plus `--data-root <root>` when the data is
+    in another folder (code_root defaults to root), as a list of arguments."""
+    code = Path(root) if code_root is None else Path(code_root)
+    args = [str(code / "scripts" / "relay.py")]
+    if code != Path(root):
+        args += ["--data-root", str(root)]
+    return args
+
+
+def relay_command(root, code_root=None, quote=True) -> str:
+    """relay_args as a shell command fragment, each path quoted.
+
+    quote=False keeps the bare path when the two folders are one, for the
+    texts that always printed it so.
+    """
+    args = relay_args(root, code_root)
+    if not quote and len(args) == 1:
+        return args[0]
+    return " ".join(shlex.quote(a) for a in args)
+
+
+def hooks_json(root: Path, pid: str, code_root: Optional[Path] = None) -> str:
+    """The settings.local.json hook block for `pid`, with absolute paths.
+
+    root is the data folder; the command names `<code_root>/scripts/relay.py`
+    and carries `--data-root <root>` when the two differ (relay_command).
+    """
+    root = Path(root).resolve()
+    relay = relay_command(root, None if code_root is None else Path(code_root).resolve())
 
     def hook(verb):
         return [{"hooks": [{"type": "command",

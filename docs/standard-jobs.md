@@ -23,6 +23,8 @@ To change the times of jobs that a project already runs, add `--all` to the comm
 3. Run each printed `schedule set` line.
 4. Open the Schedules tab and check that the project is not under Missing jobs.
 
+With a data root (`relay.py --data-root <dir> schedule standard`, or `CROSSTALK_DATA`), each printed command also carries `--data-root <dir>`.
+
 ## Harness notes
 
 - **Claude Code:** `CronCreate` jobs end with the session and expire after 7 days. Create them and report them again at each session start.

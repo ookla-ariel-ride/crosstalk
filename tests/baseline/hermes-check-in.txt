@@ -1,0 +1,6 @@
+[Sent by the Crosstalk plugin for Hermes, not typed by the user. It is a relay message for Crosstalk participant beta.]
+Crosstalk check-in for beta (every 30 minutes). Run `python3 @ROOT@/scripts/relay.py inbox beta` and
+answer what it lists with `relay.py reply`. Then post your check-in, a
+`kind: "check-in"` message from beta with your commits since the last one,
+what is in progress, and blockers (@ROOT@/PROTOCOL.md, "At every check-in"). If nothing
+changed, a one-line check-in is enough.

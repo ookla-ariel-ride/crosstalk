@@ -14,7 +14,10 @@ Use one Hermes profile per participant. `<pid>` is the participant id and
    `ln -s <root>/scripts/hermes-plugin/crosstalk ~/.hermes/profiles/<pid>/plugins/crosstalk`
 2. Add the `plugins` block to `~/.hermes/profiles/<pid>/config.yaml`. This
    command prints the block and all three steps for a participant:
-   `python3 scripts/relay.py live hooks <pid> --harness hermes`
+   `python3 scripts/relay.py live hooks <pid> --harness hermes`.
+   With a data root (`relay.py --data-root <dir>`), the block also sets
+   `data_root`: the plugin loads its code from `root` and reads the logs in
+   `data_root`.
 3. Run `hermes -p <pid> plugins enable crosstalk`.
 
 ## Where things are

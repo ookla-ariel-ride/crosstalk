@@ -214,9 +214,9 @@ def cmd_live(args):
         return 0
     if args.live_cmd == "hooks":
         if args.harness == "hermes":
-            print(hermes_mod.setup_text(CODE_ROOT, args.pid), end="")
+            print(hermes_mod.setup_text(ROOT, args.pid, code_root=CODE_ROOT), end="")
         else:
-            print(live_mod.hooks_json(CODE_ROOT, args.pid))
+            print(live_mod.hooks_json(ROOT, args.pid, code_root=CODE_ROOT))
         return 0
     regs, problems = live_mod.load_registrations(ROOT)
     for r in regs:
@@ -330,7 +330,7 @@ def cmd_token(args):
         return 1
     if args.kit:
         try:
-            result = regenerate_kit(ROOT, args.pid)
+            result = regenerate_kit(ROOT, args.pid, code_root=CODE_ROOT)
         except ValueError as e:
             err(str(e))
             return 1
@@ -355,7 +355,8 @@ def cmd_onboard(args):
     try:
         result = onboard(ROOT, args.pid, args.name, args.kind, repo=args.repo,
                          check_in_min=args.check_in_min, parent=args.parent,
-                         color=args.color, color_dark=args.color_dark, harness=args.harness)
+                         color=args.color, color_dark=args.color_dark, harness=args.harness,
+                         code_root=CODE_ROOT)
     except ValueError as e:
         err(str(e))
         return 1
@@ -367,7 +368,7 @@ def cmd_onboard(args):
 def cmd_kit(args):
     """Regenerate kits/<pid>.md with a fresh key; prints the kit path and the token once."""
     try:
-        result = regenerate_kit(ROOT, args.pid)
+        result = regenerate_kit(ROOT, args.pid, code_root=CODE_ROOT)
     except ValueError as e:
         err(str(e))
         return 1
@@ -586,7 +587,7 @@ def cmd_schedule(args):
         have = [] if args.all else [j["name"] for p in view["participants"] if p["id"] == args.from_ for j in p["jobs"] if j["status"] != "stale"]
         peers = [pid for pid, p in roster.participants.items() if p.kind == "project" and p.trust == "approved"]
         print(schedules_mod.standard_text(args.from_, roster.participants[args.from_].harness, have, peers,
-                                            cfg=config_mod.of(roster)))
+                                            cfg=config_mod.of(roster), root=ROOT, code_root=CODE_ROOT))
         return 0
     try:
         if args.schedule_cmd == "set":
@@ -935,7 +936,7 @@ def cmd_urgent(argv) -> int:
                 sys.stderr = saved
         stdin_text = sys.stdin.read()
         out = urgent_mod.hook_output(ROOT, args.as_, args.hook, stdin_text,
-                                     urgent_mod.state_path_from_env())
+                                     urgent_mod.state_path_from_env(), code_root=CODE_ROOT)
         if out:
             sys.stdout.write(out + "\n")
             sys.stdout.flush()
