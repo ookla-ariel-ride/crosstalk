@@ -1,0 +1,191 @@
+/* The stream head: the page name, the sort orders and the two tools. */
+.head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px 14px;
+  padding: 12px 18px;
+  border-bottom: 1px solid var(--rule);
+}
+
+.heading {
+  margin: 0;
+  font-family: var(--font-heading);
+  font-weight: 700;
+  font-size: var(--size-l);
+}
+
+.sorts {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+}
+
+.sort {
+  padding: 3px 10px;
+  border: 1px solid transparent;
+  border-radius: var(--radius-control);
+  color: var(--muted);
+  font-size: var(--size-s);
+  text-decoration: none;
+}
+
+.sort:hover {
+  color: var(--ink);
+}
+
+/* The chosen order: a border and ink text, not colour alone. */
+.sort[aria-current="page"] {
+  border-color: var(--rule);
+  background: var(--surface);
+  color: var(--ink);
+  font-weight: 600;
+}
+
+.tools {
+  display: flex;
+  gap: 6px;
+  margin-left: auto;
+}
+
+.action {
+  padding: 4px 10px;
+  border: 1px solid var(--rule);
+  border-radius: var(--radius-control);
+  background: var(--surface);
+  color: var(--ink);
+  font: inherit;
+  font-size: var(--size-s);
+  cursor: pointer;
+}
+
+.action:disabled {
+  color: var(--muted);
+  cursor: default;
+}
+
+.sort:focus-visible,
+.action:focus-visible,
+.fold:focus-visible {
+  outline: 2px solid var(--signal);
+  outline-offset: 1px;
+}
+
+.state {
+  margin: 0;
+  padding: 14px 18px;
+  color: var(--muted);
+}
+
+/* The note of a thread row: its age, then what needs the owner and what is new. */
+.noteLine,
+.needs,
+.fresh {
+  display: block;
+}
+
+/* Amber text needs the surface colour; the row sits on paper, so amber is a mark next to ink text. */
+.needs {
+  color: var(--ink);
+  font-weight: 600;
+}
+
+.needs::before {
+  content: "";
+  display: inline-block;
+  width: 7px;
+  height: 7px;
+  margin-right: 5px;
+  border-radius: 50%;
+  background: var(--amber);
+  vertical-align: middle;
+}
+
+.fresh {
+  color: var(--signal);
+  font-weight: 600;
+}
+
+.more {
+  padding: 10px 18px;
+}
+
+/* An open thread. */
+.thread {
+  display: flex;
+  flex-direction: column;
+}
+
+.fold {
+  margin: 6px 0;
+  padding: 7px;
+  border: 1px dashed var(--rule);
+  border-radius: var(--radius-control);
+  background: none;
+  color: var(--muted);
+  font: inherit;
+  font-size: var(--size-s);
+  cursor: pointer;
+}
+
+.newSince {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin: 8px 0 2px;
+  color: var(--signal);
+  font-size: var(--size-xs);
+  font-weight: 600;
+}
+
+.newSince::after {
+  content: "";
+  flex: 1;
+  border-top: 1px solid var(--signal);
+}
+
+.message {
+  padding: 8px 0;
+}
+
+.message[data-depth="1"],
+.message[data-depth="2"] {
+  padding-left: 14px;
+  border-left: 2px solid var(--rule);
+}
+
+.message[data-depth="2"] {
+  margin-left: 14px;
+}
+
+.quote {
+  margin: 0 0 4px;
+  padding-left: 8px;
+  border-left: 2px solid var(--rule);
+  color: var(--muted);
+  font-size: var(--size-s);
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
+.meta {
+  font-size: var(--size-s);
+}
+
+.who {
+  font-weight: 600;
+}
+
+.when {
+  margin-left: 8px;
+  color: var(--muted);
+  font-size: var(--size-xs);
+}
+
+.end {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-top: 8px;
+}

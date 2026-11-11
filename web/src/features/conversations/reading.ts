@@ -1,0 +1,132 @@
+// The reader's read state: the owner's comes from the server, a viewer's from
+// localStorage under one key, in the same shape. A storage error never breaks
+// the page: the state then lives in memory for this tab.
+import { useQueryClient } from "@tanstack/react-query";
+import { useSyncExternalStore } from "react";
+import { api } from "../../api/client";
+import { keys, useMe, useReadState } from "../../api/queries";
+import type { ReadMark, ReadState } from "../../api/types";
+
+export const STORAGE_KEY = "crosstalk.read-state";
+
+const EMPTY: ReadState = { threads: {}, muted: [], all_before: null };
+
+const isMark = (v: unknown): v is ReadMark =>
+  !!v && typeof (v as ReadMark).t === "string" && typeof (v as ReadMark).id === "string";
+
+function parse(text: string | null): ReadState {
+  try {
+    const raw = JSON.parse(text ?? "null") as Partial<ReadState> | null;
+    if (!raw || typeof raw !== "object") return EMPTY;
+    const threads: Record<string, ReadMark> = {};
+    for (const [root, mark] of Object.entries(raw.threads ?? {})) if (isMark(mark)) threads[root] = { t: mark.t, id: mark.id };
+    return {
+      threads,
+      muted: Array.isArray(raw.muted) ? raw.muted.filter((r): r is string => typeof r === "string") : [],
+      all_before: typeof raw.all_before === "string" ? raw.all_before : null,
+    };
+  } catch {
+    return EMPTY;
+  }
+}
+
+let memo: { text: string | null; state: ReadState } = { text: null, state: EMPTY };
+/** A state the storage refused to keep. */
+let unsaved: ReadState | null = null;
+const listeners = new Set<() => void>();
+
+function localState(): ReadState {
+  if (unsaved) return unsaved;
+  let text: string | null = null;
+  try {
+    text = window.localStorage.getItem(STORAGE_KEY);
+  } catch {
+    // No storage: the empty state.
+  }
+  if (text !== memo.text) memo = { text, state: parse(text) };
+  return memo.state;
+}
+
+function saveLocal(next: ReadState): void {
+  try {
+    window.localStorage.setItem(STORAGE_KEY, JSON.stringify(next));
+    unsaved = null;
+  } catch {
+    unsaved = next;
+  }
+  for (const fn of listeners) fn();
+}
+
+function subscribe(fn: () => void): () => void {
+  listeners.add(fn);
+  window.addEventListener("storage", fn);
+  return () => {
+    listeners.delete(fn);
+    window.removeEventListener("storage", fn);
+  };
+}
+
+/** Whether mark `a` is later than `b`, compared as the server does: `t`, then `id`. */
+export function isLater(a: ReadMark, b: ReadMark | undefined): boolean {
+  return !b || a.t > b.t || (a.t === b.t && a.id > b.id);
+}
+
+/** The read position of `root`: its own mark or the mark-all time, whichever is later. */
+export function markOf(state: ReadState, root: string): ReadMark | undefined {
+  const own = state.threads[root];
+  // An id that sorts after every id: each message at or before all_before is read.
+  const all = state.all_before ? { t: state.all_before, id: "￿" } : undefined;
+  if (!all) return own;
+  return own && isLater(own, all) ? own : all;
+}
+
+/** Writes in flight, so one mark is sent once. */
+const sending = new Set<string>();
+
+export interface Reading {
+  /** False while the role or the owner's state loads; nothing is written then. */
+  ready: boolean;
+  state: ReadState;
+  markThread(root: string, mark: ReadMark): void;
+  markAll(t: string): void;
+}
+
+export function useReading(): Reading {
+  const qc = useQueryClient();
+  const me = useMe().data;
+  const server = useReadState().data;
+  const local = useSyncExternalStore(subscribe, localState, () => EMPTY);
+  const owner = me?.isOwner === true;
+  const ready = me !== undefined && (!owner || server !== undefined);
+  const state = owner ? (server ?? EMPTY) : local;
+
+  const send = (key: string, body: Parameters<typeof api.putReadState>[0]) => {
+    if (sending.has(key)) return;
+    sending.add(key);
+    api
+      .putReadState(body)
+      .then((next) => {
+        qc.setQueryData(keys.readState, next);
+        void qc.invalidateQueries({ queryKey: ["threads"] });
+      })
+      .catch(() => {
+        // The mark stays where it was; the next view tries again.
+      })
+      .finally(() => sending.delete(key));
+  };
+
+  return {
+    ready,
+    state,
+    markThread(root, mark) {
+      if (!ready || !isLater(mark, markOf(state, root))) return;
+      if (owner) send(`${root}\n${mark.t}\n${mark.id}`, { thread: root, t: mark.t, id: mark.id });
+      else saveLocal({ ...state, threads: { ...state.threads, [root]: mark } });
+    },
+    markAll(t) {
+      if (!ready || (state.all_before !== null && t <= state.all_before)) return;
+      if (owner) send(`\n${t}`, { all_before: t });
+      else saveLocal({ ...state, all_before: t });
+    },
+  };
+}
