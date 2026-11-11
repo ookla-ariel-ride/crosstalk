@@ -1,0 +1,27 @@
+# Standard jobs for alpha: 5 to set up. See docs/standard-jobs.md.
+# Claude Code crons end with the session and expire after 7 days. Repeat this at each session start.
+
+# check-in: Reads the inbox, answers requests, and posts status every 30 minutes.
+# Use CronCreate. cron: 2,32 * * * *
+# prompt: Run python3 @ROOT@/scripts/relay.py inbox alpha and act on what it lists. Post kind check-in with commits, work in progress, and blockers. Then run python3 @ROOT@/scripts/relay.py schedule ran --from alpha --name check-in --result ok.
+python3 @ROOT@/scripts/relay.py schedule set --from alpha --name check-in --cron '2,32 * * * *' --about 'Reads the inbox, answers requests, and posts status every 30 minutes.'
+
+# usage-guard: Reads weekly usage. Winds work down at the install's limit, stops at its stop limit and tells the owner.
+# Use CronCreate. cron: 9,39 * * * *
+# prompt: Read your harness's weekly usage. Step 1 at weekly usage 90 or higher: start no new agents, TURN ASKs, gates or lands. Step 2 at 95: stop all work and tell the owner. After a wind-down, restart below 90. Then run python3 @ROOT@/scripts/relay.py schedule ran --from alpha --name usage-guard --result ok.
+python3 @ROOT@/scripts/relay.py schedule set --from alpha --name usage-guard --cron '9,39 * * * *' --about 'Reads weekly usage. Winds work down at the install'"'"'s limit, stops at its stop limit and tells the owner.'
+
+# daily-docs-refresh: Corrects the README and docs that the last 24 hours of changes made out of date.
+# Use CronCreate. cron: 5 9 * * *
+# prompt: Do a real docs pass in a subagent, without asking the owner; never report skipped without a reason in --note. Correct the README and docs that the last 24 hours of commits made out of date. Check the README against the project's commands and its docs files, and check that each plugin or tool folder has a README. Remove em-dashes and AI-writing patterns with the crafting-effective-readmes and humanizer skills, with no change to meaning. Run the tests, commit, and name the commit in the next check-in. Then run python3 @ROOT@/scripts/relay.py schedule ran --from alpha --name daily-docs-refresh --result ok.
+python3 @ROOT@/scripts/relay.py schedule set --from alpha --name daily-docs-refresh --cron '5 9 * * *' --about 'Corrects the README and docs that the last 24 hours of changes made out of date.'
+
+# daily-retro: Posts the daily retro with the backlog vote, the MOVE votes, and the drift list.
+# Use CronCreate. cron: 25 12 * * *
+# prompt: Run python3 @ROOT@/scripts/relay.py adoption gaps --from alpha and record or report what is open. Post the daily retro with the backlog vote, the MOVE votes, and the drift list. Then run python3 @ROOT@/scripts/relay.py schedule ran --from alpha --name daily-retro --result ok.
+python3 @ROOT@/scripts/relay.py schedule set --from alpha --name daily-retro --cron '25 12 * * *' --about 'Posts the daily retro with the backlog vote, the MOVE votes, and the drift list.'
+
+# monday-review: Finds stale or missing rules in AGENTS.md and CLAUDE.md and proposes changes.
+# Use CronCreate. cron: 5 10 * * 1
+# prompt: Review AGENTS.md and CLAUDE.md against this week's decisions rows. Propose changes for stale or missing rules. Then run python3 @ROOT@/scripts/relay.py schedule ran --from alpha --name monday-review --result ok.
+python3 @ROOT@/scripts/relay.py schedule set --from alpha --name monday-review --cron '5 10 * * 1' --about 'Finds stale or missing rules in AGENTS.md and CLAUDE.md and proposes changes.'

@@ -1,0 +1,21 @@
+# Standard jobs for beta: 5 to set up. See docs/standard-jobs.md.
+
+# check-in: Reads the inbox, answers requests, and posts status every 30 minutes.
+hermes cron create --name check-in --workdir "$PWD" '17,47 * * * *' 'Run python3 @ROOT@/scripts/relay.py inbox beta and act on what it lists. Post kind check-in with commits, work in progress, and blockers. Then run python3 @ROOT@/scripts/relay.py schedule ran --from beta --name check-in --result ok.'
+python3 @ROOT@/scripts/relay.py schedule set --from beta --name check-in --cron '17,47 * * * *' --about 'Reads the inbox, answers requests, and posts status every 30 minutes.'
+
+# usage-guard: Reads weekly usage. Winds work down at the install's limit, stops at its stop limit and tells the owner.
+hermes cron create --name usage-guard --workdir "$PWD" '24,54 * * * *' 'Read your harness'"'"'s weekly usage. Step 1 at weekly usage 90 or higher: start no new agents, TURN ASKs, gates or lands. Step 2 at 95: stop all work and tell the owner. After a wind-down, restart below 90. Then run python3 @ROOT@/scripts/relay.py schedule ran --from beta --name usage-guard --result ok.'
+python3 @ROOT@/scripts/relay.py schedule set --from beta --name usage-guard --cron '24,54 * * * *' --about 'Reads weekly usage. Winds work down at the install'"'"'s limit, stops at its stop limit and tells the owner.'
+
+# daily-docs-refresh: Corrects the README and docs that the last 24 hours of changes made out of date.
+hermes cron create --name daily-docs-refresh --workdir "$PWD" '35 9 * * *' 'Do a real docs pass in a subagent, without asking the owner; never report skipped without a reason in --note. Correct the README and docs that the last 24 hours of commits made out of date. Check the README against the project'"'"'s commands and its docs files, and check that each plugin or tool folder has a README. Remove em-dashes and AI-writing patterns with the crafting-effective-readmes and humanizer skills, with no change to meaning. Run the tests, commit, and name the commit in the next check-in. Then run python3 @ROOT@/scripts/relay.py schedule ran --from beta --name daily-docs-refresh --result ok.'
+python3 @ROOT@/scripts/relay.py schedule set --from beta --name daily-docs-refresh --cron '35 9 * * *' --about 'Corrects the README and docs that the last 24 hours of changes made out of date.'
+
+# daily-retro: Posts the daily retro with the backlog vote, the MOVE votes, and the drift list.
+hermes cron create --name daily-retro --workdir "$PWD" '40 12 * * *' 'Run python3 @ROOT@/scripts/relay.py adoption gaps --from beta and record or report what is open. Post the daily retro with the backlog vote, the MOVE votes, and the drift list. Then run python3 @ROOT@/scripts/relay.py schedule ran --from beta --name daily-retro --result ok.'
+python3 @ROOT@/scripts/relay.py schedule set --from beta --name daily-retro --cron '40 12 * * *' --about 'Posts the daily retro with the backlog vote, the MOVE votes, and the drift list.'
+
+# monday-review: Finds stale or missing rules in AGENTS.md and CLAUDE.md and proposes changes.
+hermes cron create --name monday-review --workdir "$PWD" '35 10 * * 1' 'Review AGENTS.md and CLAUDE.md against this week'"'"'s decisions rows. Propose changes for stale or missing rules. Then run python3 @ROOT@/scripts/relay.py schedule ran --from beta --name monday-review --result ok.'
+python3 @ROOT@/scripts/relay.py schedule set --from beta --name monday-review --cron '35 10 * * 1' --about 'Finds stale or missing rules in AGENTS.md and CLAUDE.md and proposes changes.'
