@@ -1,0 +1,31 @@
+.part + .part {
+  margin-top: 18px;
+}
+
+.head {
+  margin: 0 0 8px;
+  font-family: var(--font-heading);
+  font-weight: 700;
+  font-size: var(--size-m);
+}
+
+/* The rows sit in one card on surface, as in the approved mockup. */
+.list {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  border: 1px solid var(--rule);
+  border-radius: var(--radius-card);
+  background: var(--surface);
+  overflow: hidden;
+}
+
+.list li:last-child > div {
+  border-bottom: 0;
+}
+
+.empty {
+  margin: 0;
+  color: var(--muted);
+  font-size: var(--size-s);
+}

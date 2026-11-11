@@ -46,6 +46,8 @@ describe("client", () => {
     await api.getHealth();
     await api.getMe();
     await api.getReadState();
+    await api.getQueue();
+    await api.getSnapshot();
     expect(calls.map((c) => c.url)).toEqual([
       "/api/threads?sort=hot&cursor=50&limit=25",
       "/api/threads?sort=new",
@@ -56,6 +58,8 @@ describe("client", () => {
       "/api/health",
       "/api/me",
       "/api/read-state",
+      "/api/queue",
+      "/api/snapshot",
     ]);
     for (const c of calls) expect(c.init?.credentials).toBe("same-origin");
   });

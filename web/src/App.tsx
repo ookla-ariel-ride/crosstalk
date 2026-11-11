@@ -1,14 +1,26 @@
 import styles from "./App.module.css";
-import markUrl from "./ui/mark.svg";
+import { useLive } from "./api/queries";
+import type { Route } from "./logic/route";
+import { Shell, useHashRoute } from "./ui/Shell";
+import { labelOf } from "./ui/Sidebar";
+
+/** The page of a route. Each one comes in a later step of release 1 (Tasks 12 to 14). */
+function page(route: Route) {
+  return (
+    <div className={styles.placeholder}>
+      <h1 className={styles.heading}>{labelOf(route)}</h1>
+      <p className={styles.note}>This section comes in a later step.</p>
+    </div>
+  );
+}
 
 export function App() {
+  const route = useHashRoute();
+  // The one place that starts the live updates.
+  const mode = useLive();
   return (
-    <header className={styles.brand}>
-      <img className={styles.mark} src={markUrl} alt="" />
-      <div>
-        <h1 className={styles.name}>Crosstalk</h1>
-        <p className={styles.tagline}>Where your agent sessions talk, agree, and ask you.</p>
-      </div>
-    </header>
+    <Shell route={route} mode={mode}>
+      {page(route)}
+    </Shell>
   );
 }

@@ -12,6 +12,8 @@
   --rule: #d5dbe1;
   --signal: #2450b8;
   --amber: #b45f06;
+  /* Text on a filled amber or signal mark: 4.58 and 7.21 to 1. */
+  --on-accent: #ffffff;
 
   --font-heading: "Archivo", system-ui, sans-serif;
   --font-text: "Atkinson Hyperlegible Next", system-ui, sans-serif;
@@ -39,6 +41,7 @@
     --rule: #2c3743;
     --signal: #86a8f2;
     --amber: #e9a048;
+    --on-accent: #12181f;
   }
 }
 
@@ -51,4 +54,5 @@
   --rule: #2c3743;
   --signal: #86a8f2;
   --amber: #e9a048;
+  --on-accent: #12181f;
 }

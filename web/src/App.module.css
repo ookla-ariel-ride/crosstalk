@@ -1,28 +1,15 @@
-.brand {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  max-width: var(--width-sidebar);
-  padding: 16px;
+.placeholder {
+  padding: 12px 18px;
 }
 
-.mark {
-  width: 32px;
-  height: 32px;
-  flex: none;
-}
-
-.name {
+.heading {
   margin: 0;
   font-family: var(--font-heading);
   font-weight: 700;
-  font-size: var(--size-xl);
-  line-height: 1.2;
+  font-size: var(--size-l);
 }
 
-.tagline {
-  margin: 2px 0 0;
+.note {
+  margin: 8px 0 0;
   color: var(--muted);
-  font-size: var(--size-xs);
-  line-height: 1.35;
 }

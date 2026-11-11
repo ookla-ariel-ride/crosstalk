@@ -174,6 +174,71 @@ export interface LoginResult {
   viewer: string;
 }
 
+/** One land run that holds the queue (landqueue.land_queue, `holders`). */
+export interface LandHolder {
+  project: string;
+  /** The id of the LAND START or LANE START message. */
+  id: string;
+  since: string;
+  /** LAND START or LANE START. */
+  word: string;
+  branches: string[];
+  /** The TURN ASK this run answers, or null. */
+  ask: string | null;
+}
+
+/** One TURN ASK that waits (landqueue.land_queue, `waiting`). */
+export interface LandWaiting {
+  project: string;
+  id: string;
+  t: string;
+  branches: string[];
+  /** The project holds a run already. */
+  holding: boolean;
+  /** The id of a later TURN ASK that added branches. */
+  updated?: string;
+  /** The GRANTED message id, its time and the branches it names. */
+  granted?: string;
+  granted_t?: string;
+  granted_branches?: string[];
+  grant_lapsed?: boolean;
+}
+
+/** GET /api/queue: the land queue of the build host (landqueue.py). */
+export interface LandQueue {
+  holders: LandHolder[];
+  waiting: LandWaiting[];
+  /** The project whose turn comes next, or null. */
+  next: string | null;
+  slots_free: number;
+  may_start: boolean;
+  max_holders: number;
+  /** Traffic that breaks the queue rules. */
+  notes: string[];
+}
+
+/** One entry of participants.json, as GET /api/snapshot serves it (PROTOCOL.md, "Participants and trust"). */
+export interface RosterEntry {
+  id: string;
+  name?: string;
+  /** project, agent, reviewer, researcher, tool or person. */
+  kind?: string;
+  /** `#rrggbb` for the light theme and for the dark theme. */
+  color?: string;
+  colorDark?: string;
+  harness?: string | null;
+  checkInMin?: number;
+  parent?: string;
+  trust?: string;
+}
+
+/** GET /api/snapshot: every collection replayed and the roster. Only the fields the page reads are typed. */
+export interface Snapshot {
+  server_time: string;
+  roster: Record<string, RosterEntry>;
+  collections: Record<string, Record<string, unknown>>;
+}
+
 /** One new log line of an `event: rows` on GET /api/events (events._row). */
 export interface RowRef {
   from: string;

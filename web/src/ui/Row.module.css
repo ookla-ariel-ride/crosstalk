@@ -1,0 +1,82 @@
+.row {
+  border-bottom: 1px solid var(--rule);
+}
+
+.row[data-open] {
+  background: var(--surface);
+}
+
+.control {
+  display: grid;
+  grid-template-columns: 30px minmax(0, 1fr) auto;
+  gap: 0 10px;
+  width: 100%;
+  padding: 10px 18px;
+  border: 0;
+  border-radius: 0;
+  background: none;
+  color: inherit;
+  font: inherit;
+  text-align: left;
+  text-decoration: none;
+  cursor: pointer;
+}
+
+.control:hover,
+.row[data-open] .control {
+  background: var(--surface);
+}
+
+/* The ring sits inside the row, so the next row does not cover it. */
+.control:focus-visible {
+  outline: 2px solid var(--signal);
+  outline-offset: -2px;
+}
+
+.main {
+  min-width: 0;
+}
+
+.title {
+  display: block;
+  font-weight: 600;
+  font-size: var(--size-m);
+  line-height: 1.35;
+}
+
+.text {
+  display: block;
+  margin-top: 2px;
+  overflow: hidden;
+  color: var(--muted);
+  font-size: var(--size-s);
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
+.note {
+  color: var(--muted);
+  font-size: var(--size-xs);
+  text-align: right;
+  white-space: nowrap;
+}
+
+/* The one motion of the page: an open row's content moves in. base.css stops
+   it under prefers-reduced-motion: reduce; the rule below does too. */
+.content {
+  padding: 4px 18px 14px 58px;
+  animation: open 160ms ease-out;
+}
+
+@keyframes open {
+  from {
+    opacity: 0;
+    transform: translateY(-6px);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .content {
+    animation: none;
+  }
+}

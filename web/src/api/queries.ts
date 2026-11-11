@@ -3,7 +3,7 @@ import { QueryClient, useInfiniteQuery, useQuery, useQueryClient } from "@tansta
 import { useEffect, useState } from "react";
 import { api, ApiError } from "./client";
 import { type EventsDeps, type Mode, startEvents } from "./events";
-import type { RowRef, SectionName, Sort, ThreadDetail } from "./types";
+import type { RosterEntry, RowRef, SectionName, Snapshot, Sort, ThreadDetail } from "./types";
 
 export const keys = {
   threads: (sort: Sort) => ["threads", sort] as const,
@@ -12,6 +12,8 @@ export const keys = {
   vitals: ["vitals"] as const,
   me: ["me"] as const,
   readState: ["read-state"] as const,
+  queue: ["queue"] as const,
+  roster: ["roster"] as const,
 };
 
 /** The sections that read each collection (sections.COLLECTION, turned around). */
@@ -56,6 +58,8 @@ export function invalidateForRows(qc: QueryClient, rows: RowRef[]): void {
 
   if (collections.has("messages")) {
     void qc.invalidateQueries({ queryKey: ["threads"] });
+    // The land queue is read from the land messages (landqueue.py).
+    void qc.invalidateQueries({ queryKey: keys.queue });
     const holders: string[] = [];
     const held = new Set<string>();
     for (const [key, data] of qc.getQueriesData<ThreadDetail>({ queryKey: ["thread"] })) {
@@ -76,9 +80,10 @@ export function invalidateForRows(qc: QueryClient, rows: RowRef[]): void {
   for (const name of sections) void qc.invalidateQueries({ queryKey: ["section", name] });
 }
 
-/** Invalidate the thread list, every thread and every section: what the stream shows. */
+/** Invalidate the thread list, every thread, every section and the land queue: what the stream shows. */
 export function invalidateAll(qc: QueryClient): void {
   void qc.invalidateQueries({ queryKey: ["threads"] });
+  void qc.invalidateQueries({ queryKey: keys.queue });
   void qc.invalidateQueries({ queryKey: ["thread"] });
   void qc.invalidateQueries({ queryKey: ["section"] });
 }
@@ -86,7 +91,7 @@ export function invalidateAll(qc: QueryClient): void {
 /**
  * Start the live updates for `qc`. The stream has no replay, so a return from
  * poll to push refetches everything it shows; each poll refetches the thread
- * list. The returned function stops it all.
+ * list and the land queue. The returned function stops it all.
  */
 export function connectLive(qc: QueryClient, onMode: (mode: Mode) => void, deps: EventsDeps = {}): () => void {
   let mode: Mode | null = null;
@@ -97,7 +102,13 @@ export function connectLive(qc: QueryClient, onMode: (mode: Mode) => void, deps:
       mode = next;
       onMode(next);
     },
-    { ...deps, onPoll: () => void qc.invalidateQueries({ queryKey: ["threads"] }) },
+    {
+      ...deps,
+      onPoll: () => {
+        void qc.invalidateQueries({ queryKey: ["threads"] });
+        void qc.invalidateQueries({ queryKey: keys.queue });
+      },
+    },
   );
 }
 
@@ -144,4 +155,38 @@ export function useMe() {
 export function useReadState() {
   const me = useMe();
   return useQuery({ queryKey: keys.readState, queryFn: api.getReadState, enabled: me.data?.isOwner === true });
+}
+
+/** The land queue; a land message changes it, so the live updates refetch it. */
+export function useQueue() {
+  return useQuery({ queryKey: keys.queue, queryFn: api.getQueue });
+}
+
+export interface People {
+  roster: Record<string, RosterEntry>;
+  /** Each participant's newest check-in time (kind `check-in`, or the older `checkin`). */
+  checkIns: Record<string, string>;
+}
+
+/** The roster of a snapshot, and the newest check-in of each sender. */
+export function rosterOf(snapshot: Snapshot): People {
+  const checkIns: Record<string, string> = {};
+  for (const doc of Object.values(snapshot.collections?.messages ?? {})) {
+    if (!doc || typeof doc !== "object") continue;
+    const { from, kind, t } = doc as { from?: unknown; kind?: unknown; t?: unknown };
+    if (typeof from !== "string" || typeof t !== "string" || Number.isNaN(Date.parse(t))) continue;
+    if (kind !== "check-in" && kind !== "checkin") continue;
+    const seen = checkIns[from];
+    if (seen === undefined || Date.parse(t) > Date.parse(seen)) checkIns[from] = t;
+  }
+  return { roster: snapshot.roster ?? {}, checkIns };
+}
+
+/**
+ * The roster with its colours, and the check-in times. No other route serves
+ * participants.json, so this reads the whole snapshot (as the present page
+ * does): once a minute, not on each log line.
+ */
+export function useRoster() {
+  return useQuery({ queryKey: keys.roster, queryFn: api.getSnapshot, select: rosterOf, refetchInterval: 60_000 });
 }

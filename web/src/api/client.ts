@@ -2,6 +2,7 @@
 // the page's own host, so the page works under /v2/ and under the dev proxy.
 import type {
   Health,
+  LandQueue,
   LoginBody,
   LoginResult,
   Me,
@@ -9,6 +10,7 @@ import type {
   ReadStatePut,
   SectionName,
   SectionPage,
+  Snapshot,
   Sort,
   ThreadDetail,
   ThreadsPage,
@@ -70,6 +72,9 @@ export function createApi(fetchFn: Fetch = (input, init) => fetch(input, init)) 
       call<SectionPage>("/api/section/" + name + query(opts)),
     getVitals: () => call<Vitals>("/api/vitals"),
     getHealth: () => call<Health>("/api/health"),
+    getQueue: () => call<LandQueue>("/api/queue"),
+    /** The whole replay; the page reads the roster and the check-in times from it. */
+    getSnapshot: () => call<Snapshot>("/api/snapshot"),
     getMe: () => call<Me>("/api/me"),
     getReadState: () => call<ReadState>("/api/read-state"),
     putReadState: (body: ReadStatePut) => send<ReadState>("PUT", "/api/read-state", body),
