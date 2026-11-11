@@ -1,3 +1,4 @@
+/// <reference types="vitest/config" />
 import react from "@vitejs/plugin-react";
 import { defineConfig } from "vite";
 
@@ -16,5 +17,9 @@ export default defineConfig({
     // dist/.vite/manifest.json: the chunk graph that scripts/check-budget.mjs
     // counts. The server never reads it.
     manifest: true,
+  },
+  test: {
+    // e2e/ holds the Playwright tests (playwright.config.ts); Vitest skips them.
+    exclude: ["**/node_modules/**", "**/.git/**", "e2e/**"],
   },
 });

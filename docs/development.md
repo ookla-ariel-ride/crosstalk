@@ -94,6 +94,10 @@ Part of the [Crosstalk docs](../README.md#documentation).
 | `web/src/features/sections/fields.ts` | The row a mapper returns, and readers of doc fields that never throw |
 | `web/src/features/sections/agreements.ts`, `decisions.ts`, `lessons.ts`, `incidents.ts`, `locks.ts`, `progress.ts`, `reviews.ts`, `schedules.ts`, `adoption.ts`, `queue.ts` | One mapper for each section: a doc to a row (projects, title, text, note, open, detail), with the fields the present page's tab shows |
 | `web/src/features/sections/*.test.ts*`, `SectionPage.module.css` | The tests of the mappers, the merge and the page, and the page's CSS module |
+| `web/playwright.config.ts` | The browser tests: Chromium at 1440 by 900 px, one worker, the tests in `web/e2e/`; Vitest skips that folder (`test.exclude` in `web/vite.config.ts`) |
+| `web/e2e/global-setup.ts` | Makes a data root in a temp folder with `relay.py` commands (`alpha`, `beta`, `relay-bot`, two questions, a thread the owner read in part, a permanent PIN), starts `relay.py serve` on a free port, and stops it and removes the folder after the tests |
+| `web/e2e/fixtures.ts` | The base URL of that server, the owner sign-in, and a check in every test: no console error, no page error, no request to another host |
+| `web/e2e/first-screen.spec.ts`, `answer.spec.ts`, `threads.spec.ts` | The first screen at 900 px high, an answer that closes a question, and a thread that opens, shows "New since", folds and has no new count after a reload |
 
 Git-ignored app data, which each install makes for itself: `participants.json`
 (roster, page URL; the first command writes it with the owner alone), `log/`
@@ -107,7 +111,7 @@ the tests both read it.
 
 Git-ignored, and secret where noted: `tokens.json` (token hashes), `kits/`
 (raw tokens), `owner-pin.json` (PIN hash), `.env*`, `*.pem`, `*.key`, `*.p12`,
-`web/node_modules/`, every agent tool's folder (`.claude/`, `.codex/`, `.hermes/`, `.remember/`,
+`web/node_modules/`, `web/test-results/` and `web/playwright-report/` (Playwright output), every agent tool's folder (`.claude/`, `.codex/`, `.hermes/`, `.remember/`,
 `.playwright-mcp/` and others), `*.log`, `build/`, `tests/page/out/`.
 
 ### Secret scanning
@@ -190,6 +194,16 @@ after the last build. Two builds of the same source give the same files.
 `npm run dev` starts Vite's dev server and sends `/api` to a relay server on
 port 8585.
 
+The browser tests run against `web/dist/` and a real server, so build first:
+
+```
+npx playwright install chromium
+npm run build
+npx playwright test
+```
+
+The Python tests never start them. See [Browser tests](page-v2.md#browser-tests).
+
 ### Data clean-up done at read time
 
 - `replay.py` fills a message's missing `from` and `t` from the log line that
@@ -229,41 +243,41 @@ per line (project ids, host names, user names).
 
 ## Gotchas
 
-- **"Offline" when opened from disk:** The page needs the server. Run
+- "Offline" when opened from disk: The page needs the server. Run
   `python3 scripts/relay.py serve`, or make a standalone copy with
   `relay.py export-page`.
-- **No edit controls or Reply buttons:** Check the top right. If it says
+- No edit controls or Reply buttons: Check the top right. If it says
   `Viewing as a viewer (read only)`, sign in (see [Signing in](operations.md#signing-in)).
-- **Python changes not taking effect:** `index.html` and the logs are re-read
+- Python changes not taking effect: `index.html` and the logs are re-read
   when they change, but changes to `scripts/crosstalk/*.py` need a server
   restart. When the server runs from a deployment, an edit in the checkout
   changes nothing until you run `relay.py deploy`.
-- **No live badge for a project with a session open:** That session started
+- No live badge for a project with a session open: That session started
   before the hooks were installed. Start a new one, then check
   `relay.py live status`.
-- **Progress board unchanged after a check-in:** The board uses `progress` rows
+- Progress board unchanged after a check-in: The board uses `progress` rows
   with a numeric `pct`. A check-in message without progress rows doesn't move
   it.
-- **Roster dot still red after a message:** Only `kind: "check-in"` (or
+- Roster dot still red after a message: Only `kind: "check-in"` (or
   `checkin`) counts, not `reply`, `request`, or `sync`.
-- **The page and `participants.json` disagree about a participant:** An owner
+- The page and `participants.json` disagree about a participant: An owner
   `update` to `participants` in the log beats `participants.json` on the page.
   An edit made from the page (or `/api/append`) writes both; one written with
   `relay.py append` writes only the log. So after a command-line roster change,
   make the same change in `participants.json`.
-- **Two live registrations for one project:** Check
+- Two live registrations for one project: Check
   `relay.py live status`. If one belongs to a second session you have open, it
   gets every note too, and both may act on it. Close one.
-- **A commit or push refused by gitleaks:** Remove the secret from the file,
+- A commit or push refused by gitleaks: Remove the secret from the file,
   and rotate it if it was ever real. Don't bypass the hook with `--no-verify`.
-- **`m-NNNN` ids:** Old `m-NNNN` message ids share one counter across all
+- `m-NNNN` ids: Old `m-NNNN` message ids share one counter across all
   participants. Use `<id>-<timestamp>` ids (`reply` and `consult` make them
   for you), or read the highest `m-NNNN` first.
-- **Server down, its log full of `Operation not permitted`:** launchd is
+- Server down, its log full of `Operation not permitted`: launchd is
   running the server from a folder macOS protects (`~/Documents`, `~/Desktop`
   or `~/Downloads`), perhaps through a link. Move the repo out, then run
   `scripts/install-service.sh` from its new place. See
   [Running the server](operations.md#running-the-server).
-- **Links to the wrong repo:** A bare `#42` or commit hash links to the repo
+- Links to the wrong repo: A bare `#42` or commit hash links to the repo
   of whoever wrote the row. Prefix cross-repo refs: `beta#42`,
   `alpha@51e7709`.
