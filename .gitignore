@@ -50,3 +50,6 @@ HERMES.md
 .gemini/
 .agents/
 .mcp.json
+
+# The v2 page: npm packages (web/dist/ is committed)
+web/node_modules/

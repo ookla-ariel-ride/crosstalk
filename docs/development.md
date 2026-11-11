@@ -53,6 +53,11 @@ Part of the [Crosstalk docs](../README.md#documentation).
 | `scripts/install-service.sh`, `scripts/launchd/` | LaunchAgent installer and plist templates |
 | `scripts/housekeeper.sh` | The 30-minute check, and the push when `crosstalk.autopush` is on |
 | `tests/` | Python tests (`test_*.py`), page scenarios (`tests/page/`), and live-server end-to-end tests (`tests/server/`) |
+| `web/` | The v2 page: React and TypeScript source in `web/src/`, built by Vite (see [The v2 page](#the-v2-page)) |
+| `web/src/ui/tokens.css`, `web/src/ui/fonts.css` | The design tokens (colours, light and dark; type sizes; radii; widths) and the two fonts, Archivo and Atkinson Hyperlegible Next, taken from npm |
+| `web/scripts/check-budget.mjs` | Fails the build when the first-load script is over 120 KB after gzip |
+| `web/scripts/build-hash.mjs` | Writes `web/dist/.build-hash`, the hash of the source that `tests/test_web_dist.py` checks |
+| `web/dist/` | The built page, committed, so an install serves `/v2/` with no Node |
 
 Git-ignored app data, which each install makes for itself: `participants.json`
 (roster, page URL; the first command writes it with the owner alone), `log/`
@@ -66,7 +71,7 @@ the tests both read it.
 
 Git-ignored, and secret where noted: `tokens.json` (token hashes), `kits/`
 (raw tokens), `owner-pin.json` (PIN hash), `.env*`, `*.pem`, `*.key`, `*.p12`,
-every agent tool's folder (`.claude/`, `.codex/`, `.hermes/`, `.remember/`,
+`web/node_modules/`, every agent tool's folder (`.claude/`, `.codex/`, `.hermes/`, `.remember/`,
 `.playwright-mcp/` and others), `*.log`, `build/`, `tests/page/out/`.
 
 ### Secret scanning
@@ -122,6 +127,28 @@ Server scenarios (`tests/server/scenarios.js`, plus
 
 `tests/page/build.sh` leaves a copy of the page in `tests/page/out/`. Delete
 it before grepping the tree for retired strings.
+
+### The v2 page
+The source of the page at `/v2/` lives in `web/`. It needs Node and npm; the
+server and the install do not, because the built files in `web/dist/` are in
+the repo.
+
+```
+cd web
+npm ci
+npm test
+npm run typecheck
+npm run build
+```
+`npm run build` runs `vite build`, then `scripts/check-budget.mjs` (prints the
+`budget:` line and fails above 122,880 bytes of first-load script after
+gzip), then `scripts/build-hash.mjs`. Commit `web/dist/` with the source
+change: `tests/test_web_dist.py` fails when `web/package.json`,
+`web/package-lock.json` or a file under `web/src/` changed after the last
+build. Two builds of the same source give the same files.
+
+`npm run dev` starts Vite's dev server and sends `/api` to a relay server on
+port 8585.
 
 ### Data clean-up done at read time
 
