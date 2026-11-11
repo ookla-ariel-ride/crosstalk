@@ -128,8 +128,12 @@ def item_lines(items: List[dict]) -> List[str]:
     return lines
 
 
-def render_message(name: str, pid: str, items: List[dict], root: Path) -> str:
+def render_message(name: str, pid: str, items: List[dict], root: Path,
+                   code_root: Optional[Path] = None) -> str:
     """The message posted into a session: one line per item, then what to do.
+
+    The command it names is `<code_root>/scripts/relay.py` (code_root defaults
+    to root); when the data lives elsewhere it carries `--data-root <root>`.
 
     items are message docs with `_id` added; `kind`, `from` and `summary` come
     from the log. `from` is shown by its roster name when known (pass the name
@@ -141,9 +145,11 @@ def render_message(name: str, pid: str, items: List[dict], root: Path) -> str:
     lines.extend(item_lines(items))
     if n > MAX_ITEM_LINES:
         lines.append("- and %d more" % (n - MAX_ITEM_LINES))
-    lines.append("Run `python3 %s/scripts/relay.py inbox %s` and answer each\n"
+    code_root = root if code_root is None else code_root
+    data = "" if Path(code_root) == Path(root) else " --data-root %s" % root
+    lines.append("Run `python3 %s/scripts/relay.py%s inbox %s` and answer each\n"
                  "with `relay.py reply`. If one asks for substantial work, say in your reply\n"
-                 "what you will do and when." % (root, pid))
+                 "what you will do and when." % (code_root, data, pid))
     if any(it.get("_thread_reply") for it in items):
         lines.append('A reply on your thread that asks nothing gets one short answer asking whether it needs anything, unless it says "No answer needed".')
     return "\n".join(lines)
@@ -191,8 +197,10 @@ class Notifier:
                  state_path: Optional[Path], clock: Callable[[], float] = time.time,
                  poll_sec: float = 5.0,
                  send: Callable[..., None] = send_to_session,
-                 fallback=None, reviews=None):
+                 fallback=None, reviews=None, code_root: Optional[Path] = None):
         self.root = Path(root)
+        # where relay.py lives, for the command in the message (default: root)
+        self.code_root = self.root if code_root is None else Path(code_root)
         # reviews.Scanner (or None): run on every pass after the fallback; it
         # scans the review folders at most once a minute (reviews.SCAN_SEC).
         self.reviews = reviews
@@ -466,7 +474,8 @@ class Notifier:
             items.append(dict(doc, _id=did, from_name=sender_label(p, sender),
                               _thread_reply=did in threaded, _land_report=did in landed))
         me = roster.participants.get(reg.pid)
-        text = render_message(me.name if me is not None else reg.pid, reg.pid, items, self.root)
+        text = render_message(me.name if me is not None else reg.pid, reg.pid, items, self.root,
+                              code_root=self.code_root)
         try:
             self.send(reg.socket, reg.token, text)
         except SessionGone:

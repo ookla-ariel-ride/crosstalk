@@ -82,6 +82,13 @@ class DataRootTests(unittest.TestCase):
             self.assertFalse(missing.exists())
             self.assertEqual(d.log_lines(d.code), [])
 
+    def test_server_gives_the_notifier_the_code_root(self):
+        with TempRepo() as data:
+            data.write_roster()
+            with RunningServer(data.root, code_root=REPO, no_pin=True, notify=True) as srv:
+                self.assertEqual(srv._notifier.code_root, REPO)
+                self.assertEqual(srv._notifier.root, data.root)
+
     def test_page_served_from_code_root(self):
         with TempRepo() as data:
             data.write_roster()

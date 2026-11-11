@@ -961,7 +961,7 @@ class RunningServer:
                        if self.reviews_state is not None else None)
             state.notifier = Notifier(self.root, state.cache.snapshot, self.notify_state,
                                       poll_sec=self.notify_poll_sec, fallback=fallback,
-                                      reviews=scanner)
+                                      reviews=scanner, code_root=self.code_root)
             self._notifier = state.notifier
             self._notifier.start()
             # The granter posts as the coordinator, so only the server that owns the
