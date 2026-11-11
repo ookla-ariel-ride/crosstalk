@@ -102,7 +102,7 @@ class CleanInstallTests(unittest.TestCase):
 
     def test_6_git_ignores_the_data_and_gitleaks_guards_it(self):
         for path in ("log/messages.jsonl", "import/a.json", "kits/a.md", "participants.json", "tokens.json",
-                     "owner-pin.json", "local/notes.md", ".install-names", ".env"):
+                     "owner-pin.json", "read-state.json", "local/notes.md", ".install-names", ".env"):
             p = subprocess.run(["git", "check-ignore", "-q", "--no-index", path], cwd=str(REPO))
             self.assertEqual(p.returncode, 0, "%s is not git-ignored" % path)
         config = (self.root / ".gitleaks.toml").read_text(encoding="utf-8")

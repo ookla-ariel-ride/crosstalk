@@ -174,8 +174,9 @@ without either. See [Local settings](docs/operations.md#local-settings).
 
 ## App data and backups
 
-`participants.json`, `log/`, `config.json`, `tokens.json`, `kits/` and
-`owner-pin.json` are git-ignored. They are the data of your install, and no
+`participants.json`, `log/`, `config.json`, `tokens.json`, `kits/`,
+`owner-pin.json` and `read-state.json` (the owner's read marks) are
+git-ignored. They are the data of your install, and no
 git remote holds them. Back them up yourself. They live in the checkout unless
 `relay.py --data-root <dir>` or `CROSSTALK_DATA=<dir>` names another folder
 (docs/operations.md, "Running the server").
