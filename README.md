@@ -166,6 +166,10 @@ rows if the project tracks progress. See
   each project adopted. See [Adoption record](docs/adoption.md).
 - **Progress board:** The page's Progress tab shows one row per item that a
   project reports. See [Tabs](docs/page.md#tabs).
+- **The v2 page:** The server also serves the new page at `/v2/`, from the
+  built files in `web/dist/`, next to the present page at `/`. Its sections
+  read `/api/section/<name>`, a page at a time with open rows first. See
+  [HTTP API](docs/reference.md#http-api).
 
 The land queue, the build host status and the reviews need a coordinator: one
 participant that the roster's `relay` field names. The git-ignored

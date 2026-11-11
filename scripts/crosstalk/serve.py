@@ -10,11 +10,13 @@ The server is the page host and the database:
   PUT  /api/read-state  -> a thread's read mark, the mark-all time, or a mute; the owner only
   GET  /api/events      -> a Server-Sent Events stream of the ids of new log rows (events.py)
   GET  /api/vitals      -> the health numbers: disk, usage, build host (vitals.py)
+  GET  /api/section/<name> -> one section of the v2 page, open rows first, a page at a time (sections.py)
   GET  /api/<collection>-> one collection replayed
   GET  /api/queue       -> the land queue of the build host (landqueue.py)
   GET  /api/me          -> the role of the caller (owner, editor, viewer)
   POST /api/login       -> the startup PIN or the owner token, then a session cookie
   POST /api/append      -> one line appended, with the same checks `relay.py append` runs
+  GET  /v2/<path>       -> the built v2 page from <code root>/web/dist/; GET and HEAD only
 
 Reads are replays of `log/` (the source of truth), cached on each log
 file's size and mtime, so a session that appends straight to a file is
@@ -27,6 +29,7 @@ Python 3.9, standard library only.
 """
 import hmac
 import json
+import mimetypes
 import os
 import secrets
 import signal
@@ -47,7 +50,7 @@ from .logs import COLLECTIONS, append_line, check_all, check_all
 from .onboard import PALETTE, _locked_onboard, onboard
 from .participants import ensure_roster, load_roster
 from .landqueue import land_queue
-from .replay import enrich_messages, first_set_map, load_all_lines, replay
+from .replay import enrich_messages, first_set_map, last_line_map, load_all_lines, replay
 from .deploy import read_manifest
 from .service import service_block, version
 from . import config as config_mod
@@ -62,6 +65,7 @@ from . import readstate
 from . import events as events_mod
 from . import vitals as vitals_mod
 from . import buildhost as buildhost_mod
+from . import sections as sections_mod
 
 # The collections the page reads. "participants" is the owner's roster.
 KNOWN_COLLECTIONS = tuple(COLLECTIONS) + ("participants",)
@@ -88,6 +92,16 @@ LOGIN_MAX_FAILURES = 5
 # row sends a comment line this often, so a proxy or the browser keeps it open.
 EVENTS_CHECK_SEC = 1.0
 EVENTS_PING_SEC = 15.0
+# The v2 page: built files under <code root>/web/dist/. Vite names each file
+# under assets/ by its content, so a browser may keep it for a year.
+V2_DIST = ("web", "dist")
+V2_IMMUTABLE = "public, max-age=31536000, immutable"
+V2_NOT_BUILT = "The v2 page is not built: run `npm run build` in web/."
+# Text types that mimetypes names outside text/*; each gets charset=utf-8.
+TEXT_TYPES = ("application/javascript", "application/json", "application/xml",
+              "application/manifest+json", "image/svg+xml")
+# Font types that an older mimetypes table may not know.
+EXTRA_TYPES = {".woff2": "font/woff2", ".woff": "font/woff"}
 ROSTER_FIELDS = ("name", "kind", "color", "colorDark", "checkInMin", "trust", "repo", "parent", "harness", "aliases", "itemNames")
 
 
@@ -207,6 +221,7 @@ class ReplayCache:
         self._entries = None
         self._roster = None
         self._created = {}  # type: Dict[str, str]
+        self._changed = {}  # type: Dict[Tuple[str, str], str]
         self._thread_key = None
         self._thread_index = None
         self.thread_builds = 0
@@ -257,11 +272,17 @@ class ReplayCache:
             # A message's first write time: an edit moves the replayed `t`, not this.
             self._created = {did: ln.t for (coll, did), ln in first_set_map(lines).items()
                              if coll == "messages"}
+            # Each doc's last change: the time of the last line that touched it.
+            self._changed = {key: ln.t for key, ln in last_line_map(lines).items()}
             return docs, entries
 
     def created(self, did: str) -> Optional[str]:
         """The time of the first `set` line of message `did` in the current snapshot."""
         return self._created.get(did)
+
+    def changed(self, key: Tuple[str, str]) -> Optional[str]:
+        """The time of the last line that touched (collection, id) in the current snapshot."""
+        return self._changed.get(key)
 
     def threads(self) -> "threads_mod.ThreadIndex":
         """The threads of the current snapshot, built once for each cache key."""
@@ -533,10 +554,14 @@ class CrosstalkHandler(BaseHTTPRequestHandler):
             self._events()
         elif path == "/api/vitals":
             self._vitals()
+        elif path.startswith("/api/section/"):
+            self._section(unquote(path[len("/api/section/"):]))
         elif path.startswith("/api/"):
             self._collection(path[len("/api/"):])
         elif path == "/":
             self._index()
+        elif path == "/v2" or path.startswith("/v2/"):
+            self._v2(path)
         elif path == "/favicon.svg":
             self._static_asset("favicon.svg", SVG_TYPE)
         elif path == "/favicon.ico":
@@ -640,6 +665,34 @@ class CrosstalkHandler(BaseHTTPRequestHandler):
             items = self._with_unread(index, items)
         self._json(200, {"threads": items, "next": nxt, "server_time": now})
 
+    def _section(self, name: str):
+        """One page of a section: ?cursor=&limit= as for /api/threads, &q= to search."""
+        if name not in sections_mod.SECTIONS:
+            self._error(404, "no such section: %s" % name)
+            return
+        query = parse_qs(urlsplit(self.path).query)
+        raw_limit = query.get("limit", [""])[-1]
+        try:
+            limit = int(raw_limit) if raw_limit else None
+        except ValueError:
+            self._error(400, "the limit must be a whole number")
+            return
+        cache = self.state.cache
+        try:
+            docs, _entries = cache.snapshot()
+            roster = cache.roster()
+        except (OSError, ValueError) as e:
+            self._error(500, "cannot read the log: %s" % e)
+            return
+        found, open_count = sections_mod.rows(name, docs, roster, changed=cache.changed,
+                                              q=query.get("q", [""])[-1])
+        try:
+            items, nxt = threads_mod.page(found, query.get("cursor", [""])[-1], limit)
+        except ValueError as e:
+            self._error(400, str(e))
+            return
+        self._json(200, {"rows": items, "next": nxt, "open": open_count, "total": len(found)})
+
     def _with_unread(self, index, items: List[dict]) -> List[dict]:
         """Copies of the threads with the owner's `unread` count (readstate.py)."""
         state = readstate.load(self.state.root)
@@ -736,6 +789,57 @@ class CrosstalkHandler(BaseHTTPRequestHandler):
             return
         self._send(200, body, HTML_TYPE, [("Cache-Control", "no-cache")])
 
+    def _v2(self, path: str):
+        """A file of the built v2 page; a route with no file extension gets index.html."""
+        if path == "/v2":
+            query = urlsplit(self.path).query
+            self._send(301, b"", "text/plain; charset=utf-8",
+                       [("Location", "/v2/" + ("?" + query if query else ""))])
+            return
+        dist = self.state.code_root.joinpath(*V2_DIST)
+        if not dist.is_dir():
+            self._error(404, V2_NOT_BUILT)
+            return
+        # Decode once; a NUL or a backslash is never part of a built file's name.
+        rel = unquote(path[len("/v2/"):])
+        if "\x00" in rel or "\\" in rel:
+            self._error(404, "no such file")
+            return
+        try:
+            base = dist.resolve()
+            target = (base / rel).resolve()  # symlinks followed, so the check sees where they go
+        except (OSError, RuntimeError, ValueError):
+            self._error(404, "no such file")
+            return
+        if target != base and base not in target.parents:
+            self._error(404, "no such file")
+            return
+        if not target.is_file():
+            if os.path.splitext(rel.rstrip("/").rsplit("/", 1)[-1])[1]:
+                self._error(404, "no such file")
+                return
+            target = base / "index.html"
+        try:
+            body = target.read_bytes()
+        except OSError:
+            self._error(404, "no such file")
+            return
+        ctype = mimetypes.guess_type(target.name)[0] or EXTRA_TYPES.get(target.suffix.lower()) \
+            or "application/octet-stream"
+        if ctype.startswith("text/") or ctype in TEXT_TYPES:
+            ctype += "; charset=utf-8"
+        cache = V2_IMMUTABLE if (base / "assets") in target.parents else "no-cache"
+        self._send(200, body, ctype, [("Cache-Control", cache), ("X-Content-Type-Options", "nosniff")])
+
+    def _v2_method(self) -> bool:
+        """True once a method other than GET or HEAD on /v2 got 405."""
+        path = urlsplit(self.path).path
+        if path != "/v2" and not path.startswith("/v2/"):
+            return False
+        self.close_connection = True  # the body, if any, is never read
+        self._json(405, {"error": "the v2 page answers GET and HEAD only"}, headers=[("Allow", "GET, HEAD")])
+        return True
+
     def _static_asset(self, filename: str, content_type: str):
         for root in (self.state.code_root, Path(__file__).resolve().parent.parent.parent):
             path = root / filename
@@ -750,6 +854,8 @@ class CrosstalkHandler(BaseHTTPRequestHandler):
     # -- writes ------------------------------------------------------------
 
     def do_PUT(self):
+        if self._v2_method():
+            return
         path = urlsplit(self.path).path
         if path == "/api/read-state":
             self._read_state_put()
@@ -758,6 +864,8 @@ class CrosstalkHandler(BaseHTTPRequestHandler):
             self.send_error(501, "Unsupported method (%r)" % self.command)
 
     def do_POST(self):
+        if self._v2_method():
+            return
         path = urlsplit(self.path).path
         if path == "/api/append":
             self._append()
