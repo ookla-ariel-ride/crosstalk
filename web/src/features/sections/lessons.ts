@@ -1,6 +1,6 @@
 // Lessons (index.html, renderLessons): what happened, what prevents it now,
 // from whom and when. A lesson is never open.
-import { age, body, type Doc, first, line, projects, refs, type RowView, stamp, str, words } from "./fields";
+import { age, body, type Doc, first, line, marksOf, projects, refs, type RowView, stamp, str, words } from "./fields";
 
 export function lessonRow(doc: Doc, now: Date): RowView {
   const from = first(doc, "project", "from");
@@ -18,5 +18,6 @@ export function lessonRow(doc: Doc, now: Date): RowView {
       ...line("Refs", refs(doc.refs)),
       ...line("When", stamp(doc.t)),
     ],
+    marks: marksOf(doc),
   };
 }

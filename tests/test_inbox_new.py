@@ -463,9 +463,38 @@ class InboxNewTests(unittest.TestCase):
         self.assertEqual(len(lines), 3, p.stdout)
         self.assertTrue(lines[0].startswith(" ") and "owner-m1" in lines[0], lines[0])
         self.assertTrue(lines[1].startswith("!") and "beta-r2" in lines[1], lines[1])
-        self.assertEqual(lines[2], "still open 1, agreements open 1, stale locks 0")
+        self.assertEqual(lines[2], "still open 1, agreements open 1, stale locks 0, to read: 0")
         plain = self.run_cli("inbox", "alpha", "--brief").stdout.splitlines()
-        self.assertEqual(plain[-1], "adopt 1, stale locks 0")
+        self.assertEqual(plain[-1], "adopt 1, stale locks 0, to read: 0")
+
+    def test_new_brief_counts_an_open_post_past_the_cap_once(self):
+        self.r.write_log("beta", [req(i, "beta", "beta-r%02d" % i, t(i), must_read=True)
+                                  for i in range(1, 26)])
+        self.assertEqual(len(self.inbox("--new")["to_read"]), 0)
+        self.inbox("--ack")
+        out = self.inbox("--new")
+        self.assertEqual((len(out["still_open"]), out["still_open_more"]), (20, 5))
+        self.assertEqual((out["to_read_open"], out["to_read_open_more"]), ([], 0))
+        p = self.run_cli("inbox", "alpha", "--new", "--brief")
+        self.assertEqual(p.returncode, 0, p.stderr)
+        self.assertEqual(p.stdout.splitlines()[-1],
+                         "still open 25, agreements open 0, stale locks 0, to read: 0")
+
+    def test_new_report_refuses_a_full_report_with_the_to_read_cut(self):
+        from crosstalk.participants import load_roster
+        from crosstalk.replay import enrich_messages, load_all_lines, replay
+        from crosstalk.reports import inbox_report, new_report
+        self.r.write_log("beta", [req(1, "beta", "beta-r1", t(1), must_read=True)])
+        roster = load_roster(self.r.root / "participants.json")
+        lines = load_all_lines(self.r.root, roster)
+        docs = enrich_messages(replay(lines), lines)
+        cut = inbox_report(docs, "alpha", roster)
+        self.assertNotIn("to_read_all", cut)
+        with self.assertRaisesRegex(ValueError, "to_read_all=True"):
+            new_report(cut, lines, None, None)
+        out = new_report(inbox_report(docs, "alpha", roster, to_read_all=True), lines, None, None)
+        self.assertEqual(self.ids(out), ["beta-r1"])
+        self.assertNotIn("to_read_all", out)
 
     def test_quiet_check_in_is_small(self):
         roster = json.loads(json.dumps(SPEC_ROSTER))

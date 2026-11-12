@@ -27,6 +27,23 @@ export interface Thread {
   unread?: number;
   /** The requests of the thread that wait for the owner, oldest first. */
   owner_requests?: string[];
+  /** On a thread whose root expects a mark: how many of the names that owe one hold an acknowledged mark (marks.counts). */
+  marks_count?: MarksCount;
+}
+
+export interface MarksCount {
+  acknowledged: number;
+  expected: number;
+}
+
+/** The word of a mark (marks.MARKS). */
+export type MarkWord = "seen" | "ack" | "applies" | "none" | "unclear";
+
+/** The `marks` key of a marked post (marks.view): who marked it with which word, who still owes a mark, and whether it expects marks. */
+export interface MarksView {
+  marks: Record<string, MarkWord>;
+  owed: string[];
+  expects: boolean;
 }
 
 export interface ThreadsPage {
@@ -74,8 +91,8 @@ export interface Message extends MessageDoc {
   depth: 0 | 1 | 2;
   /** The parent's summary at depth 2, else null. */
   quote: string | null;
-  /** On a request: who said it needs nothing from them (an `acks` row with `none: true`). */
-  acked_by?: string[];
+  /** The marks on the message; only a message with a mark or one that expects marks has it. */
+  marks?: MarksView;
 }
 
 /** GET /api/thread/<id>: the thread that holds message <id>. */

@@ -881,42 +881,153 @@
     return res("helpPerRecipient", ok, "initial=" + initialListed + " still=" + stillListed + " waiting=" + JSON.stringify(waitingText) + " hasReply=" + hasReply + " dropped=" + droppedAfterAll);
   });
 
-  // An ack row (requests.acks_by_item) counts as a reply from its writer: the card shows the name as
-  // "acked, no action" and still waits on the other. A row whose id is not from + "--" + item counts for nothing.
+  // The text of a card's marks line as a copy gives it: each group, then "not yet", one space apart; "" when it has none.
+  function marksText(c) {
+    var line = c && c.querySelector(".marks-line");
+    return line ? line.textContent : "";
+  }
+  // What the server puts on a marked row (marks.view): the page reads only this key.
+  function marksOf(marks, owed, expects) { return { marks: marks, owed: owed || [], expects: !!expects }; }
+
+  // The `none` marks that the server puts on a request (marks.page_views, from marks.marks_by_item) count as
+  // replies from their writers, and the help card still waits on the other. The page reads only that key, not
+  // the `acks` rows: a raw row the server did not count changes nothing. The `none` mark shows as "➖ name" in
+  // the card's marks line, with no separate pill.
   S.push(async function helpAckedNoAction() {
     await go("help");
-    await addDoc("messages", "hreq-ack", { t: ago(1), from: "codex", kind: "request", summary: "Ack me?", to: ["beta", "gamma"] });
-    await addDoc("acks", "gamma--hreq-ack", { from: "gamma", item: "hreq-ack", none: true, t: ago(1) });
-    await addDoc("acks", "beta--other", { from: "beta", item: "hreq-ack", none: true, t: ago(1) });
+    var req = { t: ago(1), from: "codex", kind: "request", summary: "Ack me?", to: ["beta", "gamma"] };
+    await addDoc("messages", "hreq-ack", Object.assign({}, req, { marks: marksOf({ gamma: "none" }) }));
+    await addDoc("acks", "gamma--hreq-ack", { from: "gamma", item: "hreq-ack", none: true, mark: "none", t: ago(1) });
+    // A raw row with no mark on the request in the server's data is not counted.
+    await addDoc("acks", "beta--hreq-ack", { from: "beta", item: "hreq-ack", none: true, mark: "none", t: ago(1) });
     var c = helpCards().filter(function (x) { return x.textContent.indexOf("Ack me?") !== -1; })[0];
-    var acked = c && c.querySelector(".pill.acked"), waiting = c && c.querySelector(".pill.pending-to");
-    var ackedText = acked ? acked.textContent : "", waitingText = waiting ? waiting.textContent : "";
-    await addDoc("acks", "beta--hreq-ack", { from: "beta", item: "hreq-ack", none: true, t: ago(1) });
+    var waiting = c && c.querySelector(".pill.pending-to");
+    var line = marksText(c), pills = c ? c.querySelectorAll(".pill.acked").length : -1, waitingText = waiting ? waiting.textContent : "";
+    // A mark other than `none` answers nothing.
+    await addDoc("messages", "hreq-ack", Object.assign({}, req, { marks: marksOf({ gamma: "none", beta: "applies" }) }));
+    var kept = helpHas("Ack me?");
+    await addDoc("messages", "hreq-ack", Object.assign({}, req, { marks: marksOf({ gamma: "none", beta: "none" }) }));
     var dropped = !helpHas("Ack me?");
     // A request that names nobody: an ack clears no name, so it stays open.
-    await addDoc("messages", "hreq-ack0", { t: ago(1), from: "codex", kind: "request", summary: "Ack nobody?", to: [] });
-    await addDoc("acks", "gamma--hreq-ack0", { from: "gamma", item: "hreq-ack0", none: true, t: ago(1) });
+    await addDoc("messages", "hreq-ack0", { t: ago(1), from: "codex", kind: "request", summary: "Ack nobody?", to: [],
+      marks: marksOf({ gamma: "none" }) });
     var noneKept = helpHas("Ack nobody?");
     await go("timeline");
-    var ok = ackedText === "acked, no action: Gamma" && waitingText === "waiting on Beta" && dropped && noneKept;
-    return res("helpAckedNoAction", ok, "acked=" + JSON.stringify(ackedText) + " waiting=" + JSON.stringify(waitingText) + " dropped=" + dropped + " noneKept=" + noneKept);
+    var ok = line === "\u2796 Gamma" && pills === 0 && waitingText === "waiting on Beta" && kept && dropped && noneKept;
+    return res("helpAckedNoAction", ok, "line=" + JSON.stringify(line) + " pills=" + pills + " waiting=" + JSON.stringify(waitingText) + " kept=" + kept + " dropped=" + dropped + " noneKept=" + noneKept);
   });
 
-  // An ack never hides a request from the owner: once acks alone close it and it leaves Help, its
-  // timeline card still shows "acked, no action" from the same ack map. A non-request shows no ack pill.
+  // relay.py ack --none on request R, then --applies on lesson-R: the later mark wins (marks.marks_by_item), so the
+  // server's marks of R hold `applies` and the Help tab waits on that agent again, as relay.py inbox does.
+  S.push(async function helpLaterMarkThroughTheLesson() {
+    await go("help");
+    await addDoc("messages", "hreq-les", { t: ago(2), from: "codex", kind: "request", summary: "Marked through its lesson?", to: ["gamma"],
+      marks: marksOf({ gamma: "applies" }) });
+    await addDoc("lessons", "lesson-hreq-les", { t: ago(2), project: "codex", summary: "Marked through its lesson?" });
+    await addDoc("acks", "gamma--hreq-les", { from: "gamma", item: "hreq-les", none: true, mark: "none", t: ago(2) });
+    await addDoc("acks", "gamma--lesson-hreq-les", { from: "gamma", item: "lesson-hreq-les", mark: "applies", t: ago(1) });
+    var waiting = helpWaiting("Marked through its lesson?");
+    await go("timeline");
+    var ok = waiting !== null;
+    return res("helpLaterMarkThroughTheLesson", ok, "waiting=" + JSON.stringify(waiting));
+  });
+
+  // An ack never hides a request from the owner: once acks alone close it and it leaves Help, its timeline
+  // card still names who marked it, in the marks line. No card has the old "acked, no action" pill.
   S.push(async function timelineAckedNoAction() {
     await go("help");
-    await addDoc("messages", "treq-ack", { t: ago(1), from: "codex", kind: "request", summary: "Ack me on the timeline?", to: ["beta", "gamma"] });
-    await addDoc("messages", "tnote-ack", { t: ago(1), from: "codex", kind: "note", summary: "A plain note", to: ["beta"] });
+    await addDoc("messages", "treq-ack", { t: ago(1), from: "codex", kind: "request", summary: "Ack me on the timeline?", to: ["beta", "gamma"],
+      marks: marksOf({ gamma: "none", beta: "none" }) });
     await addDoc("acks", "gamma--treq-ack", { from: "gamma", item: "treq-ack", none: true, t: ago(1) });
     await addDoc("acks", "beta--treq-ack", { from: "beta", item: "treq-ack", none: true, t: ago(1) });
-    await addDoc("acks", "beta--tnote-ack", { from: "beta", item: "tnote-ack", none: true, t: ago(1) });
     var dropped = !helpHas("Ack me on the timeline?");
     await go("timeline");
-    function ackPill(id) { var c = card(id), p = c && c.querySelector(".meta > .pill.acked"); return c ? (p ? p.textContent : "") : null; }
-    var reqPill = ackPill("treq-ack"), notePill = ackPill("tnote-ack");
-    var ok = dropped && reqPill === "acked, no action: Beta · Gamma" && notePill === "";
-    return res("timelineAckedNoAction", ok, "dropped=" + dropped + " req=" + JSON.stringify(reqPill) + " note=" + JSON.stringify(notePill));
+    var line = marksText(card("treq-ack")), pills = document.querySelectorAll(".pill.acked").length;
+    var ok = dropped && line === "\u2796 Beta, Gamma" && pills === 0;
+    return res("timelineAckedNoAction", ok, "dropped=" + dropped + " line=" + JSON.stringify(line) + " pills=" + pills);
+  });
+
+  // The marks line under the body of a card (spec "The pages"): marks that exist, then "not yet".
+  S.push(async function marksLineLesson() {
+    await go("timeline");
+    await addDoc("messages", "mk-lesson", { t: ago(1), from: "relay-bot", kind: "lesson", summary: "A lesson with marks", body: "The rule.",
+      marks: marksOf({ beta: "ack", alpha: "ack", gamma: "none" }, ["delta"], true) });
+    var c = card("mk-lesson"), line = c && c.querySelector(".marks-line"), body = c && c.querySelector("p.body");
+    var under = !!(line && body && (body.compareDocumentPosition(line) & Node.DOCUMENT_POSITION_FOLLOWING));
+    var text = marksText(c);
+    var ok = text === "\u2705 Alpha, Beta \u2796 Gamma not yet: Delta" && under;
+    return res("marksLineLesson", ok, "line=" + JSON.stringify(text) + " underBody=" + under);
+  });
+
+  // A name with 👀 or ❓ shows with its mark and also in "not yet" (the server lists it in `owed`).
+  S.push(async function marksLineSeenIsNotYet() {
+    await go("timeline");
+    await addDoc("messages", "mk-seen", { t: ago(1), from: "relay-bot", kind: "lesson", summary: "Seen but not acknowledged",
+      marks: marksOf({ alpha: "seen", beta: "unclear", gamma: "applies" }, ["alpha", "beta", "delta"], true) });
+    var text = marksText(card("mk-seen"));
+    var want = "\ud83d\udd27 Gamma \ud83d\udc40 Alpha \u2753 Beta not yet: Alpha, Beta, Delta";
+    return res("marksLineSeenIsNotYet", text === want, "line=" + JSON.stringify(text));
+  });
+
+  // No line on a post with no marks and no expectation, nor on a `marks` key of a wrong type.
+  S.push(async function marksLineAbsent() {
+    await go("timeline");
+    await addDoc("messages", "mk-plain", { t: ago(1), from: "codex", kind: "check-in", summary: "A plain check-in" });
+    await addDoc("messages", "mk-empty", { t: ago(1), from: "codex", kind: "sync", summary: "Empty marks", marks: marksOf({}, [], false) });
+    await addDoc("messages", "mk-bad1", { t: ago(1), from: "codex", kind: "sync", summary: "Bad marks 1", marks: "ack" });
+    await addDoc("messages", "mk-bad2", { t: ago(1), from: "codex", kind: "sync", summary: "Bad marks 2", marks: { marks: ["ack"], owed: "alpha", expects: "yes" } });
+    await addDoc("messages", "mk-bad3", { t: ago(1), from: "codex", kind: "sync", summary: "Bad marks 3", marks: { marks: { alpha: "wave", beta: 7 }, owed: [3, null], expects: true } });
+    // `owed` shows only when the post expects a mark.
+    await addDoc("messages", "mk-noexp", { t: ago(1), from: "codex", kind: "sync", summary: "Owed, no expectation", marks: marksOf({ beta: "ack" }, ["alpha"], false) });
+    var ids = ["mk-plain", "mk-empty", "mk-bad1", "mk-bad2", "mk-bad3"];
+    var lines = ids.map(function (id) { var c = card(id); return c ? c.querySelectorAll(".marks-line").length : -1; });
+    var noexp = marksText(card("mk-noexp"));
+    var ok = lines.join() === "0,0,0,0,0" && noexp === "\u2705 Beta";
+    return res("marksLineAbsent", ok, "lines=" + lines.join() + " noexp=" + JSON.stringify(noexp));
+  });
+
+  // Each emoji carries its word (marks.LABEL) as the hover title and the text for a screen reader, in the
+  // order ✅ 🔧 ➖ 👀 ❓.
+  S.push(async function marksLineLabels() {
+    await go("timeline");
+    await addDoc("messages", "mk-all", { t: ago(1), from: "relay-bot", kind: "lesson", summary: "Every mark",
+      marks: marksOf({ alpha: "unclear", beta: "seen", gamma: "none", delta: "applies", codex: "ack" }, [], true) });
+    var c = card("mk-all"), marks = c ? [].slice.call(c.querySelectorAll(".marks-line .mark")) : [];
+    var got = marks.map(function (m) { return [m.textContent, m.title, m.getAttribute("aria-label"), m.getAttribute("role")].join("|"); });
+    var want = ["\u2705|acknowledged|acknowledged|img", "\ud83d\udd27|applies|applies|img", "\u2796|no change|no change|img",
+      "\ud83d\udc40|seen|seen|img", "\u2753|not clear|not clear|img"];
+    return res("marksLineLabels", JSON.stringify(got) === JSON.stringify(want), JSON.stringify(got));
+  });
+
+  // A decision and a lesson row show the same marks line as a card, under their text; a row with no marks shows none.
+  S.push(async function marksLineDecisionAndLesson() {
+    function rowOf(summary) {
+      return [].slice.call(document.querySelectorAll("#view tbody tr")).filter(function (tr) { return tr.textContent.indexOf(summary) !== -1; })[0];
+    }
+    await addDoc("decisions", "mk-dec", { t: ago(1), by: "owner", project: "all", summary: "A ruling with marks",
+      marks: marksOf({ beta: "ack", gamma: "none" }, ["delta"], true) });
+    await addDoc("decisions", "mk-dec-plain", { t: ago(1), by: "owner", project: "all", summary: "A ruling without marks" });
+    await addDoc("lessons", "mk-les", { t: ago(1), project: "codex", summary: "A lesson row with marks", fix: "A tool",
+      marks: marksOf({ alpha: "applies" }, ["beta"], true) });
+    await go("decisions");
+    var dec = marksText(rowOf("A ruling with marks")), plain = rowOf("A ruling without marks");
+    var plainLines = plain ? plain.querySelectorAll(".marks-line").length : -1;
+    await go("lessons");
+    var les = marksText(rowOf("A lesson row with marks"));
+    await go("timeline");
+    var ok = dec === "\u2705 Beta \u2796 Gamma not yet: Delta" && plainLines === 0 && les === "\ud83d\udd27 Alpha not yet: Beta";
+    return res("marksLineDecisionAndLesson", ok, "decision=" + JSON.stringify(dec) + " plainLines=" + plainLines + " lesson=" + JSON.stringify(les));
+  });
+
+  // Checks whichever width the window has (run again at 360 wide; see run.md): twelve names wrap inside the card.
+  S.push(async function marksLineNarrow() {
+    await go("timeline");
+    var names = {}, owed = [];
+    for (var i = 1; i <= 12; i++) { names["project-with-a-long-name-" + i] = "ack"; owed.push("other-project-with-a-long-name-" + i); }
+    await addDoc("messages", "mk-wide", { t: ago(1), from: "relay-bot", kind: "lesson", summary: "Twelve names", marks: marksOf(names, owed, true) });
+    var w = window.innerWidth, page = document.documentElement.scrollWidth, line = card("mk-wide") && card("mk-wide").querySelector(".marks-line");
+    var fits = !!line && line.getBoundingClientRect().right <= w + 1;
+    return res("marksLineNarrow", page <= w && fits, "width=" + w + " scrollWidth=" + page + " lineFits=" + fits);
   });
 
   // The Help tab follows relay.py inbox (requests.open_requests): who counts as having answered.

@@ -21,6 +21,7 @@ review or disagreement with source codex-review and a project (reviews.py).
 from typing import Callable, Dict, List, Optional, Tuple
 
 from . import config
+from . import marks as marks_mod
 from . import reviews as reviews_mod
 
 SECTIONS = ("agreements", "decisions", "lessons", "incidents", "locks", "progress",
@@ -80,14 +81,15 @@ def _matches(doc: dict, needle: str, fields) -> bool:
 
 def rows(name: str, docs: Dict[Tuple[str, str], dict], roster,
          changed: Optional[Callable[[Tuple[str, str]], Optional[str]]] = None,
-         q: str = "") -> Tuple[List[dict], int]:
+         q: str = "", views: Optional[Dict[Tuple[str, str], dict]] = None) -> Tuple[List[dict], int]:
     """(the section's rows, how many are open): open rows first, then newest change first.
 
     Each row is a copy of its doc with "id" set. `changed` gives the time of
     the last line that touched a (collection, id) pair; without it, or when it
     gives None, the doc's own `t` stands in. Ties go to the higher id. `q`
     keeps the docs where one of the section's FIELDS holds it, case ignored,
-    as plain text.
+    as plain text. A row of a message, a decision or a lesson gets its `marks` from
+    `views` (marks.page_views); no row keeps a `marks` field of the log.
     An unknown name is a KeyError.
     """
     if name not in SECTIONS:
@@ -113,4 +115,7 @@ def rows(name: str, docs: Dict[Tuple[str, str], dict], roster,
     found.sort(key=lambda r: (r[1], r[2]), reverse=True)
     found.sort(key=lambda r: not r[0])  # stable: open first, each part newest first
     out = [dict(doc, id=did) for _open, _when, did, doc in found]
+    # Marks come only from `acks` rows: a row of any other collection has none.
+    views = (views or {}) if coll in marks_mod.MARKABLE else {}
+    out = [marks_mod.on_row(row, views.get((coll, row["id"]))) for row in out]
     return out, sum(1 for r in found if r[0])

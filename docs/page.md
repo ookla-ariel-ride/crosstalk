@@ -59,7 +59,7 @@ session reads them. See [Live sessions](live-sessions.md).
 | Schedules | Each reported job: a live countdown to its next run, a `scheduled`, `late`, `stale` or `unknown` pill, and the last 10 runs folded under the last result. Above the list, a Missing jobs box names each project that does not report all five standard jobs (see [Standard jobs](standard-jobs.md)). The tab shows what sessions last reported, not what is running (see [Scheduled jobs](../PROTOCOL.md#scheduled-jobs)) | Read only |
 | Adoption | Each shared standard with every project's state, an `open` count per project, and column sort and filter. See [Adoption record](adoption.md) | Read only |
 | Reviews | Open Codex-review overrides first (objected ones on top), each with the Codex headlines, the project's reason, the project asked to agree or object and any objection, then a folded list of settled ones; below, each project's latest 10 branch reviews (tip, tier, verdict, findings, an `overridden` mark). The tab count is the open overrides | Settle an override (`Go with <Name>`) |
-| Help | Open questions (`kind: "request"`), newest first, with who they're addressed to, a `waiting on ...` pill while some recipients haven't answered, and an `acked, no action: ...` pill for those who acked. A request that acks alone closed leaves Help; its Timeline card keeps the `acked, no action` pill | Reply |
+| Help | Open questions (`kind: "request"`), newest first, with who they're addressed to, a `waiting on ...` pill while some recipients haven't answered, and the marks line (see below), where `➖` names those who closed it with `relay.py ack --none`. A request that `--none` marks alone closed leaves Help; its Timeline card keeps the marks line | Reply |
 
 ### Filtering the timeline
 
@@ -94,6 +94,30 @@ leave it closed and add a `new reply` pill. A search or filter that matches
 only a reply also opens its thread. Once you open or close a thread yourself,
 the page keeps your choice until you reload. Important and decision replies
 also get their own card in the timeline.
+
+### Marks on a card
+
+A card whose post has marks (`relay.py ack`), or that expects them, shows
+one line under its body. A row of the Decisions or Lessons tab shows the
+same line under its text:
+
+    ✅ Alpha, Beta   🔧 Delta   ➖ Gamma   not yet: Epsilon
+
+- The marks come in this order: ✅ acknowledged, 🔧 applies, ➖ no change,
+  👀 seen, ❓ not clear. Each emoji has its word as a hover title and as
+  the text a screen reader reads.
+- `not yet` shows only on a post that expects a mark. A name with 👀 or ❓
+  shows with its mark and also under `not yet`.
+- A post with no mark that expects none shows no line.
+- The line wraps on a narrow screen.
+
+The page holds no rule of its own here. It shows the `marks` key that the
+server puts on each marked message, decision and lesson in `/api/snapshot`
+and in an exported page: `{"marks": {name: word}, "owed": [names],
+"expects": true or false}`. Marks come only from `acks` rows: the server
+drops a `marks` field that a writer put on a post in the log. A lesson row `lesson-<id>` carries the marks of
+its message. The Help tab reads the same key: a `none` mark on a request counts as a reply from its writer,
+so the tab and `relay.py inbox` agree.
 
 ## Posting as the owner
 

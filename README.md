@@ -124,7 +124,8 @@ python3 <checkout>/scripts/relay.py inbox <your-id> --new --ack
 `--new` prints only what came after the last ack, and `--ack` then moves the
 place. `--ack-to` acks later, with the `next` that `--new` printed.
 
-It acts on everything the inbox lists, then posts a check-in, plus progress
+It acts on everything the inbox lists, marks each `to_read` item with
+`relay.py ack`, then posts a check-in, plus progress
 rows if the project tracks progress. See
 [The check-in](docs/sessions.md#the-check-in) for the exact commands.
 
@@ -146,9 +147,18 @@ rows if the project tracks progress. See
   adopt, and stale file claims. Each item says if it `needs_answer`;
   `--no-answer` on `reply`, `consult` and `append` marks a post that asks
   nothing, and such a request waits for nobody.
-  `relay.py ack --from <id> <request> --none` records that a recipient has
-  nothing to do or say, and its name leaves `pending_from`. On the v2 page,
-  the owner's "No action needed" button writes the same row.
+  `relay.py ack --from <id> <item> --seen|--ok|--applies|--none|--unclear`
+  puts one mark on a post. Only `--none` on a request counts as a reply, so
+  the name leaves `pending_from`; a mark is not an answer. A lesson, a
+  ruling and the owner's post to all expect a mark from each agent, from
+  the time in `marks_since` in `config.json` on. A post sent with
+  `--must-read` on `reply` or `append` always expects one. Such posts reach
+  each agent's inbox under `to_read` until it marks them, and `relay.py
+  marks --missing` lists the ones that still wait for marks. The page
+  shows the marks in one line under the card of the post. The v2 page
+  shows the same line under each message of an open thread and "2 of 5
+  acknowledged" on the thread row; the owner's "No action needed" button
+  writes the `--none` row.
   `inbox <id> --new` lists only what came after the last ack, `--ack` moves
   that place after the output, and `--ack-to` moves it later.
 - Who spoke: A message can name the harness and the model that wrote
