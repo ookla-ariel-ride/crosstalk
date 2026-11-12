@@ -16,10 +16,11 @@ in the sidebar and sign in with the PIN or the owner token. See
 [Signing in](operations.md#signing-in).
 
 An open tab keeps the page it loaded. After a deploy it needs a reload to
-run the new page. The page reads `page_build` from `/api/vitals` each minute,
-the hash in `web/dist/.build-hash`, which changes exactly when the page files
-change. When it differs from the one the tab first read, a bar says "A new
-version of this page is ready." with a Reload button. The page never reloads
+run the new page. `npm run build` writes the hash in `web/dist/.build-hash`,
+which changes exactly when the page files change, into the page itself, so
+the tab knows its build from the first render. The page reads `page_build`
+from `/api/vitals` each minute. When it differs from the tab's own build, a
+bar says "A new version of this page is ready." with a Reload button. The page never reloads
 by itself, because a draft may be open.
 
 ## Navigation
@@ -35,9 +36,11 @@ The sidebar holds every page:
 - Conversations: every thread, in one stream. The entry shows how many
   threads are unread, and so do the tab title, such as "(12) Crosstalk", and
   the sort New, such as "New (12)". For the owner the number is the server's
-  count of every unread thread that is not muted. For a reader who is not
-  signed in, it counts the unread threads on the pages the page loaded in
-  the Needs you order.
+  count of every unread thread that is not muted, loaded or not. The page
+  reads it with its own small request, and the server counts once for each
+  change of the log or the read state. For a reader who is not signed in, it
+  counts only the unread threads on the pages the page loaded in the Needs
+  you order.
 - Work: Land queue, Progress, Reviews, Schedules.
 - Record: Decisions, Agreements, Lessons and incidents, File claims, Adoption.
 - People: Roster, with the sign-in and the owner's controls for participants.
@@ -122,17 +125,21 @@ the newest message you read.
 - A thread counts as read when its last new message is in view for one
   second while the tab is visible. "Mark read" does the same at once, and
   "Mark all read" marks every message up to the time the stream last loaded.
-  The button shows how many loaded threads are unread, such as "Mark all read
-  (12)". With none unread it reads "All read" and is shut. After a click, a
-  status line under the buttons says what happened, such as "Marked 12
-  threads read". If the server did not keep the write, it says "Not saved"
-  with a Retry button. The line goes after 5 seconds or at your next action.
-  A thread on the page whose newest message is dated after that time (a
-  writer's clock runs ahead) gets its own mark at that message, so it reads
-  as read too; a message that comes after the click stays new. Once the server
-  keeps the writes, each open thread shows all its messages with no "New
-  since" line, and each row loads its count again, an open thread from a
-  link too.
+  For the owner, the button shows the same number as the sidebar, such as
+  "Mark all read (200)", on every sort, also when the loaded rows are all
+  read. For a reader who is not signed in, it counts the unread threads
+  loaded on this sort. With none unread it reads "All read" and does nothing,
+  but keeps the focus. After a click, a status line under the buttons says
+  what happened, such as "Marked 200 threads read". If the server did not
+  keep the write, it says "Not saved" with a Retry button, and the line stays
+  until your next action; Retry puts the focus back on "Mark all read". A
+  success line goes after 5 seconds or at your next action. For the owner,
+  the server also marks each thread whose newest message is dated after that
+  time (a writer's clock runs ahead), loaded or not; a reader who is not
+  signed in gets such a mark for each thread on the page. A message that
+  comes after the click stays new. Once the server keeps the write, each open
+  thread shows all its messages with no "New since" line, and each row loads
+  its count again, an open thread from a link too.
 - Your own posts never count as new.
 
 The server keeps the owner's read state in `read-state.json` in the data
@@ -184,8 +191,8 @@ by its id, on screen and after a reload. A third one, on the default sort,
 checks the count on the button, in the sidebar and in the tab title, the
 status line after the click, the counts that clear, and the button that then
 reads "All read". A fourth one opens New, marks all read, sees the list
-empty, also after a reload, then posts a reply and sees its thread come
-back. Each of these writes the read state it needs and puts the old one back
+empty, also after a reload, then posts a reply in a fixture thread that no
+other test reads and sees that thread come back. Each of these writes the read state it needs and puts the old one back
 after, so it runs in any order. The server and each
 `relay.py` command of the setup run with `HOME` and every `CROSSTALK_*` path
 inside the temp folder.
