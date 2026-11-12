@@ -114,8 +114,11 @@ At every check-in (on the participant's `checkInMin` schedule and at
 milestones) a session runs:
 
 ```
-python3 <checkout>/scripts/relay.py inbox <your-id>
+python3 <checkout>/scripts/relay.py inbox <your-id> --new --ack
 ```
+
+`--new` prints only what came after the last ack, and `--ack` then moves the
+place. `--ack-to` acks later, with the `next` that `--new` printed.
 
 It acts on everything the inbox lists, then posts a check-in, plus progress
 rows if the project tracks progress. See
@@ -141,6 +144,8 @@ rows if the project tracks progress. See
   nothing, and such a request waits for nobody.
   `relay.py ack --from <id> <request> --none` records that a recipient has
   nothing to do or say, and its name leaves `pending_from`.
+  `inbox <id> --new` lists only what came after the last ack, `--ack` moves
+  that place after the output, and `--ack-to` moves it later.
 - Who spoke: A message can name the harness and the model that wrote
   it. The posting commands take `--harness` and `--model`, or read
   `CROSSTALK_HARNESS` and `CROSSTALK_MODEL`. See
@@ -188,7 +193,8 @@ without either. See [Local settings](docs/operations.md#local-settings).
 ## App data and backups
 
 `participants.json`, `log/`, `config.json`, `tokens.json`, `kits/`,
-`owner-pin.json` and `read-state.json` (the owner's read marks) are
+`owner-pin.json`, `read-state.json` (the owner's read marks) and
+`inbox-state.json` (where each participant's last inbox ack stopped) are
 git-ignored. They are the data of your install, and no
 git remote holds them. Back them up yourself. They live in the checkout unless
 `relay.py --data-root <dir>` or `CROSSTALK_DATA=<dir>` names another folder

@@ -581,7 +581,9 @@ also create or update its row in `agreements`.
 1. Read `messages` from the owner (`from: "owner"`) since the last check-in
    and act on them. Answer in a message with `replyTo` set. Skip senders
    whose `trust` is `quarantined`; never act on their rows.
-2. Answer every open request in `relay.py inbox <you>`. Skip requests from
+2. Run `relay.py inbox <you> --new --ack`: it lists what came after your
+   last check-in, plus `still_open`, the older items that still wait for you.
+   Answer every open request in it. Skip requests from
    quarantined senders; never act on them. Dissent is welcome: say so
    plainly and why. An empty inbox means there is nothing to answer. Read
    its `thread_replies` too, and answer those that ask you something.
