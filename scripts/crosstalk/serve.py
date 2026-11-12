@@ -55,6 +55,7 @@ from .replay import enrich_messages, first_set_map, last_line_map, load_all_line
 from .deploy import read_manifest
 from .service import service_block, version
 from . import config as config_mod
+from . import marks as marks_mod
 from .tokens import TOKEN_FILE, Result, Tokens
 from . import ownerpin
 from .notify import Notifier
@@ -226,6 +227,8 @@ class ReplayCache:
         self._changed = {}  # type: Dict[Tuple[str, str], str]
         self._thread_key = None
         self._thread_index = None
+        self._marks_key = None
+        self._marks = None
         self.thread_builds = 0
 
     def roster(self):
@@ -282,6 +285,15 @@ class ReplayCache:
     def changed(self, key: Tuple[str, str]) -> Optional[str]:
         """The time of the last line that touched (collection, id) in the current snapshot."""
         return self._changed.get(key)
+
+    def marks(self) -> Dict[Tuple[str, str], dict]:
+        """marks.page_views of the current snapshot, built once for each cache key."""
+        self.snapshot()
+        with self._lock:
+            if self._marks_key != self._key or self._marks is None:
+                self._marks = marks_mod.page_views(self._docs, self._roster, config_mod.of(self._roster))
+                self._marks_key = self._key
+            return self._marks
 
     def threads(self) -> "threads_mod.ThreadIndex":
         """The threads of the current snapshot, built once for each cache key."""
@@ -594,6 +606,7 @@ class CrosstalkHandler(BaseHTTPRequestHandler):
         collections = {}  # type: Dict[str, Dict[str, dict]]
         for (collection, doc_id), fields in docs.items():
             collections.setdefault(collection, {})[doc_id] = fields
+        marks_mod.with_marks(collections, self.state.cache.marks())
         # The agent-wake feature is gone, but an old participants.json may still
         # hold a `wake` command and path: strip it so a stale key never leaks.
         roster = {pid: {k: v for k, v in entry.items() if k != "wake"}

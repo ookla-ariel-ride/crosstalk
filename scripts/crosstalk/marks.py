@@ -137,12 +137,28 @@ def _to_names(doc) -> Optional[List[str]]:
     return []
 
 
-def _post_time_ok(doc, config) -> bool:
+class _ParsedConfig(dict):
+    """A config whose marks_since is parsed once, for a caller that asks about many posts."""
+
+    def __init__(self, config):
+        dict.__init__(self, config if isinstance(config, dict) else {})
+        since = marks_since(self)
+        self.since_t = _parse_iso(since) if since is not None else None
+
+
+def _since_t(config) -> Optional[float]:
+    if isinstance(config, _ParsedConfig):
+        return config.since_t
     since = marks_since(config)
+    return _parse_iso(since) if since is not None else None
+
+
+def _post_time_ok(doc, config) -> bool:
+    since = _since_t(config)
     if since is None:
         return False
     t = _parse_iso(doc.get("t"))
-    return t is not None and t >= _parse_iso(since)
+    return t is not None and t >= since
 
 
 def _folded(docs: Dict, coll: str, did: str) -> bool:
@@ -236,6 +252,44 @@ def view(docs: Dict, coll: str, did: str, roster, config, by_item=None) -> dict:
     return {"marks": _marks_of(docs, coll, did, roster, by_item),
             "owed": owed(docs, coll, did, roster, config, by_item),
             "expects": expects_mark(docs, coll, did, roster, config)}
+
+
+def page_views(docs: Dict, roster, config) -> Dict[Tuple[str, str], dict]:
+    """(collection, id) to view() for each message, decision and lesson that has a mark
+    or expects one: the `marks` key of that row in the data the pages load. A row that
+    is not here gets no key. Pass the docs from replay.enrich_messages."""
+    by_item = marks_by_item(docs, roster)
+    config = _ParsedConfig(config)
+    out = {}
+    for (coll, did), doc in docs.items():
+        if coll not in MARKABLE or not isinstance(doc, dict):
+            continue
+        expects = expects_mark(docs, coll, did, roster, config)
+        have = _marks_of(docs, coll, did, roster, by_item)
+        if not have and not expects:
+            continue
+        owe = [pid for pid in markers(docs, coll, did, roster) if have.get(pid) not in ACKNOWLEDGED] if expects else []
+        out[(coll, did)] = {"marks": have, "owed": owe, "expects": expects}
+    return out
+
+
+def with_marks(collections: Dict[str, Dict[str, dict]], views: Dict[Tuple[str, str], dict]) -> None:
+    """Put each view of page_views() on a copy of its row in collections, as `marks`, and
+    drop the `marks` field that a writer put on any other message, decision or lesson:
+    marks come only from `acks` rows. The rows are copied so that a cached replay stays
+    as it was."""
+    for coll in MARKABLE:
+        rows = collections.get(coll)
+        if not isinstance(rows, dict):
+            continue
+        for did, row in list(rows.items()):
+            if not isinstance(row, dict):
+                continue
+            v = views.get((coll, did))
+            if v is not None:
+                rows[did] = dict(row, marks=v)
+            elif "marks" in row:
+                rows[did] = {k: val for k, val in row.items() if k != "marks"}
 
 
 ROW_KIND = {"decisions": "decision", "lessons": "lesson"}
