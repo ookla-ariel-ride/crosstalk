@@ -1,4 +1,4 @@
-import { QueryClient, type QueryKey } from "@tanstack/react-query";
+import { QueryClient, QueryObserver, type QueryKey } from "@tanstack/react-query";
 import { beforeEach, describe, expect, test } from "vitest";
 import { ApiError } from "./client";
 import { RETRY_MS } from "./events";
@@ -86,10 +86,10 @@ describe("queries", () => {
     expect(invalidated()).toEqual([]);
     FakeEventSource.latest().emit("error");
 
-    // A poll in poll mode invalidates the thread list (and the land queue, not cached here).
+    // A poll in poll mode invalidates what the stream shows (and the land queue, not cached here).
     clock.advance(15_000);
     await flush();
-    expect(invalidated()).toEqual([JSON.stringify(keys.threads("new")), JSON.stringify(keys.threads("hot"))]);
+    expect(invalidated()).toEqual(CACHED.filter(([k]) => k[0] !== "vitals").map(([k]) => JSON.stringify(k)));
 
     clock.advance(RETRY_MS - 15_000);
     FakeEventSource.latest().emit("open");
@@ -104,6 +104,26 @@ describe("queries", () => {
     expect(qc.getQueryState(keys.queue)?.isInvalidated).toBe(false);
     invalidateForRows(qc, [row("messages", "beta-0003")]);
     expect(qc.getQueryState(keys.queue)?.isInvalidated).toBe(true);
+  });
+
+  test("each poll refetches the open thread and the open section, and nothing that no view shows", async () => {
+    const fetched: string[] = [];
+    const watch = (key: QueryKey) =>
+      new QueryObserver(qc, { queryKey: key, queryFn: () => (fetched.push(JSON.stringify(key)), qc.getQueryData(key)), staleTime: Infinity }).subscribe(() => {});
+    const stops = [watch(keys.thread("alpha-0001")), watch(keys.section("agreements", ""))];
+    await flush();
+    fetched.length = 0;
+    const clock = new FakeClock();
+    const stop = connectLive(qc, () => {}, fakeDeps(clock));
+    FakeEventSource.latest().emit("error");
+    clock.advance(15_000);
+    await flush();
+    expect(fetched.sort()).toEqual([JSON.stringify(keys.section("agreements", "")), JSON.stringify(keys.thread("alpha-0001"))]);
+    // A thread and a section that no view shows are only marked stale.
+    expect(qc.getQueryState(keys.thread("beta-0009"))?.isInvalidated).toBe(true);
+    expect(qc.getQueryState(keys.section("decisions", ""))?.isInvalidated).toBe(true);
+    stop();
+    for (const s of stops) s();
   });
 
   test("a return to push and each poll refetch the land queue", async () => {

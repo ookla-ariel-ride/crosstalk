@@ -94,8 +94,9 @@ export function invalidateAll(qc: QueryClient): void {
 
 /**
  * Start the live updates for `qc`. The stream has no replay, so a return from
- * poll to push refetches everything it shows; each poll refetches the thread
- * list and the land queue. The returned function stops it all.
+ * poll to push refetches everything it shows, and so does each poll: the thread
+ * list, the open threads, the open section and the land queue. The returned
+ * function stops it all.
  */
 export function connectLive(qc: QueryClient, onMode: (mode: Mode) => void, deps: EventsDeps = {}): () => void {
   let mode: Mode | null = null;
@@ -108,10 +109,10 @@ export function connectLive(qc: QueryClient, onMode: (mode: Mode) => void, deps:
     },
     {
       ...deps,
-      onPoll: () => {
-        void qc.invalidateQueries({ queryKey: ["threads"] });
-        void qc.invalidateQueries({ queryKey: keys.queue });
-      },
+      // A poll cannot tell what changed, so it invalidates all that the stream
+      // shows. Only the queries an open view watches refetch (React Query's
+      // default refetchType "active"); the others refetch when a view opens.
+      onPoll: () => invalidateAll(qc),
     },
   );
 }

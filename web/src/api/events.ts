@@ -23,7 +23,7 @@ export interface EventsDeps {
   /**
    * Called in poll mode after each read of /api/health that answers. Health
    * gives no sign of a new log line (its server_time changes on every read),
-   * so the caller refetches its thread list each time.
+   * so the caller refetches what its open views show each time.
    */
   onPoll?: () => void;
 }
