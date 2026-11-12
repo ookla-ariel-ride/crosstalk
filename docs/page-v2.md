@@ -64,7 +64,9 @@ decision, mark a waiting message done, approve a participant, and hold or
 release an agreement. A control that sends once stays shut until the page
 loads the change. While an answer is on its way, by a choice or by the box,
 the other way to answer stays shut too. A new try after a failed answer goes
-under the same message id, so the question never gets two answers.
+under the same message id, also after the row was folded and opened again.
+So one page sends one answer for a question. A second tab that has not
+loaded the answer yet can still send another one.
 
 ## Read state
 

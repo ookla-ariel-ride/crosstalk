@@ -21,9 +21,11 @@ export interface ComposerProps {
   onClose: () => void;
   /** The message id of the first send when the draft has none; a new one by default. */
   newId?: () => string;
+  /** Shut the box while another send is on its way: it keeps its text and sends nothing. */
+  disabled?: boolean;
 }
 
-export function Composer({ label, draft, summary = false, send, onClose, newId = newOwnId }: ComposerProps) {
+export function Composer({ label, draft, summary = false, send, onClose, newId = newOwnId, disabled = false }: ComposerProps) {
   const [kept] = useState(() => drafts.get(draft));
   const [subject, setSubject] = useState(kept?.subject ?? "");
   const [text, setText] = useState(kept?.text ?? "");
@@ -31,9 +33,11 @@ export function Composer({ label, draft, summary = false, send, onClose, newId =
   const sending = useSend();
   const ids = useId();
   const empty = !subject.trim() && !text.trim();
+  const shut = disabled || sending.busy;
 
   async function submit(e?: FormEvent) {
     e?.preventDefault();
+    if (shut) return;
     if (empty) return sending.fail("Write something first.");
     id.current ??= newId();
     keepDraft(draft, { subject, text, id: id.current });
@@ -67,16 +71,16 @@ export function Composer({ label, draft, summary = false, send, onClose, newId =
       {summary ? (
         <>
           <label htmlFor={ids + "s"}>Summary</label>
-          <input id={ids + "s"} value={subject} onChange={(e) => edit({ subject: e.target.value })} disabled={sending.busy} />
+          <input id={ids + "s"} value={subject} onChange={(e) => edit({ subject: e.target.value })} disabled={shut} />
         </>
       ) : null}
       <label htmlFor={ids + "t"}>{label}</label>
-      <textarea id={ids + "t"} rows={4} autoFocus value={text} onChange={(e) => edit({ text: e.target.value })} disabled={sending.busy} />
+      <textarea id={ids + "t"} rows={4} autoFocus value={text} onChange={(e) => edit({ text: e.target.value })} disabled={shut} />
       <span className={styles.inline}>
-        <button type="submit" className={styles.primary} disabled={sending.busy}>
+        <button type="submit" className={styles.primary} disabled={shut}>
           Send
         </button>
-        <button type="button" className={styles.button} onClick={close} disabled={sending.busy}>
+        <button type="button" className={styles.button} onClick={close} disabled={shut}>
           Cancel
         </button>
         <Failure error={sending.error} />

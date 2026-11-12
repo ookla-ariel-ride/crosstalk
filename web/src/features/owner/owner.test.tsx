@@ -125,6 +125,8 @@ describe("answer buttons", () => {
     fireEvent.keyDown(box, { key: "Enter", ctrlKey: true });
     await waitFor(() => expect(posts(calls, "/api/append")).toHaveLength(1));
     expect(posts(calls, "/api/append")[0]?.body).toMatchObject({ data: { summary: "Neither", body: "We wait a week." } });
+    // A sent answer leaves nothing in the draft store.
+    await waitFor(() => expect(drafts.has("answer:alpha-0001")).toBe(false));
   });
 });
 
@@ -401,18 +403,53 @@ describe("one answer for one question", () => {
     expect(posts(calls, "/api/append")).toHaveLength(1);
   });
 
-  test("a choice on its way shuts the written answer", async () => {
+  test("a choice on its way shuts the open composer, with no error", async () => {
     renderActions(OWNER);
     const calls = serve({});
     fireEvent.click(screen.getByRole("button", { name: "Write an answer" }));
-    const box = screen.getByLabelText("Your answer");
+    const box = screen.getByLabelText("Your answer") as HTMLTextAreaElement;
     fireEvent.change(box, { target: { value: "Neither" } });
     fireEvent.click(screen.getByRole("button", { name: "Keep the log" }));
+    await waitFor(() => expect(posts(calls, "/api/append")).toHaveLength(1));
+    expect((screen.getByRole("button", { name: "Send" }) as HTMLButtonElement).disabled).toBe(true);
+    expect(box.disabled).toBe(true);
     fireEvent.keyDown(box, { key: "Enter", ctrlKey: true });
     await act(async () => {});
     expect(posts(calls, "/api/append")).toHaveLength(1);
-    expect(screen.queryByRole("button", { name: "Send" })).toBeNull();
-    expect((screen.getByRole("button", { name: "Write an answer" }) as HTMLButtonElement).disabled).toBe(true);
+    expect(posts(calls, "/api/append")[0]?.body).toMatchObject({ data: { summary: "Keep the log" } });
+    expect(screen.queryByRole("alert")).toBeNull();
+  });
+
+  test("a failed choice keeps its id when the row mounts again", async () => {
+    // renderWith stubs fetch, so each serve comes after a render.
+    const first = renderActions(OWNER);
+    const failed = serve({ "/api/append": [500, { error: "cannot write the log: disk full" }] });
+    fireEvent.click(screen.getByRole("button", { name: "Keep the log" }));
+    await screen.findByRole("alert");
+    first.unmount();
+    renderActions(OWNER);
+    const again = serve({ "/api/append": [201, {}] });
+    // Only the id is kept: the composer does not open by itself.
+    expect(screen.queryByLabelText("Your answer")).toBeNull();
+    fireEvent.click(screen.getByRole("button", { name: "Keep the log" }));
+    await waitFor(() => expect(posts(again, "/api/append")).toHaveLength(1));
+    expect((posts(again, "/api/append")[0]?.body as { id: string }).id).toBe((posts(failed, "/api/append")[0]?.body as { id: string }).id);
+  });
+
+  test("a failed written answer, then Cancel, keeps the id for a later choice", async () => {
+    const first = renderActions(OWNER);
+    const failed = serve({ "/api/append": [500, { error: "cannot write the log: disk full" }] });
+    fireEvent.click(screen.getByRole("button", { name: "Write an answer" }));
+    fireEvent.change(screen.getByLabelText("Your answer"), { target: { value: "Neither" } });
+    fireEvent.click(screen.getByRole("button", { name: "Send" }));
+    await screen.findByRole("alert");
+    fireEvent.click(screen.getByRole("button", { name: "Cancel" }));
+    first.unmount();
+    renderActions(OWNER);
+    const again = serve({ "/api/append": [201, {}] });
+    fireEvent.click(screen.getByRole("button", { name: "Keep the log" }));
+    await waitFor(() => expect(posts(again, "/api/append")).toHaveLength(1));
+    expect((posts(again, "/api/append")[0]?.body as { id: string }).id).toBe((posts(failed, "/api/append")[0]?.body as { id: string }).id);
   });
 
   test("a double click on a choice on its way sends once", async () => {
