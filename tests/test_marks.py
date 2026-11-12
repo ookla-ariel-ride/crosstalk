@@ -210,9 +210,39 @@ class MarkTests(unittest.TestCase):
         p = self.run_ack("gamma", self.decision_id, "--ok")
         self.assertEqual(p.returncode, 1)
 
-    def test_none_stays_for_requests_only(self):
-        for item in (self.lesson_id, self.decision_id):
-            self.assertEqual(self.run_ack("beta", item, "--none").returncode, 1, item)
+    def test_none_on_a_lesson_or_a_decision_is_a_plain_mark(self):
+        row = self.ack("beta", "lesson-" + self.lesson_id, "--none")
+        self.assertEqual((row["none"], row["mark"]), (True, "none"))
+        self.ack("beta", self.decision_id, "--none")
+        self.assertEqual(self.marks(), {("messages", self.lesson_id): {"beta": "none"},
+                                        ("decisions", self.decision_id): {"beta": "none"}})
+        docs, roster = self.docs()
+        self.assertEqual(acks_by_item(docs, roster=roster), {})
+
+    def test_none_on_own_post_is_refused(self):
+        before = self.log_lines()
+        for pid, item in (("alpha", self.request_id), ("alpha", self.lesson_id),
+                          ("alpha", "lesson-" + self.lesson_id), ("gamma", self.decision_id)):
+            p = self.run_ack(pid, item, "--none")
+            self.assertEqual(p.returncode, 1, (pid, item))
+            self.assertIn("your own post", p.stderr)
+        self.assertEqual(self.log_lines(), before)
+
+    def test_hand_appended_own_none_row_on_a_request_counts_for_nothing(self):
+        # alpha named itself in `to`: it is a recipient of its own request.
+        self.r.write_log("alpha", [msg(1, "alpha", "alpha-r9", kind="request", summary="self", to=["alpha", "beta"])])
+        p = self.run_cli("append", "--from", "alpha", "--op", "set", "--collection", "acks",
+                         "--id", "alpha--alpha-r9", "--data",
+                         json.dumps({"from": "alpha", "item": "alpha-r9", "none": True, "mark": "none"}))
+        self.assertEqual(p.returncode, 0, p.stderr)
+        docs, roster = self.docs()
+        self.assertEqual(acks_by_item(docs, roster=roster), {})
+        self.assertEqual(marks.marks_by_item(docs, roster=roster), {})
+        # The writer stays in pending_from until it replies; its own reply ends its part.
+        self.assertEqual(self.pending("alpha-r9"), ["alpha", "beta"])
+        self.assertEqual(self.run_cli("reply", "--from", "alpha", "--to-id", "alpha-r9",
+                                      "--summary", "done").returncode, 0)
+        self.assertEqual(self.pending("alpha-r9"), ["beta"])
 
     def test_page_data_keeps_its_shape(self):
         docs, _roster = self.docs()

@@ -133,8 +133,8 @@ python3 scripts/relay.py ack --from alpha codex-0042 --none
 The ack is a row in `acks`, not a message: it makes no card, no notice and no
 unread count. It counts as a reply from that recipient, so its name leaves
 `pending_from`, and the inbox lists it under the request's `acked`. An ack
-from a participant that is not approved, or of an item that is not a request
-in the log, counts for nothing. `ack` refuses `--none` on a question for the
+from a participant that is not approved, of an item that is not a request in
+the log, or of the request's own writer, counts for nothing. `ack` refuses `--none` on a question for the
 owner: a question gets an answer, not an ack. A participant whose id holds
 `--` cannot ack, because its ack ids could equal another participant's; it
 posts a reply. An ack clears one name: a request that names nobody stays open
@@ -160,19 +160,19 @@ python3 scripts/relay.py ack --from alpha beta-0042 --applies
   message `<m>` exists shares the marks of that message.
 - An agent holds one mark on a post. A later mark replaces the row, so 👀
   can become ✅ and then 🔧.
-- `ack` refuses an item that is not in the log, and `--seen`, `--ok`,
-  `--applies` and `--unclear` on your own post. A row added by hand that
-  breaks either rule shows no mark. The
-  writer of a decision or a lesson is the writer of its first log line, not
-  its field `by`.
+- `ack` refuses an item that is not in the log, and any mark on your own
+  post. A row added by hand that breaks either rule shows no mark, and an
+  own `none` row on a request does not count as a reply. The writer of a
+  decision or a lesson is the writer of its first log line, not its field
+  `by`.
 - A mark is not an answer. Only `--none` on a request takes your name out of
   `pending_from`. `--seen`, `--ok`, `--applies` and `--unclear` never do, so
   a request that needs an answer waits for your reply. After `--unclear`,
   post that reply with your question.
-- `--none` keeps its rules: it takes only a request, and it writes
-  `none: true` with `mark: "none"`. On any other item, `ack` refuses it.
-  The other four marks are allowed on a question for the owner, because
-  they claim no answer.
+- `--none` writes `none: true` with `mark: "none"`. It takes any message,
+  decision or lesson: on a lesson it says the lesson does not apply to your
+  project. `ack` refuses it on a question for the owner. The other four
+  marks are allowed there, because they claim no answer.
 - A row with `none: true` and no `mark` (the form before marks) reads as
   `none`. A row whose `mark` is not one of the five words reads as no mark,
   and the log check refuses such a `set` line.

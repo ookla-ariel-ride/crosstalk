@@ -127,14 +127,19 @@ class AckTests(unittest.TestCase):
         self.assertIn("a question to the owner gets an answer, not an ack", p.stderr)
         self.assertEqual(self.log_lines(), before)
 
-    def test_ack_refuses_a_reply(self):
+    def test_ack_none_on_a_post_that_is_not_a_request_is_no_reply(self):
         self.ok("reply", "--from", "alpha", "--to-id", "beta-r1", "--summary", "done")
         before = self.log_lines()
         reply_id =[json.loads(x)["id"] for x in before if json.loads(x)["data"].get("kind") == "reply"][0]
-        for item in (reply_id, "beta-nothing", "beta-s1"):
-            p = self.run_cli("ack", "--from", "gamma", item, "--none")
-            self.assertEqual(p.returncode, 1, item)
+        p = self.run_cli("ack", "--from", "gamma", "beta-nothing", "--none")
+        self.assertEqual(p.returncode, 1)
         self.assertEqual(self.log_lines(), before)
+        # Since marks, --none is a plain mark on a post that is not a request: no reply, no pending change.
+        for item in (reply_id, "beta-s1"):
+            self.assertEqual(self.ok("ack", "--from", "gamma", item, "--none").strip(), "gamma--" + item)
+        docs, roster = self.docs()
+        self.assertEqual(acks_by_item(docs, roster=roster), {})
+        before = self.log_lines()
         p = self.run_cli("ack", "--from", "nobody", "beta-r1", "--none")
         self.assertEqual(p.returncode, 1)
         self.assertNotEqual(self.run_cli("ack", "--from", "gamma", "beta-r2").returncode, 0)

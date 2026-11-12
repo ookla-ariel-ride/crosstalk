@@ -61,7 +61,8 @@ def marks_by_item(docs: Dict, roster=None) -> Dict[Tuple[str, str], Dict[str, st
     A row counts when its id is from + ACK_SEP + item, `from` is approved and holds no
     ACK_SEP, the item exists, `from` did not write the item, and the row has a word.
     When two rows of one participant name the same item (a message and its lesson),
-    the row with the later `t` wins.
+    the row with the later `t` wins. Pass the docs from replay.enrich_messages: a plain
+    dict has no `first_writer`, so the own-post rule then misses decisions and lessons.
     """
     rows = []
     for (coll, did), doc in docs.items():

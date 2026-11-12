@@ -268,10 +268,10 @@ def ack_item(root: Path, pid: str, item_id: str, mark: str = "none",
     """Put pid's mark on the item item_id: one `acks` row, id `<pid>--<item_id>`, that a
     later mark replaces. It is not a message.
 
-    `none` says pid read a request and has nothing to do or say: it counts as pid's reply
-    (requests.acks_by_item), so it takes only a request and never a question for the
-    owner. Any other mark (marks.MARKS) takes a message, a decision or a lesson that pid
-    did not write, and answers nothing."""
+    Each mark (marks.MARKS) takes a message, a decision or a lesson that pid did not
+    write. `none` writes `none: true` too and never takes a question for the owner; on
+    a request it counts as pid's reply (requests.acks_by_item). The other marks answer
+    nothing."""
     if mark not in MARKS:
         raise ValueError("unknown mark %r (expected one of %s)" % (mark, ", ".join(MARKS)))
     root = Path(root)
@@ -281,22 +281,16 @@ def ack_item(root: Path, pid: str, item_id: str, mark: str = "none",
         raise ValueError("participant %r holds '--', so it cannot ack; post a reply instead" % (pid,))
     lines = load_all_lines(root, roster)
     docs = enrich_messages(replay(lines), lines)
+    ref = item_ref(docs, item_id)
+    if ref is None:
+        raise ValueError("no such message, decision or lesson %r" % (item_id,))
+    if writer_of(docs, ref[0], ref[1]) == pid:
+        raise ValueError("%r is your own post; a mark is for another participant's post" % (item_id,))
     data = {"from": pid, "item": item_id, "mark": mark, "t": now_iso()}
     if mark == "none":
-        item = docs.get(("messages", item_id))
-        if item is None:
-            raise ValueError("no such message %r" % (item_id,))
-        if item.get("kind") == "question":
+        if ref[0] == "messages" and docs[ref].get("kind") == "question":
             raise ValueError("a question to the owner gets an answer, not an ack")
-        if item.get("kind") != "request":
-            raise ValueError("message %r is not a request; only a request takes an ack" % (item_id,))
         data["none"] = True
-    else:
-        ref = item_ref(docs, item_id)
-        if ref is None:
-            raise ValueError("no such message, decision or lesson %r" % (item_id,))
-        if writer_of(docs, ref[0], ref[1]) == pid:
-            raise ValueError("%r is your own post; a mark is for another participant's post" % (item_id,))
     return append_line(root, pid, "set", "acks", pid + ACK_SEP + item_id, data, roster=roster)
 
 

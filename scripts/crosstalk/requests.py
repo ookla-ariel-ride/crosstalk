@@ -344,8 +344,8 @@ def acks_by_item(docs: Dict, roster=None) -> Dict[str, Set[str]]:
     (marks.mark_of: `mark: "none"`, or `none: true` with no other known mark).
 
     A row counts when its id is from + ACK_SEP + item, `from` is approved and holds
-    no ACK_SEP, and `item` is a `kind: "request"` message in docs. Any other row
-    counts for nothing.
+    no ACK_SEP, and `item` is a `kind: "request"` message in docs that `from` did not
+    write. Any other row counts for nothing.
     """
     out = {}  # type: Dict[str, Set[str]]
     for (coll, did), doc in docs.items():
@@ -358,7 +358,7 @@ def acks_by_item(docs: Dict, roster=None) -> Dict[str, Set[str]]:
         if not _is_approved(frm, roster):
             continue
         target = docs.get(("messages", item))
-        if not isinstance(target, dict) or target.get("kind") != "request":
+        if not isinstance(target, dict) or target.get("kind") != "request" or target.get("from") == frm:
             continue
         out.setdefault(item, set()).add(frm)
     return out
