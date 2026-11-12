@@ -27,6 +27,7 @@ const SECTIONS_OF: Record<string, SectionName[]> = {
   schedules: ["schedules"],
   messages: ["reviews"],
   adoptions: ["adoption"],
+  waiting: ["waiting"],
 };
 
 /** Retry up to three times, but never a 401 or 403: a retry would only hide it. */
@@ -74,6 +75,9 @@ export function invalidateForRows(qc: QueryClient, rows: RowRef[]): void {
       for (const root of holders) void qc.invalidateQueries({ queryKey: keys.thread(root), exact: true });
     }
   }
+
+  // An open waiting row makes the thread of a message with its id need the owner.
+  if (collections.has("waiting") && !collections.has("messages")) void qc.invalidateQueries({ queryKey: ["threads"] });
 
   const sections = new Set<SectionName>();
   for (const c of collections) for (const name of SECTIONS_OF[c] ?? []) sections.add(name);

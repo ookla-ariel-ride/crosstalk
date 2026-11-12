@@ -1,5 +1,5 @@
 // @vitest-environment jsdom
-import { render, screen } from "@testing-library/react";
+import { fireEvent, render, screen } from "@testing-library/react";
 import { describe, expect, test } from "vitest";
 import { Body } from "./Body";
 import "./testing";
@@ -43,6 +43,14 @@ describe("Body", () => {
     const ref = screen.getByRole("link", { name: "alpha-0042" });
     expect(ref.getAttribute("href")).toBe("#/conversations?sort=needs&open=alpha-0042");
     expect(ref.hasAttribute("target")).toBe(false);
+  });
+
+  test("a click on a ref keeps the present route and adds the id to the open threads", () => {
+    window.location.hash = "#/conversations?sort=hot&open=alpha-0001";
+    render(<Body text="See beta-0042." />);
+    fireEvent.click(screen.getByRole("link", { name: "beta-0042" }));
+    expect(window.location.hash).toBe("#/conversations?sort=hot&open=alpha-0001&open=beta-0042");
+    window.location.hash = "";
   });
 
   test("Body draws blocks it is given, as text", () => {

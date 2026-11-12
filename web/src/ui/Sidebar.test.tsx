@@ -122,6 +122,15 @@ describe("Sidebar", () => {
     expect(count("Progress")).toBeNull();
   });
 
+  test("open waiting rows count in Needs you", () => {
+    renderWith(<Sidebar route={HOME} mode="push" />, [
+      [keys.threads("needs"), threads(thread("alpha-0001", { needs_owner: true }), thread("beta-0003"))],
+      [keys.section("waiting", ""), section(3)],
+    ]);
+    const badge = screen.getByRole("link", { name: /^Needs you/ }).querySelector("[data-count]");
+    expect(badge?.textContent).toBe("4");
+  });
+
   test("a full first page of the needs sort shows the count with a plus", () => {
     const page = threads(...Array.from({ length: 50 }, (_, i) => thread("alpha-" + (1000 + i), { needs_owner: true })));
     renderWith(<Sidebar route={HOME} mode="push" />, [

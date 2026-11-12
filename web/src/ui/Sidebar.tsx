@@ -88,11 +88,14 @@ function useCounts(): Map<string, Count> {
     locks: useOpenCount("locks"),
   };
   const counts = new Map<string, Count>();
+  // Open waiting rows need the owner too (Needs you lists them first).
+  const todo = useOpenCount("waiting");
   const needs = threads.filter((t) => t.needs_owner).length;
   // A next page whose first page needs the owner throughout may hold more.
   const more = first?.next != null && needs === threads.length;
   const waiting = queue ? queue.holders.length + queue.waiting.length : 0;
-  if (needs) counts.set("Needs you", more ? { text: needs + "+", spoken: needs + " or more", needs: true } : { text: String(needs), needs: true });
+  const total = needs + todo;
+  if (total) counts.set("Needs you", more ? { text: total + "+", spoken: total + " or more", needs: true } : { text: String(total), needs: true });
   // Conversations shows no count: an unread total needs a server route that gives it.
   if (waiting) counts.set("Land queue", { text: String(waiting) });
   for (const g of GROUPS) {

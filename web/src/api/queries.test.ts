@@ -68,6 +68,11 @@ describe("queries", () => {
     );
   });
 
+  test("a waiting row invalidates the thread list: an open one makes the thread of its id need the owner", () => {
+    invalidateForRows(qc, [row("waiting", "alpha-w1")]);
+    expect(invalidated()).toEqual([JSON.stringify(keys.threads("new")), JSON.stringify(keys.threads("hot"))]);
+  });
+
   test("a row with no collection invalidates nothing", () => {
     invalidateForRows(qc, [{ from: "alpha", seq: null, collection: null, id: null }]);
     expect(invalidated()).toEqual([]);

@@ -394,12 +394,45 @@ describe("open ids", () => {
     expect(onOpenChange).toHaveBeenLastCalledWith(["alpha-0001", "beta-0009"]);
   });
 
-  test("an id that is not in the stream does not count: fold all stays off and a toggle drops it", () => {
+  test("an open thread that is not among the loaded ones shows above the list, open", () => {
     const onOpenChange = vi.fn();
-    renderWith(<Stream sort="needs" open={["gone-0001"]} onOpenChange={onOpenChange} />, base(OWNER, EMPTY_STATE, [Q1]));
-    expect((screen.getByRole("button", { name: "Fold all" }) as HTMLButtonElement).disabled).toBe(true);
-    fireEvent.click(screen.getByRole("button", { name: /Does the rebuild go on\?/ }));
-    expect(onOpenChange).toHaveBeenCalledWith(["alpha-0001"]);
+    const linked = thread("zeta-0001", { title: "A thread on a later page" });
+    const data = base(OWNER, EMPTY_STATE, [Q1]);
+    data.push([keys.thread("zeta-0001"), { root: "zeta-0001", thread: linked, messages: [message("zeta-0001", "2026-11-11T08:00:00Z", { depth: 0, body: "Linked body" })] }]);
+    renderWith(<Stream sort="needs" open={["zeta-0001"]} onOpenChange={onOpenChange} />, data);
+    const row = screen.getByRole("button", { name: /A thread on a later page/ });
+    expect(row.getAttribute("aria-expanded")).toBe("true");
+    expect(screen.getByText("Linked body")).toBeTruthy();
+    const listed = screen.getByRole("button", { name: /Does the rebuild go on\?/ });
+    expect(row.compareDocumentPosition(listed) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    expect((screen.getByRole("button", { name: "Fold all" }) as HTMLButtonElement).disabled).toBe(false);
+    fireEvent.click(listed);
+    expect(onOpenChange).toHaveBeenCalledWith(["zeta-0001", "alpha-0001"]);
+    fireEvent.click(row);
+    expect(onOpenChange).toHaveBeenLastCalledWith(["alpha-0001"]);
+  });
+
+  test("an open id of a reply opens its thread in its place in the route", () => {
+    const onOpenChange = vi.fn();
+    const data = base(OWNER, EMPTY_STATE, [Q1]);
+    data.push([keys.thread("beta-0002"), { root: "alpha-0001", thread: Q1, messages: MESSAGES }]);
+    renderWith(<Stream sort="needs" open={["beta-0009", "beta-0002"]} onOpenChange={onOpenChange} />, data);
+    expect(onOpenChange).toHaveBeenCalledWith(["beta-0009", "alpha-0001"]);
+  });
+
+  test("an id that no thread holds says so, and folds", async () => {
+    const onOpenChange = vi.fn();
+    const qc = new QueryClient({ defaultOptions: { queries: { retry: false, staleTime: Infinity } } });
+    for (const [key, value] of base(OWNER, EMPTY_STATE, [Q1])) qc.setQueryData(key, value);
+    vi.stubGlobal("fetch", async () => new Response(JSON.stringify({ error: "no thread holds the message" }), { status: 404 }));
+    render(
+      <QueryClientProvider client={qc}>
+        <Stream sort="needs" open={["gone-0001"]} onOpenChange={onOpenChange} />
+      </QueryClientProvider>,
+    );
+    expect(await screen.findByText("No thread holds gone-0001.")).toBeTruthy();
+    fireEvent.click(screen.getByRole("button", { name: "Fold" }));
+    expect(onOpenChange).toHaveBeenCalledWith([]);
   });
 
   test("a duplicate id in the route counts once", () => {
@@ -433,6 +466,20 @@ describe("Conversations", () => {
 });
 
 describe("NeedsYou", () => {
+  test("open waiting rows show first, with the slot for their actions", () => {
+    const rows = [{ id: "alpha-w0001", summary: "Rotate the key", body: "Before Friday.\n\nThe old one expires.", project: "alpha", since: "2026-11-11T08:00:00Z", done: null }];
+    renderWith(
+      <NeedsYou waitingActions={(row) => <span>{"done " + row.id}</span>} />,
+      [...base(OWNER, EMPTY_STATE, [Q1]), [keys.section("waiting", ""), { pages: [{ rows, next: null, open: 1, total: 1 }], pageParams: [""] }]],
+    );
+    expect(screen.queryByText(/Nothing needs you/)).toBeNull();
+    const row = screen.getByRole("button", { name: /Rotate the key/ });
+    expect(screen.queryByText("The old one expires.")).toBeNull();
+    fireEvent.click(row);
+    expect(screen.queryByText("The old one expires.")).toBeTruthy();
+    expect(screen.getByText("done alpha-w0001")).toBeTruthy();
+  });
+
   test("shows only the threads that need the owner, in the needs order", () => {
     renderWith(
       <NeedsYou />,

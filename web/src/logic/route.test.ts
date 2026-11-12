@@ -1,5 +1,5 @@
 import { describe, expect, test } from "vitest";
-import { SECTIONS, href, route } from "./route";
+import { SECTIONS, href, route, withOpen } from "./route";
 import type { Route } from "./route";
 
 const home: Route = { name: "conversations", sort: "needs", open: [] };
@@ -73,5 +73,24 @@ describe("route and href", () => {
     expect(href({ name: "conversations" } as never)).toBe("#/conversations?sort=needs");
     expect(href({ name: "section", section: "queue", q: "\uD800" })).toBe("#/queue?q=%EF%BF%BD");
     expect(href({ name: "section", section: "nope" } as never)).toBe("#/conversations?sort=needs");
+  });
+});
+
+describe("withOpen", () => {
+  test("adds the id to the open threads of the present stream route, keeping the sort", () => {
+    expect(withOpen("#/conversations?sort=hot&open=alpha-0001", "beta-0002")).toBe(
+      "#/conversations?sort=hot&open=alpha-0001&open=beta-0002",
+    );
+  });
+
+  test("an id already open stays once, moved last", () => {
+    expect(withOpen("#/conversations?sort=new&open=beta-0002&open=alpha-0001", "beta-0002")).toBe(
+      "#/conversations?sort=new&open=alpha-0001&open=beta-0002",
+    );
+  });
+
+  test("from another page it opens the stream in the needs order", () => {
+    expect(withOpen("#/locks?q=x", "alpha-0001")).toBe("#/conversations?sort=needs&open=alpha-0001");
+    expect(withOpen("", "alpha-0001")).toBe("#/conversations?sort=needs&open=alpha-0001");
   });
 });

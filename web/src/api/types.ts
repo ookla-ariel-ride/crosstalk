@@ -74,9 +74,12 @@ export interface Message extends MessageDoc {
   quote: string | null;
 }
 
+/** GET /api/thread/<id>: the thread that holds message <id>. */
 export interface ThreadDetail {
   root: string;
   messages: Message[];
+  /** The thread's list row, with `unread` for the owner. */
+  thread?: Thread;
 }
 
 /** The sections of GET /api/section/<name> (sections.SECTIONS). */
@@ -89,7 +92,8 @@ export type SectionName =
   | "progress"
   | "reviews"
   | "schedules"
-  | "adoption";
+  | "adoption"
+  | "waiting";
 
 /** A section row: a copy of its doc with `id` set. The fields depend on the collection. */
 export interface SectionRow {

@@ -1,5 +1,5 @@
 import { useLive } from "./api/queries";
-import { NewThread, OwnerScope, ownerActions, People } from "./features/owner";
+import { MarkDoneButton, NewThread, OwnerScope, ownerActions, People } from "./features/owner";
 import { Conversations, NeedsYou } from "./features/conversations/Stream";
 import { SectionPage } from "./features/sections/SectionPage";
 import type { Route } from "./logic/route";
@@ -19,7 +19,7 @@ export function page(route: Route) {
     case "needs":
       return (
         <OwnerScope>
-          <NeedsYou renderActions={ownerActions} />
+          <NeedsYou renderActions={ownerActions} waitingActions={(row) => <MarkDoneButton id={row.id} />} />
         </OwnerScope>
       );
     case "section":
