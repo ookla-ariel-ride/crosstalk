@@ -480,6 +480,22 @@ class InboxNewTests(unittest.TestCase):
         self.assertEqual(p.stdout.splitlines()[-1],
                          "still open 25, agreements open 0, stale locks 0, to read: 0")
 
+    def test_new_report_refuses_a_full_report_with_the_to_read_cut(self):
+        from crosstalk.participants import load_roster
+        from crosstalk.replay import enrich_messages, load_all_lines, replay
+        from crosstalk.reports import inbox_report, new_report
+        self.r.write_log("beta", [req(1, "beta", "beta-r1", t(1), must_read=True)])
+        roster = load_roster(self.r.root / "participants.json")
+        lines = load_all_lines(self.r.root, roster)
+        docs = enrich_messages(replay(lines), lines)
+        cut = inbox_report(docs, "alpha", roster)
+        self.assertNotIn("to_read_all", cut)
+        with self.assertRaisesRegex(ValueError, "to_read_all=True"):
+            new_report(cut, lines, None, None)
+        out = new_report(inbox_report(docs, "alpha", roster, to_read_all=True), lines, None, None)
+        self.assertEqual(self.ids(out), ["beta-r1"])
+        self.assertNotIn("to_read_all", out)
+
     def test_quiet_check_in_is_small(self):
         roster = json.loads(json.dumps(SPEC_ROSTER))
         colors = zip(distinct_colors("color", pmod.PANEL_LIGHT, 26),
