@@ -524,6 +524,33 @@ describe("NeedsYou", () => {
     expect(screen.queryByRole("button", { name: /more waiting/ })).toBeNull();
   });
 
+  test("a row that a shifted page repeats shows once, and the button stays while the server has a next page", () => {
+    const wait = (n: number) => ({ id: "alpha-w" + String(n).padStart(4, "0"), summary: "Task " + n, project: "alpha", since: "2026-11-11T08:00:00Z", done: null });
+    const pages = [
+      { rows: Array.from({ length: 50 }, (_, i) => wait(i + 1)), next: "50", open: 52, total: 52 },
+      { rows: [wait(50)], next: "51", open: 52, total: 52 },
+    ];
+    renderWith(<NeedsYou />, [...base(OWNER, EMPTY_STATE, [Q1]), [keys.section("waiting", ""), { pages, pageParams: ["", "50"] }]]);
+    expect(screen.getAllByRole("button", { name: /Task 50(?!\d)/ })).toHaveLength(1);
+    expect(screen.getByRole("button", { name: /more waiting/ })).toBeTruthy();
+  });
+
+  test("a failed load of more waiting rows says so and can be tried again", async () => {
+    const wait = (n: number) => ({ id: "alpha-w" + String(n).padStart(4, "0"), summary: "Task " + n, project: "alpha", since: "2026-11-11T08:00:00Z", done: null });
+    renderWith(<NeedsYou />, [...base(OWNER, EMPTY_STATE, [Q1]), [keys.section("waiting", ""), { pages: [{ rows: [wait(1)], next: "1", open: 2, total: 2 }], pageParams: [""] }]]);
+    let calls = 0;
+    vi.stubGlobal("fetch", async (url: string) => {
+      if (!url.startsWith("/api/section/waiting")) return new Promise<Response>(() => {});
+      calls++;
+      const body = calls === 1 ? { error: "cannot read the log" } : { rows: [wait(2)], next: null, open: 2, total: 2 };
+      return new Response(JSON.stringify(body), { status: calls === 1 ? 500 : 200, headers: { "Content-Type": "application/json" } });
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Show 1 more waiting row" }));
+    expect((await screen.findByRole("alert")).textContent).toContain("did not load");
+    fireEvent.click(screen.getByRole("button", { name: "Show 1 more waiting row" }));
+    expect(await screen.findByRole("button", { name: /Task 2/ })).toBeTruthy();
+  });
+
   test("shows only the threads that need the owner, in the needs order", () => {
     renderWith(
       <NeedsYou />,

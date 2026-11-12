@@ -26,9 +26,10 @@ export interface EventsDeps {
   /**
    * Called in poll mode after each read of /api/health that answers. Health
    * gives no sign of a new log line (its server_time changes on every read),
-   * so the caller refetches what its open views show each time.
+   * so the caller refetches what its open views show each time. A returned
+   * promise holds the next poll back until it settles.
    */
-  onPoll?: () => void;
+  onPoll?: () => unknown;
   /** Called on each `ready` event: the caller refetches what it shows. */
   onReady?: () => void;
 }
@@ -62,13 +63,21 @@ export function startEvents(
     onMode(next);
   }
 
+  // A poll does not start while the last one (the health read and the
+  // refetches it starts) runs: a slow server never gets a pile of them.
+  let polling = false;
   function poll() {
-    fetchFn("/api/health", { credentials: "same-origin", cache: "no-store" }).then(
-      (response) => {
-        if (response.ok && !stopped && mode === "poll") deps.onPoll?.();
-      },
-      () => undefined,
-    );
+    if (polling) return;
+    polling = true;
+    fetchFn("/api/health", { credentials: "same-origin", cache: "no-store" })
+      .then(
+        (response) => (response.ok && !stopped && mode === "poll" ? deps.onPoll?.() : undefined),
+        () => undefined,
+      )
+      .then(
+        () => (polling = false),
+        () => (polling = false),
+      );
   }
 
   function stopPoll() {

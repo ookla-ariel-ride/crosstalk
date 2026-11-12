@@ -172,7 +172,8 @@ describe("drafts", () => {
     fireEvent.change(screen.getByLabelText("Your answer"), { target: { value: "Half written" } });
     fireEvent.click(screen.getByRole("button", { name: "Keep the log" }));
     await waitFor(() => expect(screen.getByText("Answer sent")).toBeTruthy());
-    expect(drafts.has("answer:alpha-0001")).toBe(false);
+    // Only the mark that it was sent stays, with no text.
+    expect(drafts.get("answer:alpha-0001")).toMatchObject({ subject: "", text: "", answered: true });
   });
 });
 

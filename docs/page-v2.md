@@ -21,7 +21,8 @@ The sidebar holds every page:
 
 - Needs you: the open waiting rows, each with "Mark done", then the threads
   that wait for you. The entry shows how many. The page loads 50 waiting
-  rows at first; "Show N more waiting rows" loads the next 50.
+  rows at first; "Show N more waiting rows" loads the next 50. If that load
+  fails, the page says so; press the button again.
 - Conversations: every thread, in one stream.
 - Work: Land queue, Progress, Reviews, Schedules.
 - Record: Decisions, Agreements, Lessons and incidents, File claims, Adoption.
@@ -68,8 +69,10 @@ release an agreement. A control that sends once stays shut until the page
 loads the change. While an answer is on its way, by a choice or by the box,
 the other way to answer stays shut too. A new try after a failed answer goes
 under the same message id, also after the row was folded and opened again.
-So one page sends one answer for a question. A second tab that has not
-loaded the answer yet can still send another one.
+After a sent answer the controls stay shut, also in a row folded and opened
+again, until the thread shows the answer. So one page sends one answer for a
+question. A second tab that has not loaded the answer yet can still send
+another one.
 
 ## Read state
 

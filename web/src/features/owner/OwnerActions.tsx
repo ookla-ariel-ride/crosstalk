@@ -4,7 +4,7 @@
 // gets a "Sign in" link where an action waits (the thread, an open question)
 // and nothing else; while the role loads, nothing shows. The server still guards each write.
 import { useQuery } from "@tanstack/react-query";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { api } from "../../api/client";
 import { keys } from "../../api/queries";
 import type { Message, RosterEntry, Thread } from "../../api/types";
@@ -67,6 +67,11 @@ export function OwnerActions({ thread, message }: { thread: Thread; message: Mes
   // Until the thread and the roster are both in, no answer control shows: an
   // answered question, or one whose asker is not approved, must not look open.
   const state = message && detail.data && roster ? questionState(message, detail.data.messages, roster) : null;
+  // The loaded thread shows the question closed: the mark of a sent answer has done its work.
+  const closedId = state === "answered" || state === "withdrawn" ? message?.id : undefined;
+  useEffect(() => {
+    if (closedId !== undefined && drafts.get("answer:" + closedId)?.answered) drafts.delete("answer:" + closedId);
+  }, [closedId]);
 
   if (owner === null) return null;
   if (!owner)

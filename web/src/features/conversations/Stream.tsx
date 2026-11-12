@@ -383,16 +383,23 @@ export function NeedsYou({ renderActions, waitingActions }: { renderActions?: Re
   const now = useNow();
   const waiting = useSection("waiting");
   const pages = waiting.data?.pages;
-  const rows = useMemo(() => pages?.flatMap((p) => p.rows).filter((r) => !r.done) ?? [], [pages]);
-  // The server sends the open rows first, 50 to a page, and counts them: the
-  // rest of the open ones are a click away while a page is left.
+  // A page whose cursor shifted (a row added or closed between two fetches)
+  // can repeat a row: each id shows once.
+  const rows = useMemo(() => {
+    const seen = new Set<string>();
+    return (pages?.flatMap((p) => p.rows) ?? []).filter((r) => !r.done && !seen.has(r.id) && !!seen.add(r.id));
+  }, [pages]);
+  // The server sends the open rows first, 50 to a page, and counts them. Once a
+  // done row is loaded no open one is left; until then the button stays while
+  // the server has a next page, with the count when it is above 0.
   const openCount = pages?.[pages.length - 1]?.open ?? 0;
-  const left = waiting.hasNextPage ? Math.max(0, openCount - rows.length) : 0;
+  const more = waiting.hasNextPage && !pages?.some((p) => p.rows.some((r) => r.done));
+  const left = Math.max(0, openCount - rows.length);
   const lead =
-    rows.length || left ? (
+    rows.length || more ? (
       <>
         {rows.length ? <WaitingList rows={rows} now={now} actions={waitingActions} /> : null}
-        {left ? (
+        {more ? (
           <div className={styles.more}>
             <button
               type="button"
@@ -400,8 +407,13 @@ export function NeedsYou({ renderActions, waitingActions }: { renderActions?: Re
               disabled={waiting.isFetchingNextPage}
               onClick={() => void waiting.fetchNextPage({ cancelRefetch: false })}
             >
-              {`Show ${left} more waiting row${left === 1 ? "" : "s"}`}
+              {left ? `Show ${left} more waiting row${left === 1 ? "" : "s"}` : "Show more waiting rows"}
             </button>
+            {waiting.isFetchNextPageError ? (
+              <span role="alert" className={styles.error}>
+                The next waiting rows did not load. Press the button to try again.
+              </span>
+            ) : null}
           </div>
         ) : null}
       </>

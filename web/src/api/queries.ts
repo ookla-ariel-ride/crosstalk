@@ -84,12 +84,14 @@ export function invalidateForRows(qc: QueryClient, rows: RowRef[]): void {
   for (const name of sections) void qc.invalidateQueries({ queryKey: ["section", name] });
 }
 
-/** Invalidate the thread list, every thread, every section and the land queue: what the stream shows. */
-export function invalidateAll(qc: QueryClient): void {
-  void qc.invalidateQueries({ queryKey: ["threads"] });
-  void qc.invalidateQueries({ queryKey: keys.queue });
-  void qc.invalidateQueries({ queryKey: ["thread"] });
-  void qc.invalidateQueries({ queryKey: ["section"] });
+/**
+ * Invalidate the thread list, every thread, every section and the land queue:
+ * what the stream shows. Resolves when the refetches settle.
+ */
+export function invalidateAll(qc: QueryClient): Promise<void> {
+  return Promise.all(
+    [["threads"], keys.queue, ["thread"], ["section"]].map((queryKey) => qc.invalidateQueries({ queryKey })),
+  ).then(() => undefined);
 }
 
 /**

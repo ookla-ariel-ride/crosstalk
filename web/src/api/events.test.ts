@@ -83,6 +83,25 @@ describe("events", () => {
     expect(deps.fetchCalls).toHaveLength(polls);
   });
 
+  test("a poll does not start while the last one runs", async () => {
+    let settle = () => {};
+    const onPoll = vi.fn(() => new Promise<void>((resolve) => (settle = resolve)));
+    const deps = { ...fakeDeps(clock), onPoll };
+    startEvents(vi.fn(), vi.fn(), deps);
+    FakeEventSource.latest().emit("error");
+    clock.advance(POLL_MS);
+    await flush();
+    clock.advance(POLL_MS);
+    await flush();
+    expect(deps.fetchCalls).toEqual(["/api/health"]);
+    settle();
+    await flush();
+    clock.advance(POLL_MS);
+    await flush();
+    expect(deps.fetchCalls).toEqual(["/api/health", "/api/health"]);
+    expect(onPoll).toHaveBeenCalledTimes(2);
+  });
+
   test("a failed health read in poll mode calls no onPoll", async () => {
     const onPoll = vi.fn();
     startEvents(vi.fn(), vi.fn(), { ...fakeDeps(clock, 503), onPoll });

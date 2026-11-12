@@ -125,8 +125,8 @@ describe("answer buttons", () => {
     fireEvent.keyDown(box, { key: "Enter", ctrlKey: true });
     await waitFor(() => expect(posts(calls, "/api/append")).toHaveLength(1));
     expect(posts(calls, "/api/append")[0]?.body).toMatchObject({ data: { summary: "Neither", body: "We wait a week." } });
-    // A sent answer leaves nothing in the draft store.
-    await waitFor(() => expect(drafts.has("answer:alpha-0001")).toBe(false));
+    // A sent answer leaves no text in the draft store, only the mark that it was sent.
+    await waitFor(() => expect(drafts.get("answer:alpha-0001")).toMatchObject({ subject: "", text: "", answered: true }));
   });
 });
 
@@ -450,6 +450,51 @@ describe("one answer for one question", () => {
     fireEvent.click(screen.getByRole("button", { name: "Keep the log" }));
     await waitFor(() => expect(posts(again, "/api/append")).toHaveLength(1));
     expect((posts(again, "/api/append")[0]?.body as { id: string }).id).toBe((posts(failed, "/api/append")[0]?.body as { id: string }).id);
+  });
+
+  test("a sent answer keeps the controls shut when the row mounts again before the refetch", async () => {
+    const first = renderActions(OWNER);
+    const calls = serve({ "/api/append": [201, {}] });
+    fireEvent.click(screen.getByRole("button", { name: "Keep the log" }));
+    expect(await screen.findByText("Answer sent")).toBeTruthy();
+    first.unmount();
+    renderActions(OWNER);
+    const again = serve({ "/api/append": [201, {}] });
+    expect(screen.getByText("Answer sent")).toBeTruthy();
+    const choice = screen.getByRole("button", { name: /Use SQLite/ }) as HTMLButtonElement;
+    expect(choice.disabled).toBe(true);
+    fireEvent.click(choice);
+    await act(async () => {});
+    expect(posts(calls, "/api/append").length + posts(again, "/api/append").length).toBe(1);
+  });
+
+  test("the mark of a sent answer goes once the thread shows the answer", async () => {
+    const first = renderActions(OWNER);
+    serve({ "/api/append": [201, {}] });
+    fireEvent.click(screen.getByRole("button", { name: "Keep the log" }));
+    await screen.findByText("Answer sent");
+    first.unmount();
+    renderActions(OWNER, QUESTION, ANSWERED);
+    expect(screen.getByText("Answered")).toBeTruthy();
+    await waitFor(() => expect(drafts.has("answer:alpha-0001")).toBe(false));
+  });
+
+  test("Ctrl+Enter in the frame of a choice click sends nothing and shows no error", async () => {
+    renderActions(OWNER);
+    const calls = serve({});
+    fireEvent.click(screen.getByRole("button", { name: "Write an answer" }));
+    const box = screen.getByLabelText("Your answer");
+    fireEvent.change(box, { target: { value: "Neither" } });
+    const choice = screen.getByRole("button", { name: "Keep the log" });
+    // One act: React draws nothing between the two events.
+    act(() => {
+      choice.click();
+      box.dispatchEvent(new KeyboardEvent("keydown", { key: "Enter", ctrlKey: true, bubbles: true }));
+    });
+    await act(async () => {});
+    expect(posts(calls, "/api/append")).toHaveLength(1);
+    expect(screen.queryByRole("alert")).toBeNull();
+    expect((screen.getByLabelText("Your answer") as HTMLTextAreaElement).value).toBe("Neither");
   });
 
   test("a double click on a choice on its way sends once", async () => {

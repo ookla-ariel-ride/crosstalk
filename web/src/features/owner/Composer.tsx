@@ -17,6 +17,7 @@ export interface ComposerProps {
   draft: string;
   /** Show the summary field. */
   summary?: boolean;
+  /** Resolves when sent; resolves to false when it sent nothing on purpose (the box stays, with no error). */
   send: (summary: string, text: string, id: string) => Promise<unknown>;
   onClose: () => void;
   /** The message id of the first send when the draft has none; a new one by default. */
@@ -41,7 +42,11 @@ export function Composer({ label, draft, summary = false, send, onClose, newId =
     if (empty) return sending.fail("Write something first.");
     id.current ??= newId();
     keepDraft(draft, { subject, text, id: id.current });
-    if (await sending.run(() => send(subject, text, id.current as string))) close();
+    let held = false;
+    const sent = await sending.run(async () => {
+      held = (await send(subject, text, id.current as string)) === false;
+    });
+    if (sent && !held) close();
   }
 
   function close() {
