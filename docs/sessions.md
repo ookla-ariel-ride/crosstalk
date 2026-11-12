@@ -231,22 +231,26 @@ root, out of the log and out of git. A missing or broken file means that
 everything is new.
 
 - The place holds, for each writer, the highest `seq` of that writer's log
-  lines that your last ack covered. A log line is new when its `seq` is above
-  that number. The line time plays no part, so a row from a slow clock, an
+  lines that your last ack covered, and the fingerprint of that line: 12 hex
+  digits of the SHA-256 of its exact text. A log line is new when its `seq`
+  is above that number. The line time plays no part, so a row from a slow clock, an
   edit in the same second and a row ahead of the clock are all new.
 - An item is new when a new log line touched it: a new row, or an edit of an
   old row. An edited item shows with its present content.
-- A stored number above the highest `seq` of its writer cannot be true for
-  the log: the log came back from an older copy, or the participant was
-  removed and added again. Every line of that writer is then new, and the
-  next ack repairs the number.
+- A stored entry can be false for the log: its number is above the highest
+  `seq` of its writer, or the line at that number has another fingerprint.
+  The log came back from an older copy, or the participant was removed and
+  added again, whatever its length now. Every line of that writer is then
+  new, and the next ack repairs the entry. A bare number, the form before the
+  fingerprint, is trusted when it is not above the top.
 - `requests`, `owner_messages` and `thread_replies` hold the new items only.
 - `still_open` lists the older requests and owner messages that still need
   your answer, as `{id, from, t, summary}` with no body, newest first. It
   holds at most 20; `still_open_more` counts the rest.
 - `agreements_to_adopt` holds the new ones; `agreements_open` counts all.
 - `place` is where this answer starts and `next` is the highest `seq` of
-  each writer of the log this run read, one number for each writer.
+  each writer of the log this run read with its fingerprint, one entry for
+  each writer.
   `next` has a value on a quiet day too.
 
 The JSON of `--new` is compact, on one line. `--new --brief` prints one line
@@ -263,12 +267,13 @@ To read now and ack later, run `--new`, act on the items, then pass the
 `next` you got:
 
 ```
-python3 <checkout>/scripts/relay.py inbox <your-id> --ack-to '{"beta": 42, "owner": 7}'
+python3 <checkout>/scripts/relay.py inbox <your-id> --ack-to '{"beta": [42, "9f2c1a0b77e4"], "owner": [7, "03d5e81c2a44"]}'
 ```
 
 `--ack-to` goes alone. Each writer keeps the higher of the stored number and
 the given one. It refuses JSON that is not a place, a number above the
-highest `seq` of its writer in the log, and a place that is behind the stored
+highest `seq` of its writer in the log, a fingerprint that does not match that
+line (the log changed since that `next`), and a place that is behind the stored
 one and moves nothing forward, and `{}` when no place is stored. The same
 place twice is no error. It prints the stored place.
 

@@ -1,3 +1,4 @@
+import hashlib
 import json
 import subprocess
 import sys
@@ -78,7 +79,7 @@ class InboxStateTests(unittest.TestCase):
         old = {"t": T1, "seen": ["beta-0002"]}
         lines = [ln("beta", 1, "2026-11-11T22:16:00Z"), ln("beta", 2, T1), ln("beta", 3, T1),
                  ln("beta", 4, "2026-11-11T22:10:00Z"), ln("gamma", 1, T2), ln("gamma", 2, T1)]
-        self.assertEqual(inboxstate.convert(old, lines), {"beta": 2})
+        self.assertEqual(inboxstate.convert(old, lines), {"beta": [2, inboxstate.fingerprint(lines[1])]})
 
     def test_deeply_nested_file_reads_as_empty(self):
         (self.root / inboxstate.FILE).write_text("[" * 200000, encoding="utf-8")
@@ -108,7 +109,8 @@ class InboxStateTests(unittest.TestCase):
     def test_newest_takes_the_highest_number_of_each_writer(self):
         self.assertIsNone(inboxstate.newest([]))
         lines = [ln("beta", 1, T2), ln("beta", 2, T1), ln("gamma", 1, T1)]
-        self.assertEqual(inboxstate.newest(lines), {"beta": 2, "gamma": 1})
+        fp = inboxstate.fingerprint
+        self.assertEqual(inboxstate.newest(lines), {"beta": [2, fp(lines[1])], "gamma": [1, fp(lines[2])]})
 
     def write_log(self, writer, n):
         """`n` lines of `writer` on disk, seq 1 to n; returns them as Lines."""
@@ -118,10 +120,51 @@ class InboxStateTests(unittest.TestCase):
                                                             encoding="utf-8")
         return rows
 
-    def test_trim_drops_a_writer_whose_number_is_above_its_top(self):
-        self.assertIsNone(inboxstate.trim(None, {"beta": 3}))
-        self.assertEqual(inboxstate.trim({"beta": 5, "gamma": 2, "owner": 1}, {"beta": 3, "gamma": 2}),
-                         {"gamma": 2})
+    def test_trusted_drops_a_writer_whose_number_is_above_its_top(self):
+        lines = [ln("beta", i) for i in range(1, 4)] + [ln("gamma", 1), ln("gamma", 2)]
+        self.assertIsNone(inboxstate.trusted(None, lines))
+        self.assertEqual(inboxstate.trusted({"beta": 5, "gamma": 2, "owner": 1}, lines), {"gamma": 2})
+
+    def test_trusted_drops_a_writer_whose_fingerprint_differs(self):
+        lines = [ln("beta", 1), ln("beta", 2)]
+        fp = inboxstate.fingerprint(lines[1])
+        self.assertEqual(inboxstate.trusted({"beta": [2, fp]}, lines), {"beta": [2, fp]})
+        self.assertEqual(inboxstate.trusted({"beta": [2, "0123456789ab"]}, lines), {})
+        self.assertEqual(inboxstate.trusted({"beta": [1, fp]}, lines), {})
+
+    def test_fingerprint_is_of_the_exact_text_of_the_line(self):
+        a = Line(seq=1, t=T1, from_="beta", op="set", collection="messages", id="beta-1", raw='{"x": 1}')
+        self.assertEqual(inboxstate.fingerprint(a), hashlib.sha256(b'{"x": 1}').hexdigest()[:12])
+        self.assertEqual(inboxstate.fingerprint(ln("beta", 1)),
+                         hashlib.sha256(ln("beta", 1).to_json().encode()).hexdigest()[:12])
+
+    def test_equal_numbers_keep_the_fingerprint_that_matches_the_disk(self):
+        lines = self.write_log("beta", 3)
+        true = [3, inboxstate.fingerprint(lines[2])]
+        inboxstate.move(self.root, "alpha", {"beta": [3, "0123456789ab"]})
+        self.assertEqual(inboxstate.move(self.root, "alpha", {"beta": true}, lines), {"beta": true})
+        # The stored one matches the disk now: a run with a stale fingerprint does not replace it.
+        self.assertEqual(inboxstate.move(self.root, "alpha", {"beta": [3, "0123456789ab"]}, lines),
+                         {"beta": true})
+        # A bare number gets the fingerprint of an ack at the same number.
+        inboxstate.move(self.root, "gamma", {"beta": 3})
+        self.assertEqual(inboxstate.move(self.root, "gamma", {"beta": true}, lines), {"beta": true})
+
+    def test_ack_drops_a_stored_entry_of_a_replaced_log(self):
+        old = self.write_log("beta", 3)
+        inboxstate.move(self.root, "alpha", {"beta": [3, inboxstate.fingerprint(old[2])]})
+        (self.root / "log" / "beta.jsonl").write_text(
+            "".join(ln("beta", i, T2).to_json() + "\n" for i in range(1, 3)), encoding="utf-8")
+        new = [ln("beta", i, T2) for i in range(1, 3)]
+        self.assertEqual(inboxstate.move(self.root, "alpha", {"beta": [2, inboxstate.fingerprint(new[1])]}, new),
+                         {"beta": [2, inboxstate.fingerprint(new[1])]})
+
+    def test_clean_place_takes_a_fingerprint(self):
+        self.assertEqual(inboxstate.clean_place({"beta": [3, "0123456789ab"], "gamma": 2}),
+                         {"beta": [3, "0123456789ab"], "gamma": 2})
+        for bad in ({"beta": [3]}, {"beta": [3, "XYZ"]}, {"beta": [0, "0123456789ab"]},
+                    {"beta": [3, "0123456789ab", 1]}, {"beta": ["3", "0123456789ab"]}):
+            self.assertIsNone(inboxstate.clean_place(bad), bad)
 
     def test_ack_repairs_a_number_above_the_top_of_a_shorter_log(self):
         inboxstate.move(self.root, "alpha", {"beta": 12})

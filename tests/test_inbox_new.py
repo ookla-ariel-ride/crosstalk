@@ -1,4 +1,5 @@
 """relay.py inbox --new, --ack and --ack-to: only what came after the last ack."""
+import hashlib
 import itertools
 import json
 import shutil
@@ -39,6 +40,13 @@ def agreement(seq, id_, at, **extra):
     return line(seq, "beta", collection="agreements", id_=id_, data=data, t=at)
 
 
+def seqs(value):
+    """A place, or places, with each `[seq, fingerprint]` cut to its seq."""
+    if isinstance(value, dict):
+        return {k: seqs(v) for k, v in value.items()}
+    return value[0] if isinstance(value, list) else value
+
+
 def distinct_colors(field, panel, n):
     """n colors that pass the roster's contrast and delta E rules next to SPEC_ROSTER's."""
     taken = [p[field] for p in SPEC_ROSTER["participants"]]
@@ -75,9 +83,13 @@ class InboxNewTests(unittest.TestCase):
         self.assertEqual(p.returncode, 0, p.stderr)
         return json.loads(p.stdout)
 
-    def state(self):
+    def raw_state(self):
         path = self.r.root / STATE
         return json.loads(path.read_text(encoding="utf-8")) if path.exists() else {}
+
+    def state(self):
+        """The stored places with the sequence numbers only."""
+        return seqs(self.raw_state())
 
     def ids(self, out, key="requests"):
         return sorted((i.get("request") or i.get("message") or i)["id"] for i in out[key])
@@ -86,8 +98,8 @@ class InboxNewTests(unittest.TestCase):
         self.r.write_log("beta", [req(1, "beta", "beta-r1", t(1)), req(2, "beta", "beta-r2", t(2))])
         out = self.inbox("--new")
         self.assertEqual(self.ids(out), ["beta-r1", "beta-r2"])
-        self.assertIsNone(out["place"])
-        self.assertEqual(out["next"], {"beta": 2})
+        self.assertIsNone(seqs(out["place"]))
+        self.assertEqual(seqs(out["next"]), {"beta": 2})
         self.assertEqual(out["still_open"], [])
         self.assertEqual(self.state(), {})
 
@@ -96,8 +108,8 @@ class InboxNewTests(unittest.TestCase):
         self.inbox("--new", "--ack")
         out = self.inbox("--new")
         self.assertEqual(out["requests"], [])
-        self.assertEqual(out["place"], {"beta": 1})
-        self.assertEqual(out["next"], {"beta": 1})
+        self.assertEqual(seqs(out["place"]), {"beta": 1})
+        self.assertEqual(seqs(out["next"]), {"beta": 1})
 
     def test_row_the_ack_covered_is_not_new(self):
         self.r.write_log("beta", [req(1, "beta", "beta-r5", t(1))])
@@ -110,7 +122,7 @@ class InboxNewTests(unittest.TestCase):
         self.r.write_log("beta", [req(1, "beta", "beta-r5", t(1)), req(2, "beta", "beta-r1", t(1))])
         out = self.inbox("--new")
         self.assertEqual(self.ids(out), ["beta-r1"])
-        self.assertEqual(out["next"], {"beta": 2})
+        self.assertEqual(seqs(out["next"]), {"beta": 2})
 
     def test_row_without_own_t_uses_its_line_time(self):
         self.r.write_log("beta", [req(1, "beta", "beta-r1", t(1))])
@@ -176,7 +188,7 @@ class InboxNewTests(unittest.TestCase):
     def test_ack_moves_to_next_of_the_same_run(self):
         self.r.write_log("beta", [req(1, "beta", "beta-r1", t(1)), req(2, "beta", "beta-r2", t(1))])
         out = self.inbox("--new", "--ack")
-        self.assertEqual(self.state(), {"alpha": out["next"]})
+        self.assertEqual(self.state(), {"alpha": seqs(out["next"])})
 
     def test_row_after_the_read_stays_new(self):
         rows = [req(1, "beta", "beta-r5", t(1))]
@@ -225,7 +237,7 @@ class InboxNewTests(unittest.TestCase):
         self.r.write_log("owner", [owner_msg(1, "owner-m1", t(3))])
         p = self.run_cli("inbox", "alpha", "--ack-to", json.dumps({"beta": 1, "owner": 1}))
         self.assertEqual(p.returncode, 0, p.stderr)
-        self.assertEqual(json.loads(p.stdout), {"beta": 2, "owner": 1})
+        self.assertEqual(seqs(json.loads(p.stdout)), {"beta": 2, "owner": 1})
         self.assertEqual(self.state(), {"alpha": {"beta": 2, "owner": 1}})
 
     def test_ack_to_refuses_a_number_ahead_of_the_log(self):
@@ -247,7 +259,7 @@ class InboxNewTests(unittest.TestCase):
         out = self.inbox("--new", "--ack")
         self.assertEqual(self.ids(out), ["beta-r1"])
         self.assertEqual(self.ids(out, "owner_messages"), ["owner-m9"])
-        self.assertEqual(out["next"], {"beta": 1, "owner": 1})
+        self.assertEqual(seqs(out["next"]), {"beta": 1, "owner": 1})
         rows.append(req(2, "beta", "beta-r2", clock(0)))
         self.r.write_log("beta", rows)
         out = self.inbox("--new")
@@ -269,7 +281,7 @@ class InboxNewTests(unittest.TestCase):
         (self.r.root / STATE).write_text("{broken", encoding="utf-8")
         out = self.inbox("--new")
         self.assertEqual(self.ids(out), ["beta-r1"])
-        self.assertIsNone(out["place"])
+        self.assertIsNone(seqs(out["place"]))
 
     def test_update_of_a_seen_row_in_the_same_second_is_new(self):
         mine = line(1, "alpha", id_="alpha-m1", t=t(1),
@@ -313,7 +325,7 @@ class InboxNewTests(unittest.TestCase):
             json.dumps({"alpha": {"t": t(2), "seen": ["beta-r2"]}, "rev": {"t": t(9), "seen": []}}),
             encoding="utf-8")
         out = self.inbox("--new")
-        self.assertEqual(out["place"], {"beta": 2})
+        self.assertEqual(seqs(out["place"]), {"beta": 2})
         self.assertEqual(self.ids(out), ["beta-r3", "beta-r4"])
         self.assertEqual(self.ids(out, "owner_messages"), ["owner-m1"])
         self.inbox("--new", "--ack")
@@ -329,7 +341,7 @@ class InboxNewTests(unittest.TestCase):
         self.r.write_log("beta", rows)
         out = self.inbox("--new")
         self.assertEqual(self.ids(out), ["beta-s1"])
-        self.assertEqual((out["place"], out["next"]), ({}, {"beta": 1}))
+        self.assertEqual((seqs(out["place"]), seqs(out["next"])), ({}, {"beta": 1}))
         # --ack-to of the printed next is no longer "behind": it repairs the place.
         p = self.run_cli("inbox", "alpha", "--ack-to", json.dumps(out["next"]))
         self.assertEqual(p.returncode, 0, p.stderr)
@@ -352,7 +364,7 @@ class InboxNewTests(unittest.TestCase):
         self.assertEqual(self.ids(self.inbox("--new")), ["beta-r1"])
         p = self.run_cli("inbox", "alpha", "--ack-to", "{}")  # the same place again
         self.assertEqual(p.returncode, 0, p.stderr)
-        self.assertEqual((json.loads(p.stdout), self.state()), ({}, {"alpha": {}}))
+        self.assertEqual((seqs(json.loads(p.stdout)), self.state()), ({}, {"alpha": {}}))
         p = self.run_cli("inbox", "alpha", "--ack-to", json.dumps({"beta": 1}))
         self.assertEqual(p.returncode, 0, p.stderr)
         self.assertEqual(self.state(), {"alpha": {"beta": 1}})
@@ -365,7 +377,7 @@ class InboxNewTests(unittest.TestCase):
         out = self.inbox("--new")
         self.assertEqual(self.ids(out, "owner_messages"), ["owner-m1", "owner-m2"])
         self.assertEqual(out["requests"], [])
-        self.assertEqual(out["next"], {"beta": 1, "owner": 2})
+        self.assertEqual(seqs(out["next"]), {"beta": 1, "owner": 2})
 
     def test_writer_removed_from_the_roster_keeps_its_number(self):
         rows = [req(1, "beta", "beta-r1", t(1))]
@@ -378,12 +390,66 @@ class InboxNewTests(unittest.TestCase):
         self.r.write_log("beta", rows)
         # The file of a writer that left the roster is still read: its numbers count.
         out = self.inbox("--new", "--ack")
-        self.assertEqual(out["next"], {"beta": 2})
+        self.assertEqual(seqs(out["next"]), {"beta": 2})
         self.assertEqual(self.state(), {"alpha": {"beta": 2}})
         rows.append(req(3, "beta", "beta-r3", t(3)))
         self.r.write_log("beta", rows)
         self.r.write_roster()  # beta is added again with its old file
         self.assertEqual(self.ids(self.inbox("--new")), ["beta-r3"])
+
+    def fingerprint(self, writer, seq):
+        raw = (self.r.root / "log" / (writer + ".jsonl")).read_bytes().split(b"\n")[seq - 1]
+        return hashlib.sha256(raw).hexdigest()[:12]
+
+    def test_next_carries_the_fingerprint_of_each_boundary_line(self):
+        self.r.write_log("beta", [req(1, "beta", "beta-r1", t(1)), req(2, "beta", "beta-r2", t(2))])
+        out = self.inbox("--new", "--ack")
+        self.assertEqual(out["next"], {"beta": [2, self.fingerprint("beta", 2)]})
+        self.assertEqual(self.raw_state(), {"alpha": out["next"]})
+
+    def replaced(self, n):
+        """beta's log of three lines is acked, then replaced by `n` other lines."""
+        self.r.write_log("beta", [req(i, "beta", "beta-r%d" % i, t(i)) for i in range(1, 4)])
+        self.inbox("--new", "--ack")
+        self.r.write_log("alpha", [line(1, "alpha", id_="alpha-m1", t=t(0),
+                                        data={"from": "alpha", "kind": "review", "summary": "my note"})])
+        rows = [line(1, "beta", id_="beta-x1", t=t(7),
+                     data={"from": "beta", "kind": "reply", "summary": "a reply", "replyTo": "alpha-m1"})]
+        rows += [req(i, "beta", "beta-n%d" % i, t(7 + i)) for i in range(2, n + 1)]
+        self.r.write_log("beta", rows)
+        return self.inbox("--new")
+
+    def test_replacement_log_of_equal_length_is_all_new(self):
+        out = self.replaced(3)
+        self.assertEqual(self.ids(out), ["beta-n2", "beta-n3"])
+        self.assertEqual(self.ids(out, "thread_replies"), ["beta-x1"])
+        self.assertEqual(out["place"], {})
+        self.inbox("--new", "--ack")
+        self.assertEqual(self.raw_state()["alpha"]["beta"], [3, self.fingerprint("beta", 3)])
+        self.assertEqual(self.ids(self.inbox("--new")), [])
+
+    def test_replacement_log_of_greater_length_is_all_new(self):
+        out = self.replaced(4)
+        self.assertEqual(self.ids(out), ["beta-n2", "beta-n3", "beta-n4"])
+        self.assertEqual(self.ids(out, "thread_replies"), ["beta-x1"])
+
+    def test_bare_number_place_still_works(self):
+        self.r.write_log("beta", [req(i, "beta", "beta-r%d" % i, t(i)) for i in range(1, 4)])
+        (self.r.root / STATE).write_text('{"alpha": {"beta": 2}}', encoding="utf-8")
+        out = self.inbox("--new", "--ack")
+        self.assertEqual((self.ids(out), out["place"]), (["beta-r3"], {"beta": 2}))
+        self.assertEqual(self.raw_state(), {"alpha": {"beta": [3, self.fingerprint("beta", 3)]}})
+
+    def test_ack_to_refuses_a_wrong_fingerprint(self):
+        self.r.write_log("beta", [req(1, "beta", "beta-r1", t(1)), req(2, "beta", "beta-r2", t(2))])
+        nxt = self.inbox("--new")["next"]
+        p = self.run_cli("inbox", "alpha", "--ack-to", json.dumps({"beta": [2, "0123456789ab"]}))
+        self.assertEqual(p.returncode, 1)
+        self.assertIn("fingerprint", p.stderr)
+        self.assertEqual(self.raw_state(), {})
+        p = self.run_cli("inbox", "alpha", "--ack-to", json.dumps(nxt))
+        self.assertEqual(p.returncode, 0, p.stderr)
+        self.assertEqual(self.raw_state(), {"alpha": nxt})
 
     def test_new_brief_marks_needs_answer_and_prints_counts(self):
         self.r.write_log("beta", [req(1, "beta", "beta-r1", t(1)), agreement(2, "a-one", t(2))])
@@ -420,8 +486,8 @@ class InboxNewTests(unittest.TestCase):
         out = json.loads(p.stdout)
         self.assertEqual(out["agreements_open"], 250)
         self.assertEqual(len(out["still_open"]), 20)
-        self.assertEqual(out["place"], {"beta": 275})
-        self.assertEqual(out["next"], {"beta": 275})
+        self.assertEqual(seqs(out["place"]), {"beta": 275})
+        self.assertEqual(seqs(out["next"]), {"beta": 275})
         self.assertLess(len(p.stdout), 8000)
 
     def test_plain_inbox_is_unchanged(self):

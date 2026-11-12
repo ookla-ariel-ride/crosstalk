@@ -65,13 +65,15 @@ This design gives the agents both, on the command line they already use.
 ### The place
 
 Changed 2026-11-12 after an outside review: the place is a sequence number per writer, not a time.
+Changed 2026-11-12 after a third outside review: each number carries the fingerprint of its line.
 
 The place of a participant holds, for each writer, the highest `seq` of that
-writer's log lines that its last `--ack` covered. It lives in
-`inbox-state.json` in the data root, outside the log and out of git, in the
-same style as `read-state.json`:
+writer's log lines that its last `--ack` covered, and the fingerprint of that
+line: the first 12 hex digits of the SHA-256 of its exact text in the file.
+It lives in `inbox-state.json` in the data root, outside the log and out of
+git, in the same style as `read-state.json`:
 
-    {"alpha": {"beta": 42, "owner": 7}}
+    {"alpha": {"beta": [42, "9f2c1a0b77e4"], "owner": [7, "03d5e81c2a44"]}}
 
 Each writer appends to its own file, `log/<writer>.jsonl`, and the check of
 the log refuses a `seq` that is not one more than the line before it. So the
@@ -90,20 +92,28 @@ which means "everything is new". A place of the earlier form,
 `{"t": ..., "seen": [...]}`, converts on read with the log in hand: for each
 writer, the highest `seq` among the lines it covered (line time before `t`,
 or equal to `t` with the id in `seen`), up to the first line of that writer
-it did not cover. Only the new form is written.
+it did not cover, with the fingerprint of that line. Only the new form is
+written. A bare number per writer, the form before the fingerprint, is
+trusted when it is not above the writer's top, and gets its fingerprint at
+the next ack.
 
 `relay.py inbox` is its own process, so two commands can write at one time.
 The write reads the file again, merges (each writer keeps the higher number)
 and replaces the file atomically. Because a place only moves forward, the
 merge loses nothing.
 
-A stored number above the highest `seq` of its writer cannot be true for the
-log: the log came back from an older copy, or the writer was removed and
-added again with a new file. The read leaves that writer out of the place,
-so all its lines are new. The next ack repairs the number inside the lock,
-and only when the writer's file, read again there, still tops out below the
-stored number. A run that read an older log while another run acked a newer
-one finds the newer lines on disk and keeps the higher number.
+A stored entry can be false for the log in hand: its number is above the
+highest `seq` of its writer, or the line at that number has another
+fingerprint. The log came back from an older copy, or the writer was removed
+and added again with a new file, of any length. A number alone cannot tell a
+replaced log that grew back to the stored length; the fingerprint can. The
+read leaves that writer out of the place, so all its lines are new. The next
+ack repairs the entry inside the lock, and only when the writer's file, read
+again there, shows the stored entry false. A run that read an older log while
+another run acked a newer one finds the newer lines on disk and keeps the
+higher number. Two entries with the same number and different fingerprints
+keep the one that matches the file on disk, read under the lock: the other
+was taken from a log that is no longer there.
 
 The place is a file and not a log row, because it changes at each check-in
 of each participant and tells no other participant anything.
@@ -125,8 +135,8 @@ Returns the same sections as today, each cut down to what is new:
 - `agreements_open` is the length of the list that `agreements_to_adopt_for`
   gives today.
 - `place`: the place this answer was cut at, and `next`: the highest `seq`
-  of each writer of the log as this run loaded it, one number for each
-  writer. `next` has a value on a quiet day too.
+  of each writer of the log as this run loaded it with the fingerprint of
+  that line, one entry for each writer. `next` has a value on a quiet day too.
 
 ### `--ack`
 
@@ -142,8 +152,10 @@ pipe included, the place does not move.
 An agent that wants to read first and ack later runs `--new`, then
 `inbox <id> --ack-to '<next as JSON>'` with the `next` it got. Each writer
 keeps the higher number. `--ack-to` refuses a place that is not well-formed,
-a number above the highest `seq` of its writer in the log, and a place that
-is behind the stored one and ahead of it for no writer.
+a number above the highest `seq` of its writer in the log, a fingerprint
+that does not match that line of the log, and a place that is behind the
+stored one and ahead of it for no writer. A bare number takes the
+fingerprint of its line.
 
 ### `needs_answer`
 

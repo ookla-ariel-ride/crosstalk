@@ -173,8 +173,9 @@ def cmd_inbox(args):
     out = inbox_report(docs, args.pid, roster, include_answered=args.all,
                        now_iso=getattr(args, "now", None), service=service_for(CODE_ROOT, ROOT))
     if args.new:
-        # A number above its writer's top cannot be true for this log: that writer is all new.
-        place = inboxstate.trim(inboxstate.load(ROOT, lines).get(args.pid), nxt or {})
+        # An entry that cannot be true for this log (a number above its writer's top, or
+        # another fingerprint at that number) leaves that writer all new.
+        place = inboxstate.trusted(inboxstate.load(ROOT, lines).get(args.pid), lines)
         out = new_report(out, lines, place, nxt)
     try:
         _print_inbox(out, args)
@@ -226,20 +227,29 @@ def _inbox_ack_to(pid, raw, nxt, lines):
     except (ValueError, RecursionError):
         place = None
     if place is None:
-        err('--ack-to: not a place; give the JSON object {"<writer>": <seq>, ...} '
+        err('--ack-to: not a place; give the JSON object {"<writer>": [<seq>, "<fingerprint>"], ...} '
             "that inbox --new printed as next")
         return 1
-    top = nxt or {}
-    ahead = sorted(w for w, seq in place.items() if seq > top.get(w, 0))
+    top = {w: e[0] for w, e in (nxt or {}).items()}
+    seq_of = inboxstate.seq_of
+    ahead = sorted(w for w, e in place.items() if seq_of(e) > top.get(w, 0))
     if ahead:
         err("--ack-to: ahead of the log for %s (the log holds %s)"
-            % (", ".join("%s %d" % (w, place[w]) for w in ahead),
+            % (", ".join("%s %d" % (w, seq_of(place[w])) for w in ahead),
                ", ".join("%s %d" % (w, top.get(w, 0)) for w in ahead)))
         return 1
+    by_key = inboxstate.index(lines)
+    for w, e in sorted(place.items()):
+        fp = inboxstate.fingerprint(by_key[(w, seq_of(e))])
+        if inboxstate.fp_of(e) not in (None, fp):
+            err("--ack-to: the fingerprint %s of %s %d does not match the log (%s); "
+                "the log changed since that next was printed" % (inboxstate.fp_of(e), w, seq_of(e), fp))
+            return 1
+        place[w] = [seq_of(e), fp]  # a bare number gets the fingerprint of its line
     found = inboxstate.load(ROOT, lines).get(pid)
-    stored = inboxstate.trim(found, top) or {}
-    forward = any(seq > stored.get(w, 0) for w, seq in place.items())
-    behind = any(seq > place.get(w, 0) for w, seq in stored.items())
+    stored = inboxstate.trusted(found, lines) or {}
+    forward = any(seq_of(e) > seq_of(stored.get(w)) for w, e in place.items())
+    behind = any(seq_of(e) > seq_of(place.get(w)) for w, e in stored.items())
     if behind and not forward:
         err("--ack-to: %s is behind the stored place %s and moves nothing forward"
             % (json.dumps(place, sort_keys=True), json.dumps(stored, sort_keys=True)))
