@@ -14,7 +14,7 @@ ROOT = CODE_ROOT  # the data: log/, participants.json, tokens.json, kits/; main(
 sys.path.insert(0, str(CODE_ROOT / "scripts"))
 
 from crosstalk.consults import (  # noqa: E402
-    adopt_agreement, post_consult, post_question, post_reply, question_warning, withdraw_question)
+    ack_item, adopt_agreement, post_consult, post_question, post_reply, question_warning, withdraw_question)
 from crosstalk import deploy as deploy_mod  # noqa: E402
 from crosstalk.exporter import export_page  # noqa: E402
 from crosstalk.landqueue import land_queue  # noqa: E402
@@ -615,6 +615,17 @@ def cmd_schedule(args):
     return 0
 
 
+def cmd_ack(args):
+    """Record that you read a request and have nothing to do or say; prints the row id."""
+    try:
+        ln = ack_item(ROOT, args.from_, args.item)
+    except ValueError as e:
+        err(str(e))
+        return 1
+    print(ln.id)
+    return 0
+
+
 def cmd_withdraw(args):
     """Withdraw one of your own open questions; prints the new message id."""
     try:
@@ -855,6 +866,13 @@ def build_parser():
         p.add_argument("--from", dest="from_", required=True)
     adsub.add_parser("summary", help="print the counts per project (JSON)")
     ad.set_defaults(fn=cmd_adoption)
+
+    ac = sub.add_parser("ack", help="record that a request needs nothing from you (--none); prints the row id")
+    ac.add_argument("--from", dest="from_", required=True)
+    ac.add_argument("item", metavar="ITEM", help="the request's message id")
+    ac.add_argument("--none", action="store_true", required=True,
+                    help="you read it and have nothing to do or say")
+    ac.set_defaults(fn=cmd_ack)
 
     wd = sub.add_parser("withdraw", help="withdraw one of your own open questions; prints the new message id")
     _speaker_flags(wd)

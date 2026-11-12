@@ -881,6 +881,23 @@
     return res("helpPerRecipient", ok, "initial=" + initialListed + " still=" + stillListed + " waiting=" + JSON.stringify(waitingText) + " hasReply=" + hasReply + " dropped=" + droppedAfterAll);
   });
 
+  // An ack row (requests.acks_by_item) counts as a reply from its writer: the card shows the name as
+  // "acked, no action" and still waits on the other. A row whose id is not from + "--" + item counts for nothing.
+  S.push(async function helpAckedNoAction() {
+    await go("help");
+    await addDoc("messages", "hreq-ack", { t: ago(1), from: "codex", kind: "request", summary: "Ack me?", to: ["beta", "gamma"] });
+    await addDoc("acks", "gamma--hreq-ack", { from: "gamma", item: "hreq-ack", none: true, t: ago(1) });
+    await addDoc("acks", "beta--other", { from: "beta", item: "hreq-ack", none: true, t: ago(1) });
+    var c = helpCards().filter(function (x) { return x.textContent.indexOf("Ack me?") !== -1; })[0];
+    var acked = c && c.querySelector(".pill.acked"), waiting = c && c.querySelector(".pill.pending-to");
+    var ackedText = acked ? acked.textContent : "", waitingText = waiting ? waiting.textContent : "";
+    await addDoc("acks", "beta--hreq-ack", { from: "beta", item: "hreq-ack", none: true, t: ago(1) });
+    var dropped = !helpHas("Ack me?");
+    await go("timeline");
+    var ok = ackedText === "acked, no action: Gamma" && waitingText === "waiting on Beta" && dropped;
+    return res("helpAckedNoAction", ok, "acked=" + JSON.stringify(ackedText) + " waiting=" + JSON.stringify(waitingText) + " dropped=" + dropped);
+  });
+
   // The Help tab follows relay.py inbox (requests.open_requests): who counts as having answered.
   function helpWaiting(summary) {
     var c = helpCards().filter(function (x) { return x.textContent.indexOf(summary) !== -1; })[0];

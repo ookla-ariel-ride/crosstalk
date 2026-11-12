@@ -9,7 +9,7 @@ from .logs import Line, append_line, check_speaker
 from .participants import Roster, load_roster
 from .posters import next_stamp
 from .replay import enrich_messages, load_all_lines, replay
-from .requests import _is_approved, extract_mentions, no_answer as _no_answer, owner_questions
+from .requests import ACK_SEP, _is_approved, extract_mentions, no_answer as _no_answer, owner_questions
 
 COMMIT_RE = re.compile(r"^[0-9a-fA-F]{7,40}$")
 _LAST_DT = None  # type: Optional[datetime]
@@ -253,6 +253,25 @@ def withdraw_question(
     }  # type: Dict[str, object]
     data.update(speaker or {})
     return append_line(root, pid, "set", "messages", mid, data, roster=roster)
+
+
+def ack_item(root: Path, pid: str, item_id: str, roster: Optional[Roster] = None) -> Line:
+    """Record that pid read the request item_id and has nothing to do or say: an `acks` row
+    that counts as pid's reply (requests.acks_by_item). It is not a message."""
+    root = Path(root)
+    roster = _ensure_roster(root, roster)
+    _require_pid(pid, roster)
+    lines = load_all_lines(root, roster)
+    docs = enrich_messages(replay(lines), lines)
+    item = docs.get(("messages", item_id))
+    if item is None:
+        raise ValueError("no such message %r" % (item_id,))
+    if item.get("kind") == "question":
+        raise ValueError("a question to the owner gets an answer, not an ack")
+    if item.get("kind") != "request":
+        raise ValueError("message %r is not a request; only a request takes an ack" % (item_id,))
+    data = {"from": pid, "item": item_id, "none": True, "t": now_iso()}
+    return append_line(root, pid, "set", "acks", pid + ACK_SEP + item_id, data, roster=roster)
 
 
 def adopt_agreement(

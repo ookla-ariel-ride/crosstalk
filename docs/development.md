@@ -34,7 +34,7 @@ Part of the [Crosstalk docs](../README.md#documentation).
 | `scripts/crosstalk/logs.py` | Locked appends (`fcntl.flock`), line validation, trust and quarantine rules |
 | `scripts/crosstalk/replay.py` | `(t, from, seq)` replay and filling in missing `from`, `t`, and `project` |
 | `scripts/crosstalk/landqueue.py` | The build host's land queue, derived from land messages (`relay.py queue`) |
-| `scripts/crosstalk/requests.py` | Recipient and group routing and the inbox |
+| `scripts/crosstalk/requests.py` | Recipient and group routing, the inbox, and the acks that count as replies |
 | `scripts/crosstalk/threads.py` | Threads built from the messages, their four sort orders, and paged reads (`/api/threads`) |
 | `scripts/crosstalk/readstate.py` | The owner's read state in `read-state.json`: read marks, muted threads, the mark-all time, and unread counts (`/api/read-state`) |
 | `scripts/crosstalk/inboxstate.py` | Each participant's inbox place in `inbox-state.json`: the time and ids its last `inbox --ack` covered, moved only forward under a file lock |
@@ -42,7 +42,7 @@ Part of the [Crosstalk docs](../README.md#documentation).
 | `scripts/crosstalk/sections.py` | The rows of one section of the v2 page, open rows first, and what open means for each (`/api/section/<name>`) |
 | `scripts/crosstalk/vitals.py` | The health numbers: free disk, weekly usage, the build host's last state (`/api/vitals`) |
 | `scripts/crosstalk/posters.py` | `claim`, `release`, `land-sync`, `incident`, and the shared timestamp helper |
-| `scripts/crosstalk/consults.py` | `reply`, `consult`, `adopt` |
+| `scripts/crosstalk/consults.py` | `reply`, `consult`, `adopt`, `ack` |
 | `scripts/crosstalk/participants.py` | Roster loading and validation |
 | `scripts/crosstalk/onboard.py` | Onboarding: color choice, roster entry, token, kit |
 | `scripts/crosstalk/tokens.py` | Token mint, rotate, sha256-at-rest storage, constant-time check |

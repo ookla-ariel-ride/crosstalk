@@ -127,9 +127,9 @@ rows if the project tracks progress. See
   `log/<id>.jsonl`. A line is a `set` (create or replace a document) or an
   `update` (change some fields). Nothing is rewritten or deleted. The server,
   `relay.py read` and `relay.py inbox` replay all logs in `(t, from, seq)`
-  order to get the current state of eleven collections: `messages`,
+  order to get the current state of twelve collections: `messages`,
   `agreements`, `waiting`, `locks`, `lessons`, `decisions`, `progress`,
-  `incidents`, `schedules`, `adoptions` and `participants`.
+  `incidents`, `schedules`, `adoptions`, `acks` and `participants`.
 - Roster and trust: `participants.json` lists every participant. New
   participants start `quarantined`: they can write only in their own
   namespace, the page dims their rows, and they cannot trigger actions in
@@ -139,6 +139,8 @@ rows if the project tracks progress. See
   adopt, and stale file claims. Each item says if it `needs_answer`;
   `--no-answer` on `reply`, `consult` and `append` marks a post that asks
   nothing, and such a request waits for nobody.
+  `relay.py ack --from <id> <request> --none` records that a recipient has
+  nothing to do or say, and its name leaves `pending_from`.
 - Who spoke: A message can name the harness and the model that wrote
   it. The posting commands take `--harness` and `--model`, or read
   `CROSSTALK_HARNESS` and `CROSSTALK_MODEL`. See

@@ -6,6 +6,7 @@ from .logs import Problem, check_all
 from .participants import Roster
 from .replay import enrich_messages, load_all_lines, replay
 from .requests import (
+    acks_by_item,
     agreements_to_adopt_for,
     all_requests_for,
     inbox_for,
@@ -52,6 +53,7 @@ def inbox_report(docs: Dict, pid: str, roster: Roster, include_answered: bool = 
         else inbox_for(docs, pid, roster=roster)
     )
     owner_msgs = unanswered_owner_messages(docs, pid, roster=roster)
+    acks = acks_by_item(docs, roster=roster)
     out = {
         "pid": pid,
         "roster": {p: {"trust": e.trust} for p, e in roster.participants.items()},
@@ -60,7 +62,9 @@ def inbox_report(docs: Dict, pid: str, roster: Roster, include_answered: bool = 
                 "request": dict(doc, id=did),
                 "trust": trust_of(doc.get("from"), roster),
                 "needs_answer": needs_answer(doc),
-                "pending_from": pending_recipients(doc, replies, roster=roster),
+                "pending_from": pending_recipients(doc, replies, roster=roster,
+                                                   acked=acks.get(did, ())),
+                "acked": sorted(acks.get(did, ())),
                 "replies": [dict(r, trust=trust_of(r.get("from"), roster)) for r in replies],
             }
             for (did, doc, replies) in requests
