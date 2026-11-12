@@ -54,7 +54,7 @@ Part of the [Crosstalk docs](../README.md#documentation).
 | `scripts/crosstalk/files.py` | The atomic file writer the other modules use, and `utf8_json`: JSON text that encodes as UTF-8, with `\u` escapes when a string holds a lone surrogate |
 | `scripts/install-service.sh`, `scripts/launchd/` | LaunchAgent installer (`--data-root <dir>` for a data folder) and plist templates |
 | `scripts/housekeeper.sh` | The 30-minute check, and the push when `crosstalk.autopush` is on |
-| `tests/` | Python tests (`test_*.py`), page scenarios (`tests/page/`), live-server end-to-end tests (`tests/server/`), and the one-folder kits, hooks and standard jobs that `test_data_root_texts.py` compares against, and the launchd jobs, service commands and ask template that `test_service_data_root.py` compares against (`tests/baseline/`) |
+| `tests/` | Python tests (`test_*.py`), page scenarios (`tests/page/`), live-server end-to-end tests (`tests/server/`), the smoke suite (`tests/smoke/`), and the one-folder kits, hooks and standard jobs that `test_data_root_texts.py` compares against, and the launchd jobs, service commands and ask template that `test_service_data_root.py` compares against (`tests/baseline/`) |
 | `web/` | The v2 page: React and TypeScript source in `web/src/`, built by Vite (see [The v2 page](#the-v2-page)) |
 | `web/src/ui/tokens.css`, `web/src/ui/fonts.css` | The design tokens (colours, light and dark; type sizes; radii; widths) and the two fonts, Archivo and Atkinson Hyperlegible Next, taken from npm |
 | `web/src/api/types.ts` | The shapes the server sends, field for field: threads, messages, sections, vitals, the caller's role, the read state, health, the land queue, the roster entries of the snapshot, and the rows of the push channel |
@@ -171,6 +171,37 @@ Server scenarios (`tests/server/scenarios.js`, plus
 
 `tests/page/build.sh` leaves a copy of the page in `tests/page/out/`. Delete
 it before grepping the tree for retired strings.
+
+Smoke suite (`tests/smoke/run.sh` and its driver `tests/smoke/smoke.py`):
+
+```
+sh tests/smoke/run.sh
+```
+
+It takes about 15 seconds and needs only `python3` and a POSIX `sh`. It makes a
+data root in a temp folder with `relay.py` commands (`alpha`, `beta`,
+`relay-bot` as the coordinator, a permanent PIN, a `TURN ASK`), then starts
+`relay.py serve` as a process on a free port with live notices and the
+auto-granter on. The driver then checks:
+
+- `/api/health`, the main GET routes as a viewer, `/api/events`, `/` and `/v2/`
+- the auto-granter's `GRANTED` for the ask, in the log and in `relay.py queue`
+- a session that `relay.py live register` adds, which gets the live notice for
+  an owner message
+- a login with the `set-pin` PIN, one append through HTTP and one through
+  `relay.py append`, then `inbox`, `check`, `state` and `queue`
+
+Each check prints one `ok` line. The last line is `smoke: ok in N s`, and the
+exit status is 0 only when every check passes. On a failure it prints the
+check that failed and the end of the server's stderr.
+
+The suite runs every command under `env -i`, with `HOME` and each
+`CROSSTALK_*` path pointed into the temp folder, so it never touches an
+install, a live session or the home folder. The session socket goes in
+`/tmp/cc-socks-<n>`, the only folder name that `live.py` accepts. The script
+stops the server and removes both folders when it exits, after a failure, or
+after `HUP`, `INT` or `TERM`. `unittest discover` does not run the suite
+because it would add about 15 seconds to each run.
 
 ### The v2 page
 The source of the page at `/v2/` lives in `web/`. It needs Node and npm; the
