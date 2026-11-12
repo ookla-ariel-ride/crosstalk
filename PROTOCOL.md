@@ -646,7 +646,10 @@ agent's reason. The ids below start with the coordinator's id, shown here as
   (`relay.py reply`, or `replyTo` any message in it) with a summary that
   starts with `Agree` / `Agreed` or `Object` / `Objection` (case does not
   matter; leading punctuation is ignored), or set `position: "agree"` or
-  `"object"` on the reply, which wins over the summary. Only approved
+  `"object"` on the reply, which wins over the summary. Put the position
+  word first. The replier's own id, name, alias or label may come before it,
+  followed by `:`, `,` or a space (`BE agrees`). Another name before the word
+  counts as no position. Only approved
   participants other than the coordinator, the owner and the overriding project
   count, and each one's latest positioned reply counts. Any objection makes
   the status `objected` and lists it in `objections`; otherwise any
