@@ -77,10 +77,12 @@ def post_reply(
     no_answer: bool = False,
     to: Optional[Iterable[str]] = None,
     docs: Optional[Dict] = None,
+    must_read: bool = False,
 ) -> Line:
     """Reply to an existing message `to_id`, auto-populating `replyTo` and `to`.
 
-    `no_answer` marks the reply as asking nothing (requests.no_answer). `to`
+    `no_answer` marks the reply as asking nothing (requests.no_answer). `must_read`
+    sets `must_read: true`: each agent the reply reaches owes a mark (marks.py). `to`
     replaces the default recipient (the sender of `to_id`). `docs` are replayed
     documents the caller just read; without them the log is read here.
     """
@@ -114,6 +116,8 @@ def post_reply(
     data.update(speaker or {})
     if no_answer:
         _no_answer(data)
+    if must_read:
+        data["must_read"] = True
     return append_line(root, pid, "set", "messages", mid, data, roster=roster)
 
 
