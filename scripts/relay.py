@@ -236,12 +236,17 @@ def _inbox_ack_to(pid, raw, nxt, lines):
             % (", ".join("%s %d" % (w, place[w]) for w in ahead),
                ", ".join("%s %d" % (w, top.get(w, 0)) for w in ahead)))
         return 1
-    stored = inboxstate.trim(inboxstate.load(ROOT, lines).get(pid), top) or {}
+    found = inboxstate.load(ROOT, lines).get(pid)
+    stored = inboxstate.trim(found, top) or {}
     forward = any(seq > stored.get(w, 0) for w, seq in place.items())
     behind = any(seq > place.get(w, 0) for w, seq in stored.items())
     if behind and not forward:
         err("--ack-to: %s is behind the stored place %s and moves nothing forward"
             % (json.dumps(place, sort_keys=True), json.dumps(stored, sort_keys=True)))
+        return 1
+    if found is None and not forward:
+        err("--ack-to: %s moves nothing forward, and %s has no stored place"
+            % (json.dumps(place, sort_keys=True), pid))
         return 1
     print(json.dumps(inboxstate.move(ROOT, pid, place, lines), sort_keys=True))
     return 0

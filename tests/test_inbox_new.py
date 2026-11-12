@@ -339,6 +339,52 @@ class InboxNewTests(unittest.TestCase):
         self.assertEqual(self.ids(self.inbox("--new", "--ack")), ["beta-s2"])
         self.assertEqual(self.state(), {"alpha": {"beta": 2}})
 
+    def test_ack_to_an_empty_place_without_a_stored_one_moves_nothing(self):
+        self.r.write_log("beta", [req(1, "beta", "beta-r1", t(1))])
+        p = self.run_cli("inbox", "alpha", "--ack-to", "{}")
+        self.assertEqual(p.returncode, 1)
+        self.assertIn("moves nothing forward", p.stderr)
+        self.assertEqual(self.state(), {})
+
+    def test_ack_to_against_a_stored_empty_place(self):
+        self.r.write_log("beta", [req(1, "beta", "beta-r1", t(1))])
+        (self.r.root / STATE).write_text('{"alpha": {}}', encoding="utf-8")
+        self.assertEqual(self.ids(self.inbox("--new")), ["beta-r1"])
+        p = self.run_cli("inbox", "alpha", "--ack-to", "{}")  # the same place again
+        self.assertEqual(p.returncode, 0, p.stderr)
+        self.assertEqual((json.loads(p.stdout), self.state()), ({}, {"alpha": {}}))
+        p = self.run_cli("inbox", "alpha", "--ack-to", json.dumps({"beta": 1}))
+        self.assertEqual(p.returncode, 0, p.stderr)
+        self.assertEqual(self.state(), {"alpha": {"beta": 1}})
+
+    def test_writer_file_new_since_the_ack_is_all_new(self):
+        self.r.write_log("beta", [req(1, "beta", "beta-r1", t(5))])
+        self.inbox("--new", "--ack")
+        self.assertEqual(self.state(), {"alpha": {"beta": 1}})
+        self.r.write_log("owner", [owner_msg(1, "owner-m1", t(1)), owner_msg(2, "owner-m2", t(2))])
+        out = self.inbox("--new")
+        self.assertEqual(self.ids(out, "owner_messages"), ["owner-m1", "owner-m2"])
+        self.assertEqual(out["requests"], [])
+        self.assertEqual(out["next"], {"beta": 1, "owner": 2})
+
+    def test_writer_removed_from_the_roster_keeps_its_number(self):
+        rows = [req(1, "beta", "beta-r1", t(1))]
+        self.r.write_log("beta", rows)
+        self.inbox("--new", "--ack")
+        roster = json.loads(json.dumps(SPEC_ROSTER))
+        roster["participants"] = [p for p in roster["participants"] if p["id"] != "beta"]
+        self.r.write_roster(roster)
+        rows.append(req(2, "beta", "beta-r2", t(2)))
+        self.r.write_log("beta", rows)
+        # The file of a writer that left the roster is still read: its numbers count.
+        out = self.inbox("--new", "--ack")
+        self.assertEqual(out["next"], {"beta": 2})
+        self.assertEqual(self.state(), {"alpha": {"beta": 2}})
+        rows.append(req(3, "beta", "beta-r3", t(3)))
+        self.r.write_log("beta", rows)
+        self.r.write_roster()  # beta is added again with its old file
+        self.assertEqual(self.ids(self.inbox("--new")), ["beta-r3"])
+
     def test_new_brief_marks_needs_answer_and_prints_counts(self):
         self.r.write_log("beta", [req(1, "beta", "beta-r1", t(1)), agreement(2, "a-one", t(2))])
         self.inbox("--ack")

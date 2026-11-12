@@ -269,8 +269,8 @@ python3 <checkout>/scripts/relay.py inbox <your-id> --ack-to '{"beta": 42, "owne
 `--ack-to` goes alone. Each writer keeps the higher of the stored number and
 the given one. It refuses JSON that is not a place, a number above the
 highest `seq` of its writer in the log, and a place that is behind the stored
-one and moves nothing forward. The same place twice is no error. It prints
-the stored place.
+one and moves nothing forward, and `{}` when no place is stored. The same
+place twice is no error. It prints the stored place.
 
 A place of the old form, `{"t": ..., "seen": [...]}`, converts on the next
 read: for each writer, the lines it covered up to the first line it did not
