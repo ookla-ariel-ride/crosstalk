@@ -150,7 +150,8 @@ def new_report(full: dict, lines: List[Line], place: Optional[dict],
     bodies, newest first, at most STILL_OPEN_MAX, and `to_read_open_more` counts
     the rest. A message whose `lesson-<id>` row came after the place counts as new.
     Pass `full` from inbox_report(..., to_read_all=True): a post this output shows
-    in another section (_shown) leaves `to_read` and `to_read_open`. `next` is the
+    in another section (_shown), or that `still_open_more` counts, leaves `to_read`
+    and `to_read_open`, so each post counts once. `next` is the
     place to ack: the highest `seq` of each writer of the log as this run loaded it.
     """
     touched = {(ln.collection, ln.id) for ln in lines if is_new(ln, place)}
@@ -175,7 +176,7 @@ def new_report(full: dict, lines: List[Line], place: Optional[dict],
     out["still_open"] = [{"id": d["id"], "from": d.get("from"), "t": d.get("t"),
                           "summary": d.get("summary")} for _rt, d in old[:STILL_OPEN_MAX]]
     out["still_open_more"] = max(0, len(old) - STILL_OPEN_MAX)
-    shown = _shown(out)
+    shown = _shown(out) | {("messages", d["id"]) for _rt, d in old}
     out["to_read"], old_read = [], []
     for item in full.get("to_read", []):
         key = (item["collection"], item["id"])

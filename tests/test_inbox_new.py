@@ -467,6 +467,19 @@ class InboxNewTests(unittest.TestCase):
         plain = self.run_cli("inbox", "alpha", "--brief").stdout.splitlines()
         self.assertEqual(plain[-1], "adopt 1, stale locks 0, to read: 0")
 
+    def test_new_brief_counts_an_open_post_past_the_cap_once(self):
+        self.r.write_log("beta", [req(i, "beta", "beta-r%02d" % i, t(i), must_read=True)
+                                  for i in range(1, 26)])
+        self.assertEqual(len(self.inbox("--new")["to_read"]), 0)
+        self.inbox("--ack")
+        out = self.inbox("--new")
+        self.assertEqual((len(out["still_open"]), out["still_open_more"]), (20, 5))
+        self.assertEqual((out["to_read_open"], out["to_read_open_more"]), ([], 0))
+        p = self.run_cli("inbox", "alpha", "--new", "--brief")
+        self.assertEqual(p.returncode, 0, p.stderr)
+        self.assertEqual(p.stdout.splitlines()[-1],
+                         "still open 25, agreements open 0, stale locks 0, to read: 0")
+
     def test_quiet_check_in_is_small(self):
         roster = json.loads(json.dumps(SPEC_ROSTER))
         colors = zip(distinct_colors("color", pmod.PANEL_LIGHT, 26),

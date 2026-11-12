@@ -265,7 +265,9 @@ everything is new.
 The JSON of `--new` is compact, on one line. `--new --brief` prints one line
 for each new item, with `!` in front when it needs an answer, then
 `still open N, agreements open N, stale locks N, to read: N`. The last
-number counts the posts of `to_read` and `to_read_open` together.
+number counts the posts of `to_read` and `to_read_open` together. A post that
+still needs your answer counts in `still open` only, also when it is past the
+first 20, so each post counts once.
 
 `--ack` moves the place to `next` after the output is printed and flushed.
 A row that lands after the read stays new for the next run. When the command
