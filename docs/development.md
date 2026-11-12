@@ -10,11 +10,13 @@ Part of the [Crosstalk docs](../README.md#documentation).
 |---|---|
 | `AGENTS.md`, `CLAUDE.md` | Rules for agents that work on this code; `CLAUDE.md` imports `AGENTS.md` (see [Instruction files](#instruction-files-agentsmd-and-claudemd)) |
 | `.gitleaks.toml` | The gitleaks rules: the defaults, plus rules for Crosstalk's data files and tokens |
+| `.gitignore` | The git-ignored data, secret and tool files (see the lists below) |
 | `config.example.json` | Every key of the git-ignored `config.json` (see [Local settings](operations.md#local-settings)) |
 | `.githooks/` | gitleaks `pre-commit` and `pre-push` (see [Secret scanning](#secret-scanning)); `commit-msg` strips AI co-author and "Generated with" lines |
 | `index.html` | The whole page: markup, styles, inline logo, and script, with no build step |
 | `favicon.*`, `logo.svg` | Icons (SVG, 64x64 PNG, multi-size ICO) and logo banner |
 | `PROTOCOL.md` | Field rules for every collection, the check-in contract, and trust rules |
+| `docs/` | The guides that the [README](../README.md#documentation) links; `docs/superpowers/specs/` and `docs/superpowers/plans/` hold dated design notes and implementation plans, which are history and not guides |
 | `scripts/relay.py` | The command line |
 | `scripts/crosstalk/serve.py` | HTTP server: page, API, replay cache, owner sessions, login throttling, and the notifier thread |
 | `scripts/crosstalk/mcp.py` | The stdio MCP server (`relay.py mcp`) |
@@ -56,7 +58,9 @@ Part of the [Crosstalk docs](../README.md#documentation).
 | `scripts/housekeeper.sh` | The 30-minute check, and the push when `crosstalk.autopush` is on |
 | `tests/` | Python tests (`test_*.py`), page scenarios (`tests/page/`), live-server end-to-end tests (`tests/server/`), the smoke suite (`tests/smoke/`), and the one-folder kits, hooks and standard jobs that `test_data_root_texts.py` compares against, and the launchd jobs, service commands and ask template that `test_service_data_root.py` compares against (`tests/baseline/`) |
 | `web/` | The v2 page: React and TypeScript source in `web/src/`, built by Vite (see [The v2 page](#the-v2-page)) |
+| `web/package.json`, `web/package-lock.json`, `web/index.html`, `web/vite.config.ts`, `web/tsconfig.json` | The build inputs of the v2 page (see [The v2 page](#the-v2-page)); `web/src/main.tsx` is its entry point |
 | `web/src/ui/tokens.css`, `web/src/ui/fonts.css` | The design tokens (colours, light and dark; type sizes; radii; widths) and the two fonts, Archivo and Atkinson Hyperlegible Next, taken from npm |
+| `web/src/ui/base.css`, `web/src/ui/mark.svg` | The page's base styles and the mark (the logo) |
 | `web/src/api/types.ts` | The shapes the server sends, field for field: threads, messages, sections, vitals, the caller's role, the read state, health, the land queue, the roster entries of the snapshot, and the rows of the push channel |
 | `web/src/api/client.ts` | One function for each route the page reads, with relative URLs and same-origin credentials; a failed call is an `ApiError` with the status (0 when the server was not reached) |
 | `web/src/api/normalize.ts` | Where the rows of `/api/thread`, `/api/threads` and `/api/section` enter the page: a field that the views read as text becomes text (a number or a boolean as its text, an object or a list as its JSON, null dropped), and `to` becomes a list. Many agents write the log, so any field can hold any JSON type. It also checks the ids of a `rows` event (`rowRefs`) |
@@ -80,10 +84,10 @@ Part of the [Crosstalk docs](../README.md#documentation).
 | `web/scripts/check-budget.mjs` | Fails the build when the first-load script is over 120 KB after gzip |
 | `web/scripts/build-hash.mjs` | Writes `web/dist/.build-hash`, the hash of the source that `tests/test_web_dist.py` checks |
 | `web/dist/` | The built page, committed, so an install serves `/v2/` with no Node |
-| `web/src/features/owner/actions.ts` | One function for each owner action: sign in, start a thread, reply, answer, mark done, record a decision, hold an agreement, approve and add a participant; each sends the body the page at `/` sends, through `append`, `login` and `onboard` of `api/client.ts` |
+| `web/src/features/owner/actions.ts` | One function for each owner action: sign in, start a thread, reply, answer, mark done, say that a request needs no action, record a decision, hold an agreement, approve and add a participant; each sends the body the page at `/` sends, through `append`, `login`, `onboard` and `ack` of `api/client.ts` (no action: one `POST /api/ack` for each request) |
 | `web/src/features/owner/SignIn.tsx` | The owner sign-in: the PIN or the owner token in a password field, sent only in the body of `/api/login` and cleared after the request |
 | `web/src/features/owner/Composer.tsx`, `web/src/features/owner/NewThread.tsx` | The writing box (Ctrl+Enter or Cmd+Enter sends, Escape closes an empty box, a failed send keeps the draft, which lives in `drafts.ts`) and the start of a new thread with its kind and recipients |
-| `web/src/features/owner/AnswerButtons.tsx`, `web/src/features/owner/OwnerActions.tsx` | A button for each choice of an open question and "Write an answer", with one lock and one message id for both ways to answer (the id is kept in `drafts.ts`, and the box stays shut while a choice is on its way); the owner's controls of a thread or a message (`ownerActions`: reply, answer, approve the sender, record, mark done), and the mark done and hold buttons |
+| `web/src/features/owner/AnswerButtons.tsx`, `web/src/features/owner/OwnerActions.tsx` | A button for each choice of an open question and "Write an answer", with one lock and one message id for both ways to answer (the id is kept in `drafts.ts`, and the box stays shut while a choice is on its way); the owner's controls of a thread or a message (`ownerActions`: reply, answer, approve the sender, record, mark done), and the mark done, "No action needed" and hold buttons |
 | `web/src/features/owner/People.tsx` | The People page: the roster with harness, model family and last seen; sign-in for a viewer; approval and the Add form for the owner, whose kit and token show once |
 | `web/src/features/owner/shared.tsx`, `web/src/features/owner/index.ts`, `web/src/features/owner/owner.module.css` | One send at a time, the error next to a control ("Sign in again" on 401 or 403), the owner rows of the snapshot, and `OwnerScope`, which reads the roster and those rows once for every owner control on the page; the exports of the folder; its CSS module |
 | `web/src/features/owner/drafts.ts` | The composer drafts in memory for this tab, keyed by their target (a reply to a message, the end of a thread, an answer, a new thread with its kind and recipients), so a row that unmounts keeps its draft; a sent or cancelled draft is gone, except that an answer keeps a mark with the time it was sent until the thread shows it, or until a thread loaded 60 seconds later still shows the question open. `answerIds` holds the message id of the answer to each question, apart from the draft text, so a remount or a Cancel keeps it; it goes when the thread shows the question closed, or with the 60 second rule, which takes a new id |
@@ -106,7 +110,8 @@ Part of the [Crosstalk docs](../README.md#documentation).
 Git-ignored app data, which each install makes for itself: `participants.json`
 (roster, page URL; the first command writes it with the owner alone), `log/`
 (one append-only `log/<id>.jsonl` per participant), `config.json` (the install's settings;
-`config.example.json` shows the keys), `import/` (imported data, if any), `local/` (the install's own notes),
+`config.example.json` shows the keys), `read-state.json` (the owner's read state), `inbox-state.json` (each
+participant's inbox place, with its `.lock` file), `import/` (imported data, if any), `local/` (the install's own notes),
 `AGENTS.local.md` and `CLAUDE.local.md` (the install's own rules for agents) and `.install-names` (the install's
 names, which `tests/test_clean_install.py` keeps out of tracked files). A deployment also holds
 `.deployed.json`, which `relay.py deploy` writes. `DATA_PATHS` in

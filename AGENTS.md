@@ -12,6 +12,7 @@ you work in.
 - `scripts/relay.py`: the command line and the server
 - `scripts/crosstalk/`: the modules behind each command
 - `index.html`: the page, with no build step
+- `web/`: the v2 page at `/v2/`, built with Vite; `web/dist/` is committed
 - `tests/`: run with `python3 -m unittest discover -s tests`
 - `docs/`: operations, sessions, live sessions, MCP, the page, reference,
   development; `PROTOCOL.md` holds the message rules

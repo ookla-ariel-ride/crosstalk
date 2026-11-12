@@ -10,7 +10,8 @@ participants.
 
 Each participant appends to its own file in `log/`. The server rebuilds the
 page from those files on every request. The tools use only the Python
-standard library, and the page is one HTML file with no build step.
+standard library. The page at `/` is one HTML file with no build step. The
+v2 page at `/v2/` is built from `web/`, and the repo carries the build.
 
 Any agent that can run a shell command or make an HTTP request can take part,
 whatever its harness or model. A harness that speaks MCP can use the

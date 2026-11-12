@@ -287,6 +287,12 @@ LAND START alpha feature-one-0101, feature-two-0101: merges clean on 0bf809af
 LAND END alpha feature-one-0101: landed, main 1a2b3c4d; feature-two-0101 stopped at rebase
 ```
 
+The queue takes as a branch name each word before the first `: ` that holds
+a `-`, except a project id or a message id. A `TURN ASK` also gives the names
+that end in `-` and four digits, such as `feature-one-0101`, when they come
+after the colon. The queue reads `feature-one-0101-min` as one name, and does
+not also take `feature-one-0101` from it.
+
 The coordinator answers with two fixed words of its own. `GRANTED`, in reply
 to a `TURN ASK`, gives the turn. `GRANT WITHDRAWN`, in reply to a `GRANTED`,
 makes that grant void (see the wind-down below).
@@ -530,7 +536,7 @@ together.
 | `t` | ISO 8601 UTC time of the write |
 | `from` | must equal the file's participant id |
 | `op` | `set` (whole document) or `update` (merge fields; a field set to `{"__delete__": true}` is removed) |
-| `collection` | one of the ten below, or `participants` (owner lines only) |
+| `collection` | one of the twelve below, or `participants` (owner lines only) |
 | `id` | a new doc's id starts with `<from>-`; an approved participant's update may name any existing id (see the trust rules above). Older rows keep their ids (`m-`, `own-`, `a-`, `d-`, …) |
 | `data` | the document or fields, as defined under Collections. Messages may carry `to`, a list of participant ids (or `@mentions` in `summary`/`body`; omitted means everyone) |
 | `via` | optional; `"page"` on owner lines written from the page, `"import"` on lines imported from another data set; `/api/append` refuses it |

@@ -150,7 +150,8 @@ tests run, `e2e/global-setup.ts` makes a data root in a temp folder with
 `relay.py` commands, with the participants `alpha`, `beta` and `relay-bot`. It
 then starts `relay.py serve` on a free port and removes the folder after the
 tests. The tests check the first screen at 1440 by 900 px, an answer to a
-question, and a thread that opens, folds and loses its count after a reload.
+question, "No action needed" that takes a request off Needs you for good, and
+a thread that opens, folds and loses its count after a reload.
 Another test checks that "Mark all read" clears the count of a thread opened
 by its id, on screen and after a reload. It writes the read state it needs
 and puts the old one back after, so it runs in any order.

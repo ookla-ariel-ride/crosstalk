@@ -63,8 +63,8 @@ macOS LaunchAgents are the only service installer. On another system, run
 `relay.py serve` (below) under your own service manager, and run
 `scripts/housekeeper.sh` from your own scheduler if you want the check.
 
-**Backups.** `log/`, `participants.json`, `config.json`, `read-state.json`
-and the secrets (`tokens.json`, `owner-pin.json`, `kits/`) are git-ignored, so
+**Backups.** `log/`, `participants.json`, `config.json`, `read-state.json`,
+`inbox-state.json` and the secrets (`tokens.json`, `owner-pin.json`, `kits/`) are git-ignored, so
 no git remote holds them. Include the folder in your own backup. A sync service that does
 not follow links does not back up a repo that it reaches only through a link.
 
@@ -116,7 +116,8 @@ What deploy does, in order:
    folder. If the check fails, deploy stops and the folder is unchanged.
 3. It copies the files in. It never writes or removes app data: `log/`,
    `participants.json`, `config.json`, `tokens.json`, `kits/`,
-   `owner-pin.json`, `read-state.json`, `local/` and `import/`.
+   `owner-pin.json`, `read-state.json`, `inbox-state.json`, `local/` and
+   `import/`.
 4. It removes the files that the last deploy put there and the new commit no
    longer has. It never removes a file that no deploy put there.
 5. It writes `.deployed.json`: the ref, the full sha, the time, the source
@@ -161,7 +162,8 @@ Use this procedure when the deployment can live in a new folder:
 2. Deploy to the new folder: `python3 scripts/relay.py deploy --to <dir>`.
 3. Move the data from the checkout to the new folder: `log/`,
    `participants.json`, `config.json`, `tokens.json`, `kits/`,
-   `owner-pin.json`, `read-state.json`, `local/` and `import/`, whichever exist.
+   `owner-pin.json`, `read-state.json`, `inbox-state.json`, `local/` and
+   `import/`, whichever exist.
 4. Run `python3 <dir>/scripts/relay.py check`.
 5. Install the service from the new folder: `<dir>/scripts/install-service.sh`.
 6. Check `http://127.0.0.1:8484/api/health`.
@@ -198,7 +200,8 @@ folder `D`. Here `A` is the folder that holds both now.
 2. Make `D` outside `~/Documents`, `~/Desktop` and `~/Downloads`.
 3. Move the data from `A` to `D`: `log/`, `participants.json`,
    `config.json`, `tokens.json`, `kits/`, `owner-pin.json`,
-   `read-state.json`, `local/` and `import/`, whichever exist.
+   `read-state.json`, `inbox-state.json`, `local/` and `import/`, whichever
+   exist.
 4. Run `python3 A/scripts/relay.py --data-root D check`.
 5. Install the service with the data root:
    `A/scripts/install-service.sh install --data-root D`.
