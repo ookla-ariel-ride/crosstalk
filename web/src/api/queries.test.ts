@@ -73,13 +73,14 @@ describe("queries", () => {
     expect(invalidated()).toEqual([JSON.stringify(keys.threads("new")), JSON.stringify(keys.threads("hot"))]);
   });
 
-  test("a mark refreshes the thread list, the open thread of its item and the decisions and lessons", () => {
+  test("a mark refreshes the thread list, the open thread of its item and the decisions, lessons and reviews", () => {
     invalidateForRows(qc, [row("acks", "owner--beta-0002")]);
     expect(invalidated()).toEqual([
       JSON.stringify(keys.threads("new")),
       JSON.stringify(keys.threads("hot")),
       JSON.stringify(keys.thread("alpha-0001")),
       JSON.stringify(keys.section("decisions", "")),
+      JSON.stringify(keys.section("reviews", "codex")),
     ]);
   });
 
