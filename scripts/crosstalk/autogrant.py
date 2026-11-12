@@ -184,7 +184,7 @@ class Granter:
         return out
 
     def _check(self, roster, cfg: dict, poster: str, now: float):
-        """(ask, holders, usage) from a fresh snapshot when the queue, the wind-down
+        """(ask, holders, usage, docs) from a fresh snapshot when the queue, the wind-down
         record and usage allow a grant; else None (the reason is said)."""
         docs, entries = self.snapshot()
         q = land_queue(docs, projects=entries, now=now, coordinator=poster)
@@ -204,7 +204,7 @@ class Granter:
         if checked and usage >= limit:
             self._say("not granting %s: weekly usage %g (limit %g)" % (ask["id"], usage, limit))
             return None
-        return ask, q["holders"], usage
+        return ask, q["holders"], usage, docs
 
     def poll_once(self) -> Optional[str]:
         """One pass; returns the ask id it granted, or None.
@@ -241,6 +241,9 @@ class Granter:
             if load >= load_limit:
                 self._say("not granting %s: build host load %.1f (limit %g)" % (ask["id"], load, load_limit))
                 return None
+        # Read the log once before the lock: with the server's cached snapshot the
+        # last read under the lock then replays only what changed in between.
+        self.snapshot()
         try:
             with state_lock(self.root, hold=True):
                 # Read again what can change during the probe: the pause file, the
@@ -251,9 +254,11 @@ class Granter:
                 fresh = self._check(roster, cfg, poster, self.clock())
                 if fresh is None:
                     return None
-                ask, holders, usage = fresh
+                # The post uses the docs of this last read: under the lock only
+                # that read and the append take time (logs.STATE_HOLD_LIMIT).
+                ask, holders, usage, docs = fresh
                 summary, body = grant_text(ask, holders, load, usage)
-                self.post(self.root, poster, ask["id"], summary, body=body)
+                self.post(self.root, poster, ask["id"], summary, body=body, docs=docs)
         except StateHoldExpired:
             self._say("not granting %s: held the state lock too long" % ask["id"])
             return None

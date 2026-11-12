@@ -60,7 +60,7 @@ class GranterTests(unittest.TestCase):
                 self.during_probe()
             return self.probe
 
-        def post(root, pid, to_id, summary, body=None):
+        def post(root, pid, to_id, summary, body=None, docs=None):
             self.posts.append((pid, to_id, summary, body))
             # what the real post does: the GRANTED row joins the log
             self.add("relay-bot-g%d" % len(self.posts),
@@ -164,7 +164,7 @@ class GranterTests(unittest.TestCase):
         self.add("gam-1", msg(3, "gamma", "TURN ASK gamma grav-1110"))
         held = []
 
-        def post(root, pid, to_id, summary, body=None):
+        def post(root, pid, to_id, summary, body=None, docs=None):
             with open(str(state_lock_path(root)), "a") as f:
                 try:
                     fcntl.flock(f.fileno(), fcntl.LOCK_EX | fcntl.LOCK_NB)
@@ -268,9 +268,9 @@ class RealLogTests(unittest.TestCase):
 
     def wind_down_first(self):
         """Force the order: the owner's record lands, then the GRANTED."""
-        def post(root, pid, to_id, summary, body=None):
+        def post(root, pid, to_id, summary, body=None, docs=None):
             state.set_wind_down(root, "owner", 1, roster=self.roster())
-            return post_reply(root, pid, to_id, summary, body=body)
+            return post_reply(root, pid, to_id, summary, body=body, docs=docs)
         return self.granter(post)
 
     def test_grant_that_lands_after_a_wind_down_is_withdrawn(self):

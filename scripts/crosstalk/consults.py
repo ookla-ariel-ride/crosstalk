@@ -75,18 +75,21 @@ def post_reply(
     speaker: Optional[Dict[str, str]] = None,
     no_answer: bool = False,
     to: Optional[Iterable[str]] = None,
+    docs: Optional[Dict] = None,
 ) -> Line:
     """Reply to an existing message `to_id`, auto-populating `replyTo` and `to`.
 
     `no_answer` marks the reply as asking nothing (requests.no_answer). `to`
-    replaces the default recipient (the sender of `to_id`).
+    replaces the default recipient (the sender of `to_id`). `docs` are replayed
+    documents the caller just read; without them the log is read here.
     """
     root = Path(root)
     roster = _ensure_roster(root, roster)
     _require_pid(pid, roster)
     summary = _clean_summary(summary)
-    lines = load_all_lines(root, roster)
-    docs = enrich_messages(replay(lines), lines)
+    if docs is None:
+        lines = load_all_lines(root, roster)
+        docs = enrich_messages(replay(lines), lines)
     target_doc = docs.get(("messages", to_id))
     if target_doc is None:
         raise ValueError("no such message %r" % to_id)
