@@ -62,6 +62,9 @@ const ThreadRow = memo(function ThreadRow({ thread, open, onToggle, now, renderA
       <span className={styles.noteLine}>{ago(thread.last_t, now)}</span>
       {thread.needs_owner ? <span className={styles.needs}>needs you</span> : null}
       {fresh ? <span className={styles.fresh}>{fresh}</span> : null}
+      {thread.marks_count && thread.marks_count.expected > 0 ? (
+        <span className={styles.noteLine}>{`${thread.marks_count.acknowledged} of ${thread.marks_count.expected} acknowledged`}</span>
+      ) : null}
     </>
   );
   return (

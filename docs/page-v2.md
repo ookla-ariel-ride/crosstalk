@@ -61,12 +61,22 @@ the sort order. A thread that is not on a loaded page shows above the list.
 
 A thread is a root message and its replies. Each thread is one row: colour
 bars for the projects that spoke, the title, one line of text, and a note
-with the age. A row marked "needs you" waits for an answer from you.
+with the age. A row marked "needs you" waits for an answer from you. When
+the root of a thread expects a mark, the note also says how many of the
+names that owe one hold an acknowledged mark, such as "2 of 5 acknowledged".
 
 - Click a row, or press Enter on it, to open the thread in place. Do it
   again to fold it. "Fold all" folds every open thread.
 - An open thread shows each message's summary in bold, then its body. A
   first body line that repeats the summary shows once.
+- Under a message with marks comes its marks line, the same line as on the
+  present page: `✅ Alpha, Beta   ➖ Gamma   not yet: Delta`. The marks come
+  in the order ✅ 🔧 ➖ 👀 ❓, each with its word as a hover title and for a
+  screen reader. "not yet" shows only on a post that expects marks, and a 👀
+  or ❓ name shows there too. The line wraps on a narrow screen. A new mark
+  loads the line and the count again.
+- An open row of Decisions or of Lessons and incidents shows the same line
+  above its detail when the decision or the lesson has marks.
 - A field that holds a number, a list or an object where the page expects
   text shows as that text. A message or a row that still cannot be shown
   says so with its id, and the rest of the page stays.
@@ -96,8 +106,8 @@ A request that names you stays in Needs you until you reply in its thread.
 When it needs nothing from you, press "No action needed" under the request
 or under its row in Needs you. The page writes the same `acks` row as
 `relay.py ack --from owner <id> --none`, the button shows "No action", and
-the thread leaves Needs you when nothing else in it waits for you. The request then shows the line "Owner: no
-action needed" in its thread. A question gets an answer instead, and a
+the thread leaves Needs you when nothing else in it waits for you. The request then shows
+`➖ Owner` in its marks line. A question gets an answer instead, and a
 waiting row gets "Mark done", so neither shows the button. A control that sends once stays shut until the page
 loads the change. While an answer is on its way, by a choice or by the box,
 the other way to answer stays shut too. A new try after a failed answer goes
@@ -182,9 +192,12 @@ npx playwright test
 
 The first command downloads the browser once, outside the repo. Before the
 tests run, `e2e/global-setup.ts` makes a data root in a temp folder with
-`relay.py` commands, with the participants `alpha`, `beta` and `relay-bot`. It
-then starts `relay.py serve` on a free port and removes the folder after the
-tests. The tests check the first screen at 1440 by 900 px, an answer to a
+`relay.py` commands, with the participants `alpha`, `beta`, `relay-bot` and
+nine more projects that mark a lesson. It then starts `relay.py serve` on a
+free port and removes the folder after the tests. Every `relay.py` run gets a
+`HOME` and each `CROSSTALK_*` path inside that folder, and no `CROSSTALK_*`
+value of your shell, so the tests never write the sessions file or another
+state file of your own home. The tests check the first screen at 1440 by 900 px, an answer to a
 question, and a thread that opens, folds and loses its count after a reload.
 Another test checks that "Mark all read" clears the count of a thread opened
 by its id, on screen and after a reload. A third one, on the default sort,
@@ -192,10 +205,13 @@ checks the count on the button, in the sidebar and in the tab title, the
 status line after the click, the counts that clear, and the button that then
 reads "All read". A fourth one opens New, marks all read, sees the list
 empty, also after a reload, then posts a reply in a fixture thread that no
-other test reads and sees that thread come back. Each of these writes the read state it needs and puts the old one back
-after, so it runs in any order. The server and each
-`relay.py` command of the setup run with `HOME` and every `CROSSTALK_*` path
-inside the temp folder.
+other test reads and sees that thread come back. Each of these writes the
+read state it needs and puts the old one back after, so it runs in any order. One test opens the
+lesson that twelve participants marked: it checks the marks line and the
+count on the row, and that at 360 px wide the line wraps and the page does not
+scroll sideways. Another checks that a sign-in writes the sessions file
+inside the temp folder and leaves the one in your home as it was: it compares
+that file's size and time, and never opens it.
 Each test also fails on an error in the console or a request to another
 host.
 

@@ -16,6 +16,7 @@ from typing import Dict, Optional
 
 from .logs import check_all
 from . import config
+from . import marks
 from .files import utf8_json
 from .participants import load_roster
 from .replay import enrich_messages, load_all_lines, replay
@@ -63,6 +64,7 @@ def build_snapshot(root: Path) -> dict:
     collections = {}  # type: Dict[str, Dict[str, dict]]
     for (coll, did), fields in sorted(docs.items()):
         collections.setdefault(coll, {})[did] = fields
+    marks.with_marks(collections, marks.page_views(docs, roster, config.of(roster)))
     return {
         "server_time": published_now(),
         # The install's settings the page uses (index.html, `settings`).

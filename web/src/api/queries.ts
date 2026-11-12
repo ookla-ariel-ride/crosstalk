@@ -31,6 +31,8 @@ const SECTIONS_OF: Record<string, SectionName[]> = {
   messages: ["reviews"],
   adoptions: ["adoption"],
   waiting: ["waiting"],
+  // A mark (`acks` row) shows on a decision, a lesson or a review row (marks.page_views).
+  acks: ["decisions", "lessons", "reviews"],
 };
 
 /** Retry up to three times, but never a 401 or 403: a retry would only hide it. */
@@ -51,6 +53,18 @@ export function createQueryClient(): QueryClient {
  * that holds it; a message that no open thread holds may be a new reply to any
  * of them, so it invalidates every open thread.
  */
+/**
+ * The ids an `acks` row id `<from>--<item>` can mark: the item, and for a lesson
+ * `lesson-<message id>` that message too (marks.item_ref). [] for another id.
+ */
+function ackedItems(id: string | null): string[] {
+  const at = typeof id === "string" ? id.indexOf("--") : -1;
+  if (at <= 0 || id === null) return [];
+  const item = id.slice(at + 2);
+  if (!item) return [];
+  return item.startsWith("lesson-") ? [item, item.slice("lesson-".length)] : [item];
+}
+
 export function invalidateForRows(qc: QueryClient, rows: RowRef[]): void {
   const collections = new Set<string>();
   const messageIds = new Set<string>();
@@ -81,10 +95,26 @@ export function invalidateForRows(qc: QueryClient, rows: RowRef[]): void {
 
   // An open waiting row makes the thread of a message with its id need the owner.
   if (collections.has("waiting") && !collections.has("messages")) void invalidate(qc, { queryKey: ["threads"] });
-  // An ack row can end a recipient's part of a request: the thread rows (list and open threads) change.
-  if (collections.has("acks") && !collections.has("messages")) {
-    if (!collections.has("waiting")) void invalidate(qc, { queryKey: ["threads"] });
-    void invalidate(qc, { queryKey: ["thread"] });
+  // An ack row is a mark: it changes the marks line of its item, the count on the thread
+  // rows, and it can end a recipient's part of a request.
+  if (collections.has("acks")) {
+    if (!collections.has("messages") && !collections.has("waiting")) void invalidate(qc, { queryKey: ["threads"] });
+    const holder = new Map<string, string>();
+    for (const [key, data] of qc.getQueriesData<ThreadDetail>({ queryKey: ["thread"] })) {
+      for (const id of [String(key[1]), ...(data?.messages ?? []).map((m) => m.id)]) holder.set(id, String(key[1]));
+    }
+    const roots = new Set<string>();
+    let every = false;
+    for (const row of rows) {
+      if (row.collection !== "acks") continue;
+      const root = ackedItems(row.id)
+        .map((id) => holder.get(id))
+        .find((r) => r !== undefined);
+      if (root === undefined) every = true;
+      else roots.add(root);
+    }
+    if (every) void invalidate(qc, { queryKey: ["thread"] });
+    else for (const root of roots) void invalidate(qc, { queryKey: keys.thread(root), exact: true });
   }
 
   const sections = new Set<SectionName>();

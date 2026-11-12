@@ -27,6 +27,7 @@ from crosstalk import schedules as schedules_mod  # noqa: E402
 from crosstalk import state as state_mod  # noqa: E402
 from crosstalk import buildhost as buildhost_mod  # noqa: E402
 from crosstalk import config as config_mod  # noqa: E402
+from crosstalk import marks as marks_mod  # noqa: E402
 from crosstalk import urgent as urgent_mod  # noqa: E402
 from crosstalk.logs import append_line, check_all, message_problems  # noqa: E402
 from crosstalk.onboard import onboard, regenerate_kit  # noqa: E402
@@ -64,6 +65,9 @@ def run_check(stream):
 
 def cmd_check(args):
     fatal, _ = run_check(sys.stdout)
+    since = marks_mod.since_problem(ROOT)
+    if since:
+        print("warning: " + since)
     if fatal:
         return 1
     files = sorted((ROOT / "log").glob("*.jsonl"))
@@ -76,9 +80,10 @@ def cmd_check(args):
 
 
 def cmd_append(args):
-    if args.no_answer and not (args.collection == "messages" and args.op == "set"):
-        err("--no-answer is for a new message")
-        return 1
+    for flag, on in (("--no-answer", args.no_answer), ("--must-read", args.must_read)):
+        if on and not (args.collection == "messages" and args.op == "set"):
+            err("%s is for a new message" % flag)
+            return 1
     try:
         if args.data is not None:
             text = args.data
@@ -96,6 +101,8 @@ def cmd_append(args):
             data.setdefault(name, value)
         if args.no_answer:
             no_answer(data)
+        if args.must_read:
+            data["must_read"] = True
     roster = load_roster(ROOT / "participants.json")
     for w in message_problems(args.collection, args.op, data, roster)[1]:
         err("warning: " + w)
@@ -172,7 +179,8 @@ def cmd_inbox(args):
     if args.ack_to is not None:
         return _inbox_ack_to(args.pid, args.ack_to, nxt, lines)
     out = inbox_report(docs, args.pid, roster, include_answered=args.all,
-                       now_iso=getattr(args, "now", None), service=service_for(CODE_ROOT, ROOT))
+                       now_iso=getattr(args, "now", None), service=service_for(CODE_ROOT, ROOT),
+                       to_read_all=args.new)
     if args.new:
         # An entry that cannot be true for this log (a number above its writer's top, or
         # another fingerprint at that number) leaves that writer all new.
@@ -210,15 +218,21 @@ def _print_inbox(out, args):
             doc = item.get("request") or item.get("message") or item
             line = _brief_line(label, doc.get("id", "?"), doc, _row_time(doc))
             print(_text(("!" if item.get("needs_answer") else " ") + line if args.new else line))
+    for doc in out.get("to_read", []):
+        line = _brief_line("read", doc.get("id", "?"), doc, _row_time(doc))
+        print(_text(" " + line if args.new else line))
+    # "to read" counts every post that owes your mark: the new ones above and,
+    # with --new, the ones from before the place (to_read_open).
+    to_read = len(out.get("to_read", [])) + len(out.get("to_read_open", [])) + out.get("to_read_open_more", 0)
     if args.new:
         for doc in out.get("agreements_to_adopt", []):
             print(_text(" " + _brief_line("adopt", doc.get("id", "?"), doc, _row_time(doc))))
-        print("still open %d, agreements open %d, stale locks %d" % (
+        print("still open %d, agreements open %d, stale locks %d, to read: %d" % (
             len(out["still_open"]) + out["still_open_more"], out["agreements_open"],
-            len(out.get("stale_locks", []))))
+            len(out.get("stale_locks", [])), to_read))
     else:
-        print("adopt %d, stale locks %d" % (len(out.get("agreements_to_adopt", [])),
-                                            len(out.get("stale_locks", []))))
+        print("adopt %d, stale locks %d, to read: %d" % (len(out.get("agreements_to_adopt", [])),
+                                                         len(out.get("stale_locks", [])), to_read))
 
 
 def _inbox_ack_to(pid, raw, nxt, lines):
@@ -549,6 +563,7 @@ def cmd_reply(args):
             msg_id=args.id,
             speaker=speaker_fields(args),
             no_answer=args.no_answer,
+            must_read=args.must_read,
         )
     except ValueError as e:
         err(str(e))
@@ -581,6 +596,9 @@ def cmd_ask(args):
     """Post a question for the owner; prints the new message id."""
     if args.no_answer:
         err("a question to the owner needs an answer; ask takes no --no-answer")
+        return 1
+    if args.must_read:
+        err("a question to the owner asks no mark; ask takes no --must-read")
         return 1
     recommend = None
     if args.recommend is not None:
@@ -737,14 +755,78 @@ def cmd_schedule(args):
 
 
 def cmd_ack(args):
-    """Record that you read a request and have nothing to do or say; prints the row id."""
+    """Put your mark on a post (seen, ack, applies, none, unclear); prints the row id."""
     try:
-        ln = ack_item(ROOT, args.from_, args.item)
+        ln = ack_item(ROOT, args.from_, args.item, mark=args.mark)
     except ValueError as e:
         err(str(e))
         return 1
     print(ln.id)
     return 0
+
+
+def _mark_lines(v):
+    """The text of one post's marks: each mark with its names, then who owes one."""
+    out = []
+    for word in marks_mod.MARKS:
+        names = sorted(p for p, w in v["marks"].items() if w == word)
+        if names:
+            out.append("%s %s" % (marks_mod.EMOJI[word], ", ".join(names)))
+    if not v["expects"]:
+        out.append("expects no mark")
+    else:
+        out.append("not yet: %s" % (", ".join(v["owed"]) or "nobody"))
+    return out
+
+
+def cmd_marks(args):
+    """marks <item>: the marks on one post and who owes one.
+    marks --missing [--older M]: each post that expects a mark and still has names that owe one."""
+    if (args.item is None) == (not args.missing):
+        err("marks: give an item id or --missing, not both")
+        return 2
+    if args.older is not None and not args.missing:
+        err("marks: --older goes with --missing")
+        return 2
+    roster = load_roster(ROOT / "participants.json")
+    docs, fatal = load_docs(ROOT, roster)
+    if fatal:
+        for p in fatal:
+            err("%s:%d: %s" % (p.file, p.line, p.message))
+        return 1
+    config = marks_mod.parsed(config_mod.of(roster))
+    by_item = marks_mod.marks_by_item(docs, roster)
+    if args.missing:
+        before = None if args.older is None else time.time() - args.older * 60
+        rows = marks_mod.missing(docs, roster, config, before=before, by_item=by_item)
+        if args.json:
+            print(utf8_json(rows, sort_keys=True, indent=2))
+            return 0
+        for v in rows:
+            doc = docs[(v["collection"], v["id"])]
+            frm = marks_mod.writer_of(docs, v["collection"], v["id"]) or "?"
+            print(_text(_brief_line("marks", v["id"], dict(doc, **{"from": frm}), _row_time(doc))))
+            for ln in _mark_lines(v):
+                print("  " + ln)
+        return 0
+    ref = marks_mod.item_ref(docs, args.item)
+    if ref is None:
+        err("marks: no message, decision or lesson %r in the log" % args.item)
+        return 1
+    v = dict(marks_mod.view(docs, ref[0], ref[1], roster, config, by_item), id=ref[1], collection=ref[0])
+    if args.json:
+        print(utf8_json(v, sort_keys=True, indent=2))
+    else:
+        for ln in _mark_lines(v):
+            print(ln)
+    return 0
+
+
+def _minutes(raw):
+    value = int(raw)
+    if value < 0:
+        raise argparse.ArgumentTypeError("must be 0 or more minutes")
+    return value
 
 
 def cmd_withdraw(args):
@@ -794,6 +876,7 @@ def cmd_adopt(args):
 
 
 NO_ANSWER_HELP = 'set needs_answer: false and end the body with "No answer needed."'
+MUST_READ_HELP = "set must_read: true: every agent the post reaches owes a mark (relay.py ack)"
 
 
 def _speaker_flags(parser):
@@ -825,6 +908,7 @@ def build_parser():
     g.add_argument("--data", help="JSON object")
     g.add_argument("--data-file", help="path to a JSON object file")
     a.add_argument("--no-answer", action="store_true", help=NO_ANSWER_HELP + " (--collection messages --op set only)")
+    a.add_argument("--must-read", action="store_true", help=MUST_READ_HELP + " (--collection messages --op set only)")
     a.set_defaults(fn=cmd_append)
 
     x = sub.add_parser("export-page", help="write one self-contained HTML page with the log inlined")
@@ -937,6 +1021,7 @@ def build_parser():
     rp.add_argument("--ref", "--refs", dest="refs", action="append", nargs="+")
     rp.add_argument("--id")
     rp.add_argument("--no-answer", action="store_true", help=NO_ANSWER_HELP)
+    rp.add_argument("--must-read", action="store_true", help=MUST_READ_HELP)
     rp.set_defaults(fn=cmd_reply)
 
     cs = sub.add_parser("consult", help="post a peer consultation request; prints the new message id")
@@ -962,6 +1047,7 @@ def build_parser():
     ak.add_argument("--recommend", type=int,
                     help="the choice you recommend, by number: 1 is the first --option")
     ak.add_argument("--no-answer", action="store_true", help="refused: a question to the owner needs an answer")
+    ak.add_argument("--must-read", action="store_true", help="refused: a question to the owner asks no mark")
     ak.set_defaults(fn=cmd_ask)
 
     qs = sub.add_parser("questions", help="print the open questions for the owner (JSON)")
@@ -1011,12 +1097,32 @@ def build_parser():
     adsub.add_parser("summary", help="print the counts per project (JSON)")
     ad.set_defaults(fn=cmd_adoption)
 
-    ac = sub.add_parser("ack", help="record that a request needs nothing from you (--none); prints the row id")
+    ac = sub.add_parser("ack", help="put your mark on a post (--seen, --ok, --applies, --none or --unclear); "
+                                    "prints the row id")
     ac.add_argument("--from", dest="from_", required=True)
-    ac.add_argument("item", metavar="ITEM", help="the request's message id")
-    ac.add_argument("--none", action="store_true", required=True,
-                    help="you read it and have nothing to do or say")
+    ac.add_argument("item", metavar="ITEM", help="the id of a message, a decision or a lesson")
+    mk = ac.add_mutually_exclusive_group(required=True)
+    mk.add_argument("--seen", dest="mark", action="store_const", const="seen",
+                    help="you read it; it claims nothing more")
+    mk.add_argument("--ok", dest="mark", action="store_const", const="ack",
+                    help="you read it and understood it (the word ack)")
+    mk.add_argument("--applies", dest="mark", action="store_const", const="applies",
+                    help="you understood it and act on it in your project")
+    mk.add_argument("--none", dest="mark", action="store_const", const="none",
+                    help="you understood it and need no change; on a request it counts as your reply")
+    mk.add_argument("--unclear", dest="mark", action="store_const", const="unclear",
+                    help="you read it and do not understand it; a reply with your question follows")
     ac.set_defaults(fn=cmd_ack)
+
+    mr = sub.add_parser("marks", help="print the marks on one post and who owes one; "
+                                      "--missing lists every post that still waits for marks")
+    mr.add_argument("item", metavar="ITEM", nargs="?", help="the id of a message, a decision or a lesson")
+    mr.add_argument("--missing", action="store_true",
+                    help="list each post that expects a mark and has names that owe one, oldest first")
+    mr.add_argument("--older", metavar="MINUTES", type=_minutes,
+                    help="with --missing: only posts older than this many minutes")
+    mr.add_argument("--json", action="store_true", help="print JSON")
+    mr.set_defaults(fn=cmd_marks)
 
     wd = sub.add_parser("withdraw", help="withdraw one of your own open questions; prints the new message id")
     _speaker_flags(wd)

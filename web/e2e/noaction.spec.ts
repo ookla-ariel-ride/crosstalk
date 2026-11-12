@@ -16,9 +16,9 @@ test("No action needed takes a request off Needs you, and it stays off after a r
   await expect(needsList.getByRole("button", { name: FIXTURE.openQuestion })).toBeVisible();
   await expect(needsList.getByRole("button", { name: FIXTURE.ownerRequest })).toHaveCount(0);
 
-  // The open thread shows the owner's ack on the request.
+  // The open thread shows the owner's no-change mark on the request, in its marks line.
   await page.goto("/v2/#/conversations?sort=new");
   await page.getByRole("button", { name: FIXTURE.ownerRequest }).click();
-  await expect(page.getByText("Owner: no action needed")).toBeVisible();
+  await expect(page.locator("article [data-marks]")).toHaveText("➖ Owner");
   await expect(page.getByRole("button", { name: "No action needed" })).toHaveCount(0);
 });

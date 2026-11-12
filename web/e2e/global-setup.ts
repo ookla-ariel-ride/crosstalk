@@ -22,7 +22,68 @@ export const FIXTURE = {
   ownerRequest: "Read the new runbook",
   /** Only markfeedback.spec.ts reads and replies to this thread. */
   feedback: "Index rebuilt",
+  marked: "Keep each browser test independent",
 };
+
+/**
+ * The message of the marked lesson. Twelve participants mark it through its lesson
+ * row: the nine projects below, Beta, Relay bot and the owner.
+ */
+export const MARKED = { id: "alpha-e2e-rule", lesson: "lesson-alpha-e2e-rule" };
+// The palette of `onboard` runs out after eight participants, so each of the nine gets a
+// light and a dark colour that the roster check takes (delta E 20 from every other one).
+const MARKERS: [string, string, string][] = [
+  ["gamma", "#910707", "#f76d6d"],
+  ["delta", "#661919", "#e8a5a5"],
+  ["epsilon", "#da0b0b", "#f32424"],
+  ["zeta", "#9a534a", "#b46d64"],
+  ["eta", "#b84609", "#f58346"],
+  ["theta", "#7a491e", "#e0af84"],
+  ["iota", "#b86f09", "#f5ac46"],
+  ["kappa", "#917807", "#f7de6d"],
+  ["lambda", "#827e3e", "#c0bb7c"],
+];
+const MARKS: [string, string][] = [
+  ["gamma", "--ok"],
+  ["delta", "--ok"],
+  ["epsilon", "--ok"],
+  ["zeta", "--ok"],
+  ["relay-bot", "--ok"],
+  ["eta", "--applies"],
+  ["theta", "--applies"],
+  ["iota", "--none"],
+  ["owner", "--none"],
+  ["kappa", "--seen"],
+  ["beta", "--seen"],
+  ["lambda", "--unclear"],
+];
+
+/** The temp folder of one run: the data root, with the server's home inside it. */
+function homeOf(root: string): string {
+  return join(root, "home");
+}
+
+/**
+ * The environment of every relay.py run: no CROSSTALK_* value of the caller (one can
+ * name a real install), and HOME and each state file inside the temp folder, so no
+ * run writes ~/.crosstalk-sessions.json or another file of the real home.
+ */
+export function relayEnv(root: string): NodeJS.ProcessEnv {
+  const env: NodeJS.ProcessEnv = {};
+  for (const [k, v] of Object.entries(process.env)) if (!k.startsWith("CROSSTALK_")) env[k] = v;
+  const home = homeOf(root);
+  return {
+    ...env,
+    HOME: home,
+    CROSSTALK_DATA: root,
+    CROSSTALK_SESSIONS: join(home, ".crosstalk-sessions.json"),
+    CROSSTALK_NOTIFY_STATE: join(home, ".crosstalk-notify-state.json"),
+    CROSSTALK_URGENT_STATE: join(home, ".crosstalk-urgent-state.json"),
+    CROSSTALK_REVIEWS_STATE: join(home, ".crosstalk-reviews-state.json"),
+    CROSSTALK_BUILDHOST_STATE: join(home, ".crosstalk-buildhost-state.json"),
+    CROSSTALK_LIVE_DIR: join(home, ".crosstalk-live"),
+  };
+}
 
 function freePort(): Promise<number> {
   return new Promise((ok, fail) => {
@@ -35,33 +96,16 @@ function freePort(): Promise<number> {
   });
 }
 
-/**
- * The environment of every relay.py run: HOME and each state file the server
- * or a command may write sit in the temp folder, so a run never touches the
- * user's home or a real install.
- */
-function envFor(root: string): NodeJS.ProcessEnv {
-  const env: NodeJS.ProcessEnv = {};
-  for (const [k, v] of Object.entries(process.env)) if (!k.startsWith("CROSSTALK_")) env[k] = v;
-  const at = (name: string) => join(root, ".home", name);
-  return {
-    ...env,
-    HOME: join(root, ".home"),
-    CROSSTALK_DATA: root,
-    CROSSTALK_SESSIONS: at(".crosstalk-sessions.json"),
-    CROSSTALK_NOTIFY_STATE: at(".crosstalk-notify-state.json"),
-    CROSSTALK_LIVE_DIR: at(".crosstalk-live"),
-    CROSSTALK_URGENT_STATE: at(".crosstalk-urgent-state.json"),
-    CROSSTALK_REVIEWS_STATE: at(".crosstalk-reviews-state.json"),
-    CROSSTALK_BUILDHOST_STATE: at(".crosstalk-buildhost-state.json"),
-  };
-}
-
 export function relay(root: string, ...args: string[]): string {
   // stdout is kept from the console: `onboard` prints a token. An error names
   // the command and its stderr, not its arguments: `set-pin` takes the PIN.
   try {
-    return execFileSync("python3", [RELAY, "--data-root", root, ...args], { cwd: REPO, env: envFor(root), encoding: "utf8", stdio: ["ignore", "pipe", "pipe"] });
+    return execFileSync("python3", [RELAY, "--data-root", root, ...args], {
+      cwd: REPO,
+      encoding: "utf8",
+      stdio: ["ignore", "pipe", "pipe"],
+      env: relayEnv(root),
+    });
   } catch (e) {
     throw new Error(`relay.py ${args[0]} failed: ${String((e as { stderr?: string }).stderr ?? "").trim()}`);
   }
@@ -80,12 +124,17 @@ function timeOf(root: string, id: string): string {
 }
 
 function buildFixture(root: string): string {
+  mkdirSync(homeOf(root));
   relay(root, "onboard", "alpha", "--name", "Alpha", "--kind", "project");
   relay(root, "onboard", "relay-bot", "--name", "Relay bot", "--kind", "tool");
   relay(root, "onboard", "beta", "--name", "Beta", "--kind", "agent", "--parent", "alpha");
+  // Nine more projects, so that twelve names mark the lesson.
+  for (const [id, light, dark] of MARKERS) {
+    relay(root, "onboard", id, "--name", id[0]!.toUpperCase() + id.slice(1), "--kind", "project", "--color", light, "--colorDark", dark);
+  }
   // The owner approves each participant on the page; the fixture does it in the roster.
   const rosterFile = join(root, "participants.json");
-  const roster = JSON.parse(readFileSync(rosterFile, "utf8")) as { participants: { trust?: string }[] };
+  const roster = JSON.parse(readFileSync(rosterFile, "utf8")) as { participants: Record<string, unknown>[] };
   for (const p of roster.participants) p.trust = "approved";
   writeFileSync(rosterFile, JSON.stringify(roster, null, 2) + "\n");
 
@@ -110,6 +159,12 @@ function buildFixture(root: string): string {
   relay(root, "append", ...who, "--from", "beta", "--op", "set", "--collection", "messages", "--id", "beta-e2e-cache",
     "--data", JSON.stringify({ from: "beta", kind: "sync", summary: FIXTURE.linked, body: "The cache is warm.", to: ["alpha"] }));
   relay(root, "reply", ...who, "--from", "alpha", "--to-id", "beta-e2e-cache", "--summary", "Thanks", "--body", "I saw it.");
+  // A lesson that every project must read, marked by twelve participants through the lesson row.
+  relay(root, "append", ...who, "--from", "alpha", "--op", "set", "--collection", "messages", "--id", MARKED.id,
+    "--data", JSON.stringify({ from: "alpha", kind: "lesson", summary: FIXTURE.marked, body: "Each test sets the state it needs.", must_read: true }));
+  relay(root, "append", "--from", "alpha", "--op", "set", "--collection", "lessons", "--id", MARKED.lesson,
+    "--data", JSON.stringify({ project: "alpha", summary: FIXTURE.marked }));
+  for (const [id, flag] of MARKS) relay(root, "ack", "--from", id, MARKED.lesson, flag);
   // A thread of two participants (one participant's thread folds as routine) for markfeedback.spec.ts alone.
   relay(root, "append", ...who, "--from", "beta", "--op", "set", "--collection", "messages", "--id", "beta-e2e-index",
     "--data", JSON.stringify({ from: "beta", kind: "sync", summary: FIXTURE.feedback, body: "The index is rebuilt.", to: ["alpha"] }));
@@ -122,7 +177,6 @@ function buildFixture(root: string): string {
 
 export default async function globalSetup() {
   const root = mkdtempSync(join(tmpdir(), "crosstalk-e2e-"));
-  mkdirSync(join(root, ".home"));
   let pin: string;
   let port: number;
   try {
@@ -134,8 +188,8 @@ export default async function globalSetup() {
   }
   const server = spawn("python3", [RELAY, "--data-root", root, "serve", "--port", String(port), "--no-notify", "--no-autogrant"], {
     cwd: REPO,
-    env: envFor(root),
     stdio: ["ignore", "pipe", "pipe"],
+    env: relayEnv(root),
   });
   // The server prints its startup PIN; its output never reaches the console.
   let err = "";

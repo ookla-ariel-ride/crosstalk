@@ -36,9 +36,9 @@ history and clears the stored last-visit time, so those replies never count as n
    The scenarios share one page and the last two stop subscriptions, so reload the page
    before running them again. `runAll(["name", ...])` runs only the named scenarios.
 
-   Run them at a desktop width (`browser_resize` to 1100 wide) first. Then `browser_resize`
+   Run them at a desktop width (`browser_resize` to 1100 wide) first. Then reload, `browser_resize`
    to 390 wide and run `await runAll(["mobileRosterFolds", "reviewsNarrow"])`, which checks the
-   narrow layout.
+   narrow layout. Then reload, `browser_resize` to 360 wide and run `await runAll(["marksLineNarrow"])`.
 
    Then open `index.html?viewer=reader` (a read-only stub viewer) and run
    `await runAll(["readerNoControls"])`. In the normal run that scenario reports a skip.
@@ -150,11 +150,23 @@ history and clears the stored last-visit time, so those replies never count as n
 - `filterIncludesSubAgents`: picking a project shows its sub-agents' messages; picking a sub-agent alone shows only it.
 - `filterSentTo`: the Sent by / Sent to / Either switch; "sent to" means `to` or an @mention, not a bare broadcast;
   the Help tab follows the same people filter.
-- `helpAckedNoAction`: an ack row counts as a reply from its writer: the Help card shows "acked, no action: Gamma"
-  and still waits on Beta; an ack row with a wrong id counts for nothing; an ack clears no name on a request
-  that names nobody.
-- `timelineAckedNoAction`: a request that acks alone closed leaves Help, and its timeline card still shows
-  "acked, no action: Beta · Gamma"; a note with an ack row shows no ack pill.
+- `helpAckedNoAction`: a `none` mark in the server's `marks` key of a request counts as a reply from its
+  writer: the Help card's marks line shows "➖ Gamma", no pill, and still waits on Beta; a raw `acks` row that
+  the key does not hold counts for nothing; an `applies` mark answers nothing; an ack clears no name on a
+  request that names nobody.
+- `helpLaterMarkThroughTheLesson`: after `--none` on request R and a later `--applies` on `lesson-R`, the
+  server's marks of R hold `applies`, and the Help tab waits on that agent again, as `relay.py inbox` does.
+- `timelineAckedNoAction`: a request that acks alone closed leaves Help, and its timeline card's marks line
+  still shows "➖ Beta, Gamma"; no card has the old "acked, no action" pill.
+- `marksLineLesson`: a lesson card shows "✅ Alpha, Beta   ➖ Gamma   not yet: Delta" under its body.
+- `marksLineSeenIsNotYet`: a 👀 or ❓ name shows with its mark and in "not yet"; the order is 🔧 👀 ❓.
+- `marksLineAbsent`: no line on a post with no `marks`, with an empty one, or with one of a wrong type;
+  `owed` shows only when the post expects a mark.
+- `marksLineLabels`: each emoji has its word as `title` and `aria-label`, in the order ✅ 🔧 ➖ 👀 ❓.
+- `marksLineDecisionAndLesson`: a decision row and a lesson row show the same marks line under their text; a decision
+  with no marks shows none.
+- `marksLineNarrow`: at the window's width (run again at 360), twelve names wrap and the page gets no
+  horizontal scroll.
 - `filterHasReplies`: Has replies keeps only threads with a reply.
 - `filterUnanswered`: Unanswered keeps only requests still waiting on someone, by the Help tab's rule, and
   combines with Has replies.

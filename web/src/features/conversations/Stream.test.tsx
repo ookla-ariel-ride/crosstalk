@@ -323,22 +323,37 @@ describe("Stream", () => {
     expect(screen.getByText("act end:alpha-0001")).toBeTruthy();
   });
 
-  test("a request the owner acked shows Owner: no action needed", () => {
-    const acked = [message("alpha-0001", "2026-11-11T09:00:00Z", { depth: 0, kind: "request", acked_by: ["owner"] }), MESSAGES[1]!];
+  test("a request the owner acked shows the no-change mark of the owner in its marks line", () => {
+    const marks = { marks: { owner: "none" as const }, owed: [], expects: false };
+    const acked = [message("alpha-0001", "2026-11-11T09:00:00Z", { depth: 0, kind: "request", marks }), MESSAGES[1]!];
     renderWith(<Stream sort="needs" open={["alpha-0001"]} onOpenChange={() => {}} />, [
       ...base(OWNER, EMPTY_STATE, [Q1]).filter(([key]) => key !== DETAIL[0]),
       [keys.thread("alpha-0001"), { root: "alpha-0001", messages: acked }],
     ]);
-    expect(screen.getAllByText("Owner: no action needed")).toHaveLength(1);
+    const root = document.querySelectorAll("article")[0] as HTMLElement;
+    expect(within(root).getByRole("img", { name: "no change" }).parentElement?.textContent).toBe("➖ owner");
+    expect(screen.queryByText("Owner: no action needed")).toBeNull();
   });
 
-  test("an ack by another participant does not show the owner line", () => {
-    const acked = [message("alpha-0001", "2026-11-11T09:00:00Z", { depth: 0, kind: "request", acked_by: ["beta"] })];
+  test("each message of an open thread shows its own marks line, and one with no marks shows none", () => {
+    const marks = { marks: { beta: "ack" as const }, owed: ["relay-bot"], expects: true };
+    const marked = [message("alpha-0001", "2026-11-11T09:00:00Z", { depth: 0, marks }), MESSAGES[1]!];
     renderWith(<Stream sort="needs" open={["alpha-0001"]} onOpenChange={() => {}} />, [
       ...base(OWNER, EMPTY_STATE, [Q1]).filter(([key]) => key !== DETAIL[0]),
-      [keys.thread("alpha-0001"), { root: "alpha-0001", messages: acked }],
+      [keys.thread("alpha-0001"), { root: "alpha-0001", messages: marked }],
     ]);
-    expect(screen.queryByText("Owner: no action needed")).toBeNull();
+    const root = document.querySelectorAll("article")[0] as HTMLElement;
+    expect(within(root).getByRole("img", { name: "acknowledged" }).closest("[data-marks]")?.textContent).toBe("✅ Beta not yet: relay-bot");
+    const reply = screen.getByText("Read reply").closest("article") as HTMLElement;
+    expect(within(reply).queryByRole("img")).toBeNull();
+  });
+
+  test("a thread row whose root expects marks shows how many are acknowledged", () => {
+    const counted = thread("alpha-0001", { title: "Does the rebuild go on?", marks_count: { acknowledged: 2, expected: 5 } });
+    const none = thread("beta-0007", { title: "Nobody owes", marks_count: { acknowledged: 0, expected: 0 } });
+    renderWith(<Stream sort="needs" open={[]} onOpenChange={() => {}} />, base(OWNER, EMPTY_STATE, [counted, none, thread("beta-0009")]));
+    expect(screen.getByRole("button", { name: /Does the rebuild go on\?/ }).textContent).toContain("2 of 5 acknowledged");
+    expect(screen.getAllByText(/of \d+ acknowledged/)).toHaveLength(1);
   });
 
   test("a routine item shows as one line with its counts; a click shows its threads", () => {
@@ -674,7 +689,7 @@ describe("rows with fields of the wrong type", () => {
   const BAD_MESSAGES = [
     { id: "alpha-0001", depth: 0, quote: null, t: "2026-11-11T09:00:00Z", from: null, kind: 5, summary: 42, body: { plan: "keep" } },
     { id: "beta-0002", depth: 1, quote: null, t: 1731315000, from: "beta", to: "alpha", summary: "Fine", body: ["one", 2], replyTo: ["alpha-0001"] },
-    { id: "beta-0003", depth: 2, quote: 9, t: "2026-11-11T09:30:00Z", from: "beta", kind: "request", summary: null, body: null, acked_by: "owner" },
+    { id: "beta-0003", depth: 2, quote: 9, t: "2026-11-11T09:30:00Z", from: "beta", kind: "request", summary: null, body: null, acked_by: "owner", marks: { marks: "owner" } },
   ];
 
   test("the stream and the open thread render them through the client", async () => {

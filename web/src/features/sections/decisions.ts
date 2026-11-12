@@ -1,6 +1,6 @@
 // Decisions (index.html, renderDecisions): the decision, by whom, for which
 // project, where it was said and when. A decision is never open.
-import { age, body, type Doc, first, line, projects, refs, type RowView, stamp, str, words } from "./fields";
+import { age, body, type Doc, first, line, marksOf, projects, refs, type RowView, stamp, str, words } from "./fields";
 
 export function decisionRow(doc: Doc, now: Date): RowView {
   // Older rows give the day as `date` instead of `t`.
@@ -23,5 +23,6 @@ export function decisionRow(doc: Doc, now: Date): RowView {
       ...line("Refs", refs(doc.refs)),
       ...line("When", stamp(when)),
     ],
+    marks: marksOf(doc),
   };
 }
