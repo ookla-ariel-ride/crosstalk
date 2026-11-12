@@ -113,7 +113,8 @@ one line under its body:
 The page holds no rule of its own here. It shows the `marks` key that the
 server puts on each marked message, decision and lesson in `/api/snapshot`
 and in an exported page: `{"marks": {name: word}, "owed": [names],
-"expects": true or false}`. A lesson row `lesson-<id>` carries the marks of
+"expects": true or false}`. Marks come only from `acks` rows: the server
+drops a `marks` field that a writer put on a post in the log. A lesson row `lesson-<id>` carries the marks of
 its message.
 
 ## Posting as the owner

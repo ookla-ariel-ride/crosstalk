@@ -79,6 +79,66 @@ class MarksInSnapshotTests(unittest.TestCase):
         self.assertEqual(cols["messages"]["alpha-l1"]["marks"]["expects"], False)
 
 
+FORGED = {"marks": {"beta": "ack"}, "owed": [], "expects": False}
+
+
+class ForgedMarksTests(unittest.TestCase):
+    """Marks come only from `acks` rows: a `marks` field that a writer put in the log never shows."""
+
+    def setUp(self):
+        self.r = TempRepo()
+        self.r.__enter__()
+        self.r.write_roster(ROSTER)
+        self.r.write_config({"marks_since": SINCE})
+        self.r.write_log("alpha", [
+            msg(1, "alpha", "alpha-c1", kind="check-in", summary="plain", marks=FORGED),
+            msg(2, "alpha", "alpha-l1", kind="lesson", summary="a rule", marks=FORGED),
+            line(3, "alpha", collection="decisions", id_="alpha-d1", data={"summary": "d", "marks": FORGED}),
+        ])
+        self.r.write_log("beta", [
+            msg(1, "beta", "beta-r1", kind="request", summary="help", to=["alpha"]),
+            # The form before marks: `none: true` and no `mark`.
+            line(2, "beta", collection="acks", id_="beta--alpha-l1",
+                 data={"from": "beta", "item": "alpha-l1", "none": True}),
+        ])
+        self.r.write_log("gamma", [line(1, "gamma", collection="acks", id_="gamma--beta-r1",
+                                        data={"from": "gamma", "item": "beta-r1", "none": True})])
+
+    def tearDown(self):
+        self.r.__exit__(None, None, None)
+
+    def check(self, cols):
+        self.assertNotIn("marks", cols["messages"]["alpha-c1"])
+        self.assertNotIn("marks", cols["decisions"]["alpha-d1"])
+        self.assertEqual(cols["messages"]["alpha-l1"]["marks"],
+                         {"marks": {"beta": "none"}, "owed": ["gamma"], "expects": True})
+        self.assertEqual(cols["messages"]["beta-r1"]["marks"],
+                         {"marks": {"gamma": "none"}, "owed": [], "expects": False})
+
+    def test_the_snapshot_route_drops_a_marks_field_from_the_log(self):
+        with RunningServer(self.r.root) as srv:
+            _, body = request(srv.url + "/api/snapshot")
+            self.check(body["collections"])
+
+    def test_with_marks_copies_the_rows_it_changes(self):
+        from crosstalk import marks
+        row = {"summary": "x", "marks": FORGED}
+        lesson = {"summary": "y"}
+        cols = {"messages": {"m1": row, "m2": lesson}, "acks": {"a--m1": {"marks": 1}}}
+        marks.with_marks(cols, {("messages", "m2"): {"marks": {}, "owed": [], "expects": True}})
+        self.assertNotIn("marks", cols["messages"]["m1"])
+        self.assertEqual(row, {"summary": "x", "marks": FORGED})
+        self.assertEqual(lesson, {"summary": "y"})
+        self.assertEqual(cols["acks"]["a--m1"], {"marks": 1})
+
+    def test_the_export_drops_a_marks_field_from_the_log(self):
+        self.check(build_snapshot(self.r.root)["collections"])
+        shutil.copy(str(REPO / "index.html"), str(self.r.root / "index.html"))
+        out = self.r.root / "page.html"
+        export_page(self.r.root, out)
+        self.check(snapshot_in(out.read_text(encoding="utf-8"))["collections"])
+
+
 class PageWordsTests(unittest.TestCase):
     def test_the_page_shows_the_emoji_and_words_of_marks_py(self):
         """index.html holds MARK_SHOWN: [word, emoji, label] in the order the line shows them."""
