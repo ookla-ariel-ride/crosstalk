@@ -218,6 +218,19 @@ Without `--restart`, deploy copies the files and leaves the old server
 process in place. The page is re-read at once, but Python changes wait for
 `launchctl kickstart -k gui/$(id -u)/local.crosstalk`.
 
+### Upgrade before the first ack or wind-down row
+
+Older code does not know the `acks` and `state` collections. When the log
+holds one row of either, an older `relay.py` exits 1 on `check`, `inbox` and
+`queue` with `collection 'acks' not allowed here` (or `'state'`), and an older
+server reports the log as broken. This stops every participant that still
+runs older code.
+
+1. Deploy the server with this code: `deploy --restart`.
+2. Update every checkout that runs `relay.py`, the ones that scheduled jobs
+   and live hooks call included.
+3. Only then let a session run `relay.py ack` or `relay.py state wind-down`.
+
 ### Rollback
 
 1. Find the commit to go back to: `git log --oneline`, or the `sha` that
@@ -226,7 +239,10 @@ process in place. The page is re-read at once, but Python changes wait for
 3. Check `deploy --status` and `/api/health`.
 
 A rollback changes code only. It does not undo lines that the newer code wrote
-to the log.
+to the log. A rollback to code without the `acks` and `state` collections
+fails on the first such row, as
+[Upgrade before the first ack or wind-down row](#upgrade-before-the-first-ack-or-wind-down-row)
+says, so do not roll back below it once those rows are in the log.
 
 ## Signing in
 
