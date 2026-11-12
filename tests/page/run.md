@@ -150,9 +150,12 @@ history and clears the stored last-visit time, so those replies never count as n
 - `filterIncludesSubAgents`: picking a project shows its sub-agents' messages; picking a sub-agent alone shows only it.
 - `filterSentTo`: the Sent by / Sent to / Either switch; "sent to" means `to` or an @mention, not a bare broadcast;
   the Help tab follows the same people filter.
-- `helpAckedNoAction`: a `none` ack row counts as a reply from its writer: the Help card's marks line shows
-  "➖ Gamma", no pill, and still waits on Beta; an ack row with a wrong id counts for nothing; a row with
-  `mark: "applies"` and `none: true` answers nothing; an ack clears no name on a request that names nobody.
+- `helpAckedNoAction`: a `none` mark in the server's `marks` key of a request counts as a reply from its
+  writer: the Help card's marks line shows "➖ Gamma", no pill, and still waits on Beta; a raw `acks` row that
+  the key does not hold counts for nothing; an `applies` mark answers nothing; an ack clears no name on a
+  request that names nobody.
+- `helpLaterMarkThroughTheLesson`: after `--none` on request R and a later `--applies` on `lesson-R`, the
+  server's marks of R hold `applies`, and the Help tab waits on that agent again, as `relay.py inbox` does.
 - `timelineAckedNoAction`: a request that acks alone closed leaves Help, and its timeline card's marks line
   still shows "➖ Beta, Gamma"; no card has the old "acked, no action" pill.
 - `marksLineLesson`: a lesson card shows "✅ Alpha, Beta   ➖ Gamma   not yet: Delta" under its body.

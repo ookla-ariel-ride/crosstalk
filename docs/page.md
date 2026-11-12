@@ -116,7 +116,8 @@ server puts on each marked message, decision and lesson in `/api/snapshot`
 and in an exported page: `{"marks": {name: word}, "owed": [names],
 "expects": true or false}`. Marks come only from `acks` rows: the server
 drops a `marks` field that a writer put on a post in the log. A lesson row `lesson-<id>` carries the marks of
-its message.
+its message. The Help tab reads the same key: a `none` mark on a request counts as a reply from its writer,
+so the tab and `relay.py inbox` agree.
 
 ## Posting as the owner
 

@@ -889,30 +889,47 @@
   // What the server puts on a marked row (marks.view): the page reads only this key.
   function marksOf(marks, owed, expects) { return { marks: marks, owed: owed || [], expects: !!expects }; }
 
-  // An ack row (requests.acks_by_item) counts as a reply from its writer and the help card still waits on the
-  // other. A row whose id is not from + "--" + item counts for nothing. The `none` mark shows as "➖ name" in
+  // The `none` marks that the server puts on a request (marks.page_views, from marks.marks_by_item) count as
+  // replies from their writers, and the help card still waits on the other. The page reads only that key, not
+  // the `acks` rows: a raw row the server did not count changes nothing. The `none` mark shows as "➖ name" in
   // the card's marks line, with no separate pill.
   S.push(async function helpAckedNoAction() {
     await go("help");
-    await addDoc("messages", "hreq-ack", { t: ago(1), from: "codex", kind: "request", summary: "Ack me?", to: ["beta", "gamma"],
-      marks: marksOf({ gamma: "none" }) });
+    var req = { t: ago(1), from: "codex", kind: "request", summary: "Ack me?", to: ["beta", "gamma"] };
+    await addDoc("messages", "hreq-ack", Object.assign({}, req, { marks: marksOf({ gamma: "none" }) }));
     await addDoc("acks", "gamma--hreq-ack", { from: "gamma", item: "hreq-ack", none: true, mark: "none", t: ago(1) });
-    await addDoc("acks", "beta--other", { from: "beta", item: "hreq-ack", none: true, t: ago(1) });
+    // A raw row with no mark on the request in the server's data is not counted.
+    await addDoc("acks", "beta--hreq-ack", { from: "beta", item: "hreq-ack", none: true, mark: "none", t: ago(1) });
     var c = helpCards().filter(function (x) { return x.textContent.indexOf("Ack me?") !== -1; })[0];
     var waiting = c && c.querySelector(".pill.pending-to");
     var line = marksText(c), pills = c ? c.querySelectorAll(".pill.acked").length : -1, waitingText = waiting ? waiting.textContent : "";
-    // `mark` wins over `none: true` (marks.mark_of): this row answers nothing.
-    await addDoc("acks", "beta--hreq-ack", { from: "beta", item: "hreq-ack", none: true, mark: "applies", t: ago(1) });
+    // A mark other than `none` answers nothing.
+    await addDoc("messages", "hreq-ack", Object.assign({}, req, { marks: marksOf({ gamma: "none", beta: "applies" }) }));
     var kept = helpHas("Ack me?");
-    await addDoc("acks", "beta--hreq-ack", { from: "beta", item: "hreq-ack", none: true, mark: "none", t: ago(1) });
+    await addDoc("messages", "hreq-ack", Object.assign({}, req, { marks: marksOf({ gamma: "none", beta: "none" }) }));
     var dropped = !helpHas("Ack me?");
     // A request that names nobody: an ack clears no name, so it stays open.
-    await addDoc("messages", "hreq-ack0", { t: ago(1), from: "codex", kind: "request", summary: "Ack nobody?", to: [] });
-    await addDoc("acks", "gamma--hreq-ack0", { from: "gamma", item: "hreq-ack0", none: true, t: ago(1) });
+    await addDoc("messages", "hreq-ack0", { t: ago(1), from: "codex", kind: "request", summary: "Ack nobody?", to: [],
+      marks: marksOf({ gamma: "none" }) });
     var noneKept = helpHas("Ack nobody?");
     await go("timeline");
     var ok = line === "\u2796 Gamma" && pills === 0 && waitingText === "waiting on Beta" && kept && dropped && noneKept;
     return res("helpAckedNoAction", ok, "line=" + JSON.stringify(line) + " pills=" + pills + " waiting=" + JSON.stringify(waitingText) + " kept=" + kept + " dropped=" + dropped + " noneKept=" + noneKept);
+  });
+
+  // relay.py ack --none on request R, then --applies on lesson-R: the later mark wins (marks.marks_by_item), so the
+  // server's marks of R hold `applies` and the Help tab waits on that agent again, as relay.py inbox does.
+  S.push(async function helpLaterMarkThroughTheLesson() {
+    await go("help");
+    await addDoc("messages", "hreq-les", { t: ago(2), from: "codex", kind: "request", summary: "Marked through its lesson?", to: ["gamma"],
+      marks: marksOf({ gamma: "applies" }) });
+    await addDoc("lessons", "lesson-hreq-les", { t: ago(2), project: "codex", summary: "Marked through its lesson?" });
+    await addDoc("acks", "gamma--hreq-les", { from: "gamma", item: "hreq-les", none: true, mark: "none", t: ago(2) });
+    await addDoc("acks", "gamma--lesson-hreq-les", { from: "gamma", item: "lesson-hreq-les", mark: "applies", t: ago(1) });
+    var waiting = helpWaiting("Marked through its lesson?");
+    await go("timeline");
+    var ok = waiting !== null;
+    return res("helpLaterMarkThroughTheLesson", ok, "waiting=" + JSON.stringify(waiting));
   });
 
   // An ack never hides a request from the owner: once acks alone close it and it leaves Help, its timeline
