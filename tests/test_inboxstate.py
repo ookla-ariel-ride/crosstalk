@@ -1,6 +1,7 @@
 import hashlib
 import json
 import subprocess
+from dataclasses import fields
 import sys
 import tempfile
 import unittest
@@ -10,7 +11,7 @@ SCRIPTS = Path(__file__).resolve().parent.parent / "scripts"
 sys.path.insert(0, str(SCRIPTS))
 
 from crosstalk import inboxstate  # noqa: E402
-from crosstalk.logs import Line  # noqa: E402
+from crosstalk.logs import Line, read_log  # noqa: E402
 
 T1 = "2026-11-11T22:17:00Z"
 T2 = "2026-11-11T22:18:00Z"
@@ -27,8 +28,11 @@ for i in range(1, 51):
 
 
 def ln(frm, seq, t=T1, id_=None):
-    return Line(seq=seq, t=t, from_=frm, op="set", collection="messages",
+    """A line as read from a file: its fingerprint is of its text."""
+    line = Line(seq=seq, t=t, from_=frm, op="set", collection="messages",
                 id=id_ or "%s-%04d" % (frm, seq))
+    line.fp = hashlib.sha256(line.to_json().encode()).hexdigest()[:12]
+    return line
 
 
 class InboxStateTests(unittest.TestCase):
@@ -133,10 +137,21 @@ class InboxStateTests(unittest.TestCase):
         self.assertEqual(inboxstate.trusted({"beta": [1, fp]}, lines), {})
 
     def test_fingerprint_is_of_the_exact_text_of_the_line(self):
-        a = Line(seq=1, t=T1, from_="beta", op="set", collection="messages", id="beta-1", raw='{"x": 1}')
-        self.assertEqual(inboxstate.fingerprint(a), hashlib.sha256(b'{"x": 1}').hexdigest()[:12])
-        self.assertEqual(inboxstate.fingerprint(ln("beta", 1)),
-                         hashlib.sha256(ln("beta", 1).to_json().encode()).hexdigest()[:12])
+        text = ('{"seq": 1, "t": "%s", "from": "beta", "op": "set", "collection": "messages",'
+                '  "id": "beta-1", "data": {}}' % T1)
+        (self.root / "beta.jsonl").write_text(text + "\n", encoding="utf-8")
+        [a], problems = read_log(self.root / "beta.jsonl")
+        self.assertEqual(problems, [])
+        self.assertEqual(inboxstate.fingerprint(a), hashlib.sha256(text.encode()).hexdigest()[:12])
+        self.assertNotIn("raw", {f.name for f in fields(Line)})  # the text is not kept
+
+    def test_a_line_with_no_fingerprint_is_no_boundary(self):
+        bare = Line(seq=1, t=T1, from_="beta", op="set", collection="messages", id="beta-1")
+        self.assertIsNone(inboxstate.fingerprint(bare))
+        lines = [bare, ln("gamma", 1)]
+        self.assertEqual(inboxstate.trusted({"beta": 1, "gamma": 1}, lines), {"gamma": 1})
+        self.assertEqual(list(inboxstate.newest(lines)), ["gamma"])
+        self.assertEqual(list(inboxstate.convert({"t": T2, "seen": []}, lines)), ["gamma"])
 
     def test_equal_numbers_keep_the_fingerprint_that_matches_the_disk(self):
         lines = self.write_log("beta", 3)

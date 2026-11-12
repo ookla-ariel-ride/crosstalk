@@ -1,5 +1,6 @@
 """Log lines: read, check and append."""
 import fcntl
+import hashlib
 import json
 import os
 import re
@@ -45,8 +46,9 @@ class Line:
     id: str
     data: dict = field(default_factory=dict)
     via: Optional[str] = None
-    # The exact text of the line in its file, when it was read from or written to one.
-    raw: Optional[str] = field(default=None, compare=False, repr=False)
+    # The first 12 hex digits of the SHA-256 of the line's exact text in its
+    # file, when it was read from or written to one (inboxstate.fingerprint).
+    fp: Optional[str] = field(default=None, compare=False, repr=False)
 
     def to_json(self) -> str:
         d = {"seq": self.seq, "t": self.t, "from": self.from_, "op": self.op,
@@ -152,7 +154,8 @@ def _validate(raw: str, owner: str, expected: int, _prior: List[Line],
         if msg:
             return msg
     return Line(seq=seq, t=d["t"], from_=d["from"], op=d["op"], collection=d["collection"],
-                id=d["id"], data=d["data"], via=via, raw=raw)
+                id=d["id"], data=d["data"], via=via,
+                fp=hashlib.sha256(raw.encode("utf-8")).hexdigest()[:12])
 
 
 def ack_problem(op: str, doc_id: str, owner: str, data: dict) -> Optional[str]:

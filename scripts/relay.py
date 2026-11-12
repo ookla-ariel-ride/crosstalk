@@ -241,7 +241,7 @@ def _inbox_ack_to(pid, raw, nxt, lines):
     by_key = inboxstate.index(lines)
     for w, e in sorted(place.items()):
         fp = inboxstate.fingerprint(by_key[(w, seq_of(e))])
-        if inboxstate.fp_of(e) not in (None, fp):
+        if fp is None or inboxstate.fp_of(e) not in (None, fp):
             err("--ack-to: the fingerprint %s of %s %d does not match the log (%s); "
                 "the log changed since that next was printed" % (inboxstate.fp_of(e), w, seq_of(e), fp))
             return 1

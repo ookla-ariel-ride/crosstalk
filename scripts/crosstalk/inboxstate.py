@@ -45,7 +45,6 @@ the file atomically.
 Python 3.9, standard library only.
 """
 import fcntl
-import hashlib
 import json
 import re
 from datetime import datetime
@@ -64,10 +63,11 @@ LOCK = "inbox-state.json.lock"
 FINGERPRINT_RE = re.compile(r"^[0-9a-f]{12}$")
 
 
-def fingerprint(line: Line) -> str:
-    """The first 12 hex digits of the SHA-256 of the line's exact text in its file."""
-    text = line.raw if line.raw is not None else line.to_json()
-    return hashlib.sha256(text.encode("utf-8")).hexdigest()[:12]
+def fingerprint(line: Line) -> Optional[str]:
+    """The first 12 hex digits of the SHA-256 of the line's exact text in its file,
+    kept on the line when it was read or written; None for a line that came from
+    no file, which then cannot be a boundary of a place."""
+    return line.fp
 
 
 def seq_of(entry) -> int:
@@ -135,7 +135,7 @@ def convert(old: dict, lines: Iterable[Line]) -> dict:
             if not (ln.t < old["t"] or (ln.t == old["t"] and ln.id in old["seen"])):
                 break
             last = ln
-        if last is not None:
+        if last is not None and fingerprint(last) is not None:
             out[writer] = [last.seq, fingerprint(last)]
     return out
 
@@ -191,7 +191,7 @@ def trusted(place: Optional[dict], lines: Iterable[Line]) -> Optional[dict]:
     out = {}
     for writer, entry in place.items():
         ln = by_key.get((writer, seq_of(entry)))
-        if ln is not None and fp_of(entry) in (None, fingerprint(ln)):
+        if ln is not None and fingerprint(ln) is not None and fp_of(entry) in (None, fingerprint(ln)):
             out[writer] = entry
     return out
 
@@ -212,7 +212,8 @@ def _true_on_disk(root: Path, writer: str, entry) -> Optional[bool]:
         # A file that does not read cleanly (a last line cut inside a multi-byte
         # character fails the decode of the whole file) cannot show the entry false.
         return None if problems else False
-    return fp_of(entry) in (None, fingerprint(good[n - 1]))
+    fp = fingerprint(good[n - 1])
+    return fp is not None and fp_of(entry) in (None, fp)
 
 
 def is_new(line: Line, place: Optional[dict]) -> bool:
@@ -226,7 +227,8 @@ def newest(lines: Iterable[Line]) -> Optional[dict]:
     for ln in lines:
         if ln.from_ not in top or ln.seq > top[ln.from_].seq:
             top[ln.from_] = ln
-    return {w: [ln.seq, fingerprint(ln)] for w, ln in top.items()} or None
+    return {w: [ln.seq, fingerprint(ln)] for w, ln in top.items()
+            if fingerprint(ln) is not None} or None
 
 
 def _repair(root: Path, old: dict, clean: dict) -> dict:
