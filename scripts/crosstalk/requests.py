@@ -334,33 +334,27 @@ def no_answer(data: dict) -> dict:
 ACK_SEP = "--"
 
 
-def _mark_of(doc: dict):
-    from .marks import mark_of  # marks imports this module
-    return mark_of(doc)
-
-
 def acks_by_item(docs: Dict, roster=None) -> Dict[str, Set[str]]:
-    """Item id to the ids of the participants that acked it with the mark `none`
-    (marks.mark_of: `mark: "none"`, or `none: true` with no other known mark).
+    """Item id to the ids of the participants whose mark on it is `none`.
 
-    A row counts when its id is from + ACK_SEP + item, `from` is approved and holds
-    no ACK_SEP, and `item` is a `kind: "request"` message in docs that `from` did not
-    write. Any other row counts for nothing.
+    The marks are those of marks.marks_by_item, the one reader of the `acks` rows:
+    a row counts when its id is from + ACK_SEP + item, `from` is approved and holds
+    no ACK_SEP, and `from` did not write the item; of two rows of one participant on
+    one post (a message and its lesson `lesson-<id>`) the later one wins. Only a
+    `kind: "request"` message keeps its entry here. Pass the lessons in docs too: a
+    row that names a lesson the docs lack counts for nothing.
     """
+    from .marks import marks_by_item  # marks imports this module
     out = {}  # type: Dict[str, Set[str]]
-    for (coll, did), doc in docs.items():
-        if coll != "acks" or not isinstance(doc, dict) or _mark_of(doc) != "none":
-            continue
-        frm, item = doc.get("from"), doc.get("item")
-        if not isinstance(frm, str) or ACK_SEP in frm or not isinstance(item, str) \
-                or did != frm + ACK_SEP + item:
-            continue
-        if not _is_approved(frm, roster):
+    for (coll, item), words in marks_by_item(docs, roster).items():
+        if coll != "messages":
             continue
         target = docs.get(("messages", item))
-        if not isinstance(target, dict) or target.get("kind") != "request" or target.get("from") == frm:
+        if not isinstance(target, dict) or target.get("kind") != "request":
             continue
-        out.setdefault(item, set()).add(frm)
+        who = {pid for pid, word in words.items() if word == "none"}
+        if who:
+            out[item] = who
     return out
 
 

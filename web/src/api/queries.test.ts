@@ -73,18 +73,32 @@ describe("queries", () => {
     expect(invalidated()).toEqual([JSON.stringify(keys.threads("new")), JSON.stringify(keys.threads("hot"))]);
   });
 
-  test("an ack row invalidates the thread list and the open threads: it can end a request's wait", () => {
-    invalidateForRows(qc, [row("acks", "owner--alpha-0001")]);
+  test("a mark refreshes the thread list, the open thread of its item and the decisions and lessons", () => {
+    invalidateForRows(qc, [row("acks", "owner--beta-0002")]);
+    expect(invalidated()).toEqual([
+      JSON.stringify(keys.threads("new")),
+      JSON.stringify(keys.threads("hot")),
+      JSON.stringify(keys.thread("alpha-0001")),
+      JSON.stringify(keys.section("decisions", "")),
+    ]);
+  });
+
+  test("a mark on a lesson refreshes the open thread of its message", () => {
+    invalidateForRows(qc, [row("acks", "beta--lesson-beta-0009")]);
     const got = invalidated();
-    expect(got).toEqual(
-      expect.arrayContaining([
-        JSON.stringify(keys.threads("new")),
-        JSON.stringify(keys.threads("hot")),
-        JSON.stringify(keys.thread("alpha-0001")),
-        JSON.stringify(keys.thread("beta-0009")),
-      ]),
-    );
-    expect(got.filter((k) => k.startsWith('["section"'))).toEqual([]);
+    expect(got).toContain(JSON.stringify(keys.thread("beta-0009")));
+    expect(got).not.toContain(JSON.stringify(keys.thread("alpha-0001")));
+  });
+
+  test("a mark on an item no open thread holds, or with an id that names no item, refreshes every open thread", () => {
+    for (const id of ["beta--owner-d1", "owner-d1", "--alpha-0001"]) {
+      qc = new QueryClient();
+      for (const [key, data] of CACHED) qc.setQueryData(key, data);
+      invalidateForRows(qc, [row("acks", id)]);
+      expect(invalidated(), id).toEqual(
+        expect.arrayContaining([JSON.stringify(keys.thread("alpha-0001")), JSON.stringify(keys.thread("beta-0009"))]),
+      );
+    }
   });
 
   test("a row with no collection invalidates nothing", () => {

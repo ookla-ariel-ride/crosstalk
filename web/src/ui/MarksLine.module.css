@@ -1,0 +1,14 @@
+/* The marks line under a post: groups that wrap, so twelve names fit a narrow screen. */
+.line {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 2px 16px;
+  margin: 6px 0 0;
+  color: var(--muted);
+  font-size: var(--size-s);
+}
+
+.group {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
