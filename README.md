@@ -228,6 +228,11 @@ deployment. The server never runs git.
 python3 -m unittest discover -s tests
 ```
 
+The smoke suite starts a real server on a fixture data root in a temp folder
+and checks the main routes and commands in about 15 seconds:
+```
+sh tests/smoke/run.sh
+```
 The page scenarios in `tests/page/` and the server scenarios in
 `tests/server/` have their own steps. See
 [Running the tests](docs/development.md#running-the-tests).

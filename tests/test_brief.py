@@ -108,3 +108,39 @@ class StallTests(unittest.TestCase):
         then = time.time() - 3600
         os.utime(str(path), (then, then))
         self.assertEqual(len(find_stalls(self.root, 30, time.time())), 1)
+
+
+class StallsCliTests(unittest.TestCase):
+    """relay.py stalls: the command prints one line per stall and a count, by --minutes."""
+
+    def setUp(self):
+        self.r = TempRepo()
+        self.r.__enter__()
+        self.addCleanup(self.r.__exit__, None, None, None)
+        self.r.write_roster()
+        self.tx = self.r.root / "transcripts"
+        # 40 minutes old, ends on an open call; one answered, one too recent
+        transcript(self.tx / "-work-alpha/0123456789ab.jsonl", [RESULT, CALL], 40 * 60)
+        transcript(self.tx / "-work-beta/aaaabbbbcccc.jsonl", [CALL, RESULT], 40 * 60)
+        transcript(self.tx / "-work-beta/ddddeeeeffff.jsonl", [CALL], 60)
+
+    def stalls(self, *args):
+        p = subprocess.run([sys.executable, str(REPO / "scripts" / "relay.py"),
+                            "--data-root", str(self.r.root), "stalls", "--root", str(self.tx)]
+                           + list(args), stdout=subprocess.PIPE, stderr=subprocess.PIPE,
+                           universal_newlines=True, cwd="/")
+        self.assertEqual(p.returncode, 0, p.stderr)
+        return p.stdout.splitlines()
+
+    def test_the_old_open_call_is_printed_with_the_count(self):
+        self.assertEqual(self.stalls("--minutes", "30"),
+                         ["alpha 01234567 main: Bash, 40 min", "1 stalled over 30 min"])
+
+    def test_the_threshold_boundary(self):
+        # a call open for exactly --minutes counts; one minute more is not reached yet
+        self.assertEqual(self.stalls("--minutes", "40"),
+                         ["alpha 01234567 main: Bash, 40 min", "1 stalled over 40 min"])
+        self.assertEqual(self.stalls("--minutes", "41"), ["0 stalled over 41 min"])
+
+    def test_the_default_threshold_is_30_minutes(self):
+        self.assertEqual(self.stalls()[-1], "1 stalled over 30 min")
