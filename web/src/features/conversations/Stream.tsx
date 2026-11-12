@@ -378,8 +378,30 @@ export function Conversations({
 export function NeedsYou({ renderActions, waitingActions }: { renderActions?: RenderActions; waitingActions?: (row: SectionRow) => ReactNode }) {
   const [open, setOpen] = useState<string[]>([]);
   const now = useNow();
-  const pages = useSection("waiting").data?.pages;
+  const waiting = useSection("waiting");
+  const pages = waiting.data?.pages;
   const rows = useMemo(() => pages?.flatMap((p) => p.rows).filter((r) => !r.done) ?? [], [pages]);
-  const lead = rows.length ? <WaitingList rows={rows} now={now} actions={waitingActions} /> : null;
+  // The server sends the open rows first, 50 to a page, and counts them: the
+  // rest of the open ones are a click away while a page is left.
+  const openCount = pages?.[pages.length - 1]?.open ?? 0;
+  const left = waiting.hasNextPage ? Math.max(0, openCount - rows.length) : 0;
+  const lead =
+    rows.length || left ? (
+      <>
+        {rows.length ? <WaitingList rows={rows} now={now} actions={waitingActions} /> : null}
+        {left ? (
+          <div className={styles.more}>
+            <button
+              type="button"
+              className={styles.action}
+              disabled={waiting.isFetchingNextPage}
+              onClick={() => void waiting.fetchNextPage({ cancelRefetch: false })}
+            >
+              {`Show ${left} more waiting row${left === 1 ? "" : "s"}`}
+            </button>
+          </div>
+        ) : null}
+      </>
+    ) : null;
   return <Stream sort="needs" open={open} onOpenChange={setOpen} needsOnly renderActions={renderActions} lead={lead} />;
 }

@@ -504,6 +504,26 @@ describe("NeedsYou", () => {
     expect(screen.getAllByText("Renew the cert")).toHaveLength(1);
   });
 
+  test("the 51st open waiting row is one click away", async () => {
+    const wait = (n: number) => ({ id: "alpha-w" + String(n).padStart(4, "0"), summary: "Task " + n, project: "alpha", since: "2026-11-11T08:00:00Z", done: null });
+    const first = Array.from({ length: 50 }, (_, i) => wait(i + 1));
+    // renderWith stubs fetch; the stub of this test comes after it.
+    renderWith(<NeedsYou />, [...base(OWNER, EMPTY_STATE, [Q1]), [keys.section("waiting", ""), { pages: [{ rows: first, next: "50", open: 51, total: 51 }], pageParams: [""] }]]);
+    const asked: string[] = [];
+    vi.stubGlobal("fetch", async (url: string) => {
+      asked.push(url);
+      if (url.startsWith("/api/section/waiting") && url.includes("cursor=50")) {
+        return new Response(JSON.stringify({ rows: [wait(51)], next: null, open: 51, total: 51 }), { status: 200, headers: { "Content-Type": "application/json" } });
+      }
+      return new Promise<Response>(() => {});
+    });
+    expect(screen.queryByRole("button", { name: /Task 51/ })).toBeNull();
+    fireEvent.click(screen.getByRole("button", { name: "Show 1 more waiting row" }));
+    expect(await screen.findByRole("button", { name: /Task 51/ })).toBeTruthy();
+    expect(asked.filter((u) => u.startsWith("/api/section/waiting"))).toHaveLength(1);
+    expect(screen.queryByRole("button", { name: /more waiting/ })).toBeNull();
+  });
+
   test("shows only the threads that need the owner, in the needs order", () => {
     renderWith(
       <NeedsYou />,

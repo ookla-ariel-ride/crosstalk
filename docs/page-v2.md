@@ -20,7 +20,8 @@ in the sidebar and sign in with the PIN or the owner token. See
 The sidebar holds every page:
 
 - Needs you: the open waiting rows, each with "Mark done", then the threads
-  that wait for you. The entry shows how many.
+  that wait for you. The entry shows how many. The page loads 50 waiting
+  rows at first; "Show N more waiting rows" loads the next 50.
 - Conversations: every thread, in one stream.
 - Work: Land queue, Progress, Reviews, Schedules.
 - Record: Decisions, Agreements, Lessons and incidents, File claims, Adoption.
