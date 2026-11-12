@@ -3,7 +3,7 @@
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { createContext, type ReactNode, useContext, useMemo, useRef, useState } from "react";
 import { api, ApiError } from "../../api/client";
-import { keys, useMe, useRoster } from "../../api/queries";
+import { invalidate, keys, useMe, useRoster } from "../../api/queries";
 import type { RosterEntry, Snapshot } from "../../api/types";
 import { href } from "../../logic/route";
 import styles from "./owner.module.css";
@@ -41,7 +41,7 @@ export function useSend(once = false) {
     setError(null);
     try {
       await fn();
-      for (const key of [["threads"], ["thread"], ["section"], keys.roster]) void qc.invalidateQueries({ queryKey: key });
+      for (const key of [["threads"], ["thread"], ["section"], keys.roster]) void invalidate(qc, { queryKey: key });
       if (once) setDone(true);
       else running.current = false;
       return true;

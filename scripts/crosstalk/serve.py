@@ -39,13 +39,14 @@ import sys
 import tempfile
 import threading
 import time
+import traceback
 from http.cookies import CookieError, SimpleCookie
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from typing import Dict, List, Optional, Tuple
 from urllib.parse import parse_qs, unquote, urlsplit
 
-from .files import atomic_write_text
+from .files import atomic_write_text, utf8_json
 from .logs import COLLECTIONS, append_line, check_all, check_all
 from .onboard import PALETTE, _locked_onboard, onboard
 from .participants import ensure_roster, load_roster
@@ -489,7 +490,13 @@ class CrosstalkHandler(BaseHTTPRequestHandler):
             super().handle()
         except (BrokenPipeError, ConnectionResetError, socket.timeout):
             pass
-        except Exception:
+        except Exception as e:
+            # The method, the path without its query, and where it failed: no
+            # header, no body and no value from the request.
+            frame = traceback.extract_tb(e.__traceback__)[-1]
+            sys.stderr.write("internal error on %s %s: %s at %s:%d\n" % (
+                getattr(self, "command", "?"), urlsplit(getattr(self, "path", "")).path,
+                type(e).__name__, os.path.basename(frame.filename), frame.lineno))
             try:
                 self._json(500, {"error": "internal error"})
             except Exception:
@@ -524,7 +531,7 @@ class CrosstalkHandler(BaseHTTPRequestHandler):
             self.wfile.write(body)
 
     def _json(self, status: int, payload, headers=None) -> None:
-        body = json.dumps(payload, ensure_ascii=False).encode("utf-8")
+        body = utf8_json(payload).encode("utf-8")
         self._send(status, body, JSON_TYPE, headers)
 
     def _error(self, status: int, message: str) -> None:
@@ -724,13 +731,21 @@ class CrosstalkHandler(BaseHTTPRequestHandler):
     def _events(self):
         """The push channel: Server-Sent Events, open until the client goes or the server stops.
 
-        `: open` once the start mark is taken; then each check that finds new
-        log lines sends `event: rows` with `data: {"rows": [...]}` (ids only,
+        The start mark comes first, then the headers, then `event: ready`: the
+        client refetches what it shows on each ready event, so a line written
+        before the mark is in that refetch and a line written after it comes as
+        an event. The browser's own open event fires on the headers, which is
+        why they wait for the mark too. Then each check that finds new log
+        lines sends `event: rows` with `data: {"rows": [...]}` (ids only,
         events.py), and a quiet stream sends `: ping` every events_ping_sec.
         A write error ends it.
         """
         state = self.state
         self.close_connection = True
+        # The stamp before the mark: a line written between the two shows as a
+        # changed stamp on the next check, and since() then finds it.
+        seen = events_mod.stamp(state.root)
+        mark = events_mod.mark(state.root)
         self.send_response(200)
         self.send_header("Content-Type", "text/event-stream")
         self.send_header("Cache-Control", "no-cache")
@@ -738,12 +753,8 @@ class CrosstalkHandler(BaseHTTPRequestHandler):
         self.end_headers()
         if self.command == "HEAD":
             return
-        # The stamp before the mark: a line written between the two shows as a
-        # changed stamp on the next check, and since() then finds it.
-        seen = events_mod.stamp(state.root)
-        mark = events_mod.mark(state.root)
         try:
-            self.wfile.write(b": open\n\n")
+            self.wfile.write(b"event: ready\ndata: {}\n\n")
             last = time.monotonic()
             while not state.stopping.wait(state.events_check_sec):
                 now_stamp = events_mod.stamp(state.root)
@@ -751,7 +762,7 @@ class CrosstalkHandler(BaseHTTPRequestHandler):
                     seen = now_stamp
                     rows, mark = events_mod.since(state.root, mark)
                     if rows:
-                        body = json.dumps({"rows": rows}, ensure_ascii=False)
+                        body = utf8_json({"rows": rows})
                         self.wfile.write(("event: rows\ndata: %s\n\n" % body).encode("utf-8"))
                         last = time.monotonic()
                         continue
@@ -1011,7 +1022,7 @@ class CrosstalkHandler(BaseHTTPRequestHandler):
                              check_in_min=body.get("checkInMin"),
                              parent=body.get("parent"),
                              color=body.get("color"), color_dark=body.get("colorDark"),
-                             harness=body.get("harness"))
+                             harness=body.get("harness"), code_root=self.state.code_root)
         except ValueError as e:
             self._error(400, str(e))
             return

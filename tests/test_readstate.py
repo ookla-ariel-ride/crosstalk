@@ -1,5 +1,6 @@
 import json
 import unittest
+from unittest import mock
 from pathlib import Path
 
 from helpers import RunningServer, TempRepo, line
@@ -10,7 +11,16 @@ from crosstalk.tokens import token_hash
 
 OWNER_TOKEN = "owner-test-token"
 BETA_TOKEN = "beta-test-token"
-EMPTY = {"threads": {}, "muted": [], "all_before": None}
+NOW_MS = 1_800_000_000_000
+EMPTY = {"threads": {}, "muted": [], "all_before": None, "rev": NOW_MS}
+
+
+def fixed_clock(test):
+    """Hold readstate's clock at NOW_MS; test.clock[0] moves it."""
+    test.clock = [NOW_MS]
+    patcher = mock.patch.object(readstate, "_now_ms", side_effect=lambda: test.clock[0])
+    patcher.start()
+    test.addCleanup(patcher.stop)
 
 
 def msg(did, frm, t):
@@ -25,6 +35,7 @@ class StoreTests(unittest.TestCase):
     def setUp(self):
         self.repo = TempRepo().__enter__()
         self.root = self.repo.root
+        fixed_clock(self)
 
     def tearDown(self):
         self.repo.__exit__(None, None, None)
@@ -87,11 +98,36 @@ class StoreTests(unittest.TestCase):
         readstate.set_muted(self.root, "a", False)
         self.assertEqual(readstate.load(self.root)["muted"], ["x"])
 
+    def test_each_change_raises_rev_and_a_no_op_keeps_it(self):
+        self.assertEqual(readstate.mark(self.root, "a", "2026-10-21T10:05:00Z", "b")["rev"], NOW_MS + 1)
+        self.assertEqual(readstate.mark(self.root, "a", "2026-10-21T10:00:00Z", "a")["rev"], NOW_MS + 1)
+        self.assertEqual(readstate.mark_all(self.root, "2026-10-21T12:00:00Z")["rev"], NOW_MS + 2)
+        self.assertEqual(readstate.set_muted(self.root, "a", True)["rev"], NOW_MS + 3)
+        self.assertEqual(readstate.set_muted(self.root, "a", True)["rev"], NOW_MS + 3)
+        self.assertEqual(readstate.load(self.root)["rev"], NOW_MS + 3)
+
+    def test_a_bad_rev_in_the_file_reads_as_the_present_time(self):
+        path = self.root / readstate.FILE
+        for rev in ('"7"', "-1", "true", "1.5", "null"):
+            path.write_text('{"threads": {}, "muted": [], "all_before": null, "rev": %s}' % rev, encoding="utf-8")
+            self.assertEqual(readstate.load(self.root)["rev"], NOW_MS, rev)
+
+    def test_a_lost_file_gives_a_rev_above_one_handed_out_before(self):
+        before = [readstate.mark(self.root, "a", "2026-10-21T10:0%d:00Z" % i, "b")["rev"] for i in range(3)]
+        (self.root / readstate.FILE).unlink()
+        self.clock[0] += 10
+        self.assertGreater(readstate.load(self.root)["rev"], max(before))
+        self.assertGreater(readstate.mark(self.root, "x", "2026-10-21T10:00:00Z", "b")["rev"], max(before))
+        # A file replaced by an old copy with a low rev: the next write starts from the present time.
+        (self.root / readstate.FILE).write_text('{"threads": {}, "muted": [], "all_before": null, "rev": 2}',
+                                                encoding="utf-8")
+        self.assertGreater(readstate.mark(self.root, "y", "2026-10-21T10:00:00Z", "b")["rev"], max(before))
+
     def test_file_is_written_whole_and_git_ignored(self):
         readstate.mark(self.root, "a", "2026-10-21T10:05:00Z", "b")
         raw = json.loads((self.root / readstate.FILE).read_text(encoding="utf-8"))
         self.assertEqual(raw, {"threads": {"a": {"t": "2026-10-21T10:05:00Z", "id": "b"}},
-                               "muted": [], "all_before": None})
+                               "muted": [], "all_before": None, "rev": NOW_MS + 1})
         ignore = (Path(__file__).resolve().parent.parent / ".gitignore").read_text(encoding="utf-8")
         self.assertIn(readstate.FILE, ignore.splitlines())
 
@@ -113,6 +149,7 @@ class RouteTests(unittest.TestCase):
                  t="2026-10-21T10:05:00Z"),
         ])
         self.tokens = {"owner": token_hash(OWNER_TOKEN), "beta": token_hash(BETA_TOKEN)}
+        fixed_clock(self)
 
     def tearDown(self):
         self.repo.__exit__(None, None, None)
@@ -175,7 +212,7 @@ class RouteTests(unittest.TestCase):
             status, body = request(srv.url + "/api/read-state", headers=self.auth(OWNER_TOKEN))
         self.assertEqual(status, 200)
         self.assertEqual(body, {"threads": {"alpha-root": {"t": "2026-10-21T10:05:00Z", "id": "beta-reply"}},
-                                "muted": ["alpha-other"], "all_before": "2026-10-21T09:00:00Z"})
+                                "muted": ["alpha-other"], "all_before": "2026-10-21T09:00:00Z", "rev": NOW_MS + 3})
 
     def test_threads_route_gives_the_owner_unread_counts(self):
         with self.server() as srv:

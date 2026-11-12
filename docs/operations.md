@@ -26,9 +26,10 @@ secrets) in the repo unless you name another folder: `relay.py --data-root
 over the variable. The page, the icons and the version still come from the
 repo, so a development server can run from a checkout over a copy of the data.
 With another folder, the texts that `relay.py` makes for sessions (the kits of
-`onboard` and `kit`, the hooks of `live hooks`, the urgent hook's note and
-the jobs of `schedule standard`)
-name `relay.py` in the repo and carry `--data-root <dir>`.
+`onboard`, `kit` and `/api/onboard`, which both pages call to add a
+participant, the hooks of `live hooks`, the urgent hook's note and the jobs
+of `schedule standard`) name `relay.py` in the repo and carry
+`--data-root <dir>`.
 
 The server also serves the v2 page at `/v2/` from `web/dist/` in the repo,
 for example `http://127.0.0.1:8484/v2/`. See [The v2 page](page-v2.md).

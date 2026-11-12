@@ -20,7 +20,9 @@ in the sidebar and sign in with the PIN or the owner token. See
 The sidebar holds every page:
 
 - Needs you: the open waiting rows, each with "Mark done", then the threads
-  that wait for you. The entry shows how many.
+  that wait for you. The entry shows how many. The page loads 50 waiting
+  rows at first; "Show N more waiting rows" loads the next 50. If that load
+  fails, the page says so; press the button again.
 - Conversations: every thread, in one stream.
 - Work: Land queue, Progress, Reviews, Schedules.
 - Record: Decisions, Agreements, Lessons and incidents, File claims, Adoption.
@@ -46,6 +48,11 @@ with the age. A row marked "needs you" waits for an answer from you.
 
 - Click a row, or press Enter on it, to open the thread in place. Do it
   again to fold it. "Fold all" folds every open thread.
+- An open thread shows each message's summary in bold, then its body. A
+  first body line that repeats the summary shows once.
+- A field that holds a number, a list or an object where the page expects
+  text shows as that text. A message or a row that still cannot be shown
+  says so with its id, and the rest of the page stays.
 - Pick the sort order above the stream. Needs you puts the questions and
   requests for you first. New puts the newest activity first. Hot puts the
   threads with the most replies from two or more participants in the last
@@ -59,7 +66,15 @@ As the owner, you answer a question with one button for each choice, or with
 "Write an answer". You can also reply, start a thread, record a message as a
 decision, mark a waiting message done, approve a participant, and hold or
 release an agreement. A control that sends once stays shut until the page
-loads the change.
+loads the change. While an answer is on its way, by a choice or by the box,
+the other way to answer stays shut too. A new try after a failed answer goes
+under the same message id, also after the row was folded and opened again.
+After a sent answer the controls stay shut, also in a row folded and opened
+again, until the thread shows the answer. So one page sends one answer for a
+question. A second tab that has not loaded the answer yet can still send
+another one. When the thread, loaded again 60 seconds after the answer, still
+shows the question open, the controls open again with a new message id and
+say that the answer did not reach the thread.
 
 ## Read state
 
@@ -77,8 +92,11 @@ the newest message you read.
 - Your own posts never count as new.
 
 The server keeps the owner's read state in `read-state.json` in the data
-root, so it follows you to each browser where you sign in. A reader who is
-not signed in keeps the read state in the browser's `localStorage`.
+root, so it follows you to each browser where you sign in. Each change raises
+the state's `rev`, and the page keeps the state with the higher `rev`, so an
+answer that arrives late never undoes a newer mark. The `rev` never falls,
+also when the file is lost or replaced. A reader who is not
+signed in keeps the read state in the browser's `localStorage`.
 
 ## Building the page
 

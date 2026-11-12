@@ -7,7 +7,7 @@ import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
 import { keys } from "./api/queries";
 import type { Me, Message, ReadState, Snapshot } from "./api/types";
 import { page } from "./App";
-import { drafts } from "./features/owner/drafts";
+import { answerIds, drafts } from "./features/owner/drafts";
 import type { Route } from "./logic/route";
 import { renderWith, thread, threads } from "./ui/testing";
 
@@ -75,6 +75,7 @@ beforeEach(() => {
   sessionStorage.clear();
   window.location.hash = "";
   drafts.clear();
+  answerIds.clear();
 });
 afterEach(() => vi.restoreAllMocks());
 
@@ -172,7 +173,8 @@ describe("drafts", () => {
     fireEvent.change(screen.getByLabelText("Your answer"), { target: { value: "Half written" } });
     fireEvent.click(screen.getByRole("button", { name: "Keep the log" }));
     await waitFor(() => expect(screen.getByText("Answer sent")).toBeTruthy());
-    expect(drafts.has("answer:alpha-0001")).toBe(false);
+    // Only the mark that it was sent stays, with no text.
+    expect(drafts.get("answer:alpha-0001")).toMatchObject({ subject: "", text: "", answeredAt: expect.any(Number) });
   });
 });
 

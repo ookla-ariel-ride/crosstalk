@@ -926,6 +926,22 @@ class OnboardTests(unittest.TestCase):
             self.assertIn("kit", body)
             self.assertTrue((r.root / "kits" / "smoke-agent.md").exists())
 
+    def test_a_kit_from_the_page_names_the_code_root_and_the_data_root(self):
+        # The server runs its code from one folder and keeps its data in another:
+        # the kit must point at the code's relay.py and docs, and carry --data-root.
+        code = Path(tempfile.mkdtemp(prefix="crosstalk-code-")).resolve()
+        self.addCleanup(shutil.rmtree, str(code), True)
+        with TempRepo() as r:
+            r.write_roster()
+            with self.server(r, code_root=code) as srv:
+                status, body = self.onboard(srv, self.payload(), token=self.OWNER_TOKEN)
+            self.assertEqual(status, 200)
+            kit = body["kit"]
+            self.assertIn(str(code / "scripts" / "relay.py"), kit)
+            self.assertIn(str(code / "PROTOCOL.md"), kit)
+            self.assertIn("--data-root", kit)
+            self.assertNotIn(str(r.root.resolve() / "scripts" / "relay.py"), kit)
+
     def test_invalid_input_is_400(self):
         with TempRepo() as r:
             r.write_roster()

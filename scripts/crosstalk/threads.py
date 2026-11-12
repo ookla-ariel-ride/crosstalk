@@ -25,6 +25,21 @@ ROUTINE_PREFIXES = ("LAND START", "LAND END", "GRANTED", "TURN ASK")
 _TIME_FORMAT = "%Y-%m-%dT%H:%M:%SZ"
 
 
+# The fields the index uses as keys or compares as text (_flags, roots, requests.py).
+_TEXT_FIELDS = ("kind", "from", "replyTo", "t")
+
+
+def readable(doc) -> Optional[dict]:
+    """The row as the index reads it: a field of _TEXT_FIELDS that holds no
+    text is left out, so {"kind": []} reads as no kind. None for a row that is
+    not an object. The log check (logs._validate) leaves the types inside a
+    row's data free, so a row can hold any JSON value in any field."""
+    if not isinstance(doc, dict):
+        return None
+    bad = [name for name in _TEXT_FIELDS if name in doc and not isinstance(doc[name], str)]
+    return {k: v for k, v in doc.items() if k not in bad} if bad else doc
+
+
 def _t(doc: dict) -> str:
     t = doc.get("t")
     return t if isinstance(t, str) else ""
@@ -129,6 +144,8 @@ class ThreadIndex:
 
     def __init__(self, messages: Dict[str, dict], roster=None,
                  created: Optional[Dict[str, str]] = None, waiting=()):
+        messages = {did: row for did, row in ((did, readable(doc)) for did, doc in messages.items())
+                    if row is not None}
         self.messages = messages
         self._lock = threading.Lock()
         created = created or {}

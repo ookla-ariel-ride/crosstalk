@@ -16,6 +16,7 @@ from typing import Dict, Optional
 
 from .logs import check_all
 from . import config
+from .files import utf8_json
 from .participants import load_roster
 from .replay import enrich_messages, load_all_lines, replay
 
@@ -77,7 +78,7 @@ def build_snapshot(root: Path) -> dict:
 
 def _json_for_script(obj: dict) -> str:
     """JSON safe to drop inside a <script> element."""
-    return json.dumps(obj, ensure_ascii=False, sort_keys=True).replace("<", "\\u003c")
+    return utf8_json(obj, sort_keys=True).replace("<", "\\u003c")
 
 
 # The page's data layer for a static snapshot: the same seam the stub harness

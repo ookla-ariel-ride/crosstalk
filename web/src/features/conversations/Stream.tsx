@@ -5,10 +5,12 @@ import { memo, type ReactNode, useCallback, useEffect, useMemo, useRef, useState
 import { ApiError } from "../../api/client";
 import { useSection, useThread, useThreads } from "../../api/queries";
 import type { SectionRow, Thread } from "../../api/types";
+import { afterSummary } from "../../logic/afterSummary";
 import { ago } from "../../logic/ago";
 import { foldRoutine } from "../../logic/foldRoutine";
 import { href, type Route, route as routeOf, type Sort } from "../../logic/route";
 import { Body } from "../../ui/Body";
+import { Guard } from "../../ui/Guard";
 import { Row } from "../../ui/Row";
 import { RowList } from "../../ui/RowList";
 import { useNow } from "../../ui/useNow";
@@ -109,18 +111,19 @@ function WaitingList({ rows, now, actions }: { rows: SectionRow[]; now: Date; ac
       estimateSize={64}
       renderRow={(row) => {
         const shown = open.includes(row.id);
+        const rest = afterSummary(str(row.body), str(row.summary));
         return (
           <Row
             projects={str(row.project) ? [str(row.project)] : []}
             title={str(row.summary) || row.id}
-            text={str(row.body).split("\n")[0]}
+            text={rest.split("\n")[0]}
             note={<span className={styles.noteLine}>{"waiting since " + ago(str(row.since), now)}</span>}
             open={shown}
             onOpen={() => setOpen(shown ? open.filter((id) => id !== row.id) : [...open, row.id])}
           >
             {shown ? (
               <div className={styles.thread}>
-                <Body text={str(row.body)} />
+                <Body text={rest} />
                 <div className={styles.end}>{actions?.(row)}</div>
               </div>
             ) : null}
@@ -234,7 +237,9 @@ export function Stream({ sort, open, onOpenChange, needsOnly = false, renderActi
     switch (item.type) {
       case "thread":
         return (
-          <ThreadRow thread={item.thread} open={openSet.has(item.thread.root)} onToggle={onToggle} now={now} renderActions={renderActions} />
+          <Guard what={"Thread " + item.thread.root} data={item.thread}>
+            <ThreadRow thread={item.thread} open={openSet.has(item.thread.root)} onToggle={onToggle} now={now} renderActions={renderActions} />
+          </Guard>
         );
       case "routine":
         return <RoutineLine counts={item.counts} threads={item.threads} now={now} renderThread={renderThread} openKey={openKey(item.threads)} />;
@@ -376,8 +381,42 @@ export function Conversations({
 export function NeedsYou({ renderActions, waitingActions }: { renderActions?: RenderActions; waitingActions?: (row: SectionRow) => ReactNode }) {
   const [open, setOpen] = useState<string[]>([]);
   const now = useNow();
-  const pages = useSection("waiting").data?.pages;
-  const rows = useMemo(() => pages?.flatMap((p) => p.rows).filter((r) => !r.done) ?? [], [pages]);
-  const lead = rows.length ? <WaitingList rows={rows} now={now} actions={waitingActions} /> : null;
+  const waiting = useSection("waiting");
+  const pages = waiting.data?.pages;
+  // A page whose cursor shifted (a row added or closed between two fetches)
+  // can repeat a row: each id shows once.
+  const rows = useMemo(() => {
+    const seen = new Set<string>();
+    return (pages?.flatMap((p) => p.rows) ?? []).filter((r) => !r.done && !seen.has(r.id) && !!seen.add(r.id));
+  }, [pages]);
+  // The server sends the open rows first, 50 to a page, and counts them. Once a
+  // done row is loaded no open one is left; until then the button stays while
+  // the server has a next page, with the count when it is above 0.
+  const openCount = pages?.[pages.length - 1]?.open ?? 0;
+  const more = waiting.hasNextPage && !pages?.some((p) => p.rows.some((r) => r.done));
+  const left = Math.max(0, openCount - rows.length);
+  const lead =
+    rows.length || more ? (
+      <>
+        {rows.length ? <WaitingList rows={rows} now={now} actions={waitingActions} /> : null}
+        {more ? (
+          <div className={styles.more}>
+            <button
+              type="button"
+              className={styles.action}
+              disabled={waiting.isFetchingNextPage}
+              onClick={() => void waiting.fetchNextPage({ cancelRefetch: false })}
+            >
+              {left ? `Show ${left} more waiting row${left === 1 ? "" : "s"}` : "Show more waiting rows"}
+            </button>
+            {waiting.isFetchNextPageError ? (
+              <span role="alert" className={styles.error}>
+                The next waiting rows did not load. Press the button to try again.
+              </span>
+            ) : null}
+          </div>
+        ) : null}
+      </>
+    ) : null;
   return <Stream sort="needs" open={open} onOpenChange={setOpen} needsOnly renderActions={renderActions} lead={lead} />;
 }
