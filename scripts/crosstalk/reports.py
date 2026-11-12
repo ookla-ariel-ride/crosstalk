@@ -9,6 +9,7 @@ from .requests import (
     agreements_to_adopt_for,
     all_requests_for,
     inbox_for,
+    needs_answer,
     open_owner_questions,
     owner_questions,
     pending_recipients,
@@ -58,6 +59,7 @@ def inbox_report(docs: Dict, pid: str, roster: Roster, include_answered: bool = 
             {
                 "request": dict(doc, id=did),
                 "trust": trust_of(doc.get("from"), roster),
+                "needs_answer": needs_answer(doc),
                 "pending_from": pending_recipients(doc, replies, roster=roster),
                 "replies": [dict(r, trust=trust_of(r.get("from"), roster)) for r in replies],
             }
@@ -66,6 +68,7 @@ def inbox_report(docs: Dict, pid: str, roster: Roster, include_answered: bool = 
         "owner_messages": [
             {
                 "message": dict(doc, id=did),
+                "needs_answer": needs_answer(doc),
                 "replies": [dict(r, trust=trust_of(r.get("from"), roster)) for r in replies],
             }
             for (did, doc, replies) in owner_msgs
@@ -74,6 +77,7 @@ def inbox_report(docs: Dict, pid: str, roster: Roster, include_answered: bool = 
             {
                 "message": dict(doc, id=did),
                 "trust": trust_of(doc.get("from"), roster),
+                "needs_answer": needs_answer(doc),
                 "root": root,
             }
             for (did, doc, root) in thread_replies_for(docs, pid, roster=roster)

@@ -33,7 +33,7 @@ from crosstalk.ownerpin import clear_pin, set_pin  # noqa: E402
 from crosstalk.participants import load_roster  # noqa: E402
 from crosstalk.posters import claim_file, land_sync, post_incident, release_file  # noqa: E402
 from crosstalk.replay import enrich_messages, load_all_lines, replay  # noqa: E402
-from crosstalk.requests import speaker_fields  # noqa: E402
+from crosstalk.requests import no_answer, speaker_fields  # noqa: E402
 from crosstalk.reports import inbox_report, load_docs, questions_report  # noqa: E402
 from crosstalk.serve import serve  # noqa: E402
 from crosstalk.service import service_block, service_for  # noqa: E402
@@ -72,6 +72,9 @@ def cmd_check(args):
 
 
 def cmd_append(args):
+    if args.no_answer and not (args.collection == "messages" and args.op == "set"):
+        err("--no-answer is for a new message")
+        return 1
     try:
         if args.data is not None:
             text = args.data
@@ -87,6 +90,8 @@ def cmd_append(args):
     if args.collection == "messages" and args.op == "set":
         for name, value in speaker_fields(args).items():
             data.setdefault(name, value)
+        if args.no_answer:
+            no_answer(data)
     roster = load_roster(ROOT / "participants.json")
     for w in message_problems(args.collection, args.op, data, roster)[1]:
         err("warning: " + w)
@@ -446,6 +451,7 @@ def cmd_reply(args):
             refs=_flatten(args.refs),
             msg_id=args.id,
             speaker=speaker_fields(args),
+            no_answer=args.no_answer,
         )
     except ValueError as e:
         err(str(e))
@@ -465,6 +471,7 @@ def cmd_consult(args):
             to=_flatten(args.to),
             msg_id=args.id,
             speaker=speaker_fields(args),
+            no_answer=args.no_answer,
         )
     except ValueError as e:
         err(str(e))
@@ -475,6 +482,9 @@ def cmd_consult(args):
 
 def cmd_ask(args):
     """Post a question for the owner; prints the new message id."""
+    if args.no_answer:
+        err("a question to the owner needs an answer; ask takes no --no-answer")
+        return 1
     recommend = None
     if args.recommend is not None:
         n = len(args.options or [])
@@ -634,6 +644,9 @@ def cmd_adopt(args):
     return 0
 
 
+NO_ANSWER_HELP = 'set needs_answer: false and end the body with "No answer needed."'
+
+
 def _speaker_flags(parser):
     """--harness and --model: who wrote the post.
 
@@ -662,6 +675,7 @@ def build_parser():
     g = a.add_mutually_exclusive_group(required=True)
     g.add_argument("--data", help="JSON object")
     g.add_argument("--data-file", help="path to a JSON object file")
+    a.add_argument("--no-answer", action="store_true", help=NO_ANSWER_HELP + " (--collection messages --op set only)")
     a.set_defaults(fn=cmd_append)
 
     x = sub.add_parser("export-page", help="write one self-contained HTML page with the log inlined")
@@ -767,6 +781,7 @@ def build_parser():
     rp.add_argument("--body")
     rp.add_argument("--ref", "--refs", dest="refs", action="append", nargs="+")
     rp.add_argument("--id")
+    rp.add_argument("--no-answer", action="store_true", help=NO_ANSWER_HELP)
     rp.set_defaults(fn=cmd_reply)
 
     cs = sub.add_parser("consult", help="post a peer consultation request; prints the new message id")
@@ -777,6 +792,7 @@ def build_parser():
     cs.add_argument("--ref", "--refs", dest="refs", action="append", nargs="+")
     cs.add_argument("--to", dest="to", action="append", nargs="+")
     cs.add_argument("--id")
+    cs.add_argument("--no-answer", action="store_true", help=NO_ANSWER_HELP + "; the request waits for nobody")
     cs.set_defaults(fn=cmd_consult)
 
     ak = sub.add_parser("ask", help="post a question for the owner; prints the new message id")
@@ -790,6 +806,7 @@ def build_parser():
                     help="one choice for the owner; give 2 to 6, in order")
     ak.add_argument("--recommend", type=int,
                     help="the choice you recommend, by number: 1 is the first --option")
+    ak.add_argument("--no-answer", action="store_true", help="refused: a question to the owner needs an answer")
     ak.set_defaults(fn=cmd_ask)
 
     qs = sub.add_parser("questions", help="print the open questions for the owner (JSON)")

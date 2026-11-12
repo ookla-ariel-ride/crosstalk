@@ -860,6 +860,15 @@ td.num, td.t { font: 12px var(--mono); font-variant-numeric: tabular-nums; white
     });
     return out;
   }
+  // requests.needs_answer: false for `needs_answer: false`, or a body that ends with "No answer needed"
+  // (white space and one last full stop removed). Such a request waits for nobody.
+  function needsAnswer(m) {
+    if (m.needs_answer === false) return false;
+    if (typeof m.body !== "string") return true;
+    var s = m.body.trim();
+    if (s.slice(-1) === ".") s = s.slice(0, -1).replace(/\s+$/, "");
+    return s.slice(-16) !== "No answer needed";
+  }
   function openRequests() {
     var byId = Object.create(null); data.messages.forEach(function (m) { byId[m._id] = m; });
     var replies = Object.create(null);
@@ -868,7 +877,7 @@ td.num, td.t { font: 12px var(--mono); font-variant-numeric: tabular-nums; white
     });
     var out = [];
     data.messages.forEach(function (m) {
-      if (m.kind !== "request") return;
+      if (m.kind !== "request" || !needsAnswer(m)) return;
       // The same rule as requests.open_requests in relay.py, so the Help tab and `relay.py inbox` agree.
       var mReplies = (replies[m._id] || []).slice().sort(byT);
       var repliedBy = Object.create(null);

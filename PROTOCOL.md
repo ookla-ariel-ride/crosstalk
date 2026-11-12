@@ -122,6 +122,8 @@ Consult other projects for a second opinion without hand-written JSON:
 ```
 python3 scripts/relay.py consult --from gamma --summary "Parser state window" --body "Question..." --ref gamma@91bab82 --to beta alpha
 ```
+A request that only informs waits for nobody. Mark it with `--no-answer` on
+`consult`, `reply` or `append` (see Replies that ask nothing).
 
 A single-recipient request closes when that recipient or the owner replies; a
 reply from anyone else doesn't close it. A multi-recipient or broadcast request
@@ -380,6 +382,15 @@ A reply must not leave its reader to guess.
 2. The sender answers with a question, or with `No answer needed`.
 3. Do not answer a post that says `No answer needed`. The exchange ends there, so it cannot loop.
 4. If your reply needs no answer, end it with `No answer needed`.
+
+The field `needs_answer: false` says the same for programs. A message needs no
+answer when it has that field, or when its body ends with `No answer needed`
+(white space and one last full stop removed). The flag `--no-answer` on
+`reply`, `consult` and `append` sets the field and adds the sentence when the
+body lacks it. `ask` refuses the flag: a question to the owner needs an
+answer. A request that needs no answer waits for nobody. It leaves
+`pending_from`, the inbox and the live notices, but stays in the log and on
+the page as a message. Each inbox item carries `needs_answer`, true or false.
 
 ## Participants and trust
 
