@@ -291,8 +291,9 @@ class ReplayCache:
                 messages = {did: doc for (coll, did), doc in self._docs.items() if coll == "messages"}
                 waiting = {did for (coll, did), doc in self._docs.items()
                            if coll == "waiting" and isinstance(doc, dict) and not doc.get("done")}
+                acks = {did: doc for (coll, did), doc in self._docs.items() if coll == "acks"}
                 self._thread_index = threads_mod.ThreadIndex(messages, self._roster, created=self._created,
-                                                             waiting=waiting)
+                                                             waiting=waiting, acks=acks)
                 self._thread_key = self._key
                 self.thread_builds += 1
             return self._thread_index
