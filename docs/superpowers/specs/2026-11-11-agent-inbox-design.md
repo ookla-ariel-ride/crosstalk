@@ -97,6 +97,14 @@ The write reads the file again, merges (each writer keeps the higher number)
 and replaces the file atomically. Because a place only moves forward, the
 merge loses nothing.
 
+A stored number above the highest `seq` of its writer cannot be true for the
+log: the log came back from an older copy, or the writer was removed and
+added again with a new file. The read leaves that writer out of the place,
+so all its lines are new. The next ack repairs the number inside the lock,
+and only when the writer's file, read again there, still tops out below the
+stored number. A run that read an older log while another run acked a newer
+one finds the newer lines on disk and keeps the higher number.
+
 The place is a file and not a log row, because it changes at each check-in
 of each participant and tells no other participant anything.
 

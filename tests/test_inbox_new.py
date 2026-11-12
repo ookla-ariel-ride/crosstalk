@@ -320,6 +320,25 @@ class InboxNewTests(unittest.TestCase):
         # Only the new form is written; the other participant's old place is converted too.
         self.assertEqual(self.state(), {"alpha": {"beta": 4, "owner": 1}, "rev": {"beta": 4, "owner": 1}})
 
+    def test_shorter_log_reads_as_new_and_the_ack_repairs_it(self):
+        self.r.write_log("beta", [req(i, "beta", "beta-r%d" % i, t(i)) for i in range(1, 4)])
+        self.inbox("--new", "--ack")
+        self.assertEqual(self.state(), {"alpha": {"beta": 3}})
+        # The log of beta was restored from an older copy, or beta was removed and added again.
+        rows = [req(1, "beta", "beta-s1", t(5))]
+        self.r.write_log("beta", rows)
+        out = self.inbox("--new")
+        self.assertEqual(self.ids(out), ["beta-s1"])
+        self.assertEqual((out["place"], out["next"]), ({}, {"beta": 1}))
+        # --ack-to of the printed next is no longer "behind": it repairs the place.
+        p = self.run_cli("inbox", "alpha", "--ack-to", json.dumps(out["next"]))
+        self.assertEqual(p.returncode, 0, p.stderr)
+        self.assertEqual(self.state(), {"alpha": {"beta": 1}})
+        rows.append(req(2, "beta", "beta-s2", t(6)))
+        self.r.write_log("beta", rows)
+        self.assertEqual(self.ids(self.inbox("--new", "--ack")), ["beta-s2"])
+        self.assertEqual(self.state(), {"alpha": {"beta": 2}})
+
     def test_new_brief_marks_needs_answer_and_prints_counts(self):
         self.r.write_log("beta", [req(1, "beta", "beta-r1", t(1)), agreement(2, "a-one", t(2))])
         self.inbox("--ack")

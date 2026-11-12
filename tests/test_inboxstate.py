@@ -110,6 +110,41 @@ class InboxStateTests(unittest.TestCase):
         lines = [ln("beta", 1, T2), ln("beta", 2, T1), ln("gamma", 1, T1)]
         self.assertEqual(inboxstate.newest(lines), {"beta": 2, "gamma": 1})
 
+    def write_log(self, writer, n):
+        """`n` lines of `writer` on disk, seq 1 to n; returns them as Lines."""
+        (self.root / "log").mkdir(exist_ok=True)
+        rows = [ln(writer, i) for i in range(1, n + 1)]
+        (self.root / "log" / (writer + ".jsonl")).write_text("".join(r.to_json() + "\n" for r in rows),
+                                                            encoding="utf-8")
+        return rows
+
+    def test_trim_drops_a_writer_whose_number_is_above_its_top(self):
+        self.assertIsNone(inboxstate.trim(None, {"beta": 3}))
+        self.assertEqual(inboxstate.trim({"beta": 5, "gamma": 2, "owner": 1}, {"beta": 3, "gamma": 2}),
+                         {"gamma": 2})
+
+    def test_ack_repairs_a_number_above_the_top_of_a_shorter_log(self):
+        inboxstate.move(self.root, "alpha", {"beta": 12})
+        lines = self.write_log("beta", 5)  # restored from an older copy
+        self.assertEqual(inboxstate.move(self.root, "alpha", {"beta": 5}, lines), {"beta": 5})
+        self.assertEqual(inboxstate.load(self.root), {"alpha": {"beta": 5}})
+        # A writer whose file is gone has no line: its number goes.
+        inboxstate.move(self.root, "alpha", {"gamma": 4})
+        self.assertEqual(inboxstate.move(self.root, "alpha", {"beta": 5}, lines), {"beta": 5})
+
+    def test_two_runs_the_older_log_does_not_lower_a_true_number(self):
+        older = self.write_log("beta", 10)  # run A reads the log here
+        newer = self.write_log("beta", 12)  # run B reads it later, and acks first
+        self.assertEqual(inboxstate.move(self.root, "alpha", {"beta": 12}, newer), {"beta": 12})
+        # Run A acks last. 12 is above A's top, but the log on disk holds 12 lines, so 12 is true.
+        self.assertEqual(inboxstate.move(self.root, "alpha", {"beta": 10}, older), {"beta": 12})
+        self.assertEqual(inboxstate.load(self.root), {"alpha": {"beta": 12}})
+
+    def test_without_the_log_a_move_only_raises(self):
+        inboxstate.move(self.root, "alpha", {"beta": 12})
+        self.write_log("beta", 5)
+        self.assertEqual(inboxstate.move(self.root, "alpha", {"beta": 5}), {"beta": 12})
+
     def test_two_processes_keep_both_places(self):
         procs = [subprocess.Popen([sys.executable, "-c", CHILD, str(SCRIPTS), str(self.root), pid])
                  for pid in ("alpha", "beta")]

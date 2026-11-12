@@ -173,7 +173,9 @@ def cmd_inbox(args):
     out = inbox_report(docs, args.pid, roster, include_answered=args.all,
                        now_iso=getattr(args, "now", None), service=service_for(CODE_ROOT, ROOT))
     if args.new:
-        out = new_report(out, lines, inboxstate.load(ROOT, lines).get(args.pid), nxt)
+        # A number above its writer's top cannot be true for this log: that writer is all new.
+        place = inboxstate.trim(inboxstate.load(ROOT, lines).get(args.pid), nxt or {})
+        out = new_report(out, lines, place, nxt)
     try:
         _print_inbox(out, args)
         sys.stdout.flush()
@@ -234,7 +236,7 @@ def _inbox_ack_to(pid, raw, nxt, lines):
             % (", ".join("%s %d" % (w, place[w]) for w in ahead),
                ", ".join("%s %d" % (w, top.get(w, 0)) for w in ahead)))
         return 1
-    stored = inboxstate.load(ROOT, lines).get(pid) or {}
+    stored = inboxstate.trim(inboxstate.load(ROOT, lines).get(pid), top) or {}
     forward = any(seq > stored.get(w, 0) for w, seq in place.items())
     behind = any(seq > place.get(w, 0) for w, seq in stored.items())
     if behind and not forward:

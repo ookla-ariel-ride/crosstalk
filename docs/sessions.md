@@ -236,6 +236,10 @@ everything is new.
   edit in the same second and a row ahead of the clock are all new.
 - An item is new when a new log line touched it: a new row, or an edit of an
   old row. An edited item shows with its present content.
+- A stored number above the highest `seq` of its writer cannot be true for
+  the log: the log came back from an older copy, or the participant was
+  removed and added again. Every line of that writer is then new, and the
+  next ack repairs the number.
 - `requests`, `owner_messages` and `thread_replies` hold the new items only.
 - `still_open` lists the older requests and owner messages that still need
   your answer, as `{id, from, t, summary}` with no body, newest first. It

@@ -17,8 +17,17 @@ A place never moves backwards: two places merge by the higher number of each
 writer. A file that does not parse, or nests too deep to parse, reads as empty
 and stays on disk as it is until the next write.
 
+A number above the highest `seq` of its writer cannot be true for the log: the
+log was restored from an older copy, or the writer was removed and added again
+with a new file. The read leaves such a writer out of the place (`trim`), so
+every line of it is new, and the next ack with the log in hand repairs it
+(`move`). The repair lowers a number only when the writer's file, read again
+inside the lock, still tops out below it: a run that read an older log never
+lowers the true number a run with a newer log stored.
+
 A place of the form before 2026-11-12, `{"t": ..., "seen": [...]}`, converts
-on read with the log in hand (`convert`); without the log it reads as empty.
+on read with the log in hand (`convert`); without the log it reads as empty
+(`load` leaves it out).
 Only the new form is written.
 
 Each `relay.py inbox` is its own process, so a write takes an exclusive
@@ -34,7 +43,7 @@ from pathlib import Path
 from typing import Dict, Iterable, Optional
 
 from .files import atomic_write_text
-from .logs import Line
+from .logs import Line, read_log
 from .participants import ID_RE
 from .readstate import _TIME_FORMAT, is_time
 
@@ -123,6 +132,25 @@ def merge(a: Optional[dict], b: Optional[dict]) -> Optional[dict]:
     return out
 
 
+def trim(place: Optional[dict], top: Dict[str, int]) -> Optional[dict]:
+    """`place` without the writers whose number is above their top `seq` in `top`."""
+    if place is None:
+        return None
+    return {w: seq for w, seq in place.items() if seq <= top.get(w, 0)}
+
+
+def _top_on_disk(root: Path, writer: str) -> Optional[int]:
+    """The highest good `seq` in `log/<writer>.jsonl` now; 0 with no file; None when unreadable."""
+    path = Path(root) / "log" / (writer + ".jsonl")
+    if not path.exists():
+        return 0
+    try:
+        lines = read_log(path)[0]
+    except OSError:
+        return None
+    return lines[-1].seq if lines else 0
+
+
 def is_new(line: Line, place: Optional[dict]) -> bool:
     """True when the log line comes after `place` in its writer's order."""
     return place is None or line.seq > place.get(line.from_, 0)
@@ -140,8 +168,13 @@ def move(root: Path, pid: str, place: dict, lines: Optional[Iterable[Line]] = No
     """Move `pid`'s place forward to `place`; return the stored place.
 
     The exclusive lock keeps two processes that read, merge and replace at once
-    from dropping each other's place. `lines` (the log) converts the old-form
-    places in the file; without them those places drop out at this write.
+    from dropping each other's place. `lines` (the log this run read) converts
+    the old-form places in the file; without them those places drop out at this
+    write. With `lines`, a stored number above `place` that is also above the
+    top of its writer's file, read again here inside the lock, is not true for
+    the log: it is replaced by the number in `place` (no higher than that top).
+    A number at or below the top on disk is kept, so a run that read an older
+    log cannot lower it.
     """
     root = Path(root)
     root.mkdir(parents=True, exist_ok=True)
@@ -149,9 +182,23 @@ def move(root: Path, pid: str, place: dict, lines: Optional[Iterable[Line]] = No
         fcntl.flock(lock.fileno(), fcntl.LOCK_EX)
         try:
             places = load(root, lines)
-            stored = merge(places.get(pid), clean_place(place))
-            if stored is None:
+            clean = clean_place(place)
+            if clean is None:
                 raise ValueError("not a place: %r" % (place,))
+            old = places.get(pid)
+            if old is not None and lines is not None:
+                old = dict(old)
+                for writer, seq in list(old.items()):
+                    if seq <= clean.get(writer, 0):
+                        continue
+                    top = _top_on_disk(root, writer)
+                    if top is not None and seq > top:
+                        lower = min(clean.get(writer, 0), top)
+                        if lower:
+                            old[writer] = lower
+                        else:
+                            del old[writer]
+            stored = merge(old, clean)
             if places.get(pid) != stored or _read(root) != places:
                 places[pid] = stored
                 atomic_write_text(root / FILE, json.dumps(places, indent=2, sort_keys=True) + "\n")
