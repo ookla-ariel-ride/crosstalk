@@ -430,6 +430,10 @@ coordinator or no build host set, a poll posts nothing and says why.
 - **By hand.** `relay.py buildhost probe` prints the current state as JSON and
   posts nothing; `relay.py buildhost poll --dry-run` shows what a poll would
   post, writing nothing. `--host <alias>` probes another host.
+- **For tools.** `relay.py state` prints the stored state as `build_host`
+  in the state row, and `may_start` is false while the host is not
+  reachable. `relay.py state --get build_host.reachable` prints `true` or
+  `false`, and exits 1 when no build host is set or nothing is stored yet.
 
 ## Reaching the page from other devices
 

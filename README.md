@@ -165,6 +165,10 @@ rows if the project tracks progress. See
   [The land queue](PROTOCOL.md#the-land-queue).
   `relay.py state wind-down` records a wind-down, and the server grants no
   turn at step 1 or 2.
+- State row: `relay.py state` prints one JSON object with the disk, the
+  usage, the build host, the wind-down step, the land queue and `may_start`.
+  `--get KEY` prints one value for a shell script. `/api/vitals` has the
+  same row under `state`.
 - Build host status: `relay.py buildhost` probes the build host and
   posts an alert when its state changes. See
   [Build host status](docs/operations.md#build-host-status).

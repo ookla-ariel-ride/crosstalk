@@ -9,7 +9,7 @@ The server is the page host and the database:
   GET  /api/read-state  -> the owner's read state (readstate.py); the owner only
   PUT  /api/read-state  -> a thread's read mark, the mark-all time, or a mute; the owner only
   GET  /api/events      -> a Server-Sent Events stream of the ids of new log rows (events.py)
-  GET  /api/vitals      -> the health numbers: disk, usage, build host (vitals.py)
+  GET  /api/vitals      -> the health numbers: disk, usage, build host (vitals.py), and the state row (state.py)
   GET  /api/section/<name> -> one section of the v2 page, open rows first, a page at a time (sections.py)
   GET  /api/<collection>-> one collection replayed
   GET  /api/queue       -> the land queue of the build host (landqueue.py)
@@ -63,6 +63,7 @@ from . import autogrant as autogrant_mod
 from . import threads as threads_mod
 from . import readstate
 from . import events as events_mod
+from . import state as state_mod
 from . import vitals as vitals_mod
 from . import buildhost as buildhost_mod
 from . import sections as sections_mod
@@ -762,8 +763,18 @@ class CrosstalkHandler(BaseHTTPRequestHandler):
             return  # the client went away
 
     def _vitals(self):
+        try:
+            docs, entries = self.state.cache.snapshot()
+        except (OSError, ValueError) as e:
+            self._error(500, "cannot read the log: %s" % e)
+            return
         cfg = config_mod.load(self.state.root)
-        out = vitals_mod.read(self.state.root, cfg, buildhost_state=self.state.buildhost_state)
+        now = time.time()
+        out = vitals_mod.read(self.state.root, cfg, buildhost_state=self.state.buildhost_state, now=now)
+        # The same row as `relay.py state`, from these readings: no second vitals.read.
+        out["state"] = state_mod.read(self.state.root, docs, self.state.cache.roster(), entries, cfg,
+                                      buildhost_state=self.state.buildhost_state, now=now,
+                                      readings=dict(out))
         out["model_families"] = cfg["modelFamilies"]
         self._json(200, out)
 
