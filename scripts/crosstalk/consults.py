@@ -6,6 +6,7 @@ from pathlib import Path
 from typing import Dict, Iterable, List, Optional
 
 from .logs import Line, append_line, check_speaker
+from .marks import MARKS, item_ref, writer_of
 from .participants import Roster, load_roster
 from .posters import next_stamp
 from .replay import enrich_messages, load_all_lines, replay
@@ -76,10 +77,12 @@ def post_reply(
     no_answer: bool = False,
     to: Optional[Iterable[str]] = None,
     docs: Optional[Dict] = None,
+    must_read: bool = False,
 ) -> Line:
     """Reply to an existing message `to_id`, auto-populating `replyTo` and `to`.
 
-    `no_answer` marks the reply as asking nothing (requests.no_answer). `to`
+    `no_answer` marks the reply as asking nothing (requests.no_answer). `must_read`
+    sets `must_read: true`: each agent the reply reaches owes a mark (marks.py). `to`
     replaces the default recipient (the sender of `to_id`). `docs` are replayed
     documents the caller just read; without them the log is read here.
     """
@@ -113,6 +116,8 @@ def post_reply(
     data.update(speaker or {})
     if no_answer:
         _no_answer(data)
+    if must_read:
+        data["must_read"] = True
     return append_line(root, pid, "set", "messages", mid, data, roster=roster)
 
 
@@ -262,9 +267,17 @@ def withdraw_question(
     return append_line(root, pid, "set", "messages", mid, data, roster=roster)
 
 
-def ack_item(root: Path, pid: str, item_id: str, roster: Optional[Roster] = None) -> Line:
-    """Record that pid read the request item_id and has nothing to do or say: an `acks` row
-    that counts as pid's reply (requests.acks_by_item). It is not a message."""
+def ack_item(root: Path, pid: str, item_id: str, mark: str = "none",
+             roster: Optional[Roster] = None) -> Line:
+    """Put pid's mark on the item item_id: one `acks` row, id `<pid>--<item_id>`, that a
+    later mark replaces. It is not a message.
+
+    Each mark (marks.MARKS) takes a message, a decision or a lesson that pid did not
+    write. `none` writes `none: true` too and never takes a question for the owner; on
+    a request it counts as pid's reply (requests.acks_by_item). The other marks answer
+    nothing."""
+    if mark not in MARKS:
+        raise ValueError("unknown mark %r (expected one of %s)" % (mark, ", ".join(MARKS)))
     root = Path(root)
     roster = _ensure_roster(root, roster)
     _require_pid(pid, roster)
@@ -272,14 +285,16 @@ def ack_item(root: Path, pid: str, item_id: str, roster: Optional[Roster] = None
         raise ValueError("participant %r holds '--', so it cannot ack; post a reply instead" % (pid,))
     lines = load_all_lines(root, roster)
     docs = enrich_messages(replay(lines), lines)
-    item = docs.get(("messages", item_id))
-    if item is None:
-        raise ValueError("no such message %r" % (item_id,))
-    if item.get("kind") == "question":
-        raise ValueError("a question to the owner gets an answer, not an ack")
-    if item.get("kind") != "request":
-        raise ValueError("message %r is not a request; only a request takes an ack" % (item_id,))
-    data = {"from": pid, "item": item_id, "none": True, "t": now_iso()}
+    ref = item_ref(docs, item_id)
+    if ref is None:
+        raise ValueError("no such message, decision or lesson %r" % (item_id,))
+    if writer_of(docs, ref[0], ref[1]) == pid:
+        raise ValueError("%r is your own post; a mark is for another participant's post" % (item_id,))
+    data = {"from": pid, "item": item_id, "mark": mark, "t": now_iso()}
+    if mark == "none":
+        if ref[0] == "messages" and docs[ref].get("kind") == "question":
+            raise ValueError("a question to the owner gets an answer, not an ack")
+        data["none"] = True
     return append_line(root, pid, "set", "acks", pid + ACK_SEP + item_id, data, roster=roster)
 
 

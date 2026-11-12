@@ -5,6 +5,7 @@ import urllib.error
 import urllib.request
 
 from helpers import RunningServer, TempRepo, line
+from test_marks_inbox import MarksInboxBase
 from test_serve import request, request_with_headers
 
 from crosstalk.logs import read_log
@@ -82,6 +83,24 @@ class OwnerAckTests(unittest.TestCase):
         self.assertEqual(body["thread"]["owner_requests"], [])
         self.assertEqual(body["messages"][0]["acked_by"], ["owner"])
 
+    def test_a_later_mark_through_the_lesson_replaces_the_no_change_mark(self):
+        # One source: acked_by and the wait read the acks rows through marks.mark_of,
+        # and of two rows of one participant on one post the later one wins.
+        self.r.write_log("beta", [line(1, "beta", "lessons", "lesson-alpha-r1",
+                                       data={"summary": "A lesson", "t": "2026-10-21T18:00:00Z"})])
+        self.r.write_log("owner", [
+            msg(1, "owner", "own-1", kind="owner", summary="Done", replyTo="alpha-r4"),
+            line(2, "owner", "acks", "owner--alpha-r1", t="2026-10-21T18:01:00Z",
+                 data={"from": "owner", "item": "alpha-r1", "mark": "none", "none": True, "t": "2026-10-21T18:01:00Z"}),
+            line(3, "owner", "acks", "owner--lesson-alpha-r1", t="2026-10-21T18:02:00Z",
+                 data={"from": "owner", "item": "lesson-alpha-r1", "mark": "seen", "t": "2026-10-21T18:02:00Z"}),
+        ])
+        status, body = request(self.srv.url + "/api/thread/alpha-r1")
+        self.assertEqual(status, 200)
+        self.assertNotIn("acked_by", body["messages"][0])
+        self.assertEqual(body["thread"]["owner_requests"], ["alpha-r1"])
+        self.assertIn("alpha-r1", self.needs())
+
     def test_a_viewer_is_refused(self):
         status, body = self.ack({"item": "alpha-r1"}, headers={})
         self.assertEqual(status, 401)
@@ -97,9 +116,43 @@ class OwnerAckTests(unittest.TestCase):
         self.assertEqual(self.acks(), [])
 
     def test_a_message_that_is_no_request_is_refused(self):
+        # The command takes --none on any post; the route takes only a request that waits for the owner.
         status, body = self.ack({"item": "alpha-s1"})
         self.assertEqual(status, 400)
         self.assertIn("not a request", body["error"])
+        self.assertEqual(self.acks(), [])
+
+    def test_an_old_none_row_on_a_message_that_is_no_request_is_still_refused(self):
+        # A row of the form before marks (`none: true`, no `mark`) on a sync is no reason for 200.
+        self.r.write_log("owner", [
+            msg(1, "owner", "own-1", kind="owner", summary="Done", replyTo="alpha-r4"),
+            line(2, "owner", "acks", "owner--alpha-s1", data={"from": "owner", "item": "alpha-s1", "none": True}),
+        ])
+        status, body = self.ack({"item": "alpha-s1"})
+        self.assertEqual(status, 400)
+        self.assertIn("not a request", body["error"])
+        self.assertEqual(len(self.acks()), 1)
+
+    def test_a_no_change_mark_that_is_already_there_writes_nothing(self):
+        # A row with only `mark: "none"` (no `none` field) is the owner's no-change mark too.
+        self.r.write_log("owner", [
+            msg(1, "owner", "own-1", kind="owner", summary="Done", replyTo="alpha-r4"),
+            line(2, "owner", "acks", "owner--alpha-r1", data={"from": "owner", "item": "alpha-r1", "mark": "none"}),
+        ])
+        status, body = self.ack({"item": "alpha-r1"})
+        self.assertEqual(status, 200, body)
+        self.assertFalse(body["written"])
+
+    def test_another_mark_of_the_owner_does_not_end_the_wait(self):
+        self.r.write_log("owner", [
+            msg(1, "owner", "own-1", kind="owner", summary="Done", replyTo="alpha-r4"),
+            line(2, "owner", "acks", "owner--alpha-r1", data={"from": "owner", "item": "alpha-r1", "mark": "seen"}),
+        ])
+        self.assertIn("alpha-r1", self.needs())
+        status, body = self.ack({"item": "alpha-r1"})
+        self.assertEqual(status, 200, body)
+        self.assertTrue(body["written"])
+        self.assertNotIn("alpha-r1", self.needs())
 
     def test_an_unknown_id_is_404(self):
         status, body = self.ack({"item": "alpha-nope"})
@@ -142,12 +195,38 @@ class OwnerAckTests(unittest.TestCase):
         self.assertEqual(len(self.acks()), 1)
 
     def test_the_row_has_the_shape_of_the_command_row(self):
+        # `relay.py ack --from owner <id> --none` writes from, item, mark "none", none true and t.
         self.ack({"item": "alpha-r1"})
         row = self.acks()[0]
         self.assertEqual(row.from_, "owner")
-        self.assertEqual(set(row.data), {"from", "item", "none", "t"})
-        self.assertEqual((row.data["from"], row.data["item"], row.data["none"]), ("owner", "alpha-r1", True))
+        self.assertEqual(set(row.data), {"from", "item", "mark", "none", "t"})
+        self.assertEqual((row.data["from"], row.data["item"], row.data["mark"], row.data["none"]),
+                         ("owner", "alpha-r1", "none", True))
         self.assertRegex(row.data["t"], r"^\d{4}-\d\d-\d\dT\d\d:\d\d:\d\dZ$")
+
+
+class LaterMarkThroughTheLessonCliTests(MarksInboxBase):
+    """relay.py inbox: a later mark through `lesson-<request id>` replaces the `none` mark,
+    so the request waits for its writer again (pending_from)."""
+
+    def setUp(self):
+        super().setUp()
+        self.r.write_log("beta", [
+            msg(1, "beta", "beta-c0", kind="sync", summary="hello"),
+            msg(2, "beta", "beta-r1", kind="request", summary="Look at this", to=["gamma"]),
+            line(3, "beta", "lessons", "lesson-beta-r1", data={"project": "beta", "summary": "A lesson"}),
+        ])
+
+    def pending(self):
+        rows = [r for r in self.inbox("gamma")["requests"] if r["request"]["id"] == "beta-r1"]
+        return rows[0]["pending_from"] if rows else None
+
+    def test_none_then_a_later_mark_on_the_lesson_puts_gamma_back_in_pending_from(self):
+        self.assertEqual(self.pending(), ["gamma"])
+        self.ack("gamma", "beta-r1", "--none")
+        self.assertIn(self.pending(), (None, []))
+        self.ack("gamma", "lesson-beta-r1", "--seen")
+        self.assertEqual(self.pending(), ["gamma"])
 
 
 if __name__ == "__main__":

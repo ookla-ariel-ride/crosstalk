@@ -92,12 +92,15 @@ def _routine(root_doc: dict, authors: List[str]) -> bool:
 
 
 def _flags(messages: Dict[str, dict], roster,
-           acks: Optional[Dict[str, object]] = None) -> Tuple[set, set, set, Dict[str, Set[str]]]:
+           acks: Optional[Dict[str, object]] = None,
+           lessons: Optional[Dict[str, object]] = None) -> Tuple[set, set, set, Dict[str, Set[str]]]:
     """(ids that need the owner, ids of open requests, ids of the requests that
     wait for the owner, request id -> the ids that acked it), by the rules of requests.py.
 
     `acks` (ack id -> doc) closes a recipient's part of a request as in requests.py:
     acks_by_item reads them, so a row it does not count changes nothing.
+    `lessons` (lesson id -> doc) lets a mark on `lesson-<request id>` count as a
+    mark on that request, as marks.marks_by_item reads it.
     """
     # Each helper reads only its own kind of message and the replies to it: hand it no more.
     by_kind = {"question": {}, "request": {}}  # type: Dict[str, Dict]
@@ -118,6 +121,8 @@ def _flags(messages: Dict[str, dict], roster,
     questions, asks = by_kind["question"], by_kind["request"]
     for aid, doc in (acks or {}).items():
         asks[("acks", aid)] = doc
+    for lid, doc in (lessons or {}).items():
+        asks[("lessons", lid)] = doc
     acked = requests_mod.acks_by_item(asks, roster=roster)
     needs = {did for did, _doc in requests_mod.open_owner_questions(questions, roster=roster)}
     # inbox_for also lists a broadcast request; the owner needs it only when named.
@@ -152,11 +157,13 @@ class ThreadIndex:
     an old message does not move it. `waiting` holds the ids of the open
     `waiting` rows: the thread of a message with one of those ids needs the owner.
     `acks` holds the `acks` rows (id -> doc): an ack closes a recipient's part of a
-    request, as in requests.py.
+    request, as in requests.py. `lessons` holds the `lessons` rows (id -> doc), so
+    that a mark on a request's lesson counts as on the request (marks.marks_by_item).
     """
 
     def __init__(self, messages: Dict[str, dict], roster=None,
-                 created: Optional[Dict[str, str]] = None, waiting=(), acks: Optional[Dict[str, object]] = None):
+                 created: Optional[Dict[str, str]] = None, waiting=(), acks: Optional[Dict[str, object]] = None,
+                 lessons: Optional[Dict[str, object]] = None):
         messages = {did: row for did, row in ((did, readable(doc)) for did, doc in messages.items())
                     if row is not None}
         self.messages = messages
@@ -170,7 +177,7 @@ class ThreadIndex:
             self.members.setdefault(root_of[did], []).append(did)
         self._times = [when for when, _did in timed]
         self._recent = [(messages[did].get("from"), root_of[did]) for _when, did in timed]
-        needs, open_, owner_asks, self._acked = _flags(messages, roster, acks)
+        needs, open_, owner_asks, self._acked = _flags(messages, roster, acks, lessons)
         needs = {root_of[did] for did in needs | (set(waiting) & set(messages))}
         open_ = {root_of[did] for did in open_}
         self.by_root = {}  # type: Dict[str, dict]
@@ -229,6 +236,10 @@ class ThreadIndex:
             self._refresh_hot(now)
             return list(self.by_root.values())
 
+    def acked_by(self, did: str) -> Set[str]:
+        """The ids whose mark on request `did` is `none` (requests.acks_by_item)."""
+        return set(self._acked.get(did, ()))
+
     def row(self, root: str, now: str) -> Optional[dict]:
         """The list row of the thread `root`, with `hot` as of `now`, or None."""
         with self._lock:
@@ -256,7 +267,8 @@ class ThreadIndex:
     def thread(self, root: str) -> Optional[List[dict]]:
         """The messages of one thread in created order with `id`, `depth`, `quote` and the created `t`, or None.
 
-        A request that a participant acked with `none: true` also holds `acked_by`, their ids.
+        A request whose mark from a participant is `none` (requests.acks_by_item) also
+        holds `acked_by`, their ids.
         """
         ids = self.members.get(root)
         if ids is None:

@@ -5,7 +5,7 @@ The server is the page host and the database:
   GET  /                -> index.html, as it sits in the checkout
   GET  /api/snapshot    -> every collection replayed, plus server_time and commit
   GET  /api/threads     -> the threads in one sort order, a page at a time (threads.py)
-  GET  /api/thread/<id> -> the thread that holds a message: its messages, with depth and quote, and its list row
+  GET  /api/thread/<id> -> the thread that holds a message: its messages, with depth, quote and marks, and its list row
   GET  /api/read-state  -> the owner's read state (readstate.py); the owner only
   PUT  /api/read-state  -> a thread's read mark, the mark-all time, or a mute; the owner only
   GET  /api/events      -> a Server-Sent Events stream of the ids of new log rows (events.py)
@@ -59,6 +59,7 @@ from .replay import enrich_messages, first_set_map, last_line_map, load_all_line
 from .deploy import read_manifest
 from .service import service_block, version
 from . import config as config_mod
+from . import marks as marks_mod
 from .tokens import TOKEN_FILE, Result, Tokens
 from . import ownerpin
 from .notify import Notifier
@@ -230,6 +231,9 @@ class ReplayCache:
         self._changed = {}  # type: Dict[Tuple[str, str], str]
         self._thread_key = None
         self._thread_index = None
+        self._marks_key = None
+        self._marks = None
+        self._marks_lock = threading.Lock()
         self.thread_builds = 0
 
     def roster(self):
@@ -287,6 +291,35 @@ class ReplayCache:
         """The time of the last line that touched (collection, id) in the current snapshot."""
         return self._changed.get(key)
 
+    def marks(self) -> Dict[Tuple[str, str], dict]:
+        """marks.page_views of the current snapshot, built once for each cache key."""
+        return self._mark_data()[0]
+
+    def mark_counts(self) -> Dict[Tuple[str, str], dict]:
+        """marks.counts of the current snapshot: the "n of m acknowledged" of each post
+        that expects a mark, built once for each cache key."""
+        return self._mark_data()[1]
+
+    def _mark_data(self):
+        """(page_views, counts) of the current snapshot. The work runs under its own
+        lock, not the shared one, so a read of the snapshot or the threads does not wait
+        for it; one reader builds it and the others wait for that result."""
+        self.snapshot()
+        with self._lock:
+            key, docs, roster = self._key, self._docs, self._roster
+            if self._marks_key == key and self._marks is not None:
+                return self._marks
+        with self._marks_lock:
+            with self._lock:
+                if self._marks_key == key and self._marks is not None:
+                    return self._marks
+            views = marks_mod.page_views(docs, roster, config_mod.of(roster))
+            data = (views, marks_mod.counts(docs, roster, views))
+            with self._lock:
+                if self._key == key:
+                    self._marks, self._marks_key = data, key
+            return data
+
     def threads(self) -> "threads_mod.ThreadIndex":
         """The threads of the current snapshot, built once for each cache key."""
         self.snapshot()
@@ -296,8 +329,9 @@ class ReplayCache:
                 waiting = {did for (coll, did), doc in self._docs.items()
                            if coll == "waiting" and isinstance(doc, dict) and not doc.get("done")}
                 acks = {did: doc for (coll, did), doc in self._docs.items() if coll == "acks"}
+                lessons = {did: doc for (coll, did), doc in self._docs.items() if coll == "lessons"}
                 self._thread_index = threads_mod.ThreadIndex(messages, self._roster, created=self._created,
-                                                             waiting=waiting, acks=acks)
+                                                             waiting=waiting, acks=acks, lessons=lessons)
                 self._thread_key = self._key
                 self.thread_builds += 1
             return self._thread_index
@@ -657,6 +691,7 @@ class CrosstalkHandler(BaseHTTPRequestHandler):
         collections = {}  # type: Dict[str, Dict[str, dict]]
         for (collection, doc_id), fields in docs.items():
             collections.setdefault(collection, {})[doc_id] = fields
+        marks_mod.with_marks(collections, self.state.cache.marks())
         # The agent-wake feature is gone, but an old participants.json may still
         # hold a `wake` command and path: strip it so a stale key never leaks.
         roster = {pid: {k: v for k, v in entry.items() if k != "wake"}
@@ -735,6 +770,7 @@ class CrosstalkHandler(BaseHTTPRequestHandler):
             return
         if self._role() == "owner":
             items = self._with_unread(index, items)
+        items = self._with_counts(items)
         self._json(200, {"threads": items, "next": nxt, "server_time": now})
 
     def _section(self, name: str):
@@ -757,7 +793,7 @@ class CrosstalkHandler(BaseHTTPRequestHandler):
             self._error(500, "cannot read the log: %s" % e)
             return
         found, open_count = sections_mod.rows(name, docs, roster, changed=cache.changed,
-                                              q=query.get("q", [""])[-1])
+                                              q=query.get("q", [""])[-1], views=cache.marks())
         try:
             items, nxt = threads_mod.page(found, query.get("cursor", [""])[-1], limit)
         except ValueError as e:
@@ -791,7 +827,17 @@ class CrosstalkHandler(BaseHTTPRequestHandler):
         row = index.row(root, now_iso())
         if self._role() == "owner":
             row = self._with_unread(index, [row])[0]
+        row = self._with_counts([row])[0]
+        views = self.state.cache.marks()
+        messages = [marks_mod.on_row(m, views.get(("messages", m["id"]))) for m in messages]
         self._json(200, {"root": root, "messages": messages, "thread": row})
+
+    def _with_counts(self, items: List[dict]) -> List[dict]:
+        """The threads, a copy of each whose root expects a mark with its `marks_count`
+        (marks.counts): {"acknowledged": n, "expected": m}."""
+        counts = self.state.cache.mark_counts()
+        return [dict(t, marks_count=counts[("messages", t["root"])]) if ("messages", t["root"]) in counts else t
+                for t in items]
 
     def _events(self):
         """The push channel: Server-Sent Events, open until the client goes or the server stops.
@@ -997,24 +1043,31 @@ class CrosstalkHandler(BaseHTTPRequestHandler):
         if ("messages", item) not in docs:
             self._error(404, "no such message %r" % (item,))
             return
+        # Only a request that waits for the owner now (the thread's owner_requests,
+        # by requests.pending_recipients). The command takes --none on any post; this
+        # button does not.
+        doc = docs.get(("messages", item))
+        kind = doc.get("kind") if isinstance(doc, dict) else None
+        if kind == "question":
+            self._error(400, "a question to the owner gets an answer, not an ack")
+            return
+        if kind != "request":
+            self._error(400, "%r is not a request" % (item,))
+            return
         ack_id = "owner" + ACK_SEP + item
-        row = docs.get(("acks", ack_id))
-        if isinstance(row, dict) and row.get("none") is True and row.get("item") == item:
+        try:
+            index = self.state.cache.threads()
+        except (OSError, ValueError) as e:
+            self._error(500, "cannot read the log: %s" % e)
+            return
+        # The owner's mark as marks.mark_of reads it, through the thread data.
+        if "owner" in index.acked_by(item):
             self._json(200, {"ok": True, "id": ack_id, "written": False})
             return
-        # Only a request that waits for the owner now (the thread's owner_requests,
-        # by requests.pending_recipients). ack_item refuses the other kinds itself.
-        doc = docs.get(("messages", item))
-        if isinstance(doc, dict) and doc.get("kind") == "request":
-            try:
-                index = self.state.cache.threads()
-            except (OSError, ValueError) as e:
-                self._error(500, "cannot read the log: %s" % e)
-                return
-            listed = index.row(index.root_of.get(item, item), now_iso())
-            if listed is None or item not in listed["owner_requests"]:
-                self._error(400, "request %r does not wait for the owner" % (item,))
-                return
+        listed = index.row(index.root_of.get(item, item), now_iso())
+        if listed is None or item not in listed["owner_requests"]:
+            self._error(400, "request %r does not wait for the owner" % (item,))
+            return
         try:
             ack_item(self.state.root, "owner", item, roster=self.state.cache.roster())
         except ValueError as e:
