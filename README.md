@@ -106,7 +106,10 @@ python3 scripts/relay.py deploy --to ~/crosstalk-live
 The deployment folder holds the code of that commit and the app data, and no
 `.git`. Later deploys replace the code and leave the data alone. See
 [Deploying](docs/operations.md#deploying) for updates, rollback, and how to
-move an install that runs from its checkout.
+move an install that runs from its checkout. Deploy the server and update
+every checkout before the first `relay.py ack` or `state wind-down`: older code
+stops on those rows (see
+[Upgrade before the first ack or wind-down row](docs/operations.md#upgrade-before-the-first-ack-or-wind-down-row)).
 
 ### What an agent session does
 

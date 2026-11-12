@@ -877,14 +877,13 @@ td.num, td.t { font: 12px var(--mono); font-variant-numeric: tabular-nums; white
     if (s.slice(-1) === ".") s = s.slice(0, -1).replace(/\s+$/, "");
     return s.slice(-16) !== "No answer needed";
   }
-  function openRequests() {
+  // requests.acks_by_item: an ack counts as a reply from its writer when its id is from + "--" + item,
+  // the writer is approved and its id holds no "--", and the item is a request in the log.
+  // Item id -> acked ids by name, for the Help tab and the timeline. Cached until a snapshot changes.
+  var ackCache = null;
+  function acksByItem() {
+    if (ackCache && ackCache.acks === data.acks && ackCache.messages === data.messages && ackCache.participants === data.participants) return ackCache.map;
     var byId = Object.create(null); data.messages.forEach(function (m) { byId[m._id] = m; });
-    var replies = Object.create(null);
-    data.messages.forEach(function (m) {
-      if (m.replyTo && byId[m.replyTo]) (replies[m.replyTo] = replies[m.replyTo] || []).push(m);
-    });
-    // requests.acks_by_item: an ack counts as a reply from its writer when its id is from + "--" + item,
-    // the writer is approved and its id holds no "--", and the item is a request in the log.
     var acks = Object.create(null);
     data.acks.forEach(function (a) {
       var from = a.from, item = a.item, m = typeof item === "string" ? byId[item] : null;
@@ -893,6 +892,17 @@ td.num, td.t { font: 12px var(--mono); font-variant-numeric: tabular-nums; white
       var list = acks[item] = acks[item] || [];
       if (list.indexOf(from) === -1) list.push(from);
     });
+    Object.keys(acks).forEach(function (k) { acks[k].sort(byName); });
+    ackCache = { acks: data.acks, messages: data.messages, participants: data.participants, map: acks };
+    return acks;
+  }
+  function openRequests() {
+    var byId = Object.create(null); data.messages.forEach(function (m) { byId[m._id] = m; });
+    var replies = Object.create(null);
+    data.messages.forEach(function (m) {
+      if (m.replyTo && byId[m.replyTo]) (replies[m.replyTo] = replies[m.replyTo] || []).push(m);
+    });
+    var acks = acksByItem();
     var out = [];
     data.messages.forEach(function (m) {
       if (m.kind !== "request" || !needsAnswer(m)) return;
@@ -900,7 +910,7 @@ td.num, td.t { font: 12px var(--mono); font-variant-numeric: tabular-nums; white
       var mReplies = (replies[m._id] || []).slice().sort(byT);
       var repliedBy = Object.create(null);
       mReplies.forEach(function (r) { if (!isQuarantined(r.from)) repliedBy[String(r.from || "")] = true; });
-      var acked = (acks[m._id] || []).slice().sort(byName);
+      var acked = (acks[m._id] || []).slice();
       acked.forEach(function (pid) { repliedBy[pid] = true; });
       var toList = toListOf(m);
       if (m.to == null) {
@@ -1453,6 +1463,9 @@ td.num, td.t { font: 12px var(--mono); font-variant-numeric: tabular-nums; white
       meta.appendChild(el("span", "pill question", "question for owner"));
       var qst = questionStatus(m._id); if (qst) meta.appendChild(pill(qst));
     } else if (m.kind) meta.appendChild(pill(kindOf(m)));
+    // An ack never hides a request from the owner: the card names who acked, open or closed.
+    var acked = m.kind === "request" ? acksByItem()[m._id] : null;
+    if (acked && acked.length) meta.appendChild(el("span", "pill acked", "acked, no action: " + acked.map(displayName).join(" · ")));
     if (imp) meta.appendChild(pill("important"));
     if (quarantined) meta.appendChild(quarantinePill());
     if (canWrite && !isReply) {

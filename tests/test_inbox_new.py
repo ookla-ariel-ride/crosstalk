@@ -4,6 +4,7 @@ import json
 import shutil
 import subprocess
 import sys
+import time
 import unittest
 from pathlib import Path
 
@@ -223,6 +224,22 @@ class InboxNewTests(unittest.TestCase):
         self.assertEqual(p.returncode, 1)
         self.assertIn("ahead", p.stderr)
         self.assertEqual(self.state(), {})
+
+    def test_row_ahead_of_the_clock_stays_out_of_next_and_hides_no_later_row(self):
+        # A wind-down row can carry a line time one second ahead of the clock.
+        clock = lambda s: time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime(time.time() + s))
+        rows = [req(1, "beta", "beta-r1", clock(-3600)), req(2, "beta", "beta-r9", clock(3600))]
+        self.r.write_log("beta", rows)
+        out = self.inbox("--new", "--ack")
+        self.assertEqual(self.ids(out), ["beta-r1", "beta-r9"])
+        self.assertEqual(out["next"], {"t": rows[0]["t"], "seen": ["beta-r1"]})
+        rows.append(req(3, "beta", "beta-r2", clock(0)))
+        self.r.write_log("beta", rows)
+        self.assertEqual(self.ids(self.inbox("--new")), ["beta-r2", "beta-r9"])
+        p = self.run_cli("inbox", "alpha", "--ack-to", json.dumps({"t": rows[1]["t"], "seen": []}))
+        self.assertEqual(p.returncode, 1)
+        self.assertIn("clock", p.stderr)
+        self.assertEqual(self.state(), {"alpha": out["next"]})
 
     def test_ack_to_refuses_bad_json(self):
         self.r.write_log("beta", [req(1, "beta", "beta-r1", t(1))])

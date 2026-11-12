@@ -902,6 +902,23 @@
     return res("helpAckedNoAction", ok, "acked=" + JSON.stringify(ackedText) + " waiting=" + JSON.stringify(waitingText) + " dropped=" + dropped + " noneKept=" + noneKept);
   });
 
+  // An ack never hides a request from the owner: once acks alone close it and it leaves Help, its
+  // timeline card still shows "acked, no action" from the same ack map. A non-request shows no ack pill.
+  S.push(async function timelineAckedNoAction() {
+    await go("help");
+    await addDoc("messages", "treq-ack", { t: ago(1), from: "codex", kind: "request", summary: "Ack me on the timeline?", to: ["beta", "gamma"] });
+    await addDoc("messages", "tnote-ack", { t: ago(1), from: "codex", kind: "note", summary: "A plain note", to: ["beta"] });
+    await addDoc("acks", "gamma--treq-ack", { from: "gamma", item: "treq-ack", none: true, t: ago(1) });
+    await addDoc("acks", "beta--treq-ack", { from: "beta", item: "treq-ack", none: true, t: ago(1) });
+    await addDoc("acks", "beta--tnote-ack", { from: "beta", item: "tnote-ack", none: true, t: ago(1) });
+    var dropped = !helpHas("Ack me on the timeline?");
+    await go("timeline");
+    function ackPill(id) { var c = card(id), p = c && c.querySelector(".meta > .pill.acked"); return c ? (p ? p.textContent : "") : null; }
+    var reqPill = ackPill("treq-ack"), notePill = ackPill("tnote-ack");
+    var ok = dropped && reqPill === "acked, no action: Beta · Gamma" && notePill === "";
+    return res("timelineAckedNoAction", ok, "dropped=" + dropped + " req=" + JSON.stringify(reqPill) + " note=" + JSON.stringify(notePill));
+  });
+
   // The Help tab follows relay.py inbox (requests.open_requests): who counts as having answered.
   function helpWaiting(summary) {
     var c = helpCards().filter(function (x) { return x.textContent.indexOf(summary) !== -1; })[0];
