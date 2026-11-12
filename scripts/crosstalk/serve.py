@@ -774,18 +774,19 @@ class CrosstalkHandler(BaseHTTPRequestHandler):
             return  # the client went away
 
     def _vitals(self):
-        try:
-            docs, entries = self.state.cache.snapshot()
-        except (OSError, ValueError) as e:
-            self._error(500, "cannot read the log: %s" % e)
-            return
         cfg = config_mod.load(self.state.root)
         now = time.time()
         out = vitals_mod.read(self.state.root, cfg, buildhost_state=self.state.buildhost_state, now=now)
-        # The same row as `relay.py state`, from these readings: no second vitals.read.
-        out["state"] = state_mod.read(self.state.root, docs, self.state.cache.roster(), entries, cfg,
-                                      buildhost_state=self.state.buildhost_state, now=now,
-                                      readings=dict(out))
+        # The readings need no log: a log that cannot be read leaves out only the state row.
+        try:
+            docs, entries = self.state.cache.snapshot()
+        except (OSError, ValueError):
+            out["state"] = None
+        else:
+            # The same row as `relay.py state`, from these readings: no second vitals.read.
+            out["state"] = state_mod.read(self.state.root, docs, self.state.cache.roster(), entries, cfg,
+                                          buildhost_state=self.state.buildhost_state, now=now,
+                                          readings=dict(out))
         out["model_families"] = cfg["modelFamilies"]
         self._json(200, out)
 

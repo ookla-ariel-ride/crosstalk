@@ -119,6 +119,24 @@ class VitalsRouteTests(unittest.TestCase):
         self.assertEqual((row["may_start"], row["may_start_why"]), (False, ["usage 95 at or over the limit 90"]))
         self.assertNotIn("model_families", row)
 
+    def test_vitals_answer_without_the_state_row_when_the_log_cannot_be_read(self):
+        # As before the state row came: the readings do not need the log.
+        with TempRepo() as r:
+            r.write_roster()
+            r.write_config({"modelFamilies": [["^gpt-", "openai"]]})
+            with RunningServer(r.root) as srv:
+                srv.state.buildhost_state = r.root / "buildhost-state.json"
+
+                def unreadable():
+                    raise OSError("the log is gone")
+
+                srv.state.cache.snapshot = unreadable
+                status, body = request(srv.url + "/api/vitals")
+        self.assertEqual(status, 200)
+        self.assertIsNone(body["state"])
+        self.assertIsInstance(body["disk_free_gb"], int)
+        self.assertEqual(body["model_families"], [["^gpt-", "openai"]])
+
 
 if __name__ == "__main__":
     unittest.main()
