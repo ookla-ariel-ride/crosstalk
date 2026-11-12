@@ -347,6 +347,10 @@ export function Stream({ sort, open, onOpenChange, needsOnly = false, renderActi
   const loadedUnread = unreadThreads([...list, ...linkedRows.flatMap((q) => (q.data?.thread ? [q.data.thread] : []))], reading.state, reading.ready).length;
   const unread = owner && server !== undefined ? server : loadedUnread;
   const off = !serverTime || !reading.ready || marking || unread === 0;
+  // A failure line with nothing left to mark offers a Retry that cannot run: it goes.
+  useEffect(() => {
+    if (unread === 0 && status?.ok === false) setStatus(null);
+  }, [unread, status]);
 
   const markAll = () => {
     // The button stays focusable while off (aria-disabled): a click then does nothing.

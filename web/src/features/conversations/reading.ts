@@ -206,12 +206,13 @@ export function useReading(): Reading {
         for (const fn of listeners) fn();
       };
       if (owner) {
-        // `ahead`: the server also marks each thread dated after `t` up to its
-        // newest message now, loaded or not; a later post stays new.
+        // `ahead`: the server also marks each thread dated after its own clock (a
+        // writer's clock runs ahead), loaded or not; a post that came after the
+        // page loaded, or after the click, stays new.
         return send(`\n${t}\nahead`, { all_before: t, ahead: true }).then((ok) => {
           if (!ok) return false;
-          // The server marked every unread thread: no count waits for the next read.
-          qc.setQueryData(keys.unreadTotal, 0);
+          // The count comes from the server's next read (send invalidates it): a post that
+          // came after the page loaded stays unread.
           // The open threads drop "New since" only once the server kept the write.
           done();
           return true;

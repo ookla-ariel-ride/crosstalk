@@ -769,9 +769,28 @@ describe("Mark all read feedback", () => {
     spyFetch({ ...EMPTY_STATE, all_before: "2026-11-11T10:00:00Z", rev: 1 });
     await act(async () => fireEvent.click(button));
     await waitFor(() => expect(screen.getByRole("status").textContent).toBe("Marked 200 threads read"));
-    expect(qc.getQueryData(keys.unreadTotal)).toBe(0);
-    expect(screen.getByRole("button", { name: "All read" }).getAttribute("aria-disabled")).toBe("true");
+    // The page does not set the count to 0: the server's next answer gives it (a post
+    // that came after the load stays unread).
+    expect(qc.getQueryData(keys.unreadTotal)).toBe(200);
+    await act(async () => qc.setQueryData(keys.unreadTotal, 3));
+    expect(await screen.findByRole("button", { name: "Mark all read (3)" })).toBe(document.activeElement);
+    await act(async () => qc.setQueryData(keys.unreadTotal, 0));
+    expect((await screen.findByRole("button", { name: "All read" })).getAttribute("aria-disabled")).toBe("true");
     expect(document.activeElement).toBe(screen.getByRole("button", { name: "All read" }));
+  });
+
+  test("a failure line goes when the count reaches 0, so no Retry is left that cannot run", async () => {
+    const { qc } = renderWith(<Stream sort="hot" open={[]} onOpenChange={() => {}} />, [...base(OWNER, EMPTY_STATE, [], "hot"), [keys.unreadTotal, 4]]);
+    vi.stubGlobal("fetch", async (_url: string, init: RequestInit = {}) =>
+      init.method === "PUT" ? json({ error: "down" }, 500) : new Promise<Response>(() => {}),
+    );
+    const status = screen.getByRole("status");
+    await act(async () => fireEvent.click(screen.getByRole("button", { name: "Mark all read (4)" })));
+    await waitFor(() => expect(status.textContent).toMatch(/^Not saved/));
+    // Another tab marked them all: the next count is 0.
+    await act(async () => qc.setQueryData(keys.unreadTotal, 0));
+    await waitFor(() => expect(status.textContent).toBe(""));
+    expect(within(status).queryByRole("button", { name: "Retry" })).toBeNull();
   });
 
   test("a viewer's button counts the loaded threads", () => {

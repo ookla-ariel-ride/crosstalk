@@ -41,6 +41,7 @@ import sys
 import tempfile
 import threading
 import time
+from datetime import datetime, timedelta
 import traceback
 from http.cookies import CookieError, SimpleCookie
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
@@ -110,6 +111,16 @@ TEXT_TYPES = ("application/javascript", "application/json", "application/xml",
 # Font types that an older mimetypes table may not know.
 EXTRA_TYPES = {".woff2": "font/woff2", ".woff": "font/woff"}
 ROSTER_FIELDS = ("name", "kind", "color", "colorDark", "checkInMin", "trust", "repo", "parent", "harness", "aliases", "itemNames")
+
+
+# How far after the server's clock a mark-all time may be: a page's clock never needs more.
+ALL_BEFORE_SLACK_SEC = 300
+
+
+def _plus_seconds(stamp: str, seconds: int) -> str:
+    """The log time `stamp` moved by `seconds`, in the same format."""
+    when = datetime.strptime(stamp, "%Y-%m-%dT%H:%M:%SZ") + timedelta(seconds=seconds)
+    return when.strftime("%Y-%m-%dT%H:%M:%SZ")
 
 
 def now_iso() -> str:
@@ -1331,8 +1342,10 @@ class CrosstalkHandler(BaseHTTPRequestHandler):
         """One of {"thread", "t", "id"}, {"all_before": t} or {"thread", "muted": bool}.
 
         {"all_before": t, "ahead": true} also marks each thread whose newest
-        message is dated after `t` up to that message, as the log holds it now:
-        a thread dated ahead of the clock is then read too, and a later post is new.
+        message is dated after the server's clock up to that message, unless the
+        thread holds an unread message dated before the clock: a post that came
+        between the page load and the click stays new, and so does a later post.
+        An `all_before` more than 5 minutes after the server's clock is refused.
         """
         if self._role() != "owner":
             self._error(403, "only the owner has a read state")
@@ -1352,7 +1365,11 @@ class CrosstalkHandler(BaseHTTPRequestHandler):
                     raise ValueError("all_before must be a time like 2026-01-02T03:04:05Z")
                 if not isinstance(body.get("ahead", False), bool):
                     raise ValueError("ahead must be true or false")
-                marks = self._newest_after(body["all_before"]) if body.get("ahead") else {}
+                now = now_iso()
+                if body["all_before"] > _plus_seconds(now, ALL_BEFORE_SLACK_SEC):
+                    raise ValueError("all_before is more than %d minutes after the server's clock (%s)"
+                                     % (ALL_BEFORE_SLACK_SEC // 60, now))
+                marks = self._newest_after(body["all_before"], now) if body.get("ahead") else {}
                 state = readstate.mark_all(root, body["all_before"], marks)
             elif keys == {"thread", "muted"}:
                 if not (_name(body["thread"]) and isinstance(body["muted"], bool)):
@@ -1368,17 +1385,28 @@ class CrosstalkHandler(BaseHTTPRequestHandler):
             return
         self._json(200, state)
 
-    def _newest_after(self, t: str) -> Dict[str, Tuple[str, str]]:
-        """The newest (t, id) of each thread whose newest message is dated after `t`."""
+    def _newest_after(self, t: str, now: str) -> Dict[str, Tuple[str, str]]:
+        """The newest (t, id) of each thread whose newest message is dated after the
+        server's clock `now` (a writer's clock runs ahead). A thread that also holds a
+        message by another participant dated after `t` and its read mark but not after
+        `now` is left out: that message came after the page loaded, and stays new."""
         try:
             index = self.state.cache.threads()
         except ValueError as e:
             raise OSError("cannot read the log: %s" % e)
+        marks = readstate.load(self.state.root)["threads"]
         out = {}
         for root, ids in index.members.items():
-            newest = max((index.when[did], did) for did in ids)
-            if newest[0] > t:
-                out[root] = newest
+            dated = sorted((index.when[did], did) for did in ids)
+            if dated[-1][0] <= now:
+                continue
+            mark = marks.get(root)
+            after = (mark["t"], mark["id"]) if mark else ("", "")
+            unseen = any(t < when <= now and (when, did) > after
+                         and index.messages[did].get("from") != readstate.OWNER
+                         for when, did in dated)
+            if not unseen:
+                out[root] = dated[-1]
         return out
 
     def _me(self):

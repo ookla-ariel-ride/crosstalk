@@ -7,6 +7,7 @@ from helpers import RunningServer, TempRepo, line
 from test_serve import request
 
 from crosstalk import readstate
+from crosstalk import serve as serve_mod
 from crosstalk.tokens import token_hash
 
 OWNER_TOKEN = "owner-test-token"
@@ -306,22 +307,42 @@ class RouteTests(unittest.TestCase):
         self.assertEqual(([t["root"] for t in body["threads"]], body["unread_total"]),
                          (["alpha-other", "alpha-root"], 2))
 
-    def test_mark_all_with_ahead_also_marks_the_threads_dated_after_it(self):
-        with self.server() as srv:
-            self.assertEqual(self.put(srv, {"all_before": "2026-10-21T10:10:00Z"})[0], 200)
-            self.assertEqual(self.unread_by_root(srv), {"alpha-root": 0, "alpha-other": 1})
+    def test_mark_all_with_ahead_marks_only_the_threads_dated_after_the_servers_clock(self):
+        # The page loaded at 10:10 (all_before); the click reaches the server at 10:20.
+        self.append("beta", line(2, "beta", id_="beta-mid", t="2026-10-21T10:15:00Z",
+                                 data={"kind": "note", "summary": "came after the load"}))
+        self.append("beta", line(3, "beta", id_="beta-mix", t="2026-10-21T10:12:00Z",
+                                 data={"kind": "note", "summary": "mixed"}))
+        self.append("alpha", line(3, "alpha", id_="alpha-mix-late", t="2026-10-21T10:50:00Z",
+                                  data={"kind": "reply", "summary": "clock ahead", "replyTo": "beta-mix"}))
+        with mock.patch.object(serve_mod, "now_iso", return_value="2026-10-21T10:20:00Z"), self.server() as srv:
             status, state = self.put(srv, {"all_before": "2026-10-21T10:10:00Z", "ahead": True})
             self.assertEqual(status, 200, state)
+            # alpha-other (10:30) is dated after the clock: marked. beta-mid (10:15) came between
+            # the load and the click: it stays new, and so does beta-mix, which holds a post like it.
             self.assertEqual(state["threads"], {"alpha-other": {"t": "2026-10-21T10:30:00Z", "id": "alpha-other"}})
-            self.assertEqual(self.unread_by_root(srv), {"alpha-root": 0, "alpha-other": 0})
-            self.assertEqual(self.owner_get(srv, "/api/threads?sort=new&unread=1")["unread_total"], 0)
-            self.append("beta", line(2, "beta", id_="beta-after", t="2026-10-21T10:40:00Z",
+            self.assertEqual(self.unread_by_root(srv),
+                             {"alpha-root": 0, "alpha-other": 0, "beta-mid": 1, "beta-mix": 2})
+            self.assertEqual(self.owner_get(srv, "/api/threads?sort=new&unread=1")["unread_total"], 2)
+            self.append("beta", line(4, "beta", id_="beta-after", t="2026-10-21T10:40:00Z",
                                      data={"kind": "reply", "summary": "after", "replyTo": "alpha-other"}))
-            self.assertEqual(self.unread_by_root(srv), {"alpha-root": 0, "alpha-other": 1})
+            self.assertEqual(self.unread_by_root(srv)["alpha-other"], 1)
             for bad in ("yes", 1, None):
                 status, reply = self.put(srv, {"all_before": "2026-10-21T10:10:00Z", "ahead": bad})
                 self.assertEqual(status, 400, bad)
                 self.assertIn("error", reply)
+
+    def test_all_before_more_than_five_minutes_ahead_of_the_clock_is_refused(self):
+        with mock.patch.object(serve_mod, "now_iso", return_value="2026-10-21T10:20:00Z"), self.server() as srv:
+            for t in ("2026-10-21T10:25:01Z", "9999-12-31T23:59:59Z"):
+                status, reply = self.put(srv, {"all_before": t})
+                self.assertEqual(status, 400, t)
+                self.assertIn("error", reply)
+                status, reply = self.put(srv, {"all_before": t, "ahead": True})
+                self.assertEqual(status, 400, t)
+            self.assertFalse((self.repo.root / readstate.FILE).exists())
+            status, state = self.put(srv, {"all_before": "2026-10-21T10:25:00Z"})
+            self.assertEqual((status, state["all_before"]), (200, "2026-10-21T10:25:00Z"))
 
     def test_unread_filter_refuses_a_bad_value(self):
         with self.server() as srv:
