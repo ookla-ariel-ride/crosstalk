@@ -445,11 +445,28 @@ class ServerState:
         self.login_failures = []  # type: List[float]
         self.login_lock = threading.Lock()
         self.notifier = None  # type: Optional[Notifier]
+        self._health_lock = threading.Lock()
+        self._health = (None, [])  # type: Tuple[Optional[tuple], List[str]]
         self.events_check_sec = EVENTS_CHECK_SEC
         self.events_ping_sec = EVENTS_PING_SEC
         # Set when the server stops, so an open event stream ends.
         self.stopping = threading.Event()
         self.buildhost_state = buildhost_mod.state_path_from_env()
+
+    def health_fatal(self, roster) -> List[str]:
+        """The fatal problems of the whole log, checked again only when an input
+        changed (the replay cache's key: each log file's and the roster's size
+        and mtime). The key is taken before the check, so a write during the
+        check makes the next call check again."""
+        key = self.cache._stamp()
+        with self._health_lock:
+            if self._health[0] == key:
+                return list(self._health[1])
+        fatal = ["%s:%d: %s" % (p.file, p.line, p.message)
+                 for p in check_all(self.root, roster) if p.fatal]
+        with self._health_lock:
+            self._health = (key, fatal)
+        return list(fatal)
 
     def make_pin(self) -> str:
         """The one-time startup PIN: six digits, good for ten minutes."""
@@ -678,8 +695,7 @@ class CrosstalkHandler(BaseHTTPRequestHandler):
             self._json(200, {"ok": False, "server_time": now_iso(), "sha": ver["sha"], "version": ver,
                              "fatal": ["participants.json:0: %s" % e]})
             return
-        problems = check_all(root, roster)
-        fatal = ["%s:%d: %s" % (p.file, p.line, p.message) for p in problems if p.fatal]
+        fatal = self.state.health_fatal(roster)
         self._json(200, {"ok": not fatal, "server_time": now_iso(), "sha": ver["sha"], "version": ver,
                          "fatal": fatal})
 
@@ -1389,6 +1405,18 @@ class CrosstalkHandler(BaseHTTPRequestHandler):
         self._line(201, ln)
 
 
+class CrosstalkServer(ThreadingHTTPServer):
+    """The HTTP server: one thread per connection.
+
+    The listen backlog is 128, not Python 3.9's default of 5: while a long
+    snapshot rebuild holds the GIL the accept loop falls behind, and with 5 the
+    kernel drops new connections, which TCP retries only after 1, 3 and 7 s.
+    """
+
+    daemon_threads = True
+    request_queue_size = 128
+
+
 class RunningServer:
     """The server in a thread: `with RunningServer(root) as srv: ...`.
 
@@ -1427,8 +1455,7 @@ class RunningServer:
     def start_server(self) -> "RunningServer":
         if self._httpd is not None:
             return self
-        httpd = ThreadingHTTPServer((self.host, self.port), CrosstalkHandler)
-        httpd.daemon_threads = True
+        httpd = CrosstalkServer((self.host, self.port), CrosstalkHandler)
         httpd.state = ServerState(self.root, self.tokens, sessions=self.sessions,
                                    code_root=self.code_root)  # type: ignore[attr-defined]
         if not self.no_pin:

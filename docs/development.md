@@ -192,6 +192,8 @@ auto-granter on. The driver then checks:
   `relay.py append`, then `inbox`, `check`, `state` and `queue`
 - a `null` body, which gets a 400, and a POST to an unknown path whose body
   holds a second request: the server answers once and closes the connection
+- 20 readers of `/api/snapshot`, `/api/threads` and `/api/health` while 20
+  appends go in: each read gets a 200 within 5 seconds
 
 Each check prints one `ok` line. The last line is `smoke: ok in N s`, and the
 exit status is 0 only when every check passes. On a failure it prints the

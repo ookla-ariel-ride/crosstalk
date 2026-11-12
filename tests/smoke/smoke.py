@@ -11,6 +11,7 @@ import os
 import socket
 import subprocess
 import sys
+import threading
 import time
 import urllib.error
 import urllib.request
@@ -21,6 +22,7 @@ RELAY = REPO / "scripts" / "relay.py"
 PIN = "468024"
 ASK_ID = "alpha-smoke-ask"
 WAIT = 30.0
+LOAD_LIMIT = 5  # seconds a read may take while appends go in
 
 
 class Failed(Exception):
@@ -64,7 +66,7 @@ def fixture(tmp):
 
 # -- the checks --------------------------------------------------------------
 
-def http(url, method="GET", body=None, headers=None, raw=False):
+def http(url, method="GET", body=None, headers=None, raw=False, timeout=10):
     """(status, body): JSON decoded unless raw, then bytes."""
     data = None if body is None else json.dumps(body).encode("utf-8")
     hdrs = dict(headers or {})
@@ -72,7 +74,7 @@ def http(url, method="GET", body=None, headers=None, raw=False):
         hdrs["Content-Type"] = "application/json"
     req = urllib.request.Request(url, data=data, method=method, headers=hdrs)
     try:
-        with urllib.request.urlopen(req, timeout=10) as resp:
+        with urllib.request.urlopen(req, timeout=timeout) as resp:
             status, payload, got = resp.status, resp.read(), dict(resp.headers)
     except urllib.error.HTTPError as e:
         status, payload, got = e.code, e.read(), dict(e.headers)
@@ -277,6 +279,39 @@ def check(tmp, socks):
         expect(out.count(b"HTTP/1.1 ") == 1 and out.startswith(b"HTTP/1.1 404 "),
                "an unread body was read as a second request: %r" % out[:200])
     step("a null body is 400; an unread body closes the connection", body_checks)
+
+    def load():
+        # Each append changes the log, so each read after it may rebuild the snapshot.
+        bad = []
+        start = threading.Barrier(21)
+
+        def reader(n):
+            start.wait()
+            for path in ("/api/snapshot", "/api/threads", "/api/health"):
+                began = time.monotonic()
+                try:
+                    status = http(url + path, timeout=LOAD_LIMIT)[0]
+                except OSError as e:
+                    status = repr(e)
+                took = time.monotonic() - began
+                if status != 200 or took > LOAD_LIMIT:
+                    bad.append("reader %d %s: %s in %.1f s" % (n, path, status, took))
+
+        readers = [threading.Thread(target=reader, args=(n,)) for n in range(20)]
+        for t in readers:
+            t.start()
+        start.wait()
+        for i in range(20):
+            status, body = http(url + "/api/append", "POST",
+                                {"from": "alpha", "op": "set", "collection": "messages",
+                                 "id": "alpha-smoke-load-%d" % i,
+                                 "data": {"from": "alpha", "kind": "reply", "summary": "load %d" % i}},
+                                {"Authorization": "Bearer " + tokens["alpha"]})
+            expect(status == 201, "load append %d: %s %s" % (i, status, body))
+        for t in readers:
+            t.join()
+        expect(not bad, "readers under load: %s" % "; ".join(bad[:5]))
+    step("20 readers while 20 appends go in, each read 200 within %d s" % LOAD_LIMIT, load)
 
     def commands():
         out = relay(data, "inbox", "alpha").stdout

@@ -22,7 +22,8 @@ from test_notify import FakeSession
 from crosstalk import live
 from crosstalk.logs import append_line, check_all
 from crosstalk.participants import load_roster
-from crosstalk.serve import MAX_BODY, CrosstalkHandler, repo_build_info, repo_commit
+from crosstalk.serve import (MAX_BODY, CrosstalkHandler, CrosstalkServer, ServerState,
+                             repo_build_info, repo_commit)
 from crosstalk.tokens import token_hash
 
 
@@ -1406,6 +1407,63 @@ class HealthTests(unittest.TestCase):
             self.assertEqual(status, 200)
             self.assertTrue(body["ok"])
             self.assertEqual(body["fatal"], [])
+
+    def test_health_checks_the_log_once_until_it_changes(self):
+        calls = []
+
+        def counted(root, roster):
+            calls.append(1)
+            return check_all(root, roster)
+        clock = iter("2026-01-01T00:00:%02dZ" % i for i in range(60))
+        with TempRepo() as r, mock.patch("crosstalk.serve.check_all", counted), \
+                mock.patch("crosstalk.serve.now_iso", lambda: next(clock)):
+            r.write_roster()
+            r.write_log("rev", [line(1, "rev", data={"kind": "reply", "summary": "hi"})])
+            with RunningServer(r.root) as srv:
+                first = request(srv.url + "/api/health")[1]
+                second = request(srv.url + "/api/health")[1]
+                self.assertEqual(len(calls), 1)
+                self.assertTrue(second["ok"])
+                self.assertNotEqual(first["server_time"], second["server_time"])
+                with (r.root / "log" / "rev.jsonl").open("a", encoding="utf-8") as f:
+                    f.write(json.dumps(line(2, "rev", data={"kind": "reply", "summary": "again"})) + "\n")
+                self.assertTrue(request(srv.url + "/api/health")[1]["ok"])
+                self.assertEqual(len(calls), 2)
+                # a fatal line shows on the next call, not after some expiry
+                with (r.root / "log" / "rev.jsonl").open("a", encoding="utf-8") as f:
+                    f.write(json.dumps(line(9, "rev", data={"kind": "reply", "summary": "gap"})) + "\n")
+                body = request(srv.url + "/api/health")[1]
+                self.assertEqual(len(calls), 3)
+                self.assertFalse(body["ok"])
+                self.assertRegex(body["fatal"][0], r"^log/rev\.jsonl:3: seq 9, expected 3")
+
+
+class BacklogTests(unittest.TestCase):
+    def test_fifty_clients_that_connect_while_no_one_accepts_all_get_an_answer(self):
+        # The accept loop is held (as a busy server's is), so every connection
+        # waits in the listen backlog; one of the default 5 would drop the rest.
+        with TempRepo() as r:
+            r.write_roster()
+            httpd = CrosstalkServer(("127.0.0.1", 0), CrosstalkHandler)
+            httpd.state = ServerState(r.root)
+            self.addCleanup(httpd.server_close)
+            port = httpd.server_address[1]
+            socks = []
+            try:
+                for _ in range(50):
+                    s = socket.create_connection(("127.0.0.1", port), timeout=2)
+                    socks.append(s)
+                    s.sendall(b"GET /api/health HTTP/1.1\r\nHost: x\r\nConnection: close\r\n\r\n")
+                t = threading.Thread(target=httpd.serve_forever, kwargs={"poll_interval": 0.05})
+                t.start()
+                self.addCleanup(t.join)
+                self.addCleanup(httpd.shutdown)
+                for s in socks:
+                    s.settimeout(10)
+                    self.assertEqual(s.recv(13), b"HTTP/1.1 200 ")
+            finally:
+                for s in socks:
+                    s.close()
 
 
 class RobustnessTests(unittest.TestCase):
