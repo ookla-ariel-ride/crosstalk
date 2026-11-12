@@ -9,10 +9,13 @@ import contextlib
 import copy
 import io
 import json
+import os
+import subprocess
+import sys
 import unittest
 from unittest import mock
 
-from helpers import SPEC_ROSTER, RunningServer, TempRepo, line
+from helpers import SPEC_ROSTER, RunningServer, TempRepo, line, relay_in
 from test_serve import request
 
 from crosstalk import events as events_mod
@@ -193,6 +196,30 @@ class WrongTypeTests(unittest.TestCase):
                 with self.subTest(case=name):
                     self.check_routes(srv, coll)
         print("\nwrong-type cases the log refuses: %s" % json.dumps(refused))
+
+
+class CliTests(unittest.TestCase):
+    """The inbox side's JSON and text output of relay.py never fails on a lone surrogate."""
+
+    def test_inbox_and_state_print_a_lone_surrogate(self):
+        with TempRepo() as repo:
+            repo.write_roster()
+            repo.write_log("beta", [line(1, "beta", data={"kind": "request", "summary": SURROGATE,
+                                                          "to": ["alpha"]}, t=T)])
+            repo.write_log("owner", [line(1, "owner", "state", id_="owner-wind-down", t=T, data={
+                "from": "owner", "step": 1, "started": T, "by": "owner", "reason": SURROGATE, "t": T})])
+            script = str(relay_in(repo.root))
+            env = dict(os.environ, PYTHONIOENCODING="utf-8")
+            for args in (["inbox", "alpha"], ["inbox", "alpha", "--new"], ["inbox", "alpha", "--brief"],
+                         ["inbox", "alpha", "--new", "--brief"], ["state"],
+                         ["state", "--get", "wind_down.reason"]):
+                with self.subTest(args=args):
+                    p = subprocess.run([sys.executable, script] + args, stdout=subprocess.PIPE,
+                                       stderr=subprocess.PIPE, cwd="/", env=env)
+                    self.assertEqual(p.returncode, 0, p.stderr.decode("utf-8", "replace"))
+                    text = p.stdout.decode("utf-8")  # valid UTF-8
+                    if "--brief" not in args and "--get" not in args:
+                        self.assertIsInstance(json.loads(text), dict)
 
 
 class InternalErrorTests(unittest.TestCase):

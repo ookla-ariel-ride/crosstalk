@@ -36,6 +36,7 @@ from crosstalk.posters import claim_file, land_sync, post_incident, release_file
 from crosstalk.replay import enrich_messages, load_all_lines, replay  # noqa: E402
 from crosstalk.requests import no_answer, speaker_fields  # noqa: E402
 from crosstalk import inboxstate  # noqa: E402
+from crosstalk.files import utf8_json  # noqa: E402
 from crosstalk.reports import (inbox_report, load_docs, load_docs_and_lines, new_report,  # noqa: E402
                                questions_report)
 from crosstalk.serve import serve  # noqa: E402
@@ -190,22 +191,28 @@ def cmd_inbox(args):
     return 0
 
 
+def _text(s: str) -> str:
+    """`s` as text stdout can encode: a lone surrogate (the log check accepts
+    "\\ud800") prints as its \\u escape, never fails the command."""
+    return s.encode("utf-8", "backslashreplace").decode("utf-8")
+
+
 def _print_inbox(out, args):
     if not args.brief:
         # `--new` is the check-in of every session, so it prints compact JSON;
         # the full view keeps the indented form it always had.
         layout = {"separators": (",", ":")} if args.new else {"indent": 2}
-        print(json.dumps(out, ensure_ascii=False, sort_keys=True, **layout))
+        print(utf8_json(out, sort_keys=True, **layout))
         return
     sections = (("owner_messages", "owner"), ("requests", "request"), ("thread_replies", "reply"))
     for key, label in sections:
         for item in out.get(key, []):
             doc = item.get("request") or item.get("message") or item
             line = _brief_line(label, doc.get("id", "?"), doc, _row_time(doc))
-            print(("!" if item.get("needs_answer") else " ") + line if args.new else line)
+            print(_text(("!" if item.get("needs_answer") else " ") + line if args.new else line))
     if args.new:
         for doc in out.get("agreements_to_adopt", []):
-            print(" " + _brief_line("adopt", doc.get("id", "?"), doc, _row_time(doc)))
+            print(_text(" " + _brief_line("adopt", doc.get("id", "?"), doc, _row_time(doc))))
         print("still open %d, agreements open %d, stale locks %d" % (
             len(out["still_open"]) + out["still_open_more"], out["agreements_open"],
             len(out.get("stale_locks", []))))
@@ -649,7 +656,7 @@ def _print_state(key):
     row = state_mod.read(ROOT, docs, roster, roster.participants, config_mod.of(roster),
                          buildhost_state=buildhost_mod.state_path_from_env())
     if key is None:
-        print(json.dumps(row, ensure_ascii=False, sort_keys=True, indent=2))
+        print(utf8_json(row, sort_keys=True, indent=2))
         return 0
     try:
         value = state_mod.get(row, key)
@@ -658,7 +665,7 @@ def _print_state(key):
         return 2
     if value is None:
         return 1
-    print(value if isinstance(value, str) else json.dumps(value, ensure_ascii=False, sort_keys=True))
+    print(_text(value) if isinstance(value, str) else utf8_json(value, sort_keys=True))
     return 0
 
 
