@@ -277,7 +277,8 @@ def to_read(docs: Dict, pid: str, roster, config, by_item=None) -> List[dict]:
 
 def missing(docs: Dict, roster, config, before: Optional[float] = None, by_item=None) -> List[dict]:
     """Each post that expects a mark and has names that owe one, oldest first: view()
-    plus `id` and `collection`. With `before` (a POSIX time), only posts older than it.
+    plus `id` and `collection`. With `before` (a POSIX time), only posts older than it,
+    and the posts whose time cannot be read: they miss marks, and their age is unknown.
     Pass the docs from replay.enrich_messages."""
     if by_item is None:
         by_item = marks_by_item(docs, roster)
@@ -285,7 +286,7 @@ def missing(docs: Dict, roster, config, before: Optional[float] = None, by_item=
     for t, coll, did, _doc in _posts_that_expect(docs, roster, config):
         if before is not None:
             when = _parse_iso(t)
-            if when is None or when >= before:
+            if when is not None and when >= before:
                 continue
         v = view(docs, coll, did, roster, config, by_item)
         if v["owed"]:

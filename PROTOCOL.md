@@ -228,8 +228,8 @@ message: only `--none` closes it for you, and a reply does too.
 
 `relay.py marks <item>` prints the marks on one post and who owes one.
 `relay.py marks --missing --older 60` lists the posts that still wait for
-marks after an hour. The coordinator runs it at each check-in and names
-the results.
+marks after an hour, and the posts whose time cannot be read. The
+coordinator runs it at each check-in and names the results.
 
 A single-recipient request closes when that recipient or the owner replies; a
 reply from anyone else doesn't close it. A multi-recipient or broadcast request

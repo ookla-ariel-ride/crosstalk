@@ -70,6 +70,14 @@ class MarksCliTests(MarksInboxBase):
         self.assertEqual(json.loads(self.relay("marks", "--missing", "--json").stdout), [])
         self.assertEqual(self.relay("marks", self.lesson_id).returncode, 1)
 
+    def test_older_keeps_a_post_whose_time_cannot_be_read(self):
+        self.alpha.append(msg(4, "alpha", "alpha-c9", kind="check-in", summary="odd time", must_read=True,
+                              t=ago(1)))
+        self.alpha[-1]["data"]["t"] = "soon"
+        self.r.write_log("alpha", self.alpha)
+        ids = [o["id"] for o in json.loads(self.relay("marks", "--missing", "--older", "60", "--json").stdout)]
+        self.assertEqual(ids, ["alpha-c9", self.old_lesson])
+
     def test_bad_arguments_are_refused(self):
         self.assertEqual(self.relay("marks").returncode, 2)
         self.assertEqual(self.relay("marks", self.lesson_id, "--missing").returncode, 2)
