@@ -1,6 +1,7 @@
 // @vitest-environment jsdom
 import { QueryClient, QueryClientProvider, type QueryKey } from "@tanstack/react-query";
 import { act, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
+import { useEffect } from "react";
 import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
 import { keys } from "../../api/queries";
 import type { Me, Message, ReadState, Thread } from "../../api/types";
@@ -229,6 +230,21 @@ describe("Stream", () => {
     expect(screen.queryByText(/New since/)).toBeNull();
     expect(screen.getByText("Newest reply")).toBeTruthy();
     expect(screen.queryByRole("button", { name: /earlier message/ })).toBeNull();
+  });
+
+  test("mark all read keeps the messages in view mounted, with their actions", async () => {
+    const mounts: string[] = [];
+    function Probe({ id }: { id: string }) {
+      useEffect(() => void mounts.push(id), [id]);
+      return null;
+    }
+    const state = { ...EMPTY_STATE, threads: { "alpha-0001": { t: "2026-11-11T09:10:00Z", id: "beta-0002" } } };
+    const actions = (_t: Thread, m: Message | null) => (m ? <Probe id={m.id} /> : null);
+    renderWith(<Stream sort="needs" open={["alpha-0001"]} onOpenChange={() => {}} renderActions={actions} />, base(OWNER, state, [Q1]));
+    expect(mounts).toEqual(["alpha-0003", "beta-0004"]);
+    spyFetch({ ...state, all_before: "2026-11-11T10:00:00Z" });
+    await act(async () => fireEvent.click(screen.getByRole("button", { name: "Mark all read" })));
+    expect(mounts).toEqual(["alpha-0003", "beta-0004", "alpha-0001", "beta-0002"]);
   });
 
   test("a muted thread leaves the stream until a message in it addresses the owner", () => {

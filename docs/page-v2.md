@@ -150,6 +150,8 @@ tests run, `e2e/global-setup.ts` makes a data root in a temp folder with
 then starts `relay.py serve` on a free port and removes the folder after the
 tests. The tests check the first screen at 1440 by 900 px, an answer to a
 question, and a thread that opens, folds and loses its count after a reload.
+"Mark all read" then clears the count of a thread opened by its id, on screen
+and after a reload.
 Each test also fails on an error in the console or a request to another
 host.
 
