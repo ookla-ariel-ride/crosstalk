@@ -49,6 +49,9 @@ with the age. A row marked "needs you" waits for an answer from you.
   again to fold it. "Fold all" folds every open thread.
 - An open thread shows each message's summary in bold, then its body. A
   first body line that repeats the summary shows once.
+- A field that holds a number, a list or an object where the page expects
+  text shows as that text. A message or a row that still cannot be shown
+  says so with its id, and the rest of the page stays.
 - Pick the sort order above the stream. Needs you puts the questions and
   requests for you first. New puts the newest activity first. Hot puts the
   threads with the most replies from two or more participants in the last

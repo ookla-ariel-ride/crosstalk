@@ -10,6 +10,7 @@ import { ago } from "../../logic/ago";
 import { speaker } from "../../logic/speaker";
 import { splitRead } from "../../logic/splitRead";
 import { Body } from "../../ui/Body";
+import { Guard } from "../../ui/Guard";
 import { isLater, markOf, useReading } from "./reading";
 import { WatchContext } from "./seen";
 import styles from "./Stream.module.css";
@@ -137,9 +138,11 @@ export function ThreadOpen({ thread, now, renderActions }: ThreadOpenProps) {
 
   const { earlier, fresh } = parts;
   const view = (m: Message) => (
-    <MessageView key={m.id} message={m} roster={roster} now={now}>
-      {renderActions?.(thread, m)}
-    </MessageView>
+    <Guard key={m.id} what={"Message " + m.id}>
+      <MessageView message={m} roster={roster} now={now}>
+        {renderActions?.(thread, m)}
+      </MessageView>
+    </Guard>
   );
   // The reader's own posts are never new to the reader.
   const current = markOf(reading.state, thread.root);

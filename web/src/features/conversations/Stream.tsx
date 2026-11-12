@@ -10,6 +10,7 @@ import { ago } from "../../logic/ago";
 import { foldRoutine } from "../../logic/foldRoutine";
 import { href, type Route, route as routeOf, type Sort } from "../../logic/route";
 import { Body } from "../../ui/Body";
+import { Guard } from "../../ui/Guard";
 import { Row } from "../../ui/Row";
 import { RowList } from "../../ui/RowList";
 import { useNow } from "../../ui/useNow";
@@ -236,7 +237,9 @@ export function Stream({ sort, open, onOpenChange, needsOnly = false, renderActi
     switch (item.type) {
       case "thread":
         return (
-          <ThreadRow thread={item.thread} open={openSet.has(item.thread.root)} onToggle={onToggle} now={now} renderActions={renderActions} />
+          <Guard what={"Thread " + item.thread.root}>
+            <ThreadRow thread={item.thread} open={openSet.has(item.thread.root)} onToggle={onToggle} now={now} renderActions={renderActions} />
+          </Guard>
         );
       case "routine":
         return <RoutineLine counts={item.counts} threads={item.threads} now={now} renderThread={renderThread} openKey={openKey(item.threads)} />;

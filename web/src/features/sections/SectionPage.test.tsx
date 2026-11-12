@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { act, fireEvent, render, screen, within } from "@testing-library/react";
+import { act, cleanup, fireEvent, render, screen, within } from "@testing-library/react";
 import type { ReactNode } from "react";
 import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
 import { keys } from "../../api/queries";
@@ -143,6 +143,16 @@ describe("SectionPage", () => {
     expect(await screen.findByText(/did not load/)).toBeTruthy();
     fireEvent.click(screen.getByRole("button", { name: "Try again" }));
     expect(await screen.findByText(/docs\/a\.md/)).toBeTruthy();
+  });
+
+  test("a section and its search render rows with fields of the wrong type", async () => {
+    const bad = { id: "own-9", summary: 7, body: { why: "speed" }, from: null, to: "beta", kind: ["x"], t: 5, replyTo: {} };
+    renderFetching(<SectionPage section="decisions" q="" />, () => json(200, { rows: [bad], next: null, open: 0, total: 1 }));
+    expect(await screen.findByRole("button", { name: /^7/ })).toBeTruthy();
+    cleanup();
+    renderFetching(<SectionPage section="decisions" q="speed" />, () => json(200, { rows: [bad], next: null, open: 0, total: 1 }));
+    fireEvent.click(await screen.findByRole("button", { name: /^7/ }));
+    expect(screen.getByText('{"why":"speed"}')).toBeTruthy();
   });
 
   test("an unknown section name says so", () => {

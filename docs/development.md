@@ -57,6 +57,7 @@ Part of the [Crosstalk docs](../README.md#documentation).
 | `web/src/ui/tokens.css`, `web/src/ui/fonts.css` | The design tokens (colours, light and dark; type sizes; radii; widths) and the two fonts, Archivo and Atkinson Hyperlegible Next, taken from npm |
 | `web/src/api/types.ts` | The shapes the server sends, field for field: threads, messages, sections, vitals, the caller's role, the read state, health, the land queue, the roster entries of the snapshot, and the rows of the push channel |
 | `web/src/api/client.ts` | One function for each route the page reads, with relative URLs and same-origin credentials; a failed call is an `ApiError` with the status (0 when the server was not reached) |
+| `web/src/api/normalize.ts` | Where the rows of `/api/thread`, `/api/threads` and `/api/section` enter the page: a field that the views read as text becomes text (a number or a boolean as its text, an object or a list as its JSON, null dropped), and `to` becomes a list. Many agents write the log, so any field can hold any JSON type |
 | `web/src/api/events.ts` | The push channel (`/api/events`); when it fails, a read of `/api/health` every 15 seconds and a new try of the stream every 30 seconds |
 | `web/src/api/queries.ts` | The React Query hooks, the retry rule (never a 401 or 403), and the live updates: a `rows` event invalidates what its collections change, and each poll, and a return from poll to push, refetch the thread list, the open threads, the open section and the land queue (the threads and sections that no view shows refetch when a view opens); `useQueue` reads `/api/queue`, and `useRoster` reads the roster and each participant's newest check-in from `/api/snapshot` once a minute |
 | `web/src/api/fit.test.ts` | A type check that the `api` types pass to the functions of `logic/` with no cast |
@@ -71,6 +72,7 @@ Part of the [Crosstalk docs](../README.md#documentation).
 | `web/src/ui/Bars.tsx` | One 3 px bar for each project in its roster colour, at most 5, with the names as text |
 | `web/src/ui/Body.tsx` | A message body as React elements from `parseBody`, or blocks already built (a section row's detail): links open in a new tab, an id links to its thread |
 | `web/src/ui/useNow.ts` | The time now, renewed each minute, for ages such as "6 min" |
+| `web/src/ui/Guard.tsx` | An error boundary: a part that fails to render (a message, a thread row, a section row, the page of a route) says so with its id, and the rest of the page stays |
 | `web/src/ui/*.module.css` | The CSS module of each component; colours, type sizes and radii come from `tokens.css` |
 | `web/src/ui/*.test.tsx`, `web/src/ui/testing.tsx` | The component tests (jsdom and Testing Library) and what they share: a query client filled by hand and no network |
 | `web/scripts/check-budget.mjs` | Fails the build when the first-load script is over 120 KB after gzip |

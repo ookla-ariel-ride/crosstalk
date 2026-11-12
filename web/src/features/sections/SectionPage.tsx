@@ -9,6 +9,7 @@ import { useQueue, useSection } from "../../api/queries";
 import type { SectionName, SectionPage as Page } from "../../api/types";
 import { href, SECTIONS, type Section } from "../../logic/route";
 import { Body } from "../../ui/Body";
+import { Guard } from "../../ui/Guard";
 import { HoldButton } from "../owner";
 import { Row } from "../../ui/Row";
 import { RowList } from "../../ui/RowList";
@@ -162,17 +163,19 @@ export function SectionList({ label, count, items, pending, error, retry, more, 
           estimateSize={60}
           renderRow={(item, index) => (
             <>
-              <Row
-                projects={item.view.projects}
-                title={item.view.title}
-                text={item.view.text}
-                note={item.view.note.join(", ")}
-                open={openKey === item.key}
-                onOpen={() => setOpenKey((k) => (k === item.key ? null : item.key))}
-              >
-                {item.view.detail.length ? <Body blocks={item.view.detail} /> : <p className={styles.muted}>No more detail.</p>}
-                {item.act}
-              </Row>
+              <Guard what={"Row " + item.key}>
+                <Row
+                  projects={item.view.projects}
+                  title={item.view.title}
+                  text={item.view.text}
+                  note={item.view.note.join(", ")}
+                  open={openKey === item.key}
+                  onOpen={() => setOpenKey((k) => (k === item.key ? null : item.key))}
+                >
+                  {item.view.detail.length ? <Body blocks={item.view.detail} /> : <p className={styles.muted}>No more detail.</p>}
+                  {item.act}
+                </Row>
+              </Guard>
               {loadMore && index === items.length - 1 ? <NearEnd onReach={loadMore} /> : null}
             </>
           )}

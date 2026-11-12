@@ -534,3 +534,47 @@ describe("NeedsYou", () => {
     expect(screen.queryByRole("link", { name: "Hot" })).toBeNull();
   });
 });
+
+describe("rows with fields of the wrong type", () => {
+  // What a log line can hold: any field of any JSON type.
+  const BAD_THREAD = { root: "alpha-0001", title: 7, preview: null, projects: "alpha", count: "3", last_t: "2026-11-11T09:30:00Z", last_id: "beta-0003", needs_owner: 1, unanswered: false, routine: false, hot: 0, kind: 5 };
+  const BAD_MESSAGES = [
+    { id: "alpha-0001", depth: 0, quote: null, t: "2026-11-11T09:00:00Z", from: null, kind: 5, summary: 42, body: { plan: "keep" } },
+    { id: "beta-0002", depth: 1, quote: null, t: 1731315000, from: "beta", to: "alpha", summary: "Fine", body: ["one", 2], replyTo: ["alpha-0001"] },
+    { id: "beta-0003", depth: 2, quote: 9, t: "2026-11-11T09:30:00Z", from: "beta", summary: null, body: null },
+  ];
+
+  test("the stream and the open thread render them through the client", async () => {
+    const answers: Record<string, unknown> = {
+      "/api/threads?sort=needs": { threads: [BAD_THREAD], next: null, server_time: "2026-11-11T10:00:00Z" },
+      "/api/thread/alpha-0001": { root: "alpha-0001", messages: BAD_MESSAGES },
+      "/api/me": OWNER,
+      "/api/read-state": EMPTY_STATE,
+    };
+    vi.stubGlobal("fetch", (url: string) =>
+      url in answers ? Promise.resolve(new Response(JSON.stringify(answers[url]), { status: 200, headers: { "Content-Type": "application/json" } })) : new Promise(() => {}),
+    );
+    const qc = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+    render(
+      <QueryClientProvider client={qc}>
+        <Stream sort="needs" open={["alpha-0001"]} onOpenChange={() => {}} />
+      </QueryClientProvider>,
+    );
+    expect(await screen.findByText("42")).toBeTruthy();
+    expect(screen.getByRole("button", { name: /alpha.*7/ })).toBeTruthy();
+    expect(screen.getByText('{"plan":"keep"}')).toBeTruthy();
+    expect(screen.getByText('["one",2]')).toBeTruthy();
+  });
+
+  test("a message that still fails to render shows its id; the rest of the thread stays", () => {
+    const broken = { ...MESSAGES[1], id: "beta-0002", body: { not: "text" } } as unknown as Message;
+    const data = base(OWNER, EMPTY_STATE, [Q1]).map(([k, v]): [QueryKey, unknown] =>
+      k[0] === "thread" ? [k, { root: "alpha-0001", messages: [MESSAGES[0], broken, MESSAGES[3]] }] : [k, v],
+    );
+    vi.spyOn(console, "error").mockImplementation(() => {});
+    renderWith(<Stream sort="needs" open={["alpha-0001"]} onOpenChange={() => {}} />, data);
+    expect(screen.getByText(/beta-0002 could not be shown/)).toBeTruthy();
+    expect(screen.getByText("Newest reply")).toBeTruthy();
+  });
+});
+
