@@ -5,11 +5,13 @@ import json
 import os
 import tempfile
 import unittest
+from unittest import mock
 from pathlib import Path
 
 import helpers  # noqa: F401  (puts scripts/ on sys.path)
 
 from crosstalk.autogrant import Granter, grant_text, read_usage
+from crosstalk import logs
 from crosstalk.logs import state_lock_path
 
 T = calendar.timegm((2026, 11, 8, 10, 10, 0))
@@ -164,6 +166,25 @@ class GranterTests(unittest.TestCase):
         g.post = post
         self.assertEqual(g.poll_once(), "gam-1")
         self.assertEqual(held, [True])
+
+    def test_pause_set_during_the_probe_stops_the_grant(self):
+        self.add("gam-1", msg(3, "gamma", "TURN ASK gamma grav-1110"))
+        self.during_probe = lambda: self.pause.write_text("")
+        self.assertIsNone(self.granter().poll_once())
+        self.assertEqual(self.posts, [])
+
+    def test_busy_state_lock_means_no_grant_in_this_poll(self):
+        self.add("gam-1", msg(3, "gamma", "TURN ASK gamma grav-1110"))
+        g = self.granter()
+        path = state_lock_path(self.tmp.name)
+        path.parent.mkdir(parents=True, exist_ok=True)
+        with open(str(path), "a") as f, mock.patch.object(logs, "STATE_LOCK_WAIT", 0.3):
+            fcntl.flock(f.fileno(), fcntl.LOCK_EX)
+            self.assertIsNone(g.poll_once())
+            fcntl.flock(f.fileno(), fcntl.LOCK_UN)
+        self.assertEqual(self.posts, [])
+        self.assertIn("state lock", g._said)
+        self.assertEqual(g.poll_once(), "gam-1")
 
     def test_grant_text_without_holders(self):
         s, b = grant_text({"project": "gamma", "branches": []}, [], 3.0, 90)

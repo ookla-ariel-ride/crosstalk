@@ -3,6 +3,7 @@ import fcntl
 import json
 import os
 import re
+import sys
 import threading
 import time
 from contextlib import contextmanager
@@ -453,13 +454,24 @@ def state_lock_path(root: Path) -> Path:
     return Path(root) / "log" / STATE_LOCK
 
 
+STATE_LOCK_WAIT = 5.0  # seconds a caller waits for the state lock
+STATE_LOCK_TRY = 0.05
+
+
+class StateLockBusy(OSError):
+    """The state lock stayed held for STATE_LOCK_WAIT seconds."""
+
+
 @contextmanager
-def state_lock(root: Path):
+def state_lock(root: Path, force: bool = False):
     """Hold the exclusive state lock of `root`; again in the same thread, it is a no-op.
 
     A row of the `state` collection takes it around its append, and the granter
     takes it from its last read of the log to its GRANTED append. A process
-    that dies drops its flock, so a crashed holder blocks nobody.
+    that dies drops its flock, so a crashed holder blocks nobody. A live holder
+    that is stuck blocks a caller for at most STATE_LOCK_WAIT seconds. Then a
+    `force` caller (a state row: the owner's command must win) goes on without
+    the lock and says so on stderr; any other caller gets StateLockBusy.
     """
     depth = getattr(_state_lock_depth, "n", 0)
     if depth:
@@ -472,13 +484,29 @@ def state_lock(root: Path):
     path = state_lock_path(root)
     path.parent.mkdir(parents=True, exist_ok=True)
     with open(str(path), "a") as f:
-        fcntl.flock(f.fileno(), fcntl.LOCK_EX)
+        deadline = time.monotonic() + STATE_LOCK_WAIT
+        held = False
+        while True:
+            try:
+                fcntl.flock(f.fileno(), fcntl.LOCK_EX | fcntl.LOCK_NB)
+                held = True
+                break
+            except BlockingIOError:
+                if time.monotonic() >= deadline:
+                    break
+                time.sleep(STATE_LOCK_TRY)
+        if not held and not force:
+            raise StateLockBusy("the state lock %s stayed busy for %g s" % (path, STATE_LOCK_WAIT))
+        if not held:
+            print("crosstalk: %s stayed busy for %g s; writing the state row without the state lock"
+                  % (path, STATE_LOCK_WAIT), file=sys.stderr)
         _state_lock_depth.n = 1
         try:
             yield
         finally:
             _state_lock_depth.n = 0
-            fcntl.flock(f.fileno(), fcntl.LOCK_UN)
+            if held:
+                fcntl.flock(f.fileno(), fcntl.LOCK_UN)
 
 
 def append_line(root: Path, from_: str, op: str, collection: str, id: str, data: dict,
@@ -491,7 +519,7 @@ def append_line(root: Path, from_: str, op: str, collection: str, id: str, data:
     (state_lock), so it never lands between the granter's last read and its GRANTED.
     """
     if collection == "state":
-        with state_lock(root):
+        with state_lock(root, force=True):
             return _append_line(root, from_, op, collection, id, data, t, via, roster)
     return _append_line(root, from_, op, collection, id, data, t, via, roster)
 

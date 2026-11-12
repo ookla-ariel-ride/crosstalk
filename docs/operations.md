@@ -395,7 +395,9 @@ When the owner says work may run again, it sets step 0. The owner can set the
 record too, with `--from owner`. At step 1 or 2 the auto-granter posts no
 `GRANTED`. The granter reads the record again after its probe of the build
 host, just before it posts, under the lock file `log/.state.lock` that every
-`state` row takes too. With no coordinator set, only the owner's record counts.
+`state` row takes too. It checks the pause file again there. When the lock
+stays busy for 5 seconds, the granter posts nothing in that pass, and
+`state wind-down` writes its row without the lock and says so on stderr. With no coordinator set, only the owner's record counts.
 
 ### config.json
 

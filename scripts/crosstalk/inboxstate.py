@@ -199,17 +199,19 @@ def trusted(place: Optional[dict], lines: Iterable[Line]) -> Optional[dict]:
 def _true_on_disk(root: Path, writer: str, entry) -> Optional[bool]:
     """Whether `entry` is true for `log/<writer>.jsonl` as it is now: False when
     the number is above the file's top or the fingerprint differs; None when the
-    file cannot be read."""
+    file cannot be read, or does not read cleanly up to that number."""
     path = Path(root) / "log" / (writer + ".jsonl")
     if not path.exists():
         return False
     try:
-        good = read_log(path)[0]
+        good, problems = read_log(path)
     except OSError:
         return None
     n = seq_of(entry)
     if n > len(good):
-        return False
+        # A file that does not read cleanly (a last line cut inside a multi-byte
+        # character fails the decode of the whole file) cannot show the entry false.
+        return None if problems else False
     return fp_of(entry) in (None, fingerprint(good[n - 1]))
 
 

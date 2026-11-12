@@ -1,16 +1,20 @@
 """The wind-down record: only the owner and the coordinator set it, and the newest of theirs counts."""
+import contextlib
 import copy
+import io
 import fcntl
 import json
 import os
 import subprocess
 import sys
 import threading
+import time
+from unittest import mock
 import unittest
 
 from helpers import SPEC_ROSTER, TempRepo, line, relay_in
 
-from crosstalk import state
+from crosstalk import logs, state
 from crosstalk.logs import append_line, state_lock_path
 from crosstalk.participants import load_roster
 from crosstalk.replay import load_all_lines, replay
@@ -120,6 +124,17 @@ class WindDownTests(unittest.TestCase):
         worker.join(10)
         self.assertFalse(worker.is_alive())
         self.assertEqual(self.current()["step"], 1)
+
+    def test_the_owner_writes_its_record_when_the_lock_stays_busy(self):
+        err = io.StringIO()
+        with open(str(state_lock_path(self.r.root)), "a") as f, \
+                mock.patch.object(logs, "STATE_LOCK_WAIT", 0.3), contextlib.redirect_stderr(err):
+            fcntl.flock(f.fileno(), fcntl.LOCK_EX)
+            started = time.monotonic()
+            state.set_wind_down(self.r.root, "owner", 2, roster=self.roster())
+            self.assertLess(time.monotonic() - started, 5)
+        self.assertEqual(self.current()["step"], 2)
+        self.assertIn("without the state lock", err.getvalue())
 
     def test_update_cannot_change_the_step(self):
         state.set_wind_down(self.r.root, "owner", 1, reason="stop", roster=self.roster())

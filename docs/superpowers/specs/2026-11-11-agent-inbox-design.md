@@ -268,7 +268,10 @@ after the probe of the build host. It checks the queue, the record and usage
 on that fresh read, and appends the GRANTED while it holds a lock file,
 `log/.state.lock`. Every `state` row takes the same lock for its append. A
 record set during the probe stops the grant, and no record can land between
-the last read and the GRANTED.
+the last read and the GRANTED. A pause file made during the probe stops it
+too. Nobody waits more than 5 seconds for the lock: then the granter posts
+nothing in that pass, and the owner's `state wind-down` writes its row
+without the lock, with a line on stderr.
 
 The owner's request "wind down" in a post does not set the record by itself.
 The coordinator sets it when it reads the request. A later design may give

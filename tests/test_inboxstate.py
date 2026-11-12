@@ -188,6 +188,15 @@ class InboxStateTests(unittest.TestCase):
         self.write_log("beta", 5)
         self.assertEqual(inboxstate.move(self.root, "alpha", {"beta": 5}), {"beta": 12})
 
+    def test_a_torn_multibyte_last_line_keeps_the_stored_number(self):
+        lines = self.write_log("beta", 3)
+        inboxstate.move(self.root, "alpha", {"beta": 3})
+        # A fourth line is being appended: its write stopped inside a two-byte character,
+        # so the whole file does not decode as UTF-8 for this instant.
+        with open(str(self.root / "log" / "beta.jsonl"), "ab") as f:
+            f.write('{"seq": 4, "summary": "caf\u00e9"}'.encode("utf-8")[:-3])
+        self.assertEqual(inboxstate.move(self.root, "alpha", {"beta": 2}, lines[:2]), {"beta": 3})
+
     def test_two_processes_keep_both_places(self):
         procs = [subprocess.Popen([sys.executable, "-c", CHILD, str(SCRIPTS), str(self.root), pid])
                  for pid in ("alpha", "beta")]

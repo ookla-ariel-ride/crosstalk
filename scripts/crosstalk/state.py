@@ -86,7 +86,9 @@ def set_wind_down(root: Path, pid: str, step: int, reason: Optional[str] = None,
     reason = reason.strip() if isinstance(reason, str) else None
     # The time is taken under the state lock, so it is not earlier than a GRANTED
     # the granter appended while this command waited for the lock.
-    with state_lock(root):
+    # A stuck holder delays it for at most logs.STATE_LOCK_WAIT seconds: then the
+    # owner's record goes in without the lock, with a line on stderr.
+    with state_lock(root, force=True):
         return _set_wind_down(root, pid, step, reason, roster)
 
 

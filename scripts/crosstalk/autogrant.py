@@ -15,9 +15,10 @@ set the granter does nothing. One pass (Granter.poll_once):
 4. The build host must answer a probe (buildhost.probe) with a 1-minute load
    under `autogrant.loadLimit`. A probe result is reused for PROBE_SEC. With
    no build host set (`buildHost.ssh`) this check is skipped.
-5. After the probe, under the state lock (logs.state_lock), steps 1 to 3 run
-   again on a fresh snapshot, and the GRANTED is appended before the lock
-   goes. A wind-down row takes the same lock for its append, so it lands
+5. After the probe, under the state lock (logs.state_lock), the pause file
+   and steps 1 to 3 are checked again on a fresh snapshot and clock, and the
+   GRANTED is appended before the lock goes. A lock that stays busy for
+   logs.STATE_LOCK_WAIT seconds means no GRANTED in this pass. A wind-down row takes the same lock for its append, so it lands
    either before that last read or after the GRANTED.
 
 Then it replies to the ask as the coordinator with a GRANTED row that names
@@ -39,7 +40,7 @@ from typing import Callable, Optional, Tuple
 from . import buildhost, config, state
 from .consults import post_reply
 from .landqueue import land_queue
-from .logs import state_lock
+from .logs import StateLockBusy, state_lock
 from .participants import load_roster
 
 PROBE_SEC = 60.0
@@ -202,13 +203,22 @@ class Granter:
             if load >= load_limit:
                 self._say("not granting %s: build host load %.1f (limit %g)" % (ask["id"], load, load_limit))
                 return None
-        with state_lock(self.root):
-            fresh = self._check(roster, cfg, poster, now)
-            if fresh is None:
-                return None
-            ask, holders, usage = fresh
-            summary, body = grant_text(ask, holders, load, usage)
-            self.post(self.root, poster, ask["id"], summary, body=body)
+        try:
+            with state_lock(self.root):
+                # Read again what can change during the probe: the pause file, the
+                # clock and the log. The roster and config stay as read.
+                if self.pause_path is not None and self.pause_path.exists():
+                    self._say("paused (%s exists)" % self.pause_path)
+                    return None
+                fresh = self._check(roster, cfg, poster, self.clock())
+                if fresh is None:
+                    return None
+                ask, holders, usage = fresh
+                summary, body = grant_text(ask, holders, load, usage)
+                self.post(self.root, poster, ask["id"], summary, body=body)
+        except StateLockBusy:
+            self._say("not granting %s: the state lock is busy" % ask["id"])
+            return None
         self._probed = None  # the next grant probes afresh
         self._said = ""
         _warn("granted %s (%s)" % (ask["id"], summary))
