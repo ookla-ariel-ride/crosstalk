@@ -453,20 +453,19 @@ class ServerState:
         self.stopping = threading.Event()
         self.buildhost_state = buildhost_mod.state_path_from_env()
 
-    def health_fatal(self, roster) -> List[str]:
+    def health_fatal(self, roster, key) -> List[str]:
         """The fatal problems of the whole log, checked again only when an input
-        changed (the replay cache's key: each log file's and the roster's size
-        and mtime). The key is taken before the check, so a write during the
-        check makes the next call check again."""
-        key = self.cache._stamp()
+        changed. `key` is the replay cache's stamp (each log file's, the roster's
+        and config.json's size and mtime), taken by the caller before it read
+        the roster, so a result is never kept under a key newer than its data.
+        The lock spans the check: concurrent callers with the same key wait for
+        one check and share its result."""
         with self._health_lock:
-            if self._health[0] == key:
-                return list(self._health[1])
-        fatal = ["%s:%d: %s" % (p.file, p.line, p.message)
-                 for p in check_all(self.root, roster) if p.fatal]
-        with self._health_lock:
-            self._health = (key, fatal)
-        return list(fatal)
+            if self._health[0] != key:
+                fatal = ["%s:%d: %s" % (p.file, p.line, p.message)
+                         for p in check_all(self.root, roster) if p.fatal]
+                self._health = (key, fatal)
+            return list(self._health[1])
 
     def make_pin(self) -> str:
         """The one-time startup PIN: six digits, good for ten minutes."""
@@ -497,13 +496,14 @@ def _name(value) -> bool:
 
 
 _NO_BODY = object()  # what _read_json returns once it has answered an error
-_LENGTH_RE = re.compile(r"[0-9]+", re.ASCII)
+_LENGTH_RE = re.compile(r"[0-9]{1,18}", re.ASCII)
 
 
 def _content_length(headers):
     """The declared body length: None with no Content-Length header, -1 for more
-    than one header or a value that is not ASCII digits alone (`int()` would
-    also take "+5", "1_0" and other scripts' digits)."""
+    than one header or a value that is not 1 to 18 ASCII digits alone (`int()`
+    would also take "+5", "1_0" and other scripts' digits, and raises on a long
+    run where Python limits int digits)."""
     values = headers.get_all("Content-Length") or []
     if not values:
         return None
@@ -686,6 +686,7 @@ class CrosstalkHandler(BaseHTTPRequestHandler):
         The page's "live" strip reads this: a fatal line surfaces as the
         Offline reason, and the server_time is the freshness clock.
         """
+        key = self.state.cache._stamp()  # before the roster is read: see health_fatal
         root = self.state.root
         # which commit runs: `relay.py deploy --restart` waits for its own
         ver = version(self.state.code_root)
@@ -695,7 +696,7 @@ class CrosstalkHandler(BaseHTTPRequestHandler):
             self._json(200, {"ok": False, "server_time": now_iso(), "sha": ver["sha"], "version": ver,
                              "fatal": ["participants.json:0: %s" % e]})
             return
-        fatal = self.state.health_fatal(roster)
+        fatal = self.state.health_fatal(roster, key)
         self._json(200, {"ok": not fatal, "server_time": now_iso(), "sha": ver["sha"], "version": ver,
                          "fatal": fatal})
 

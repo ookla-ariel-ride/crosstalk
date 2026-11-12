@@ -777,6 +777,18 @@ class EarlyAnswerTests(unittest.TestCase):
                 raw += b"".join(("%s: %s\r\n" % h).encode("utf-8") for h in headers)
                 self.assert_answered_once_and_closed(raw + b"\r\n" + body, status)
 
+    def test_a_length_of_more_than_eighteen_digits_is_refused(self):
+        # A Python with the int-digit limit makes int() raise on 5000 digits; the
+        # server never calls int() on more than 18.
+        huge = "9" * 5000
+        raw = self.request("POST", "/api/append", [("Content-Length", huge)], SMUGGLED)
+        self.assert_answered_once_and_closed(raw, 400)
+        self.assertIn(b"bad Content-Length", self.exchange(raw)[2])
+        self.assert_answered_once_and_closed(
+            self.request("POST", "/api/append", [("Content-Length", "0" * 19)], SMUGGLED), 400)
+        self.assert_answered_once_and_closed(
+            self.request("GET", "/api/me", [("Content-Length", huge)], SMUGGLED), 200)
+
     def test_a_leading_space_in_the_length_is_plain_whitespace(self):
         # The header parser drops the space after the colon, so " 5" is the length 5:
         # five bytes are read and the next request is a request of its own.
@@ -1436,6 +1448,63 @@ class HealthTests(unittest.TestCase):
                 self.assertEqual(len(calls), 3)
                 self.assertFalse(body["ok"])
                 self.assertRegex(body["fatal"][0], r"^log/rev\.jsonl:3: seq 9, expected 3")
+
+    def test_a_roster_change_during_a_check_makes_the_next_call_check_again(self):
+        # The result is kept under the stamp taken before the roster was read, so
+        # a roster written after the stamp never hides behind a cached result.
+        calls, changed = [], []
+        real_load = load_roster
+
+        def counted(root, roster):
+            calls.append(1)
+            return check_all(root, roster)
+
+        def load_then_change(path):
+            roster = real_load(path)
+            if not changed:
+                changed.append(1)
+                with Path(path).open("a", encoding="utf-8") as f:
+                    f.write("\n")
+            return roster
+        with TempRepo() as r, mock.patch("crosstalk.serve.check_all", counted):
+            r.write_roster()
+            r.write_log("rev", [line(1, "rev", data={"kind": "reply", "summary": "hi"})])
+            with RunningServer(r.root) as srv:
+                with mock.patch("crosstalk.serve.load_roster", load_then_change):
+                    self.assertTrue(request(srv.url + "/api/health")[1]["ok"])
+                self.assertTrue(request(srv.url + "/api/health")[1]["ok"])
+                self.assertEqual(len(calls), 2)
+                self.assertTrue(request(srv.url + "/api/health")[1]["ok"])
+                self.assertEqual(len(calls), 2)
+
+    def test_concurrent_health_calls_share_one_check(self):
+        calls = []
+
+        def slow(root, roster):
+            calls.append(1)
+            time.sleep(0.5)
+            return check_all(root, roster)
+        with TempRepo() as r, mock.patch("crosstalk.serve.check_all", slow):
+            r.write_roster()
+            r.write_log("rev", [line(1, "rev", data={"kind": "reply", "summary": "hi"})])
+            with RunningServer(r.root) as srv:
+                self.assertTrue(request(srv.url + "/api/health")[1]["ok"])
+                with (r.root / "log" / "rev.jsonl").open("a", encoding="utf-8") as f:
+                    f.write(json.dumps(line(2, "rev", data={"kind": "reply", "summary": "again"})) + "\n")
+                del calls[:]
+                results = []
+                start = threading.Barrier(10)
+
+                def one():
+                    start.wait(10)
+                    results.append(request(srv.url + "/api/health")[1]["ok"])
+                threads = [threading.Thread(target=one, daemon=True) for _ in range(10)]
+                for t in threads:
+                    t.start()
+                for t in threads:
+                    t.join(30)
+                self.assertEqual(results, [True] * 10)
+                self.assertEqual(len(calls), 1)
 
 
 class BacklogTests(unittest.TestCase):

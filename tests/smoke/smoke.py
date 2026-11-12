@@ -283,10 +283,14 @@ def check(tmp, socks):
     def load():
         # Each append changes the log, so each read after it may rebuild the snapshot.
         bad = []
-        start = threading.Barrier(21)
+        start = threading.Barrier(21, timeout=WAIT)
 
         def reader(n):
-            start.wait()
+            try:
+                start.wait()
+            except threading.BrokenBarrierError:
+                bad.append("reader %d: the start barrier broke" % n)
+                return
             for path in ("/api/snapshot", "/api/threads", "/api/health"):
                 began = time.monotonic()
                 try:
@@ -297,10 +301,13 @@ def check(tmp, socks):
                 if status != 200 or took > LOAD_LIMIT:
                     bad.append("reader %d %s: %s in %.1f s" % (n, path, status, took))
 
-        readers = [threading.Thread(target=reader, args=(n,)) for n in range(20)]
+        readers = [threading.Thread(target=reader, args=(n,), daemon=True) for n in range(20)]
         for t in readers:
             t.start()
-        start.wait()
+        try:
+            start.wait()
+        except threading.BrokenBarrierError:
+            raise Failed("the readers did not all start within %ds" % WAIT)
         for i in range(20):
             status, body = http(url + "/api/append", "POST",
                                 {"from": "alpha", "op": "set", "collection": "messages",
@@ -309,7 +316,8 @@ def check(tmp, socks):
                                 {"Authorization": "Bearer " + tokens["alpha"]})
             expect(status == 201, "load append %d: %s %s" % (i, status, body))
         for t in readers:
-            t.join()
+            t.join(WAIT)
+        expect(not any(t.is_alive() for t in readers), "a reader still runs after %ds" % WAIT)
         expect(not bad, "readers under load: %s" % "; ".join(bad[:5]))
     step("20 readers while 20 appends go in, each read 200 within %d s" % LOAD_LIMIT, load)
 
