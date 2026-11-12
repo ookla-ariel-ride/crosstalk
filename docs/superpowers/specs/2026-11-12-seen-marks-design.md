@@ -180,7 +180,10 @@ A post with the mark `seen` or `unclear` from this participant stays in
 `to_read_open` until an acknowledged mark replaces it.
 
 A post that expects a mark and is also a request for this participant shows
-in `requests` only. The request rules decide when it is done.
+in `requests` only, not again in `to_read`. The request rules decide when it
+is done. `--none` is a plain mark on any post, and an acknowledged one. Only
+on a request does it also count as a reply, which takes the agent out of
+`pending_from`.
 
 ## The command line
 
