@@ -387,6 +387,57 @@ describe("one answer for one question", () => {
     expect(posts(calls, "/api/append")).toHaveLength(1);
   });
 
+  test("a written answer on its way shuts the choices", async () => {
+    renderActions(OWNER);
+    const calls = serve({});
+    fireEvent.click(screen.getByRole("button", { name: "Write an answer" }));
+    fireEvent.change(screen.getByLabelText("Your answer"), { target: { value: "Neither" } });
+    fireEvent.click(screen.getByRole("button", { name: "Send" }));
+    await waitFor(() => expect(posts(calls, "/api/append")).toHaveLength(1));
+    const choice = screen.getByRole("button", { name: "Keep the log" }) as HTMLButtonElement;
+    expect(choice.disabled).toBe(true);
+    fireEvent.click(choice);
+    await act(async () => {});
+    expect(posts(calls, "/api/append")).toHaveLength(1);
+  });
+
+  test("a choice on its way shuts the written answer", async () => {
+    renderActions(OWNER);
+    const calls = serve({});
+    fireEvent.click(screen.getByRole("button", { name: "Write an answer" }));
+    const box = screen.getByLabelText("Your answer");
+    fireEvent.change(box, { target: { value: "Neither" } });
+    fireEvent.click(screen.getByRole("button", { name: "Keep the log" }));
+    fireEvent.keyDown(box, { key: "Enter", ctrlKey: true });
+    await act(async () => {});
+    expect(posts(calls, "/api/append")).toHaveLength(1);
+    expect(screen.queryByRole("button", { name: "Send" })).toBeNull();
+    expect((screen.getByRole("button", { name: "Write an answer" }) as HTMLButtonElement).disabled).toBe(true);
+  });
+
+  test("a double click on a choice on its way sends once", async () => {
+    renderActions(OWNER);
+    const calls = serve({});
+    const choice = screen.getByRole("button", { name: "Keep the log" });
+    fireEvent.click(choice);
+    fireEvent.click(choice);
+    await act(async () => {});
+    expect(posts(calls, "/api/append")).toHaveLength(1);
+  });
+
+  test("a choice after a failed written answer goes under the same id", async () => {
+    renderActions(OWNER);
+    const calls = serve({ "/api/append": [500, { error: "cannot write the log: disk full" }] });
+    fireEvent.click(screen.getByRole("button", { name: "Write an answer" }));
+    fireEvent.change(screen.getByLabelText("Your answer"), { target: { value: "Neither" } });
+    fireEvent.click(screen.getByRole("button", { name: "Send" }));
+    await screen.findByRole("alert");
+    fireEvent.click(screen.getByRole("button", { name: "Keep the log" }));
+    await waitFor(() => expect(posts(calls, "/api/append")).toHaveLength(2));
+    const [first, second] = posts(calls, "/api/append").map((c) => (c.body as { id: string }).id);
+    expect(second).toBe(first);
+  });
+
   test("a failed answer brings the choices back and shows the error once stopped", async () => {
     renderActions(OWNER);
     const calls = serve({ "/api/append": [400, { error: "Bad reply." }] });

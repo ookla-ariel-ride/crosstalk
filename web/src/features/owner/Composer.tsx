@@ -19,9 +19,11 @@ export interface ComposerProps {
   summary?: boolean;
   send: (summary: string, text: string, id: string) => Promise<unknown>;
   onClose: () => void;
+  /** The message id of the first send when the draft has none; a new one by default. */
+  newId?: () => string;
 }
 
-export function Composer({ label, draft, summary = false, send, onClose }: ComposerProps) {
+export function Composer({ label, draft, summary = false, send, onClose, newId = newOwnId }: ComposerProps) {
   const [kept] = useState(() => drafts.get(draft));
   const [subject, setSubject] = useState(kept?.subject ?? "");
   const [text, setText] = useState(kept?.text ?? "");
@@ -33,7 +35,7 @@ export function Composer({ label, draft, summary = false, send, onClose }: Compo
   async function submit(e?: FormEvent) {
     e?.preventDefault();
     if (empty) return sending.fail("Write something first.");
-    id.current ??= newOwnId();
+    id.current ??= newId();
     keepDraft(draft, { subject, text, id: id.current });
     if (await sending.run(() => send(subject, text, id.current as string))) close();
   }

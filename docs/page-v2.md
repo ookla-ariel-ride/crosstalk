@@ -59,7 +59,9 @@ As the owner, you answer a question with one button for each choice, or with
 "Write an answer". You can also reply, start a thread, record a message as a
 decision, mark a waiting message done, approve a participant, and hold or
 release an agreement. A control that sends once stays shut until the page
-loads the change.
+loads the change. While an answer is on its way, by a choice or by the box,
+the other way to answer stays shut too. A new try after a failed answer goes
+under the same message id, so the question never gets two answers.
 
 ## Read state
 
