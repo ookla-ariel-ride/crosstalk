@@ -3,7 +3,7 @@ import { beforeEach, describe, expect, test } from "vitest";
 import { ApiError } from "./client";
 import { RETRY_MS } from "./events";
 import { FakeClock, FakeEventSource, fakeDeps, flush } from "./fakes";
-import { connectLive, createQueryClient, invalidateAll, invalidateForRows, keys, rosterOf, shouldRetry } from "./queries";
+import { connectLive, createQueryClient, invalidateAll, invalidateForRows, keys, ROWS_MS, rosterOf, shouldRetry } from "./queries";
 import type { Message, RowRef, Snapshot, ThreadDetail } from "./types";
 
 function message(id: string): Message {
@@ -187,6 +187,35 @@ describe("queries", () => {
     await flush();
     expect(fresh.getQueryData<ThreadDetail>(key)?.messages).toHaveLength(2);
     unsubscribe();
+  });
+
+  test("rows events within ROWS_MS make one invalidation, with every row of them", async () => {
+    const clock = new FakeClock();
+    const stop = connectLive(qc, () => {}, fakeDeps(clock));
+    const es = FakeEventSource.latest();
+    es.emit("ready");
+    for (const [key, data] of CACHED) qc.setQueryData(key, data);
+    let calls = 0;
+    const real = qc.invalidateQueries.bind(qc);
+    qc.invalidateQueries = ((...args: Parameters<typeof real>) => {
+      calls += 1;
+      return real(...args);
+    }) as typeof qc.invalidateQueries;
+    es.emit("rows", JSON.stringify({ rows: [row("agreements", "a-parser")] }));
+    clock.advance(ROWS_MS - 1);
+    es.emit("rows", JSON.stringify({ rows: [row("decisions", "d-one")] }));
+    expect(invalidated()).toEqual([]);
+    expect(calls).toBe(0);
+    clock.advance(1);
+    expect(invalidated()).toEqual([JSON.stringify(keys.section("agreements", "")), JSON.stringify(keys.section("decisions", ""))]);
+    expect(calls).toBe(2);
+    // A ready event refetches everything: a batch still waiting is dropped.
+    es.emit("rows", JSON.stringify({ rows: [row("adoptions", "x")] }));
+    es.emit("ready");
+    calls = 0;
+    clock.advance(ROWS_MS);
+    expect(calls).toBe(0);
+    stop();
   });
 
   test("a first load that fails gets no chained read", async () => {

@@ -70,8 +70,8 @@ export function createApi(fetchFn: Fetch = (input, init) => fetch(input, init)) 
   }
 
   return {
-    getThreads: (sort: Sort, cursor?: string, limit?: number) =>
-      call<unknown>("/api/threads" + query({ sort, cursor, limit })).then(threadsPage),
+    getThreads: (sort: Sort, cursor?: string, limit?: number, unread?: boolean) =>
+      call<unknown>("/api/threads" + query({ sort, unread: unread ? 1 : undefined, cursor, limit })).then(threadsPage),
     getThread: (root: string) => call<unknown>("/api/thread/" + encodeURIComponent(root)).then(threadDetail),
     getSection: (name: SectionName, opts: { cursor?: string; limit?: number; q?: string } = {}) =>
       call<unknown>("/api/section/" + name + query(opts)).then(sectionPage),

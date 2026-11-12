@@ -9,7 +9,7 @@ The server is the page host and the database:
   GET  /api/read-state  -> the owner's read state (readstate.py); the owner only
   PUT  /api/read-state  -> a thread's read mark, the mark-all time, or a mute; the owner only
   GET  /api/events      -> a Server-Sent Events stream of the ids of new log rows (events.py)
-  GET  /api/vitals      -> the health numbers: disk, usage, build host (vitals.py), and the state row (state.py)
+  GET  /api/vitals      -> the health numbers: disk, usage, build host (vitals.py), the state row (state.py), and page_build
   GET  /api/section/<name> -> one section of the v2 page, open rows first, a page at a time (sections.py)
   GET  /api/<collection>-> one collection replayed
   GET  /api/queue       -> the land queue of the build host (landqueue.py)
@@ -41,6 +41,7 @@ import sys
 import tempfile
 import threading
 import time
+from datetime import datetime, timedelta
 import traceback
 from http.cookies import CookieError, SimpleCookie
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
@@ -112,6 +113,16 @@ EXTRA_TYPES = {".woff2": "font/woff2", ".woff": "font/woff"}
 ROSTER_FIELDS = ("name", "kind", "color", "colorDark", "checkInMin", "trust", "repo", "parent", "harness", "aliases", "itemNames")
 
 
+# How far after the server's clock a mark-all time may be: a page's clock never needs more.
+ALL_BEFORE_SLACK_SEC = 300
+
+
+def _plus_seconds(stamp: str, seconds: int) -> str:
+    """The log time `stamp` moved by `seconds`, in the same format."""
+    when = datetime.strptime(stamp, "%Y-%m-%dT%H:%M:%SZ") + timedelta(seconds=seconds)
+    return when.strftime("%Y-%m-%dT%H:%M:%SZ")
+
+
 def now_iso() -> str:
     """The server's clock, in the log's timestamp format."""
     return time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime())
@@ -163,6 +174,19 @@ def _git_commit(root: Path) -> Optional[str]:
     if out.returncode != 0:
         return None
     return out.stdout.decode("utf-8", "replace").strip() or None
+
+
+def page_build(code_root) -> Optional[str]:
+    """The hash in web/dist/.build-hash: it changes exactly when the v2 page's files change.
+
+    An open v2 tab reads it through /api/vitals and offers a reload when it
+    differs from the one it first saw. None when the page is not built.
+    """
+    try:
+        text = Path(code_root).joinpath(*V2_DIST, ".build-hash").read_text(encoding="utf-8").strip()
+    except (OSError, ValueError):
+        return None
+    return text or None
 
 
 _build_info_cache = {}  # type: Dict[str, Tuple[Optional[tuple], float, dict]]
@@ -486,6 +510,30 @@ class ServerState:
         # Set when the server stops, so an open event stream ends.
         self.stopping = threading.Event()
         self.buildhost_state = buildhost_mod.state_path_from_env()
+        self._unread_lock = threading.Lock()
+        self._unread = (None, None, {})  # type: Tuple[object, Optional[dict], Dict[str, int]]
+        self.unread_builds = 0
+
+    def unread_counts(self, index, state: dict) -> Dict[str, int]:
+        """The owner's `unread` count of each thread of `index` (readstate.unread).
+
+        Built once for each thread index and read state: every page, sort and
+        tab then shares one count. The state is compared without its `rev`, so
+        a missing state file (a new `rev` at each load) counts as one state too.
+        """
+        content = {k: v for k, v in state.items() if k != "rev"}
+        with self._unread_lock:
+            built_for, seen, counts = self._unread
+            if built_for is index and seen == content:
+                return counts
+            counts = {}
+            for root, ids in index.members.items():
+                messages = [{"id": did, "from": index.messages[did].get("from"), "t": index.when[did]}
+                            for did in ids]
+                counts[root] = readstate.unread({"root": root}, messages, state)
+            self._unread = (index, content, counts)
+            self.unread_builds += 1
+            return counts
 
     def health_fatal(self, roster, key) -> List[str]:
         """The fatal problems of the whole log, checked again only when an input
@@ -745,7 +793,12 @@ class CrosstalkHandler(BaseHTTPRequestHandler):
                                    coordinator=config_mod.coordinator(self.state.cache.roster())))
 
     def _threads(self):
-        """One page of threads: ?sort=needs|new|hot|unanswered (default new), &cursor=, &limit=."""
+        """One page of threads: ?sort=needs|new|hot|unanswered (default new), &cursor=, &limit=.
+
+        &unread=1 lists only the owner's unread threads, in the same order, pages
+        counted over those, with `unread_total`. A reader with no server read
+        state (not the owner) gets every thread: the page filters on its own.
+        """
         query = parse_qs(urlsplit(self.path).query)
         order = query.get("sort", ["new"])[-1] or "new"
         if order not in threads_mod.ORDERS:
@@ -757,12 +810,31 @@ class CrosstalkHandler(BaseHTTPRequestHandler):
         except ValueError:
             self._error(400, "the limit must be a whole number")
             return
+        unread_only = query.get("unread", [""])[-1]
+        if unread_only not in ("", "0", "1"):
+            self._error(400, "unread must be 1 or 0")
+            return
         try:
             index = self.state.cache.threads()
         except (OSError, ValueError) as e:
             self._error(500, "cannot read the log: %s" % e)
             return
         now = now_iso()
+        if unread_only == "1" and self._role() == "owner":
+            state = readstate.load(self.state.root)
+            counts = self.state.unread_counts(index, state)
+            # A muted thread stays hidden on the page until it needs the owner: left out here too.
+            muted = set(state["muted"])
+            fresh = [t for t in index.ordered(order, now)
+                     if counts.get(t["root"], 0) > 0 and (t["root"] not in muted or t["needs_owner"])]
+            try:
+                items, nxt = threads_mod.page(fresh, query.get("cursor", [""])[-1], limit)
+            except ValueError as e:
+                self._error(400, str(e))
+                return
+            items = self._with_counts(self._with_unread(index, items, state))
+            self._json(200, {"threads": items, "next": nxt, "server_time": now, "unread_total": len(fresh)})
+            return
         try:
             items, nxt = index.page(order, now, query.get("cursor", [""])[-1], limit)
         except ValueError as e:
@@ -801,16 +873,13 @@ class CrosstalkHandler(BaseHTTPRequestHandler):
             return
         self._json(200, {"rows": items, "next": nxt, "open": open_count, "total": len(found)})
 
-    def _with_unread(self, index, items: List[dict]) -> List[dict]:
-        """Copies of the threads with the owner's `unread` count (readstate.py)."""
-        state = readstate.load(self.state.root)
-        out = []
-        for item in items:
-            messages = []
-            for did in index.members.get(item["root"], []):
-                messages.append({"id": did, "from": index.messages[did].get("from"), "t": index.when[did]})
-            out.append(dict(item, unread=readstate.unread(item, messages, state)))
-        return out
+    def _with_unread(self, index, items: List[dict], state: Optional[dict] = None) -> List[dict]:
+        """Copies of the threads with the owner's `unread` count (readstate.py).
+
+        `state` is the read state this request loaded; without it, one load.
+        """
+        counts = self.state.unread_counts(index, readstate.load(self.state.root) if state is None else state)
+        return [dict(item, unread=counts.get(item["root"], 0)) for item in items]
 
     def _thread(self, did: str):
         """The thread that holds message `did` (its root or any reply), with its list row."""
@@ -898,6 +967,7 @@ class CrosstalkHandler(BaseHTTPRequestHandler):
                                           buildhost_state=self.state.buildhost_state, now=now,
                                           readings=dict(out))
         out["model_families"] = cfg["modelFamilies"]
+        out["page_build"] = page_build(self.state.code_root)
         self._json(200, out)
 
     def _collection(self, name: str):
@@ -1269,7 +1339,14 @@ class CrosstalkHandler(BaseHTTPRequestHandler):
         self._json(200, readstate.load(self.state.root))
 
     def _read_state_put(self):
-        """One of {"thread", "t", "id"}, {"all_before": t} or {"thread", "muted": bool}."""
+        """One of {"thread", "t", "id"}, {"all_before": t} or {"thread", "muted": bool}.
+
+        {"all_before": t, "ahead": true} also marks each thread whose newest
+        message is dated after the server's clock up to that message, unless the
+        thread holds an unread message dated before the clock: a post that came
+        between the page load and the click stays new, and so does a later post.
+        An `all_before` more than 5 minutes after the server's clock is refused.
+        """
         if self._role() != "owner":
             self._error(403, "only the owner has a read state")
             return
@@ -1283,10 +1360,17 @@ class CrosstalkHandler(BaseHTTPRequestHandler):
                 if not (_name(body["thread"]) and readstate.is_time(body["t"]) and _name(body["id"])):
                     raise ValueError("thread and id must be ids and t a time like 2026-01-02T03:04:05Z")
                 state = readstate.mark(root, body["thread"], body["t"], body["id"])
-            elif keys == {"all_before"}:
+            elif keys in ({"all_before"}, {"all_before", "ahead"}):
                 if not readstate.is_time(body["all_before"]):
                     raise ValueError("all_before must be a time like 2026-01-02T03:04:05Z")
-                state = readstate.mark_all(root, body["all_before"])
+                if not isinstance(body.get("ahead", False), bool):
+                    raise ValueError("ahead must be true or false")
+                now = now_iso()
+                if body["all_before"] > _plus_seconds(now, ALL_BEFORE_SLACK_SEC):
+                    raise ValueError("all_before is more than %d minutes after the server's clock (%s)"
+                                     % (ALL_BEFORE_SLACK_SEC // 60, now))
+                marks = self._newest_after(body["all_before"], now) if body.get("ahead") else {}
+                state = readstate.mark_all(root, body["all_before"], marks)
             elif keys == {"thread", "muted"}:
                 if not (_name(body["thread"]) and isinstance(body["muted"], bool)):
                     raise ValueError("thread must be an id and muted true or false")
@@ -1300,6 +1384,30 @@ class CrosstalkHandler(BaseHTTPRequestHandler):
             self._error(500, "cannot write the read state: %s" % e)
             return
         self._json(200, state)
+
+    def _newest_after(self, t: str, now: str) -> Dict[str, Tuple[str, str]]:
+        """The newest (t, id) of each thread whose newest message is dated after the
+        server's clock `now` (a writer's clock runs ahead). A thread that also holds a
+        message by another participant dated after `t` and its read mark but not after
+        `now` is left out: that message came after the page loaded, and stays new."""
+        try:
+            index = self.state.cache.threads()
+        except ValueError as e:
+            raise OSError("cannot read the log: %s" % e)
+        marks = readstate.load(self.state.root)["threads"]
+        out = {}
+        for root, ids in index.members.items():
+            dated = sorted((index.when[did], did) for did in ids)
+            if dated[-1][0] <= now:
+                continue
+            mark = marks.get(root)
+            after = (mark["t"], mark["id"]) if mark else ("", "")
+            unseen = any(t < when <= now and (when, did) > after
+                         and index.messages[did].get("from") != readstate.OWNER
+                         for when, did in dated)
+            if not unseen:
+                out[root] = dated[-1]
+        return out
 
     def _me(self):
         role = self._role()

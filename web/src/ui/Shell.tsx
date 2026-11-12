@@ -5,6 +5,7 @@ import { type ReactNode, useEffect, useId, useRef, useState } from "react";
 import type { Mode } from "../api/events";
 import { type Route, route as routeOf } from "../logic/route";
 import markUrl from "./mark.svg";
+import { NewVersion } from "./NewVersion";
 import { RightColumn } from "./RightColumn";
 import styles from "./Shell.module.css";
 import { Sidebar } from "./Sidebar";
@@ -24,14 +25,20 @@ export interface ShellProps {
   route: Route;
   /** The mode of the live updates, for the health line; null until the stream answers. */
   mode: Mode | null;
+  /** How many loaded threads are unread: the sidebar and the tab title show it. */
+  unread?: number;
   /** The main part: the page of the route. */
   children: ReactNode;
 }
 
-export function Shell({ route, mode, children }: ShellProps) {
+export function Shell({ route, mode, unread = 0, children }: ShellProps) {
   const [menuOpen, setMenuOpen] = useState(false);
   const menuButton = useRef<HTMLButtonElement>(null);
   const sidebarId = useId();
+
+  useEffect(() => {
+    document.title = unread > 0 ? `(${unread}) Crosstalk` : "Crosstalk";
+  }, [unread]);
 
   // While the menu is open, Escape closes it from anywhere and gives the focus to the button.
   useEffect(() => {
@@ -62,9 +69,12 @@ export function Shell({ route, mode, children }: ShellProps) {
         </button>
       </header>
       <div id={sidebarId} className={styles.sidebar} data-open={menuOpen || undefined}>
-        <Sidebar route={route} mode={mode} onNavigate={() => setMenuOpen(false)} />
+        <Sidebar route={route} mode={mode} unread={unread} onNavigate={() => setMenuOpen(false)} />
       </div>
-      <main className={styles.main}>{children}</main>
+      <main className={styles.main}>
+        <NewVersion />
+        {children}
+      </main>
       <aside className={styles.right} aria-label="Needs you and the land queue">
         <RightColumn />
       </aside>

@@ -107,6 +107,11 @@ class WebDistTests(unittest.TestCase):
         self.assertEqual(mark.read_text(encoding="ascii").strip(), build_hash(WEB),
                          "web/dist/ is older than its source: run `npm run build` in web/ and commit web/dist/")
 
+    def test_the_built_page_names_its_build(self):
+        # The page compares it with /api/vitals page_build from its first render.
+        page = (WEB / "dist" / "index.html").read_text(encoding="utf-8")
+        self.assertIn('<meta name="crosstalk-build" content="%s"' % build_hash(WEB), page)
+
 
 if __name__ == "__main__":
     unittest.main()

@@ -137,6 +137,25 @@ class VitalsRouteTests(unittest.TestCase):
         self.assertIsInstance(body["disk_free_gb"], int)
         self.assertEqual(body["model_families"], [["^gpt-", "openai"]])
 
+    def test_vitals_name_the_build_of_the_v2_page(self):
+        # An open tab compares it with the one it loaded: a change means new page files.
+        with TempRepo() as r:
+            r.write_roster()
+            code = r.root / "code"
+            (code / "web" / "dist").mkdir(parents=True)
+            (code / "web" / "dist" / ".build-hash").write_text("abc123\n", encoding="utf-8")
+            with RunningServer(r.root) as srv:
+                srv.state.buildhost_state = r.root / "buildhost-state.json"
+                srv.state.code_root = code
+                _, built = request(srv.url + "/api/vitals")
+                (code / "web" / "dist" / ".build-hash").write_text(" \n", encoding="utf-8")
+                _, empty = request(srv.url + "/api/vitals")
+                (code / "web" / "dist" / ".build-hash").unlink()
+                _, unbuilt = request(srv.url + "/api/vitals")
+        self.assertEqual(built["page_build"], "abc123")
+        self.assertIsNone(empty["page_build"])
+        self.assertIsNone(unbuilt["page_build"])
+
 
 if __name__ == "__main__":
     unittest.main()

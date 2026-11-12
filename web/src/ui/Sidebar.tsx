@@ -76,7 +76,7 @@ interface Count {
 }
 
 /** The counts of open or new items; an entry with none is left out. */
-function useCounts(): Map<string, Count> {
+function useCounts(unread: number): Map<string, Count> {
   // The first page of the needs sort: threads that need the owner come first.
   const first = useThreads("needs").data?.pages[0];
   const threads: Thread[] = first?.threads ?? [];
@@ -96,7 +96,8 @@ function useCounts(): Map<string, Count> {
   const waiting = queue ? queue.holders.length + queue.waiting.length : 0;
   const total = needs + todo;
   if (total) counts.set("Needs you", more ? { text: total + "+", spoken: total + " or more", needs: true } : { text: String(total), needs: true });
-  // Conversations shows no count: an unread total needs a server route that gives it.
+  // The unread threads of the loaded pages: the server has no cheap total over every thread.
+  if (unread) counts.set("Conversations", { text: String(unread), spoken: unread + " unread" });
   if (waiting) counts.set("Land queue", { text: String(waiting) });
   for (const g of GROUPS) {
     for (const entry of g.entries) {
@@ -226,12 +227,14 @@ function Health({ mode }: { mode: Mode | null }) {
 export interface SidebarProps {
   route: Route;
   mode: Mode | null;
+  /** How many loaded threads are unread (Conversations shows it); 0 shows nothing. */
+  unread?: number;
   /** Called when an entry is followed: the menu closes under 900 px. */
   onNavigate?: () => void;
 }
 
-export function Sidebar({ route, mode, onNavigate }: SidebarProps) {
-  const counts = useCounts();
+export function Sidebar({ route, mode, unread = 0, onNavigate }: SidebarProps) {
+  const counts = useCounts(unread);
   return (
     <>
       <div className={styles.brand}>

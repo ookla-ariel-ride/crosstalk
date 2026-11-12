@@ -20,6 +20,8 @@ export const FIXTURE = {
   thread: "Schema change ready",
   linked: "Cache warmed",
   ownerRequest: "Read the new runbook",
+  /** Only markfeedback.spec.ts reads and replies to this thread. */
+  feedback: "Index rebuilt",
   marked: "Keep each browser test independent",
 };
 
@@ -94,7 +96,7 @@ function freePort(): Promise<number> {
   });
 }
 
-function relay(root: string, ...args: string[]): string {
+export function relay(root: string, ...args: string[]): string {
   // stdout is kept from the console: `onboard` prints a token. An error names
   // the command and its stderr, not its arguments: `set-pin` takes the PIN.
   try {
@@ -163,6 +165,10 @@ function buildFixture(root: string): string {
   relay(root, "append", "--from", "alpha", "--op", "set", "--collection", "lessons", "--id", MARKED.lesson,
     "--data", JSON.stringify({ project: "alpha", summary: FIXTURE.marked }));
   for (const [id, flag] of MARKS) relay(root, "ack", "--from", id, MARKED.lesson, flag);
+  // A thread of two participants (one participant's thread folds as routine) for markfeedback.spec.ts alone.
+  relay(root, "append", ...who, "--from", "beta", "--op", "set", "--collection", "messages", "--id", "beta-e2e-index",
+    "--data", JSON.stringify({ from: "beta", kind: "sync", summary: FIXTURE.feedback, body: "The index is rebuilt.", to: ["alpha"] }));
+  relay(root, "reply", ...who, "--from", "alpha", "--to-id", "beta-e2e-index", "--summary", "Noted", "--body", "I will use it.");
   // The owner read the thread's root before the replies came.
   writeFileSync(join(root, "read-state.json"),
     JSON.stringify({ threads: { "beta-e2e-schema": { t: timeOf(root, "beta-e2e-schema"), id: "beta-e2e-schema" } }, muted: [], all_before: null }));

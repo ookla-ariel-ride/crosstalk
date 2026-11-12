@@ -43,9 +43,44 @@
 }
 
 .tools {
+  position: relative;
   display: flex;
   gap: 6px;
   margin-left: auto;
+}
+
+/* The status line of "Mark all read" floats under the buttons: the head keeps its height. */
+.status {
+  position: absolute;
+  top: 100%;
+  right: 0;
+  z-index: 1;
+  margin: 4px 0 0;
+  color: var(--ink);
+  font-size: var(--size-s);
+  white-space: nowrap;
+}
+
+.status:not(:empty) {
+  padding: 2px 8px;
+  border: 1px solid var(--rule);
+  border-radius: var(--radius-control);
+  background: var(--surface);
+}
+
+.retry {
+  padding: 0;
+  border: 0;
+  background: none;
+  color: var(--signal);
+  font: inherit;
+  text-decoration: underline;
+  cursor: pointer;
+}
+
+.retry:focus-visible {
+  outline: 2px solid var(--signal);
+  outline-offset: 1px;
 }
 
 .action {
@@ -59,7 +94,8 @@
   cursor: pointer;
 }
 
-.action:disabled {
+.action:disabled,
+.action[aria-disabled="true"] {
   color: var(--muted);
   cursor: default;
 }

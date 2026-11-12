@@ -122,6 +122,7 @@ export function threadsPage(raw: unknown): ThreadsPage {
     threads: (Array.isArray(r.threads) ? r.threads : []).filter(isObject).map(thread),
     next: text(r.next) ?? null,
     server_time: text(r.server_time) ?? "",
+    ...(typeof r.unread_total === "number" ? { unread_total: r.unread_total } : {}),
   };
 }
 

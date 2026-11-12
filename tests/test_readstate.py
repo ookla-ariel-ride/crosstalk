@@ -7,6 +7,7 @@ from helpers import RunningServer, TempRepo, line
 from test_serve import request
 
 from crosstalk import readstate
+from crosstalk import serve as serve_mod
 from crosstalk.tokens import token_hash
 
 OWNER_TOKEN = "owner-test-token"
@@ -221,6 +222,133 @@ class RouteTests(unittest.TestCase):
             self.assertEqual(self.unread_by_root(srv, BETA_TOKEN), {"alpha-root": None, "alpha-other": None})
             self.put(srv, {"thread": "alpha-root", "t": "2026-10-21T10:05:00Z", "id": "beta-reply"})
             self.assertEqual(self.unread_by_root(srv), {"alpha-root": 0, "alpha-other": 1})
+
+    def test_unread_filter_lists_only_the_owners_unread_threads_and_counts_them(self):
+        def unread_page(srv, query="", token=OWNER_TOKEN):
+            headers = self.auth(token) if token else {}
+            status, body = request(srv.url + "/api/threads?sort=new&unread=1" + query, headers=headers)
+            self.assertEqual(status, 200, body)
+            return body
+
+        with self.server() as srv:
+            body = unread_page(srv)
+            self.assertEqual([t["root"] for t in body["threads"]], ["alpha-other", "alpha-root"])
+            self.assertEqual(body["unread_total"], 2)
+            # Paging runs over the unread threads only.
+            first = unread_page(srv, "&limit=1")
+            self.assertEqual(([t["root"] for t in first["threads"]], first["next"]), (["alpha-other"], "1"))
+            second = unread_page(srv, "&limit=1&cursor=1")
+            self.assertEqual(([t["root"] for t in second["threads"]], second["next"]), (["alpha-root"], None))
+            # A muted thread is hidden on the page, so the filter leaves it out too.
+            self.put(srv, {"thread": "alpha-other", "muted": True})
+            self.assertEqual([t["root"] for t in unread_page(srv)["threads"]], ["alpha-root"])
+            self.put(srv, {"thread": "alpha-other", "muted": False})
+            self.put(srv, {"thread": "alpha-root", "t": "2026-10-21T10:05:00Z", "id": "beta-reply"})
+            self.assertEqual([t["root"] for t in unread_page(srv)["threads"]], ["alpha-other"])
+            self.put(srv, {"all_before": "2026-10-21T12:00:00Z"})
+            body = unread_page(srv)
+            self.assertEqual((body["threads"], body["unread_total"], body["next"]), ([], 0, None))
+            # A reader with no server read state gets every thread, with no total.
+            for token in (None, BETA_TOKEN):
+                body = unread_page(srv, token=token)
+                self.assertEqual(len(body["threads"]), 2, token)
+                self.assertNotIn("unread_total", body)
+            # Without the filter nothing changes.
+            status, body = request(srv.url + "/api/threads?sort=new", headers=self.auth(OWNER_TOKEN))
+            self.assertEqual(len(body["threads"]), 2)
+            self.assertNotIn("unread_total", body)
+
+    def owner_get(self, srv, path):
+        status, body = request(srv.url + path, headers=self.auth(OWNER_TOKEN))
+        self.assertEqual(status, 200, body)
+        return body
+
+    def test_the_unread_counts_are_built_once_for_each_change(self):
+        paths = ["/api/threads?sort=new&unread=1", "/api/threads?sort=needs&unread=1&limit=1",
+                 "/api/threads?sort=hot", "/api/thread/alpha-root"]
+        with self.server() as srv, mock.patch.object(readstate, "load", wraps=readstate.load) as load:
+            for _ in range(3):
+                for path in paths:
+                    load.reset_mock()
+                    self.owner_get(srv, path)
+                    self.assertEqual(load.call_count, 1, path)
+            self.assertEqual(srv.state.unread_builds, 1)
+
+            self.put(srv, {"thread": "alpha-root", "t": "2026-10-21T10:05:00Z", "id": "beta-reply"})
+            for path in paths:
+                self.owner_get(srv, path)
+            self.assertEqual(srv.state.unread_builds, 2)
+            self.assertEqual(self.owner_get(srv, paths[0])["unread_total"], 1)
+
+            self.append("beta", line(2, "beta", id_="beta-new", t="2026-10-21T11:05:00Z",
+                                     data={"kind": "reply", "summary": "new", "replyTo": "alpha-root"}))
+            body = self.owner_get(srv, paths[0])
+            self.assertEqual(([t["root"] for t in body["threads"]], body["unread_total"]),
+                             (["alpha-root", "alpha-other"], 2))
+            for path in paths:
+                self.owner_get(srv, path)
+            self.assertEqual(srv.state.unread_builds, 3)
+
+    def test_unread_filter_keeps_the_needs_order(self):
+        with self.server() as srv:
+            needs = [t["root"] for t in self.owner_get(srv, "/api/threads?sort=needs")["threads"]]
+            body = self.owner_get(srv, "/api/threads?sort=needs&unread=1")
+            self.assertEqual([t["root"] for t in body["threads"]], needs)
+            self.assertEqual(body["unread_total"], 2)
+            self.put(srv, {"thread": "alpha-root", "t": "2026-10-21T10:05:00Z", "id": "beta-reply"})
+            body = self.owner_get(srv, "/api/threads?sort=needs&unread=1")
+            self.assertEqual(([t["root"] for t in body["threads"]], body["unread_total"]), (["alpha-other"], 1))
+
+    def test_unread_filter_reads_a_wrong_typed_state_as_empty(self):
+        (self.repo.root / readstate.FILE).write_text(json.dumps(
+            {"threads": 5, "muted": "alpha-root", "all_before": 7, "rev": "x"}), encoding="utf-8")
+        with self.server() as srv:
+            body = self.owner_get(srv, "/api/threads?sort=new&unread=1")
+        self.assertEqual(([t["root"] for t in body["threads"]], body["unread_total"]),
+                         (["alpha-other", "alpha-root"], 2))
+
+    def test_mark_all_with_ahead_marks_only_the_threads_dated_after_the_servers_clock(self):
+        # The page loaded at 10:10 (all_before); the click reaches the server at 10:20.
+        self.append("beta", line(2, "beta", id_="beta-mid", t="2026-10-21T10:15:00Z",
+                                 data={"kind": "note", "summary": "came after the load"}))
+        self.append("beta", line(3, "beta", id_="beta-mix", t="2026-10-21T10:12:00Z",
+                                 data={"kind": "note", "summary": "mixed"}))
+        self.append("alpha", line(3, "alpha", id_="alpha-mix-late", t="2026-10-21T10:50:00Z",
+                                  data={"kind": "reply", "summary": "clock ahead", "replyTo": "beta-mix"}))
+        with mock.patch.object(serve_mod, "now_iso", return_value="2026-10-21T10:20:00Z"), self.server() as srv:
+            status, state = self.put(srv, {"all_before": "2026-10-21T10:10:00Z", "ahead": True})
+            self.assertEqual(status, 200, state)
+            # alpha-other (10:30) is dated after the clock: marked. beta-mid (10:15) came between
+            # the load and the click: it stays new, and so does beta-mix, which holds a post like it.
+            self.assertEqual(state["threads"], {"alpha-other": {"t": "2026-10-21T10:30:00Z", "id": "alpha-other"}})
+            self.assertEqual(self.unread_by_root(srv),
+                             {"alpha-root": 0, "alpha-other": 0, "beta-mid": 1, "beta-mix": 2})
+            self.assertEqual(self.owner_get(srv, "/api/threads?sort=new&unread=1")["unread_total"], 2)
+            self.append("beta", line(4, "beta", id_="beta-after", t="2026-10-21T10:40:00Z",
+                                     data={"kind": "reply", "summary": "after", "replyTo": "alpha-other"}))
+            self.assertEqual(self.unread_by_root(srv)["alpha-other"], 1)
+            for bad in ("yes", 1, None):
+                status, reply = self.put(srv, {"all_before": "2026-10-21T10:10:00Z", "ahead": bad})
+                self.assertEqual(status, 400, bad)
+                self.assertIn("error", reply)
+
+    def test_all_before_more_than_five_minutes_ahead_of_the_clock_is_refused(self):
+        with mock.patch.object(serve_mod, "now_iso", return_value="2026-10-21T10:20:00Z"), self.server() as srv:
+            for t in ("2026-10-21T10:25:01Z", "9999-12-31T23:59:59Z"):
+                status, reply = self.put(srv, {"all_before": t})
+                self.assertEqual(status, 400, t)
+                self.assertIn("error", reply)
+                status, reply = self.put(srv, {"all_before": t, "ahead": True})
+                self.assertEqual(status, 400, t)
+            self.assertFalse((self.repo.root / readstate.FILE).exists())
+            status, state = self.put(srv, {"all_before": "2026-10-21T10:25:00Z"})
+            self.assertEqual((status, state["all_before"]), (200, "2026-10-21T10:25:00Z"))
+
+    def test_unread_filter_refuses_a_bad_value(self):
+        with self.server() as srv:
+            status, body = request(srv.url + "/api/threads?sort=new&unread=yes", headers=self.auth(OWNER_TOKEN))
+        self.assertEqual(status, 400)
+        self.assertIn("error", body)
 
     def test_edit_of_old_message_does_not_count(self):
         with self.server() as srv:

@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 import type { Route } from "../logic/route";
-import { act, fireEvent, renderHook, screen } from "@testing-library/react";
+import { act, cleanup, fireEvent, renderHook, screen } from "@testing-library/react";
 import { describe, expect, test } from "vitest";
 import { Shell, useHashRoute } from "./Shell";
 import { renderWith } from "./testing";
@@ -13,6 +13,14 @@ describe("Shell", () => {
     expect(screen.getByRole("navigation", { name: "Sections" })).toBeTruthy();
     expect(screen.getByRole("main").textContent).toBe("Main content");
     expect(screen.getByRole("complementary", { name: "Needs you and the land queue" })).toBeTruthy();
+  });
+
+  test("the tab title shows the unread total, and only the name with none", () => {
+    renderWith(<Shell route={HOME} mode="push" unread={12}><p>x</p></Shell>);
+    expect(document.title).toBe("(12) Crosstalk");
+    cleanup();
+    renderWith(<Shell route={HOME} mode="push" unread={0}><p>x</p></Shell>);
+    expect(document.title).toBe("Crosstalk");
   });
 
   test("the menu button opens the sidebar; Escape closes it and gives focus back", () => {
