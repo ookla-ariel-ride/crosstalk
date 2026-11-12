@@ -29,8 +29,8 @@ test("mark all read clears the count of a thread opened by its id, and it stays 
   // The unanswered order leaves the thread out, so it shows as a thread opened by its id.
   await page.goto("/v2/#/conversations?sort=unanswered&open=beta-e2e-cache");
   const row = page.getByRole("list", { name: "Opened threads" }).getByRole("button", { name: FIXTURE.linked });
-  // Two new, or more when another test replied in it first.
-  await expect(row).toContainText(/\d+ new/);
+  // Two new: no other test posts in this thread.
+  await expect(row).toContainText("2 new");
 
   const marked = page.waitForResponse((r) => r.url().endsWith("/api/read-state") && r.request().method() === "PUT" && r.ok());
   await page.getByRole("button", { name: /^Mark all read/ }).click();

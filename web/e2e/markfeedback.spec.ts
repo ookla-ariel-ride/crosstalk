@@ -24,7 +24,7 @@ test.afterEach(() => {
   write(JSON.parse(saved) as Record<string, unknown>);
 });
 
-test("on the default sort the button counts the unread threads, and a click says what it did and clears the counts", async ({ page }) => {
+test("on the default sort the button counts the server's unread threads, and a click says what it did and clears the counts", async ({ page }) => {
   await signIn(page);
   await page.goto("/v2/");
   const list = page.getByRole("list", { name: "Conversations" });
@@ -66,13 +66,12 @@ test("on the view New, mark all read leaves the list empty, also after a reload,
   await expect(empty).toBeVisible();
   await expect(page.getByRole("list", { name: "Conversations" })).toHaveCount(0);
 
-  // A new post in a thread of two participants (one participant's thread folds
-  // as routine). The log stamps whole seconds and the mark-all time covers its
+  // A new post in the fixture thread that only this test reads. The log stamps whole seconds and the mark-all time covers its
   // own second, so the post comes in the next one.
   await page.waitForTimeout(1100);
   relay(process.env.CROSSTALK_E2E_ROOT ?? "", "reply", "--harness", "codex", "--model", "gpt-5", "--from", "beta",
-    "--to-id", "beta-e2e-cache", "--summary", "One more", "--body", "The cache is warm again.");
+    "--to-id", "beta-e2e-index", "--summary", "One more", "--body", "The index is rebuilt again.");
   // The live update brings its thread into the view.
-  await expect(list.getByRole("button", { name: FIXTURE.linked })).toBeVisible({ timeout: 20000 });
+  await expect(list.getByRole("button", { name: FIXTURE.feedback })).toBeVisible({ timeout: 20000 });
   await expect(empty).toHaveCount(0);
 });

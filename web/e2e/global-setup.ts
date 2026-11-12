@@ -20,6 +20,8 @@ export const FIXTURE = {
   thread: "Schema change ready",
   linked: "Cache warmed",
   ownerRequest: "Read the new runbook",
+  /** Only markfeedback.spec.ts reads and replies to this thread. */
+  feedback: "Index rebuilt",
 };
 
 function freePort(): Promise<number> {
@@ -108,6 +110,10 @@ function buildFixture(root: string): string {
   relay(root, "append", ...who, "--from", "beta", "--op", "set", "--collection", "messages", "--id", "beta-e2e-cache",
     "--data", JSON.stringify({ from: "beta", kind: "sync", summary: FIXTURE.linked, body: "The cache is warm.", to: ["alpha"] }));
   relay(root, "reply", ...who, "--from", "alpha", "--to-id", "beta-e2e-cache", "--summary", "Thanks", "--body", "I saw it.");
+  // A thread of two participants (one participant's thread folds as routine) for markfeedback.spec.ts alone.
+  relay(root, "append", ...who, "--from", "beta", "--op", "set", "--collection", "messages", "--id", "beta-e2e-index",
+    "--data", JSON.stringify({ from: "beta", kind: "sync", summary: FIXTURE.feedback, body: "The index is rebuilt.", to: ["alpha"] }));
+  relay(root, "reply", ...who, "--from", "alpha", "--to-id", "beta-e2e-index", "--summary", "Noted", "--body", "I will use it.");
   // The owner read the thread's root before the replies came.
   writeFileSync(join(root, "read-state.json"),
     JSON.stringify({ threads: { "beta-e2e-schema": { t: timeOf(root, "beta-e2e-schema"), id: "beta-e2e-schema" } }, muted: [], all_before: null }));
