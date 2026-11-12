@@ -1756,6 +1756,16 @@
     return res("filterUnansweredNoAnswer", ok && back, "open=" + ok + " back=" + back);
   });
 
+  // A TURN ASK always needs an answer (requests.needs_answer): Unanswered keeps it, whatever its body ends with.
+  S.push(async function filterUnansweredTurnAsk() {
+    await go("timeline");
+    await addDoc("messages", "fx-turn", { t: ago(3), from: "gamma", kind: "request", to: ["beta"], needs_answer: false, summary: "TURN ASK gamma fx-0101", body: "Ready. No answer needed." });
+    await press("f-open");
+    var ok = shows("fx-turn");
+    await press("f-open");
+    return res("filterUnansweredTurnAsk", ok, "open=" + ok);
+  });
+
   // A question posted as a reply counts for Unanswered, as it does on the Help tab, and opens its thread to it.
   // A reply sent to someone counts as sent to them; a starred reply opens its thread under Starred.
   S.push(async function filterNestedMatches() {

@@ -301,7 +301,10 @@ NO_ANSWER = "No answer needed"
 
 def needs_answer(doc: dict) -> bool:
     """False when the row has `needs_answer: false`, or its body (white space and one last
-    full stop removed) ends with NO_ANSWER; true otherwise."""
+    full stop removed) ends with NO_ANSWER; true otherwise. A TURN ASK always needs an
+    answer: it waits for a GRANTED."""
+    if is_turn_ask(doc):
+        return True
     if doc.get("needs_answer") is False:
         return False
     body = doc.get("body")

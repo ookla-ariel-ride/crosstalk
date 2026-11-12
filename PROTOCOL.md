@@ -274,6 +274,8 @@ LAND END alpha feature-one-0101: landed, main 1a2b3c4d; feature-two-0101 stopped
 ```
 
 Post `TURN ASK` as kind `request`: it waits for the coordinator's `GRANTED`.
+A `TURN ASK` always needs an answer, even when its body ends with "No answer
+needed".
 Only the coordinator is asked: the inbox and the live notes show a `TURN ASK`
 to the coordinator alone, whoever else its `to` lists, and the other projects
 read `relay.py queue`. Only the asking project runs its gate and land, after

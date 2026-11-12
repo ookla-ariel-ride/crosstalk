@@ -862,7 +862,9 @@ td.num, td.t { font: 12px var(--mono); font-variant-numeric: tabular-nums; white
   }
   // requests.needs_answer: false for `needs_answer: false`, or a body that ends with "No answer needed"
   // (white space and one last full stop removed). Such a request waits for nobody.
+  // A TURN ASK (requests.is_turn_ask) always needs an answer: it waits for a GRANTED.
   function needsAnswer(m) {
+    if (m.kind === "request" && typeof m.summary === "string" && /^\s*TURN ASK\b/.test(m.summary)) return true;
     if (m.needs_answer === false) return false;
     if (typeof m.body !== "string") return true;
     var s = m.body.trim();
