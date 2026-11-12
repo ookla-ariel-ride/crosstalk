@@ -73,6 +73,20 @@ describe("queries", () => {
     expect(invalidated()).toEqual([JSON.stringify(keys.threads("new")), JSON.stringify(keys.threads("hot"))]);
   });
 
+  test("an ack row invalidates the thread list and the open threads: it can end a request's wait", () => {
+    invalidateForRows(qc, [row("acks", "owner--alpha-0001")]);
+    const got = invalidated();
+    expect(got).toEqual(
+      expect.arrayContaining([
+        JSON.stringify(keys.threads("new")),
+        JSON.stringify(keys.threads("hot")),
+        JSON.stringify(keys.thread("alpha-0001")),
+        JSON.stringify(keys.thread("beta-0009")),
+      ]),
+    );
+    expect(got.filter((k) => k.startsWith('["section"'))).toEqual([]);
+  });
+
   test("a row with no collection invalidates nothing", () => {
     invalidateForRows(qc, [{ from: "alpha", seq: null, collection: null, id: null }]);
     expect(invalidated()).toEqual([]);
