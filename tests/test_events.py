@@ -129,6 +129,17 @@ class EventsRouteTests(unittest.TestCase):
                          {"rows": [{"from": "alpha", "seq": 2, "collection": "messages", "id": "alpha-0002"}]})
         self.assertNotIn("secret body", data)
 
+    def test_a_lone_surrogate_in_an_id_still_sends_the_rows_event(self):
+        stream = Stream(self.srv.url)
+        try:
+            stream.read_until("event: ready")
+            append(self.repo.root, "alpha", line(2, "alpha", id_="alpha-\ud800", data={"kind": "reply"}))
+            stream.read_until("event: rows")
+            data = stream.resp.fp.readline().decode("utf-8")
+        finally:
+            stream.close()
+        self.assertEqual(json.loads(data[len("data: "):])["rows"][0]["id"], "alpha-\ud800")
+
     def test_ready_comes_after_the_mark_and_a_row_after_the_mark_follows_it(self):
         # The client refetches on `ready`; a row written before the mark is in
         # that refetch, and a row written after it must come as an event.

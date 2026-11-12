@@ -26,18 +26,24 @@ OWNER_TOKEN = "owner-token-for-wrong-types"
 AUTH = {"Authorization": "Bearer " + OWNER_TOKEN}
 T = "2026-10-21T10:00:00Z"
 
-WRONG = {"list": [], "object": {"a": 1}, "number": 7, "boolean": True, "null": None, "empty text": ""}
-# The fields that hold a list: these also get a string.
-LIST_FIELDS = ("to", "positions", "objections", "findings", "branches", "options")
+# A lone surrogate is a valid JSON string escape ("\ud800") that no UTF-8 encoder takes.
+SURROGATE = "bad \ud800 x"
+WRONG = {"list": [], "object": {"a": 1}, "number": 7, "boolean": True, "null": None, "empty text": "",
+         "lone surrogate": SURROGATE}
+# The fields that hold a list: these also get a string, and a list of wrong elements.
+LIST_FIELDS = ("to", "positions", "objections", "findings", "branches", "options", "commits")
 
 
 def wrong(field):
-    return dict(WRONG, text="x") if field in LIST_FIELDS else WRONG
+    if field not in LIST_FIELDS:
+        return WRONG
+    return dict(WRONG, text="x", **{"list of wrong": [[], {"a": 1}, 7, True, None, "", SURROGATE]})
 
 # The fields the v2 server code reads from a row, by the row's base data.
 MESSAGE_FIELDS = ("kind", "summary", "body", "from", "to", "t", "replyTo", "status", "verdict", "id",
                   "project", "source", "question", "resolution", "position", "positions", "objections",
-                  "findings", "reviewer", "report", "options", "answered", "withdrawn", "seen", "branches")
+                  "findings", "reviewer", "report", "options", "answered", "withdrawn", "seen", "branches",
+                  "harness", "model", "recommend", "commits", "hold", "updated")
 MESSAGE_BASES = {
     "question": {"kind": "question", "summary": "bad question", "to": ["owner"]},
     "request": {"kind": "request", "summary": "bad request", "to": ["owner"]},
@@ -47,7 +53,8 @@ MESSAGE_BASES = {
     "review": {"kind": "disagreement", "summary": "bad override", "source": "codex-review", "project": "alpha"},
 }
 SECTION_FIELDS = {
-    "agreements": ("title", "status", "builder", "owner", "adopter", "summary", "body", "t", "id", "from"),
+    "agreements": ("title", "status", "builder", "owner", "adopter", "summary", "body", "t", "id", "from",
+                   "hold", "holder", "updated", "commits"),
     "decisions": ("title", "project", "source", "summary", "body", "t"),
     "lessons": ("title", "fix", "summary", "body", "t"),
     "incidents": ("title", "fix", "project", "end", "summary", "body", "t"),
@@ -124,23 +131,29 @@ class WrongTypeTests(unittest.TestCase):
         return body
 
     def check_routes(self, srv, coll):
-        for order in ("needs", "new", "hot", "unanswered"):
+        # The good root is a question to the owner that nobody answered: it needs the owner.
+        for order in ("needs", "new"):
+            roots = [t["root"] for t in self.get(srv, "/api/threads?sort=%s&limit=200" % order)["threads"]]
+            self.assertIn("alpha-root", roots, order)
+        for order in ("hot", "unanswered"):
             self.get(srv, "/api/threads?sort=" + order)
-        roots = [t["root"] for t in self.get(srv, "/api/threads?sort=new&limit=200")["threads"]]
-        self.assertIn("alpha-root", roots)
         thread = self.get(srv, "/api/thread/alpha-root")
-        self.assertIn("beta-reply", [m["id"] for m in thread["messages"]])
+        self.assertEqual(["alpha-root", "beta-reply"], [m["id"] for m in thread["messages"]][:2])
         for bad in ("alpha-bad", "rev-bad"):
             self.get(srv, "/api/thread/" + bad)
         for name in SECTIONS:
-            body = self.get(srv, "/api/section/" + name)
-            if COLLECTION[name] != coll:
-                continue
-            self.get(srv, "/api/section/%s?q=x" % name)
-            if coll != "messages":
-                self.assertIn("alpha-good-" + coll, [r["id"] for r in body["rows"]], name)
-        for route in ("/api/queue", "/api/vitals", "/api/snapshot", "/api/read-state", "/api/me",
-                      "/api/health", "/api/palette", "/api/" + coll):
+            routes = ["/api/section/" + name] + (["/api/section/%s?q=good" % name] if COLLECTION[name] == coll else [])
+            for route in routes:
+                body = self.get(srv, route)
+                if COLLECTION[name] in SECTION_FIELDS:
+                    self.assertIn("alpha-good-" + COLLECTION[name], [r["id"] for r in body["rows"]], route)
+        snapshot = self.get(srv, "/api/snapshot")["collections"]
+        self.assertIn("alpha-root", snapshot["messages"])
+        for other in SECTION_FIELDS:
+            self.assertIn("alpha-good-" + other, snapshot[other])
+        docs = self.get(srv, "/api/" + coll)["docs"]
+        self.assertIn("alpha-root" if coll == "messages" else "alpha-good-" + coll, docs)
+        for route in ("/api/queue", "/api/vitals", "/api/read-state", "/api/me", "/api/health", "/api/palette"):
             self.get(srv, route)
         rows, _mark = events_mod.since(self.repo.root, {})
         self.assertTrue(any(r["id"] == "beta-reply" for r in rows))

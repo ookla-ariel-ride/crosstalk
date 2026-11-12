@@ -50,7 +50,10 @@ Every `GET` route also answers `HEAD`. Reads need no sign-in.
 The log check covers the line, not the types inside its `data`, so a row can
 hold any JSON value in any field. The thread routes read a `kind`, `from`,
 `replyTo` or `t` that holds no text as a missing field
-(`threads.readable`), and every read route answers with the other rows. When
+(`threads.readable`), and every read route answers with the other rows.
+A string with a lone surrogate (`"\ud800"`, valid in JSON and not in UTF-8)
+makes the server send that answer, a `rows` event or an export with `\u`
+escapes (`files.utf8_json`), so the JSON stays valid. When
 a route still fails, the server answers `500` with
 `{"error": "internal error"}` and writes one line to stderr: the method, the
 path without its query, the exception type and the file and line. The line

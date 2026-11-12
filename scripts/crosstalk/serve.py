@@ -46,7 +46,7 @@ from pathlib import Path
 from typing import Dict, List, Optional, Tuple
 from urllib.parse import parse_qs, unquote, urlsplit
 
-from .files import atomic_write_text
+from .files import atomic_write_text, utf8_json
 from .logs import COLLECTIONS, append_line, check_all, check_all
 from .onboard import PALETTE, _locked_onboard, onboard
 from .participants import ensure_roster, load_roster
@@ -531,7 +531,7 @@ class CrosstalkHandler(BaseHTTPRequestHandler):
             self.wfile.write(body)
 
     def _json(self, status: int, payload, headers=None) -> None:
-        body = json.dumps(payload, ensure_ascii=False).encode("utf-8")
+        body = utf8_json(payload).encode("utf-8")
         self._send(status, body, JSON_TYPE, headers)
 
     def _error(self, status: int, message: str) -> None:
@@ -762,7 +762,7 @@ class CrosstalkHandler(BaseHTTPRequestHandler):
                     seen = now_stamp
                     rows, mark = events_mod.since(state.root, mark)
                     if rows:
-                        body = json.dumps({"rows": rows}, ensure_ascii=False)
+                        body = utf8_json({"rows": rows})
                         self.wfile.write(("event: rows\ndata: %s\n\n" % body).encode("utf-8"))
                         last = time.monotonic()
                         continue

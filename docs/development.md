@@ -49,7 +49,7 @@ Part of the [Crosstalk docs](../README.md#documentation).
 | `scripts/crosstalk/service.py` | The self-describing `service` block, and `version`: the commit the install runs |
 | `scripts/crosstalk/exporter.py` | `export-page` |
 | `scripts/crosstalk/deploy.py` | `deploy`: copies one commit into the deployment folder, with the pre-check, the manifest and the rollback |
-| `scripts/crosstalk/files.py` | The atomic file writer the other modules use |
+| `scripts/crosstalk/files.py` | The atomic file writer the other modules use, and `utf8_json`: JSON text that encodes as UTF-8, with `\u` escapes when a string holds a lone surrogate |
 | `scripts/install-service.sh`, `scripts/launchd/` | LaunchAgent installer (`--data-root <dir>` for a data folder) and plist templates |
 | `scripts/housekeeper.sh` | The 30-minute check, and the push when `crosstalk.autopush` is on |
 | `tests/` | Python tests (`test_*.py`), page scenarios (`tests/page/`), live-server end-to-end tests (`tests/server/`), and the one-folder kits, hooks and standard jobs that `test_data_root_texts.py` compares against, and the launchd jobs, service commands and ask template that `test_service_data_root.py` compares against (`tests/baseline/`) |
