@@ -9,7 +9,8 @@ log and out of git:
 row of that same second it covered. Times have a resolution of one second and
 ids are not in write order, so the `seen` list keeps a row that lands in the
 same second from hiding. A place never moves backwards. A file that does not
-parse reads as empty and stays on disk as it is until the next write.
+parse, or nests too deep to parse, reads as empty and stays on disk as it is
+until the next write. A `t` must have the log's exact zero-padded form.
 
 Each `relay.py inbox` is its own process, so a write takes an exclusive
 `flock` on `inbox-state.json.lock`, reads the file again, merges and replaces
@@ -19,19 +20,29 @@ Python 3.9, standard library only.
 """
 import fcntl
 import json
+from datetime import datetime
 from pathlib import Path
 from typing import Dict, Optional, Tuple
 
 from .files import atomic_write_text
-from .readstate import is_time
+from .readstate import _TIME_FORMAT, is_time
 
 FILE = "inbox-state.json"
 LOCK = "inbox-state.json.lock"
 
 
+def _is_log_time(value) -> bool:
+    """True for a time in the log's exact zero-padded form.
+
+    `is_time` also takes `2026-11-1T22:17:00Z`, which sorts as a string after
+    `2026-11-10T...` and so could put a place in the future and hide rows.
+    """
+    return is_time(value) and datetime.strptime(value, _TIME_FORMAT).strftime(_TIME_FORMAT) == value
+
+
 def clean_place(raw) -> Optional[dict]:
     """`{"t", "seen"}` with `seen` sorted and without repeats, or None for a bad shape."""
-    if not isinstance(raw, dict) or not is_time(raw.get("t")):
+    if not isinstance(raw, dict) or not _is_log_time(raw.get("t")):
         return None
     seen = raw.get("seen")
     if not isinstance(seen, list) or not all(isinstance(s, str) and s for s in seen):
@@ -42,7 +53,7 @@ def clean_place(raw) -> Optional[dict]:
 def _read(root: Path) -> Optional[dict]:
     try:
         raw = json.loads((Path(root) / FILE).read_text(encoding="utf-8"))
-    except (OSError, UnicodeDecodeError, ValueError):
+    except (OSError, UnicodeDecodeError, ValueError, RecursionError):
         return None
     return raw if isinstance(raw, dict) else None
 

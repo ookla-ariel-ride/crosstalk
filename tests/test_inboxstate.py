@@ -52,6 +52,18 @@ class InboxStateTests(unittest.TestCase):
         self.assertIsNone(inboxstate.clean_place({"t": T1}))
         self.assertIsNone(inboxstate.clean_place("x"))
 
+    def test_clean_place_refuses_a_time_without_zero_padding(self):
+        for t in ("2026-11-1T22:17:00Z", "2026-1-11T22:17:00Z", "2026-11-11T2:17:00Z",
+                  "2026-11-11T22:7:00Z", "2026-11-11T22:17:0Z"):
+            self.assertIsNone(inboxstate.clean_place({"t": t, "seen": []}), t)
+        (self.root / inboxstate.FILE).write_text(
+            '{"alpha": {"t": "2026-11-1T22:17:00Z", "seen": []}}', encoding="utf-8")
+        self.assertEqual(inboxstate.load(self.root), {})
+
+    def test_deeply_nested_file_reads_as_empty(self):
+        (self.root / inboxstate.FILE).write_text("[" * 200000, encoding="utf-8")
+        self.assertEqual(inboxstate.load(self.root), {})
+
     def test_move_never_goes_back(self):
         later = {"t": T2, "seen": ["b"]}
         inboxstate.move(self.root, "alpha", later)
