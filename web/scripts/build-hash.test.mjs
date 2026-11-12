@@ -2,7 +2,7 @@ import { mkdtempSync, mkdirSync, readFileSync, writeFileSync, rmSync } from "nod
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, describe, expect, test } from "vitest";
-import { buildHash, hashInputs } from "./build-hash.mjs";
+import { buildHash, hashInputs, stampPage } from "./build-hash.mjs";
 
 // tests/test_web_dist.py builds the same tree and expects the same value.
 const KNOWN_HASH = "4c2c071f28ee37a37c894fa1bbc27c5e760eb77047cd6c549394cdb574b4fbe7";
@@ -29,6 +29,13 @@ afterEach(() => {
 });
 
 describe("build hash", () => {
+  test("the built page gets the hash in its crosstalk-build meta", () => {
+    const page = '<head>\n<meta name="crosstalk-build" content="" />\n</head>';
+    expect(stampPage(page, "abc")).toBe('<head>\n<meta name="crosstalk-build" content="abc" />\n</head>');
+    expect(stampPage(stampPage(page, "abc"), "def")).toContain('content="def"');
+    expect(() => stampPage("<head></head>", "abc")).toThrow(/crosstalk-build/);
+  });
+
   test("matches the Python rule", () => {
     expect(buildHash(makeWeb())).toBe(KNOWN_HASH);
   });

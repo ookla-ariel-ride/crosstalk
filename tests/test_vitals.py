@@ -148,9 +148,12 @@ class VitalsRouteTests(unittest.TestCase):
                 srv.state.buildhost_state = r.root / "buildhost-state.json"
                 srv.state.code_root = code
                 _, built = request(srv.url + "/api/vitals")
+                (code / "web" / "dist" / ".build-hash").write_text(" \n", encoding="utf-8")
+                _, empty = request(srv.url + "/api/vitals")
                 (code / "web" / "dist" / ".build-hash").unlink()
                 _, unbuilt = request(srv.url + "/api/vitals")
         self.assertEqual(built["page_build"], "abc123")
+        self.assertIsNone(empty["page_build"])
         self.assertIsNone(unbuilt["page_build"])
 
 

@@ -34,6 +34,19 @@ describe("NewVersion", () => {
     expect(reload).toHaveBeenCalledTimes(1);
   });
 
+  test("the build the page was built as counts from the first render: a deploy before the first vitals answer shows the bar", async () => {
+    const meta = document.createElement("meta");
+    meta.name = "crosstalk-build";
+    meta.content = "aaa";
+    document.head.append(meta);
+    try {
+      renderWith(<NewVersion />, [[keys.vitals, vitals("bbb")]]);
+      expect(await screen.findByText("A new version of this page is ready.")).toBeTruthy();
+    } finally {
+      meta.remove();
+    }
+  });
+
   test("a server with no build named never shows the bar, and the first build named is the one kept", async () => {
     const { qc } = renderWith(<NewVersion />, [[keys.vitals, vitals(null)]]);
     await act(async () => qc.setQueryData(keys.vitals, vitals("aaa")));

@@ -1,5 +1,7 @@
 // Writes dist/.build-hash: a hash of the source of the built page, so
 // tests/test_web_dist.py can tell when web/dist/ is older than its source.
+// It also writes the hash into the crosstalk-build meta of dist/index.html, so
+// an open page knows its build from the first render (src/ui/NewVersion.tsx).
 //
 // The rule. tests/test_web_dist.py computes the same value; keep the two
 // rules identical.
@@ -56,9 +58,19 @@ export function buildHash(web) {
   return h.digest("hex");
 }
 
+const META = /<meta name="crosstalk-build" content="[^"]*"/;
+
+/** `html` with `hash` in its crosstalk-build meta; the meta must be there (web/index.html). */
+export function stampPage(html, hash) {
+  if (!META.test(html)) throw new Error("no crosstalk-build meta in the built index.html");
+  return html.replace(META, `<meta name="crosstalk-build" content="${hash}"`);
+}
+
 if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {
   const web = dirname(dirname(fileURLToPath(import.meta.url)));
   const hash = buildHash(web);
+  const page = join(web, "dist", "index.html");
+  writeFileSync(page, stampPage(readFileSync(page, "utf8"), hash));
   writeFileSync(join(web, "dist", ".build-hash"), `${hash}\n`);
   console.log(`build hash: ${hash}`);
 }
