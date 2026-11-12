@@ -22,7 +22,7 @@ from test_notify import FakeSession
 from crosstalk import live
 from crosstalk.logs import append_line, check_all
 from crosstalk.participants import load_roster
-from crosstalk.serve import CrosstalkHandler, repo_build_info, repo_commit
+from crosstalk.serve import MAX_BODY, CrosstalkHandler, repo_build_info, repo_commit
 from crosstalk.tokens import token_hash
 
 
@@ -486,6 +486,110 @@ class AppendTests(unittest.TestCase):
                     self.assertEqual(status, 400, (bad, body))
                     self.assertIn("id", json.dumps(body))
             self.assertFalse((r.root / "log" / "rev.jsonl").exists())
+
+
+class AppendBodyTests(unittest.TestCase):
+    """The checks POST /api/append runs on the raw body before it writes a line."""
+
+    TOKEN = "rev-body-checks-test-token"
+
+    def setUp(self):
+        self.r = TempRepo()
+        self.r.__enter__()
+        self.addCleanup(self.r.__exit__, None, None, None)
+        self.r.write_roster()
+        self.srv = RunningServer(self.r.root, tokens={"rev": token_hash(self.TOKEN)}).start_server()
+        self.addCleanup(self.srv.close)
+        self.log = self.r.root / "log" / "rev.jsonl"
+
+    def post(self, raw, length=None, token=True, timeout=10):
+        """(status, decoded JSON) for raw body bytes, with Content-Length `length` when given."""
+        import http.client
+        conn = http.client.HTTPConnection("127.0.0.1", self.srv.port, timeout=timeout)
+        try:
+            conn.putrequest("POST", "/api/append")
+            conn.putheader("Content-Type", "application/json")
+            conn.putheader("Content-Length", str(len(raw)) if length is None else length)
+            if token:
+                conn.putheader("Authorization", "Bearer " + self.TOKEN)
+            conn.endheaders(raw)
+            resp = conn.getresponse()
+            return resp.status, json.loads(resp.read().decode("utf-8"))
+        finally:
+            conn.close()
+
+    def message(self, **over):
+        body = {"from": "rev", "op": "set", "collection": "messages", "id": "rev-0001",
+                "data": {"from": "rev", "kind": "reply", "summary": "hi"}}
+        body.update(over)
+        return body
+
+    def padded(self, size):
+        """A valid append of exactly `size` bytes: the server ignores the extra `pad` key."""
+        base = json.dumps(self.message(pad="")).encode("utf-8")
+        raw = json.dumps(self.message(pad="x" * (size - len(base)))).encode("utf-8")
+        self.assertEqual(len(raw), size)
+        return raw
+
+    def assert_refused(self, status, body, error):
+        self.assertEqual((status, body), (400, {"error": error}))
+        self.assertFalse(self.log.exists())
+
+    def test_a_body_over_the_limit_is_refused_unread(self):
+        status, body = self.post(self.padded(MAX_BODY + 1))
+        self.assert_refused(status, body, "the body is too big")
+
+    def test_a_body_at_the_limit_is_taken(self):
+        status, body = self.post(self.padded(MAX_BODY))
+        self.assertEqual(status, 201, body)
+        self.assertNotIn("pad", json.loads(self.log.read_text(encoding="utf-8")))
+
+    def test_an_empty_or_bad_length_is_refused(self):
+        for length, error in (("0", "the body is empty"), ("-3", "the body is empty"),
+                              ("abc", "bad Content-Length")):
+            status, body = self.post(b"", length=length)
+            self.assert_refused(status, body, error)
+
+    def test_a_body_that_is_not_json_is_refused(self):
+        for raw in (b"{nope", b"\xff\xfe{}", b"not json at all"):
+            status, body = self.post(raw)
+            self.assert_refused(status, body, "the body is not JSON")
+        for raw in (b"[1]", b"\"text\"", b"5"):
+            status, body = self.post(raw)
+            self.assert_refused(status, body, "the body must be a JSON object")
+
+    @unittest.expectedFailure
+    def test_a_null_body_is_answered(self):
+        # Defect: _read_json returns None for the JSON `null`, which its callers
+        # read as "400 already sent", so the request gets no answer at all.
+        status, body = self.post(b"null", timeout=1)
+        self.assert_refused(status, body, "the body must be a JSON object")
+
+    def test_via_import_is_refused(self):
+        raw = json.dumps(self.message(via="import")).encode("utf-8")
+        status, body = self.post(raw)
+        self.assert_refused(status, body,
+                            "via 'import' marks rows from an old import; the API does not take it")
+
+    def test_via_must_be_a_string(self):
+        for via in (5, ["page"], {"a": 1}, True):
+            status, body = self.post(json.dumps(self.message(via=via)).encode("utf-8"))
+            self.assert_refused(status, body, "via must be a string")
+
+    def test_another_via_is_kept_on_the_line(self):
+        status, body = self.post(json.dumps(self.message(via="mcp")).encode("utf-8"))
+        self.assertEqual((status, body["via"]), (201, "mcp"))
+        self.assertEqual(json.loads(self.log.read_text(encoding="utf-8"))["via"], "mcp")
+
+    def test_a_client_t_is_refused_whatever_its_value(self):
+        for t in ("2020-01-01T00:00:00Z", None, "", 0):
+            status, body = self.post(json.dumps(self.message(t=t)).encode("utf-8"))
+            self.assert_refused(status, body, "the server stamps the line's t; leave it out")
+
+    def test_data_must_be_an_object(self):
+        for data in (None, [], "hi", 1):
+            status, body = self.post(json.dumps(self.message(data=data)).encode("utf-8"))
+            self.assert_refused(status, body, "data must be a JSON object")
 
 
 class OwnerTests(unittest.TestCase):
