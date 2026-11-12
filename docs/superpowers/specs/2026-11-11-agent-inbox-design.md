@@ -64,27 +64,38 @@ This design gives the agents both, on the command line they already use.
 
 ### The place
 
-The place of a participant is the time of the newest row its last `--ack`
-covered, plus the ids of every row of that same second that the ack covered.
-It lives in `inbox-state.json` in the data root, outside the log and out of
-git, in the same style as `read-state.json`:
+Changed 2026-11-12 after an outside review: the place is a sequence number per writer, not a time.
 
-    {"alpha": {"t": "2026-11-11T22:17:00Z", "seen": ["beta-0042", "a-0007"]}}
+The place of a participant holds, for each writer, the highest `seq` of that
+writer's log lines that its last `--ack` covered. It lives in
+`inbox-state.json` in the data root, outside the log and out of git, in the
+same style as `read-state.json`:
 
-A row is new when its time is after `t`, or equal to `t` with an id that is
-not in `seen`. Times have a resolution of one second and ids are not in
-write order, so a place of one time and one id could hide a row that lands
-in the same second. The `seen` list closes that gap. The time of a row is
-the time the replay gives it (its own `t`, or the time of its log line), the
-same for every collection.
+    {"alpha": {"beta": 42, "owner": 7}}
+
+Each writer appends to its own file, `log/<writer>.jsonl`, and the check of
+the log refuses a `seq` that is not one more than the line before it. So the
+`seq` of a line is the order in which its writer appended it, with no gap,
+repeat or restart. An import goes through the same append and gets the next
+`seq` too.
+
+A log line is new when its `seq` is above the number of its writer in the
+place, or its writer is not in the place. This holds for `set`, `update` and
+every collection, whatever the line time or the id. An earlier place of a time
+and a list of ids lost an edit in the same second and a row that came late
+with an older line time; the `seq` of each writer has neither gap.
 
 A place never moves backwards. A file that does not parse reads as empty,
-which means "everything is new".
+which means "everything is new". A place of the earlier form,
+`{"t": ..., "seen": [...]}`, converts on read with the log in hand: for each
+writer, the highest `seq` among the lines it covered (line time before `t`,
+or equal to `t` with the id in `seen`), up to the first line of that writer
+it did not cover. Only the new form is written.
 
 `relay.py inbox` is its own process, so two commands can write at one time.
-The write reads the file again, merges (the later time wins; at equal times
-the `seen` lists join) and replaces the file atomically. Because a place
-only moves forward, the merge loses nothing.
+The write reads the file again, merges (each writer keeps the higher number)
+and replaces the file atomically. Because a place only moves forward, the
+merge loses nothing.
 
 The place is a file and not a log row, because it changes at each check-in
 of each participant and tells no other participant anything.
@@ -93,10 +104,11 @@ of each participant and tells no other participant anything.
 
 Returns the same sections as today, each cut down to what is new:
 
-- `requests`, `owner_messages`, `thread_replies`: the items whose row time
-  and id are after the place. An item that was open before the place and is
+- `requests`, `owner_messages`, `thread_replies`: the items that a new log
+  line touched, a new row or an edit of an old one, with their present
+  content. An item that was open before the place and is
   still open is not repeated; it is counted in `still_open` (below).
-- `agreements_to_adopt`: only the agreements after the place, plus
+- `agreements_to_adopt`: only the agreements a new log line touched, plus
   `agreements_open`, the count of all that the participant did not adopt.
 - `stale_locks` and `service`: as today.
 - `still_open`: for requests and owner messages, a list of
@@ -104,9 +116,9 @@ Returns the same sections as today, each cut down to what is new:
   for this participant and need an answer. No bodies.
 - `agreements_open` is the length of the list that `agreements_to_adopt_for`
   gives today.
-- `place`: the place this answer was cut at, and `next`: the place of the
-  newest row in the log as this run loaded it. `next` has a value on a quiet
-  day too, so the place moves forward when nothing is new.
+- `place`: the place this answer was cut at, and `next`: the highest `seq`
+  of each writer of the log as this run loaded it, one number for each
+  writer. `next` has a value on a quiet day too.
 
 ### `--ack`
 
@@ -114,13 +126,16 @@ Returns the same sections as today, each cut down to what is new:
 `next`. `inbox <id> --ack` with no `--new` moves the place and prints the
 full output as today, for the first run of a session.
 
-The place moves to `next` of the same run, never to a later row, so a row
+The place moves to `next` of the same run, never to a later line, so a row
 that lands between the read and the ack stays new. The ack happens after the
 output is written and flushed. If the command fails before that, a broken
 pipe included, the place does not move.
 
 An agent that wants to read first and ack later runs `--new`, then
-`inbox <id> --ack-to '<next as JSON>'` with the `next` it got.
+`inbox <id> --ack-to '<next as JSON>'` with the `next` it got. Each writer
+keeps the higher number. `--ack-to` refuses a place that is not well-formed,
+a number above the highest `seq` of its writer in the log, and a place that
+is behind the stored one and ahead of it for no writer.
 
 ### `needs_answer`
 
@@ -252,12 +267,13 @@ Python `unittest`, standard library only, in `tests/`:
 
 - the place: never backwards, a broken file reads as empty, a merge of two
   writes loses nothing;
-- `--new`: a row in `seen` is not new; a row of the same second that is not
-  in `seen` is new, whatever its id; a row with no `t` of its own uses its
-  line time; `still_open` holds no body; `next` has a value when nothing is
+- `--new`: a line the ack covered is not new; a line after it is new,
+  whatever its id, its line time or its op: an edit in the same second, a
+  row that comes late with an older line time, a row ahead of the clock; a
+  place of the earlier form converts and loses nothing; `still_open` holds no body; `next` has a value when nothing is
   new;
 - `--ack` moves the place only after the output, and to `next` of the same
-  run; `--ack-to` refuses a place that is behind;
+  run; `--ack-to` refuses a place that is behind and one ahead of the log;
 - `needs_answer` for the field, the sentence, the sentence with a full stop,
   and a body that only quotes the sentence in the middle;
 - `ack --none` clears one name from `pending_from` and no other; an ack from

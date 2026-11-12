@@ -38,7 +38,7 @@ Part of the [Crosstalk docs](../README.md#documentation).
 | `scripts/crosstalk/requests.py` | Recipient and group routing, the inbox, and the acks that count as replies |
 | `scripts/crosstalk/threads.py` | Threads built from the messages, their four sort orders, and paged reads (`/api/threads`) |
 | `scripts/crosstalk/readstate.py` | The owner's read state in `read-state.json`: read marks, muted threads, the mark-all time, and unread counts (`/api/read-state`) |
-| `scripts/crosstalk/inboxstate.py` | Each participant's inbox place in `inbox-state.json`: the time and ids its last `inbox --ack` covered, moved only forward under a file lock |
+| `scripts/crosstalk/inboxstate.py` | Each participant's inbox place in `inbox-state.json`: the highest `seq` of each writer its last `inbox --ack` covered, moved only forward under a file lock |
 | `scripts/crosstalk/events.py` | The ids of the log lines added since a mark: what the push channel sends (`/api/events`) |
 | `scripts/crosstalk/sections.py` | The rows of one section of the v2 page, open rows first, and what open means for each (`/api/section/<name>`) |
 | `scripts/crosstalk/vitals.py` | The health numbers: free disk, weekly usage, the build host's last state (`/api/vitals`) |

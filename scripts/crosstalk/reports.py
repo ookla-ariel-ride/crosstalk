@@ -3,7 +3,7 @@ from pathlib import Path
 from typing import Dict, List, Optional, Tuple
 
 from .inboxstate import is_new
-from .logs import Problem, check_all
+from .logs import Line, Problem, check_all
 from .participants import Roster
 from .replay import enrich_messages, last_line_map, load_all_lines, replay
 from .requests import (
@@ -31,20 +31,17 @@ def trust_of(pid, roster: Roster) -> str:
     return p.trust if p is not None else "unknown"
 
 
-def load_docs_and_times(root: Path, roster: Roster
-                        ) -> Tuple[Optional[Dict], Dict[Tuple[str, str], str], List[Problem]]:
-    """Replayed, enriched docs and the time of each row, or (None, {}, fatal problems).
+def load_docs_and_lines(root: Path, roster: Roster
+                        ) -> Tuple[Optional[Dict], List[Line], List[Problem]]:
+    """Replayed, enriched docs and the log lines they came from, or (None, [], fatal problems).
 
-    The time of a row is the `t` of the last log line that touched it: an edit
-    of an old row makes it new again for `inbox --new`, and a row whose own `t`
-    lies behind the clock still lands after the place it was written after.
+    `inbox --new` reads the lines: each carries its writer and its `seq`.
     """
     fatal = [p for p in check_all(root, roster) if p.fatal]
     if fatal:
-        return None, {}, fatal
+        return None, [], fatal
     lines = load_all_lines(root, roster)
-    times = {key: ln.t for key, ln in last_line_map(lines).items()}
-    return enrich_messages(replay(lines), lines), times, []
+    return enrich_messages(replay(lines), lines), lines, []
 
 
 def load_docs(root: Path, roster: Roster) -> Tuple[Optional[Dict], List[Problem]]:
@@ -53,7 +50,7 @@ def load_docs(root: Path, roster: Roster) -> Tuple[Optional[Dict], List[Problem]
     relay.py read and inbox refuse to answer from a broken log; so does every
     caller of this function.
     """
-    docs, _times, fatal = load_docs_and_times(root, roster)
+    docs, _lines, fatal = load_docs_and_lines(root, roster)
     return docs, fatal
 
 
@@ -113,19 +110,22 @@ def inbox_report(docs: Dict, pid: str, roster: Roster, include_answered: bool = 
     return out
 
 
-def new_report(full: dict, times: Dict[Tuple[str, str], str], place: Optional[dict],
+def new_report(full: dict, lines: List[Line], place: Optional[dict],
                nxt: Optional[dict]) -> dict:
     """What `relay.py inbox <pid> --new` prints: the items of `full` (an
-    `inbox_report`) that came after `place`.
+    `inbox_report`) that a log line after `place` touched (a new row, or an
+    edit of an old one), with their present content.
 
     The open requests and owner messages from before the place that still need
     an answer stay as `still_open`, without bodies, newest first, at most
     STILL_OPEN_MAX; `still_open_more` counts the rest. `next` is the place to
-    ack: the newest row of the log as this run loaded it.
+    ack: the highest `seq` of each writer of the log as this run loaded it.
     """
+    touched = {(ln.collection, ln.id) for ln in lines if is_new(ln, place)}
+    times = {key: ln.t for key, ln in last_line_map(lines).items()}
+
     def new(coll, did):
-        rt = times.get((coll, did))
-        return rt is None or is_new(rt, did, place)
+        return (coll, did) in touched or (coll, did) not in times
 
     out = {k: full[k] for k in ("pid", "roster", "stale_locks", "service", "owner_questions")
            if k in full}
