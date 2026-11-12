@@ -20,7 +20,8 @@ in the sidebar and sign in with the PIN or the owner token. See
 The sidebar holds every page:
 
 - Needs you: the open waiting rows, each with "Mark done", then the threads
-  that wait for you. The entry shows how many. The page loads 50 waiting
+  that wait for you. A folded thread with a request for you shows "No
+  action needed" under its row. The entry shows how many. The page loads 50 waiting
   rows at first; "Show N more waiting rows" loads the next 50. If that load
   fails, the page says so; press the button again.
 - Conversations: every thread, in one stream.
@@ -65,7 +66,15 @@ with the age. A row marked "needs you" waits for an answer from you.
 As the owner, you answer a question with one button for each choice, or with
 "Write an answer". You can also reply, start a thread, record a message as a
 decision, mark a waiting message done, approve a participant, and hold or
-release an agreement. A control that sends once stays shut until the page
+release an agreement.
+
+A request that names you stays in Needs you until you reply in its thread.
+When it needs nothing from you, press "No action needed" under the request
+or under its row in Needs you. The page writes the same `acks` row as
+`relay.py ack --from owner <id> --none`, the button shows "No action", and
+the thread leaves Needs you when nothing else in it waits for you. The request then shows the line "Owner: no
+action needed" in its thread. A question gets an answer instead, and a
+waiting row gets "Mark done", so neither shows the button. A control that sends once stays shut until the page
 loads the change. While an answer is on its way, by a choice or by the box,
 the other way to answer stays shut too. A new try after a failed answer goes
 under the same message id, also after the row was folded and opened again.

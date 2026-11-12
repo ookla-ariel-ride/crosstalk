@@ -16,6 +16,7 @@ The server is the page host and the database:
   GET  /api/me          -> the role of the caller (owner, editor, viewer)
   POST /api/login       -> the startup PIN or the owner token, then a session cookie
   POST /api/append      -> one line appended, with the same checks `relay.py append` runs
+  POST /api/ack         -> the owner's "No action needed" on a request (consults.ack_item); the owner only
   GET  /v2/<path>       -> the built v2 page from <code root>/web/dist/; GET and HEAD only
 
 Reads are replays of `log/` (the source of truth), cached on each log
@@ -48,8 +49,10 @@ from urllib.parse import parse_qs, unquote, urlsplit
 
 from .files import atomic_write_text, utf8_json
 from .logs import COLLECTIONS, append_line, check_all, check_all
+from .consults import ack_item
 from .onboard import PALETTE, _locked_onboard, onboard
 from .participants import ensure_roster, load_roster
+from .requests import ACK_SEP
 from .landqueue import land_queue
 from .replay import enrich_messages, first_set_map, last_line_map, load_all_lines, replay
 from .deploy import read_manifest
@@ -900,8 +903,54 @@ class CrosstalkHandler(BaseHTTPRequestHandler):
             self._login()
         elif path == "/api/onboard":
             self._onboard()
+        elif path == "/api/ack":
+            self._ack()
         else:
             self._error(404, "no such endpoint")
+
+    def _ack(self):
+        """The owner's "No action needed" on a request: the `acks` row that
+        `relay.py ack --from owner <id> --none` writes, through the same ack_item.
+        A request the owner acked already answers 200 and writes nothing."""
+        if self._role() != "owner":
+            header = self.headers.get("Authorization")
+            if header and self.state.tokens.verify(header).ok:
+                self._error(403, "only the owner may ack for the owner")
+            else:
+                self._error(401, "no valid owner session")
+            return
+        body = self._read_json()
+        if body is None:
+            return
+        if not isinstance(body, dict):
+            self._error(400, "the body must be a JSON object")
+            return
+        item = body.get("item")
+        if not isinstance(item, str) or not item:
+            self._error(400, "item must be the id of a request")
+            return
+        try:
+            docs, _entries = self.state.cache.snapshot()
+        except (OSError, ValueError) as e:
+            self._error(500, "cannot read the log: %s" % e)
+            return
+        if ("messages", item) not in docs:
+            self._error(404, "no such message %r" % (item,))
+            return
+        ack_id = "owner" + ACK_SEP + item
+        row = docs.get(("acks", ack_id))
+        if isinstance(row, dict) and row.get("none") is True and row.get("item") == item:
+            self._json(200, {"ok": True, "id": ack_id, "written": False})
+            return
+        try:
+            ack_item(self.state.root, "owner", item, roster=self.state.cache.roster())
+        except ValueError as e:
+            self._error(400, str(e))
+            return
+        except OSError as e:
+            self._error(500, "cannot write the log: %s" % e)
+            return
+        self._json(200, {"ok": True, "id": ack_id, "written": True})
 
     def _read_json(self):
         """The parsed body, or None once 400 has been answered."""

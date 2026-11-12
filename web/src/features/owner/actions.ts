@@ -82,6 +82,11 @@ export function answer(questionId: string, text: string, asker?: string, id = ne
 
 export const markDone = (id: string) => row("update", "waiting", id, { done: stamp() });
 
+/** The owner needs to do nothing for these requests: one ack each (POST /api/ack). */
+export async function noAction(ids: string[]) {
+  for (const id of ids) await api.ack(id);
+}
+
 export const recordDecision = (m: { id: string; summary?: string; body?: string }) =>
   row("set", "decisions", "d-from-" + m.id, {
     t: stamp(),

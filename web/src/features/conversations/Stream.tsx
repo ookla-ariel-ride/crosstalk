@@ -39,9 +39,13 @@ interface ThreadRowProps {
   onToggle: (root: string) => void;
   now: Date;
   renderActions?: RenderActions;
+  rowActions?: RowActions;
 }
 
-const ThreadRow = memo(function ThreadRow({ thread, open, onToggle, now, renderActions }: ThreadRowProps) {
+/** The owner's controls under a folded thread row (Needs you). */
+export type RowActions = (thread: Thread) => ReactNode;
+
+const ThreadRow = memo(function ThreadRow({ thread, open, onToggle, now, renderActions, rowActions }: ThreadRowProps) {
   const reading = useReading();
   // The owner's count comes from the server; a viewer sees whether anything is new.
   const fresh =
@@ -60,7 +64,15 @@ const ThreadRow = memo(function ThreadRow({ thread, open, onToggle, now, renderA
     </>
   );
   return (
-    <Row projects={thread.projects} title={thread.title} text={thread.preview} note={note} open={open} onOpen={() => onToggle(thread.root)}>
+    <Row
+      projects={thread.projects}
+      title={thread.title}
+      text={thread.preview}
+      note={note}
+      open={open}
+      onOpen={() => onToggle(thread.root)}
+      actions={rowActions?.(thread)}
+    >
       {open ? <ThreadOpen thread={thread} now={now} renderActions={renderActions} /> : null}
     </Row>
   );
@@ -155,13 +167,14 @@ export interface StreamProps {
   /** The Needs you page: only the threads that need the owner, no sort bar. */
   needsOnly?: boolean;
   renderActions?: RenderActions;
+  rowActions?: RowActions;
   /** What shows above the heading, such as the owner's "Start a thread". */
   top?: ReactNode;
   /** What shows first under the heading, such as the open waiting rows; the stream is then never "empty". */
   lead?: ReactNode;
 }
 
-export function Stream({ sort, open, onOpenChange, needsOnly = false, renderActions, top, lead }: StreamProps) {
+export function Stream({ sort, open, onOpenChange, needsOnly = false, renderActions, rowActions, top, lead }: StreamProps) {
   const query = useThreads(sort);
   const reading = useReading();
   const now = useNow();
@@ -222,9 +235,16 @@ export function Stream({ sort, open, onOpenChange, needsOnly = false, renderActi
 
   const renderThread = useCallback(
     (thread: Thread) => (
-      <ThreadRow thread={thread} open={seenOpen.current.includes(thread.root)} onToggle={onToggle} now={now} renderActions={renderActions} />
+      <ThreadRow
+          thread={thread}
+          open={seenOpen.current.includes(thread.root)}
+          onToggle={onToggle}
+          now={now}
+          renderActions={renderActions}
+          rowActions={rowActions}
+        />
     ),
-    [onToggle, now, renderActions],
+    [onToggle, now, renderActions, rowActions],
   );
   const openKey = (threads: Thread[]) => threads.filter((t) => openSet.has(t.root)).map((t) => t.root).join("\n");
   const fetchNext = query.fetchNextPage;
@@ -238,7 +258,14 @@ export function Stream({ sort, open, onOpenChange, needsOnly = false, renderActi
       case "thread":
         return (
           <Guard what={"Thread " + item.thread.root} data={item.thread}>
-            <ThreadRow thread={item.thread} open={openSet.has(item.thread.root)} onToggle={onToggle} now={now} renderActions={renderActions} />
+            <ThreadRow
+              thread={item.thread}
+              open={openSet.has(item.thread.root)}
+              onToggle={onToggle}
+              now={now}
+              renderActions={renderActions}
+              rowActions={rowActions}
+            />
           </Guard>
         );
       case "routine":
@@ -378,7 +405,15 @@ export function Conversations({
  * The Needs you page: the open waiting rows, then the stream in the needs
  * order with only the threads that need the owner.
  */
-export function NeedsYou({ renderActions, waitingActions }: { renderActions?: RenderActions; waitingActions?: (row: SectionRow) => ReactNode }) {
+export function NeedsYou({
+  renderActions,
+  rowActions,
+  waitingActions,
+}: {
+  renderActions?: RenderActions;
+  rowActions?: RowActions;
+  waitingActions?: (row: SectionRow) => ReactNode;
+}) {
   const [open, setOpen] = useState<string[]>([]);
   const now = useNow();
   const waiting = useSection("waiting");
@@ -418,5 +453,5 @@ export function NeedsYou({ renderActions, waitingActions }: { renderActions?: Re
         ) : null}
       </>
     ) : null;
-  return <Stream sort="needs" open={open} onOpenChange={setOpen} needsOnly renderActions={renderActions} lead={lead} />;
+  return <Stream sort="needs" open={open} onOpenChange={setOpen} needsOnly renderActions={renderActions} rowActions={rowActions} lead={lead} />;
 }

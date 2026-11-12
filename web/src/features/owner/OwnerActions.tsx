@@ -9,7 +9,7 @@ import { api } from "../../api/client";
 import { invalidate, keys } from "../../api/queries";
 import type { Message, RosterEntry, Thread } from "../../api/types";
 import { nameOf } from "../../ui/Bars";
-import { approveParticipant, holdAgreement, markDone, recordDecision, reply, splitPost } from "./actions";
+import { approveParticipant, holdAgreement, markDone, noAction, recordDecision, reply, splitPost } from "./actions";
 import { AnswerButtons } from "./AnswerButtons";
 import { Composer } from "./Composer";
 import { ANSWER_WAIT_MS, answerIds, drafts, keepDraft } from "./drafts";
@@ -135,6 +135,7 @@ export function OwnerActions({ thread, message }: { thread: Thread; message: Mes
         )
       ) : null}
       {records?.waiting.has(message.id) ? <MarkDoneButton id={message.id} /> : null}
+      {message.kind === "request" && thread.owner_requests?.includes(message.id) ? <NoActionButton ids={[message.id]} /> : null}
     </div>
   );
 }
@@ -143,6 +144,17 @@ export function OwnerActions({ thread, message }: { thread: Thread; message: Mes
 export function MarkDoneButton({ id }: { id: string }) {
   if (!useIsOwner()) return null;
   return <ActionButton label="Mark done" done="Done" act={() => markDone(id)} />;
+}
+
+/** Say that requests which wait for the owner need nothing from the owner. The owner alone sees it. */
+export function NoActionButton({ ids }: { ids: string[] }) {
+  if (!useIsOwner() || !ids.length) return null;
+  return <ActionButton label="No action needed" done="No action" act={() => noAction(ids)} />;
+}
+
+/** The button for the folded row of a thread in Needs you: its requests that wait for the owner. */
+export function noActionRow(thread: Thread) {
+  return <NoActionButton ids={thread.owner_requests ?? []} />;
 }
 
 /** Hold or release an agreement (the present page's Agreements tab). The owner alone sees it. */

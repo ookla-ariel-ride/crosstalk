@@ -86,6 +86,8 @@ export function createApi(fetchFn: Fetch = (input, init) => fetch(input, init)) 
     login: (body: LoginBody) => send<LoginResult>("POST", "/api/login", body),
     append: (body: AppendBody) => send<AppendResult>("POST", "/api/append", body),
     onboard: (body: OnboardBody) => send<OnboardResult>("POST", "/api/onboard", body),
+    /** The owner's "No action needed" on the request `item`. */
+    ack: (item: string) => send<{ ok: boolean }>("POST", "/api/ack", { item }),
   };
 }
 

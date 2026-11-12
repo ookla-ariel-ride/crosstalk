@@ -5,7 +5,7 @@ test("an answer to a question closes it", async ({ page }) => {
   await signIn(page);
   await page.goto("/v2/#/needs");
   const needsList = page.getByRole("list", { name: "Needs you" });
-  await expect(page.getByRole("navigation", { name: "Sections" }).getByRole("link", { name: "Needs you 2" })).toBeVisible();
+  await expect(page.getByRole("navigation", { name: "Sections" }).getByRole("link", { name: "Needs you 3" })).toBeVisible();
   const row = needsList.getByRole("button", { name: FIXTURE.answerQuestion });
   await row.click();
   const answer = page.getByRole("group", { name: "Answer" });
@@ -17,7 +17,7 @@ test("an answer to a question closes it", async ({ page }) => {
   // leaves at once, with its "Answer sent"); the other question stays.
   await expect(needsList.getByRole("button", { name: FIXTURE.answerQuestion })).toHaveCount(0);
   await expect(needsList.getByRole("button", { name: FIXTURE.openQuestion })).toBeVisible();
-  await expect(page.getByRole("navigation", { name: "Sections" }).getByRole("link", { name: "Needs you 1" })).toBeVisible();
+  await expect(page.getByRole("navigation", { name: "Sections" }).getByRole("link", { name: "Needs you 2" })).toBeVisible();
 
   // In Conversations the thread shows the question as answered.
   await page.goto("/v2/#/conversations?sort=new");

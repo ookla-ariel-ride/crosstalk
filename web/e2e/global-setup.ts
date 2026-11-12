@@ -18,6 +18,7 @@ export const FIXTURE = {
   openQuestion: "Ship the beta build today?",
   answerQuestion: "Which port should the test server use?",
   thread: "Schema change ready",
+  ownerRequest: "Read the new runbook",
 };
 
 function freePort(): Promise<number> {
@@ -75,6 +76,9 @@ function buildFixture(root: string): string {
     "--body", "The tests pass.", "--option", "Ship it", "--option", "Wait a day", "--recommend", "1");
   // The replies come a second later than the root, so they sort after the owner's mark.
   execFileSync("sleep", ["1.1"]);
+  // A request that names the owner: Needs you lists it after the two questions, which are a second older.
+  relay(root, "append", ...who, "--from", "alpha", "--op", "set", "--collection", "messages", "--id", "alpha-e2e-runbook",
+    "--data", JSON.stringify({ from: "alpha", kind: "request", summary: FIXTURE.ownerRequest, body: "It is in docs/.", to: ["owner"] }));
   relay(root, "reply", ...who, "--from", "alpha", "--to-id", "beta-e2e-schema", "--summary", "Looks good", "--body", "I read the migration.");
   relay(root, "reply", ...who, "--from", "relay-bot", "--to-id", "beta-e2e-schema", "--summary", "Merged", "--body", "The branch is merged.");
   // The owner read the thread's root before the replies came.
