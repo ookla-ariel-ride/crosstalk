@@ -58,12 +58,17 @@ def load_docs(root: Path, roster: Roster) -> Tuple[Optional[Dict], List[Problem]
 
 def inbox_report(docs: Dict, pid: str, roster: Roster, include_answered: bool = False,
                  now_iso: Optional[str] = None, service: Optional[dict] = None,
-                 config: Optional[dict] = None) -> dict:
+                 config: Optional[dict] = None, to_read_all: bool = False) -> dict:
     """What `relay.py inbox <pid>` prints: requests, owner messages, replies on pid's
     threads, the posts that owe pid's mark (`to_read`, marks.to_read), agreements,
     stale locks, and for the owner the open questions for it.
     `service` defaults to SERVICE (service.service_for gives one with a data root);
-    `config` defaults to the settings the roster carries (config.of)."""
+    `config` defaults to the settings the roster carries (config.of).
+
+    `to_read` leaves out a post that this output shows in `requests`,
+    `owner_messages` or `thread_replies`, so each post shows once. With
+    `to_read_all` it keeps them all, for new_report, which applies the same rule
+    to its own cut."""
     requests = (
         all_requests_for(docs, pid, roster=roster)
         if include_answered
@@ -110,12 +115,26 @@ def inbox_report(docs: Dict, pid: str, roster: Roster, include_answered: bool = 
         "stale_locks": stale_locks_for(docs, pid, now_iso=now_iso),
         "service": SERVICE if service is None else service,
     }
+    if not to_read_all:
+        shown = _shown(out)
+        out["to_read"] = [i for i in out["to_read"] if (i["collection"], i["id"]) not in shown]
     if pid == "owner":
         out["owner_questions"] = [
             {"question": dict(doc, id=did), "trust": trust_of(doc.get("from"), roster)}
             for (did, doc) in open_owner_questions(docs, roster=roster)
         ]
     return out
+
+
+def _shown(out: dict) -> set:
+    """(collection, id) of each message that `out` lists in requests, owner_messages,
+    thread_replies or still_open."""
+    ids = set()
+    for key, field in (("requests", "request"), ("owner_messages", "message"),
+                       ("thread_replies", "message")):
+        ids.update(item[field]["id"] for item in out.get(key, []))
+    ids.update(item["id"] for item in out.get("still_open", []))
+    return {("messages", did) for did in ids}
 
 
 def new_report(full: dict, lines: List[Line], place: Optional[dict],
@@ -129,8 +148,10 @@ def new_report(full: dict, lines: List[Line], place: Optional[dict],
     STILL_OPEN_MAX; `still_open_more` counts the rest. The `to_read` posts follow
     the same cut: the ones from before the place stay as `to_read_open`, without
     bodies, newest first, at most STILL_OPEN_MAX, and `to_read_open_more` counts
-    the rest. `next` is the place to ack: the highest `seq` of each writer of the
-    log as this run loaded it.
+    the rest. A message whose `lesson-<id>` row came after the place counts as new.
+    Pass `full` from inbox_report(..., to_read_all=True): a post this output shows
+    in another section (_shown) leaves `to_read` and `to_read_open`. `next` is the
+    place to ack: the highest `seq` of each writer of the log as this run loaded it.
     """
     touched = {(ln.collection, ln.id) for ln in lines if is_new(ln, place)}
     times = {key: ln.t for key, ln in last_line_map(lines).items()}
@@ -154,9 +175,14 @@ def new_report(full: dict, lines: List[Line], place: Optional[dict],
     out["still_open"] = [{"id": d["id"], "from": d.get("from"), "t": d.get("t"),
                           "summary": d.get("summary")} for _rt, d in old[:STILL_OPEN_MAX]]
     out["still_open_more"] = max(0, len(old) - STILL_OPEN_MAX)
+    shown = _shown(out)
     out["to_read"], old_read = [], []
     for item in full.get("to_read", []):
-        (out["to_read"] if new(item["collection"], item["id"]) else old_read).append(item)
+        key = (item["collection"], item["id"])
+        if key in shown:
+            continue
+        fresh = new(*key) or (key[0] == "messages" and ("lessons", marks_mod.LESSON_PREFIX + key[1]) in touched)
+        (out["to_read"] if fresh else old_read).append(item)
     out["to_read_open"] = [{k: d.get(k) for k in ("id", "from", "t", "summary")}
                            for d in old_read[:STILL_OPEN_MAX]]
     out["to_read_open_more"] = max(0, len(old_read) - STILL_OPEN_MAX)

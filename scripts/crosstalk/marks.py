@@ -261,15 +261,12 @@ def item_of(docs: Dict, coll: str, did: str, doc: dict) -> dict:
 
 def to_read(docs: Dict, pid: str, roster, config, by_item=None) -> List[dict]:
     """The posts that owe pid's acknowledged mark, newest first, each as item_of gives it.
-    A request addressed to pid is left out: the request rules decide when it is done.
+    The inbox leaves out the ones it shows in another section (reports.inbox_report).
     Pass the docs from replay.enrich_messages; by_item as in owed()."""
-    from .requests import _addressed  # requests imports this module lazily too
     if by_item is None:
         by_item = marks_by_item(docs, roster)
     out = []
     for _t, coll, did, doc in reversed(_posts_that_expect(docs, roster, config)):
-        if coll == "messages" and doc.get("kind") == "request" and _addressed(doc, pid, roster=roster):
-            continue
         if pid in owed(docs, coll, did, roster, config, by_item):
             out.append(item_of(docs, coll, did, doc))
     return out

@@ -179,7 +179,8 @@ def cmd_inbox(args):
     if args.ack_to is not None:
         return _inbox_ack_to(args.pid, args.ack_to, nxt, lines)
     out = inbox_report(docs, args.pid, roster, include_answered=args.all,
-                       now_iso=getattr(args, "now", None), service=service_for(CODE_ROOT, ROOT))
+                       now_iso=getattr(args, "now", None), service=service_for(CODE_ROOT, ROOT),
+                       to_read_all=args.new)
     if args.new:
         # An entry that cannot be true for this log (a number above its writer's top, or
         # another fingerprint at that number) leaves that writer all new.

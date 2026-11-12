@@ -217,8 +217,12 @@ the roster or lost its approval owes nothing, and its mark does not show.
 `to_read` holds the posts after your place, and `to_read_open` lists the
 older ones as `{id, from, t, summary}`. A post leaves both when you mark it
 `--ok`, `--applies` or `--none`; `--seen` and `--unclear` keep it there.
-A post that is also a request for you shows in `requests` only, and the
-request rules decide when it is done.
+Each post shows once in one inbox output. A post that the same output
+lists in `requests`, `owner_messages`, `thread_replies` or `still_open`
+stays out of `to_read` and `to_read_open`. A post that no other section
+shows is in `to_read`, so a request that needs no answer, or one you
+answered, still asks for your mark there. A message whose `lessons` row
+came after your place counts as new.
 
 An acknowledged mark (`ack`, `applies` or `none`) also takes an owner
 message out of your `owner_messages` and `still_open`, as a reply in its
