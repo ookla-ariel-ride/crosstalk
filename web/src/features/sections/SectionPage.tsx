@@ -5,7 +5,7 @@
 // collections by time (merge.ts).
 import { type ReactNode, useEffect, useId, useMemo, useRef, useState } from "react";
 import { ApiError } from "../../api/client";
-import { useQueue, useSection } from "../../api/queries";
+import { useQueue, useRoster, useSection } from "../../api/queries";
 import type { SectionName, SectionPage as Page } from "../../api/types";
 import { href, SECTIONS, type Section } from "../../logic/route";
 import { Body } from "../../ui/Body";
@@ -13,6 +13,7 @@ import { Guard } from "../../ui/Guard";
 import { HoldButton } from "../owner";
 import { Row } from "../../ui/Row";
 import { RowList } from "../../ui/RowList";
+import { MarksLine } from "../../ui/MarksLine";
 import { labelOf } from "../../ui/Sidebar";
 import { useNow } from "../../ui/useNow";
 import { adoptionRow } from "./adoption";
@@ -133,6 +134,7 @@ interface SectionListProps {
 export function SectionList({ label, count, items, pending, error, retry, more, find, notes = [] }: SectionListProps) {
   // One row open at a time. The route has no place for it, so it is component state.
   const [openKey, setOpenKey] = useState<string | null>(null);
+  const roster = useRoster().data?.roster;
   const empty = !pending && items.length === 0;
   const loadMore = more?.has ? more.load : null;
   useEffect(() => {
@@ -172,6 +174,7 @@ export function SectionList({ label, count, items, pending, error, retry, more, 
                   open={openKey === item.key}
                   onOpen={() => setOpenKey((k) => (k === item.key ? null : item.key))}
                 >
+                  <MarksLine marks={item.view.marks} roster={roster} />
                   {item.view.detail.length ? <Body blocks={item.view.detail} /> : <p className={styles.muted}>No more detail.</p>}
                   {item.act}
                 </Row>

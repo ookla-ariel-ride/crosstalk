@@ -2378,7 +2378,7 @@ td.num, td.t { font: 12px var(--mono); font-variant-numeric: tabular-nums; white
   }
   function renderLessons(view) {
     simpleTable(view, data.lessons.slice().sort(byT).reverse(), [
-      ["What happened", function (r) { var d = el("div"); d.appendChild(el("div", "summary", r.summary || r.title || "")); add(d, bodyEl(r.body || r.detail || "", r.summary || r.title)); return d; }],
+      ["What happened", function (r) { var d = el("div"); d.appendChild(el("div", "summary", r.summary || r.title || "")); add(d, bodyEl(r.body || r.detail || "", r.summary || r.title)); add(d, marksLineEl(r)); return d; }],
       ["What prevents it now", function (r) { var d = el("div"); d.appendChild(el("p", "body", r.fix || "")); add(d, refsEl(r.refs, r.project || r.from)); return d; }],
       ["From", function (r) { return who(r.project || r.from); }],
       ["When", function (r) { return timeEl(r.t, true); }, "t"]
@@ -2388,7 +2388,7 @@ td.num, td.t { font: 12px var(--mono); font-variant-numeric: tabular-nums; white
     // Older rows give the day as `date` instead of `t`.
     function when(r) { return r.t || r.date; }
     simpleTable(view, data.decisions.slice().sort(function (a, b) { return (ts(when(b)) || 0) - (ts(when(a)) || 0); }), [
-      ["Decision", textBlock],
+      ["Decision", function (r) { var d = textBlock(r); add(d, marksLineEl(r)); return d; }],
       ["By", function (r) { return r.by ? who(r.by) : null; }],
       ["For", function (r) { return el("span", null, r.project === "all" || r.project === "both" ? "All projects" : r.project ? person(r.project).name : ""); }],
       ["Where said", function (r) { return el("span", null, r.source || ""); }],

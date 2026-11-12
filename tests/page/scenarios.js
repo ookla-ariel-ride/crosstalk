@@ -982,6 +982,26 @@
     return res("marksLineLabels", JSON.stringify(got) === JSON.stringify(want), JSON.stringify(got));
   });
 
+  // A decision and a lesson row show the same marks line as a card, under their text; a row with no marks shows none.
+  S.push(async function marksLineDecisionAndLesson() {
+    function rowOf(summary) {
+      return [].slice.call(document.querySelectorAll("#view tbody tr")).filter(function (tr) { return tr.textContent.indexOf(summary) !== -1; })[0];
+    }
+    await addDoc("decisions", "mk-dec", { t: ago(1), by: "owner", project: "all", summary: "A ruling with marks",
+      marks: marksOf({ beta: "ack", gamma: "none" }, ["delta"], true) });
+    await addDoc("decisions", "mk-dec-plain", { t: ago(1), by: "owner", project: "all", summary: "A ruling without marks" });
+    await addDoc("lessons", "mk-les", { t: ago(1), project: "codex", summary: "A lesson row with marks", fix: "A tool",
+      marks: marksOf({ alpha: "applies" }, ["beta"], true) });
+    await go("decisions");
+    var dec = marksText(rowOf("A ruling with marks")), plain = rowOf("A ruling without marks");
+    var plainLines = plain ? plain.querySelectorAll(".marks-line").length : -1;
+    await go("lessons");
+    var les = marksText(rowOf("A lesson row with marks"));
+    await go("timeline");
+    var ok = dec === "\u2705 Beta \u2796 Gamma not yet: Delta" && plainLines === 0 && les === "\ud83d\udd27 Alpha not yet: Beta";
+    return res("marksLineDecisionAndLesson", ok, "decision=" + JSON.stringify(dec) + " plainLines=" + plainLines + " lesson=" + JSON.stringify(les));
+  });
+
   // Checks whichever width the window has (run again at 360 wide; see run.md): twelve names wrap inside the card.
   S.push(async function marksLineNarrow() {
     await go("timeline");

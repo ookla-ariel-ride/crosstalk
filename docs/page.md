@@ -98,7 +98,8 @@ also get their own card in the timeline.
 ### Marks on a card
 
 A card whose post has marks (`relay.py ack`), or that expects them, shows
-one line under its body:
+one line under its body. A row of the Decisions or Lessons tab shows the
+same line under its text:
 
     ✅ Alpha, Beta   🔧 Delta   ➖ Gamma   not yet: Epsilon
 

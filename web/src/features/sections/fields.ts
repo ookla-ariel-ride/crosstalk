@@ -1,6 +1,7 @@
 // What every mapper shares: the row it returns, and readers that never throw
 // on a field that is missing or of the wrong type.
 import { ago } from "../../logic/ago";
+import type { MarksView } from "../../api/types";
 import { type Block, parseBody } from "../../logic/parseBody";
 
 /** One row of a section, ready for `Row`; `detail` shows through `Body` when the row opens. */
@@ -12,6 +13,8 @@ export interface RowView {
   note: string[];
   open: boolean;
   detail: Block[];
+  /** The marks of a decision or a lesson (marks.view), shown by MarksLine when the row opens. */
+  marks?: MarksView;
 }
 
 /** A doc of a section: its fields depend on the collection. */
@@ -77,3 +80,8 @@ export function line(label: string, value: string): Block[] {
 
 /** The parts that are not empty, in order. */
 export const words = (...parts: string[]): string[] => parts.filter((p) => p !== "");
+
+/** The `marks` key that normalize.ts kept on a row (marks.view); MarksLine checks its shape. */
+export function marksOf(doc: Doc): MarksView | undefined {
+  return typeof doc.marks === "object" && doc.marks !== null ? (doc.marks as MarksView) : undefined;
+}

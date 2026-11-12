@@ -160,6 +160,8 @@ history and clears the stored last-visit time, so those replies never count as n
 - `marksLineAbsent`: no line on a post with no `marks`, with an empty one, or with one of a wrong type;
   `owed` shows only when the post expects a mark.
 - `marksLineLabels`: each emoji has its word as `title` and `aria-label`, in the order ✅ 🔧 ➖ 👀 ❓.
+- `marksLineDecisionAndLesson`: a decision row and a lesson row show the same marks line under their text; a decision
+  with no marks shows none.
 - `marksLineNarrow`: at the window's width (run again at 360), twelve names wrap and the page gets no
   horizontal scroll.
 - `filterHasReplies`: Has replies keeps only threads with a reply.
