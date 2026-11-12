@@ -8,12 +8,18 @@ coordinator set, only the owner's counts. A row of any other writer counts for
 nothing. Rows are compared by their `t`, which logs.state_problem ties to the
 log line's time; on an equal `t` the owner's wins. set_wind_down writes a `t`
 later than both records, so a later command always takes force.
+
+The state row (read, state_row) puts the shared readings in one object for
+tools: the numbers of vitals.read, the wind-down record in force, the land
+queue, and `may_start` with the reasons it is false. `relay.py state` prints
+it, and the server adds it to /api/vitals under the key `state`.
 """
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
-from typing import Dict, Optional
+from typing import Dict, Iterable, Optional
 
 from . import config
+from .landqueue import land_queue
 from .logs import Line, append_line, parse_utc, utc_text
 from .participants import load_roster
 from .replay import load_all_lines, replay
@@ -90,3 +96,56 @@ def set_wind_down(root: Path, pid: str, step: int, reason: Optional[str] = None,
             "reason": reason or None, "t": now}
     return append_line(root, pid, "set", COLLECTION, wind_down_id(pid), data, t=now, roster=roster)
 
+
+
+def state_row(vitals: dict, land: dict, wind: dict, now_iso: str) -> dict:
+    """The state row from the readings of vitals.read, the land queue as it is and the
+    wind-down record in force. `may_start` is false for each reason in `may_start_why`;
+    a null reading gives no reason."""
+    usage, limit, host = vitals["usage"], vitals["usage_limit"], vitals["build_host"]
+    why = []
+    if wind["step"] in (1, 2):
+        why.append("wind-down step %d" % wind["step"])
+    if usage is not None and limit is not None and usage >= limit:
+        why.append("usage %s at or over the limit %s" % (usage, limit))
+    if host is not None and host.get("reachable") is False:
+        why.append("build host not reachable")
+    return {"t": now_iso, "disk_free_gb": vitals["disk_free_gb"], "usage": usage,
+            "usage_limit": limit, "build_host": host, "wind_down": wind, "land": land,
+            "may_start": not why, "may_start_why": why}
+
+
+def read(root, docs: Dict, roster, projects: Iterable[str], cfg: dict, buildhost_state=None,
+         now: Optional[float] = None, readings: Optional[dict] = None) -> dict:
+    """The state row of the install at root, for `relay.py state` and /api/vitals. `docs` are
+    the replayed documents, `projects` the roster ids, `cfg` and `buildhost_state` what
+    vitals.read takes. `readings` is a vitals.read result the caller already has; without
+    it, read calls vitals.read once. Reads only: it writes no file."""
+    from . import vitals  # here, not at the top: vitals imports autogrant, which imports this module
+    if now is None:
+        now = datetime.now(timezone.utc).timestamp()
+    if readings is None:
+        readings = vitals.read(root, cfg, buildhost_state=buildhost_state, now=now)
+    land = land_queue(docs, projects=projects, now=now, coordinator=config.coordinator(roster))
+    when = utc_text(datetime.fromtimestamp(now, timezone.utc))
+    return state_row(readings, land, wind_down(docs, roster), when)
+
+
+# The keys of a reading that can be null as a whole, so that a key under it is null, not unknown.
+NULLABLE_KEYS = {"build_host": ("reachable", "load", "t")}
+
+
+def get(row: dict, key: str):
+    """One value of the row by a dotted key (`wind_down.step`). A key under a null
+    build_host is null; a key that is not there raises KeyError."""
+    parts = key.split(".")
+    if len(parts) == 2 and parts[0] in NULLABLE_KEYS and row.get(parts[0]) is None:
+        if parts[1] in NULLABLE_KEYS[parts[0]]:
+            return None
+        raise KeyError(key)
+    value = row
+    for part in parts:
+        if not isinstance(value, dict) or part not in value:
+            raise KeyError(key)
+        value = value[part]
+    return value

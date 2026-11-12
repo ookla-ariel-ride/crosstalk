@@ -609,6 +609,30 @@ def cmd_queue(args):
     return 0
 
 
+def _print_state(key):
+    """The state row as JSON; with a key, one value (a string as it is): exit 1 for null, 2 for an unknown key."""
+    roster = load_roster(ROOT / "participants.json")
+    docs, fatal = load_docs(ROOT, roster)
+    if fatal:
+        for p in fatal:
+            err("%s:%d: %s" % (p.file, p.line, p.message))
+        return 1
+    row = state_mod.read(ROOT, docs, roster, roster.participants, config_mod.of(roster),
+                         buildhost_state=buildhost_mod.state_path_from_env())
+    if key is None:
+        print(json.dumps(row, ensure_ascii=False, sort_keys=True, indent=2))
+        return 0
+    try:
+        value = state_mod.get(row, key)
+    except KeyError:
+        err("state: no key %r in the state row" % key)
+        return 2
+    if value is None:
+        return 1
+    print(value if isinstance(value, str) else json.dumps(value, ensure_ascii=False, sort_keys=True))
+    return 0
+
+
 def cmd_adoption(args):
     """adoption set records a project's state; adoption gaps and adoption summary print JSON."""
     roster = load_roster(ROOT / "participants.json")
@@ -700,7 +724,13 @@ def cmd_withdraw(args):
 
 
 def cmd_state(args):
-    """state wind-down: the owner or the coordinator records the wind-down step; prints the row id."""
+    """state [--get KEY]: print the state row (state.py) as JSON, or one value.
+    state wind-down: the owner or the coordinator records the wind-down step; prints the row id."""
+    if args.state_cmd is None:
+        return _print_state(args.get)
+    if args.get is not None:
+        err("state: --get reads the row; it does not go with %s" % args.state_cmd)
+        return 2
     try:
         ln = state_mod.set_wind_down(ROOT, args.from_, args.step, reason=args.reason)
     except ValueError as e:
@@ -960,8 +990,11 @@ def build_parser():
     wd.add_argument("--id")
     wd.set_defaults(fn=cmd_withdraw)
 
-    sta = sub.add_parser("state", help="record the wind-down step (state wind-down)")
-    stasub = sta.add_subparsers(dest="state_cmd", required=True)
+    sta = sub.add_parser("state", help="print the state row as JSON (--get KEY: one value); "
+                                       "state wind-down records the wind-down step")
+    sta.add_argument("--get", metavar="KEY", help="print one value by a dotted key (wind_down.step); "
+                                                  "exit 1 for null, 2 for an unknown key")
+    stasub = sta.add_subparsers(dest="state_cmd", required=False)
     sta_wd = stasub.add_parser("wind-down", help="the owner or the coordinator sets the wind-down step; "
                                                  "prints the row id")
     sta_wd.add_argument("--from", dest="from_", required=True)

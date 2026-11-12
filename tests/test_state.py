@@ -1,6 +1,7 @@
 """The wind-down record: only the owner and the coordinator set it, and the newest of theirs counts."""
 import copy
 import json
+import os
 import subprocess
 import sys
 import unittest
@@ -209,6 +210,150 @@ class WindDownTests(unittest.TestCase):
         self.assertEqual(self.current()["step"], 0)
         ln = state.set_wind_down(self.r.root, "owner", 1, roster=self.roster())
         self.assertEqual(ln.data["started"], ln.data["t"])  # a new wind-down starts now
+
+
+VITALS = {"disk_free_gb": 149, "usage": 43, "usage_limit": 96,
+          "build_host": {"reachable": True, "load": 1.5, "t": "2026-11-11T23:45:00Z"}}
+LAND = {"holders": [], "waiting": [], "max_holders": 2, "next": None, "slots_free": 2,
+        "may_start": True, "notes": []}
+T = "2026-11-11T23:50:00Z"
+
+
+def wind(step):
+    return {"step": step, "started": T if step else None, "by": "owner" if step else None,
+            "reason": "owner request" if step else None}
+
+
+class StateRowTests(unittest.TestCase):
+    def test_state_row_readings_null_and_not_null(self):
+        out = state.state_row(VITALS, LAND, NONE, T)
+        self.assertEqual(sorted(out), ["build_host", "disk_free_gb", "land", "may_start", "may_start_why",
+                                       "t", "usage", "usage_limit", "wind_down"])
+        self.assertEqual((out["t"], out["disk_free_gb"], out["usage"], out["usage_limit"]), (T, 149, 43, 96))
+        self.assertEqual(out["build_host"], VITALS["build_host"])
+        self.assertEqual(out["wind_down"], NONE)
+        self.assertEqual((out["may_start"], out["may_start_why"]), (True, []))
+        nulls = dict(VITALS, usage=None, usage_limit=None, build_host=None)
+        out = state.state_row(nulls, LAND, NONE, T)
+        self.assertIsNone(out["usage"])
+        self.assertIsNone(out["usage_limit"])
+        self.assertIsNone(out["build_host"])
+        self.assertEqual((out["may_start"], out["may_start_why"]), (True, []))
+
+    def test_may_start_false_for_each_reason(self):
+        for step in (1, 2):
+            out = state.state_row(VITALS, LAND, wind(step), T)
+            self.assertEqual((out["may_start"], out["may_start_why"]), (False, ["wind-down step %d" % step]))
+        for usage in (96, 97):
+            out = state.state_row(dict(VITALS, usage=usage), LAND, NONE, T)
+            self.assertEqual((out["may_start"], out["may_start_why"]),
+                             (False, ["usage %d at or over the limit 96" % usage]))
+        down = dict(VITALS, build_host={"reachable": False, "load": None, "t": None})
+        out = state.state_row(down, LAND, NONE, T)
+        self.assertEqual((out["may_start"], out["may_start_why"]), (False, ["build host not reachable"]))
+        out = state.state_row(dict(down, usage=99), LAND, wind(2), T)
+        self.assertFalse(out["may_start"])
+        self.assertEqual(out["may_start_why"], ["wind-down step 2", "usage 99 at or over the limit 96",
+                                                "build host not reachable"])
+
+    def test_null_reading_does_not_block(self):
+        for vit in (dict(VITALS, usage=None), dict(VITALS, usage=200, usage_limit=None),
+                    dict(VITALS, build_host=None)):
+            out = state.state_row(vit, LAND, NONE, T)
+            self.assertEqual((out["may_start"], out["may_start_why"]), (True, []), vit)
+
+    def test_land_does_not_block(self):
+        full = dict(LAND, may_start=False, slots_free=0)
+        out = state.state_row(VITALS, full, NONE, T)
+        self.assertIs(out["land"], full)
+        self.assertTrue(out["may_start"])
+
+    def test_get_dotted_key(self):
+        row = state.state_row(VITALS, LAND, wind(1), T)
+        self.assertEqual(state.get(row, "wind_down.step"), 1)
+        self.assertIs(state.get(row, "build_host.reachable"), True)
+        self.assertEqual(state.get(row, "land.max_holders"), 2)
+        for key in ("nope", "wind_down.nope", "t.x", "wind_down.step.x", "", "wind_down."):
+            with self.assertRaises(KeyError, msg=key):
+                state.get(row, key)
+        self.assertIsNone(state.get(dict(row, build_host=None), "build_host.reachable"))
+        with self.assertRaises(KeyError):
+            state.get(dict(row, build_host=None), "build_host.nope")
+
+
+class StateCommandTests(unittest.TestCase):
+    def setUp(self):
+        self.r = TempRepo()
+        self.r.__enter__()
+        self.r.write_roster(roster_data())
+        self.script = str(relay_in(self.r.root))
+        self.env = dict(os.environ, CROSSTALK_BUILDHOST_STATE=str(self.r.root / "buildhost-state.json"))
+
+    def tearDown(self):
+        self.r.__exit__(None, None, None)
+
+    def run_cli(self, *args):
+        return subprocess.run([sys.executable, self.script] + list(args),
+                              stdout=subprocess.PIPE, stderr=subprocess.PIPE,
+                              universal_newlines=True, cwd="/", env=self.env)
+
+    def files(self):
+        return {str(p.relative_to(self.r.root)): (p.stat().st_size, p.stat().st_mtime_ns)
+                for p in self.r.root.rglob("*") if p.is_file() and "scripts" not in p.parts}
+
+    def test_state_and_wind_down_in_one_log(self):
+        p = self.run_cli("state")
+        self.assertEqual(p.returncode, 0, p.stderr)
+        self.assertEqual(json.loads(p.stdout)["wind_down"], NONE)
+        p = self.run_cli("state", "wind-down", "--from", "owner", "--step", "1", "--reason", "owner request")
+        self.assertEqual((p.returncode, p.stdout.strip()), (0, "owner-wind-down"), p.stderr)
+        p = self.run_cli("state")
+        self.assertEqual(p.returncode, 0, p.stderr)
+        out = json.loads(p.stdout)
+        self.assertEqual((out["wind_down"]["step"], out["wind_down"]["by"]), (1, "owner"))
+        self.assertEqual((out["may_start"], out["may_start_why"]), (False, ["wind-down step 1"]))
+
+    def test_state_only_reads(self):
+        self.r.write_log("owner", [line(1, "owner", data={"from": "owner", "kind": "sync", "summary": "hi"})])
+        before = self.files()
+        for args in (("state",), ("state", "--get", "wind_down.step"), ("state", "--get", "usage")):
+            self.run_cli(*args)
+        self.assertEqual(self.files(), before)
+
+    def test_land_is_the_queue_output(self):
+        self.r.write_log("alpha", [line(1, "alpha", t="2026-11-11T10:00:00Z",
+                                        data={"from": "alpha", "kind": "sync",
+                                              "summary": "TURN ASK alpha a-1111"})])
+        q = self.run_cli("queue")
+        s = self.run_cli("state")
+        self.assertEqual((q.returncode, s.returncode), (0, 0), q.stderr + s.stderr)
+        land = json.loads(s.stdout)["land"]
+        self.assertEqual(land, json.loads(q.stdout))
+        self.assertEqual([w["project"] for w in land["waiting"]], ["alpha"])
+
+    def test_get_prints_a_value_exit_0(self):
+        self.r.write_config({"usage": {"glob": str(self.r.root / "usage-*.json"), "limit": 90}})
+        for key, want in (("wind_down.step", "0"), ("usage_limit", "90"), ("may_start", "true"),
+                          ("may_start_why", "[]")):
+            p = self.run_cli("state", "--get", key)
+            self.assertEqual((p.returncode, p.stdout, p.stderr), (0, want + "\n", ""), key)
+        self.run_cli("state", "wind-down", "--from", "owner", "--step", "2", "--reason", "owner request")
+        p = self.run_cli("state", "--get", "wind_down.reason")
+        self.assertEqual((p.returncode, p.stdout), (0, "owner request\n"))  # a string as it is
+        p = self.run_cli("state", "--get", "t")
+        self.assertRegex(p.stdout, r"^\d{4}-\d\d-\d\dT\d\d:\d\d:\d\dZ\n$")
+
+    def test_get_null_exits_1(self):
+        # A key under a null reading is null too: build_host is null with no build host set.
+        for key in ("usage", "build_host", "build_host.reachable", "wind_down.by"):
+            p = self.run_cli("state", "--get", key)
+            self.assertEqual((p.returncode, p.stdout, p.stderr), (1, "", ""), key)
+
+    def test_get_unknown_key_exits_2(self):
+        for key in ("nope", "wind_down.nope", "wind_down.step.x"):
+            p = self.run_cli("state", "--get", key)
+            self.assertEqual((p.returncode, p.stdout), (2, ""), key)
+            self.assertIn(key, p.stderr)
 
 
 if __name__ == "__main__":
