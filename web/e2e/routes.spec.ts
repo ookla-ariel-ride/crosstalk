@@ -49,19 +49,21 @@ test.beforeEach(() => {
   writeFileSync(file(), JSON.stringify({ threads: {}, muted: [], all_before: null, rev: Date.now() + 1000 }));
 });
 
-test.afterEach(() => {
+test.afterEach(async ({ page }) => {
+  // Leave the page first, so no late PUT of the read state lands after the restore.
+  await page.goto("about:blank");
   writeFileSync(file(), JSON.stringify({ ...(JSON.parse(saved) as Record<string, unknown>), rev: Date.now() + 2000 }));
 });
 
-/**
- * Each route: its hash, its heading, and a row it shows. "any" takes the first
- * row, for an order that other specs change; null: the fixture has no row.
- */
+/** Each route: its hash, its heading, and a row it shows (null: the fixture has none). */
 const ROUTES: [string, string, string | null][] = [
   ["#/needs", "Needs you", FIXTURE.openQuestion],
   ["#/conversations?sort=needs", "Conversations", FIXTURE.openQuestion],
   ["#/conversations?sort=new", "Conversations", ROWS.ask],
-  ["#/conversations?sort=hot", "Conversations", "any"],
+  // Hot counts the messages of the last hour in threads where two or more spoke. The
+  // schema thread has three; no other spec gives a thread more than three, so it
+  // stays among the first rows that the list draws.
+  ["#/conversations?sort=hot", "Conversations", FIXTURE.thread],
   ["#/conversations?sort=unanswered", "Conversations", ROWS.request],
   ["#/queue", "Land queue", "alpha: walk-branch"],
   ["#/progress", "Progress", ROWS.progress],
@@ -88,7 +90,6 @@ test("every route loads with its heading and a fixture row, and no request fails
     await page.goto("/v2/" + hash);
     await expect(main.getByRole("heading", { level: 1 }), hash).toHaveText(heading);
     if (row === null) await expect(main.getByText("This section has no rows yet."), hash).toBeVisible();
-    else if (row === "any") await expect(main.getByRole("list", { name: "Conversations" }).getByRole("listitem").first(), hash).toBeVisible();
     else await expect(main.getByRole("button", { name: row }).first(), hash).toBeVisible();
     await expect(main.getByRole("alert"), hash).toHaveCount(0);
   }

@@ -227,6 +227,8 @@ reader who is not signed in sees no owner control, gets no owner counts from
 views do not scroll sideways, the Menu button opens the navigation, and a
 thread opens. These specs add their own rows to the log, with ids that no
 other spec reads, and put back the read state and the roster they change.
+Some older specs still depend on the order of the runs, because each new
+thread can push their thread out of the rows that the list draws.
 Each test also fails on an error in the console or a request to another
 host.
 

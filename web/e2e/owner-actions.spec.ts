@@ -4,7 +4,7 @@
 // each state file it changes: the read state and the roster.
 import { readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
-import type { Page } from "@playwright/test";
+import type { Page, Response } from "@playwright/test";
 import { expect, signIn, test } from "./fixtures";
 import { relay } from "./global-setup";
 
@@ -32,7 +32,9 @@ test.beforeEach(() => {
   writeFileSync(readState(), JSON.stringify({ threads: {}, muted: [], all_before: null, rev: Date.now() + 1000 }));
 });
 
-test.afterEach(() => {
+test.afterEach(async ({ page }) => {
+  // Leave the page first, so no late PUT of the read state lands after the restore.
+  await page.goto("about:blank");
   writeFileSync(readState(), JSON.stringify({ ...(JSON.parse(saved) as Record<string, unknown>), rev: Date.now() + 2000 }));
 });
 
@@ -44,14 +46,19 @@ async function doc(page: Page, collection: string, id: string): Promise<Record<s
   return snap.collections[collection]?.[id];
 }
 
-/** The body of the next POST to /api/append that the server takes. */
-function nextAppend(page: Page) {
-  return page
-    .waitForResponse((r) => r.url().endsWith("/api/append") && r.request().method() === "POST")
-    .then((r) => {
-      expect(r.ok()).toBe(true);
-      return r.request().postDataJSON() as { id: string; collection: string; data: Record<string, unknown> };
-    });
+/** The answer to the next POST to /api/append. */
+function nextAppend(page: Page): Promise<Response> {
+  const sent = page.waitForResponse((r) => r.url().endsWith("/api/append") && r.request().method() === "POST");
+  // A test that fails before it awaits the answer leaves no unhandled rejection.
+  sent.catch(() => undefined);
+  return sent;
+}
+
+/** The body that the page sent, once the server took it. */
+async function appended(sent: Promise<Response>) {
+  const r = await sent;
+  expect(r.ok()).toBe(true);
+  return r.request().postDataJSON() as { id: string; collection: string; data: Record<string, unknown> };
 }
 
 async function openThread(page: Page) {
@@ -65,14 +72,19 @@ async function openThread(page: Page) {
 test("Mute thread hides the thread on the server's read state, and Unmute brings it back", async ({ page }) => {
   await signIn(page);
   let main = await openThread(page);
-  const put = page.waitForResponse((r) => r.url().endsWith("/api/read-state") && r.request().method() === "PUT" && r.ok());
+  // The mute's own PUT: the page also PUTs a read mark once the thread was in view.
+  const put = page.waitForResponse((r) => {
+    if (!r.url().endsWith("/api/read-state") || r.request().method() !== "PUT") return false;
+    const sent = r.request().postDataJSON() as { thread?: unknown; muted?: unknown } | null;
+    return sent?.thread === THREAD.root && sent?.muted === true;
+  });
   await main.getByRole("button", { name: "Mute thread" }).click();
-  await put;
+  expect((await put).ok()).toBe(true);
   // The stream folds the thread into one "muted" line at once.
   await expect(main.getByRole("button", { name: /\b1 muted\b/ })).toBeVisible();
   await expect(main.getByRole("button", { name: THREAD.title })).toHaveCount(0);
   const state = async () => ((await (await page.request.get("/api/read-state")).json()) as { muted: string[] }).muted;
-  expect(await state()).toContain(THREAD.root);
+  await expect.poll(state).toContain(THREAD.root);
 
   // The sort Hot folds the muted thread into one line, also after a reload.
   await page.goto("/v2/#/conversations?sort=hot");
@@ -96,7 +108,7 @@ test("Reply posts the owner's message in the thread", async ({ page }) => {
   await main.getByLabel("Message").fill("The owner answers in the thread.");
   const sent = nextAppend(page);
   await main.getByRole("button", { name: "Send" }).click();
-  const body = await sent;
+  const body = await appended(sent);
   await expect(main.getByText("The owner answers in the thread.")).toBeVisible();
   await expect(main.getByLabel("Message")).toHaveCount(0);
 
@@ -119,7 +131,7 @@ test("Start a thread posts a new thread to the participants ticked", async ({ pa
   await main.getByLabel("Message").fill("A new thread for Alpha.");
   const sent = nextAppend(page);
   await main.getByRole("button", { name: "Send" }).click();
-  const body = await sent;
+  const body = await appended(sent);
   await expect(main.getByRole("button", { name: "Start a thread" })).toBeVisible();
 
   expect(await doc(page, "messages", body.id)).toMatchObject({
@@ -141,7 +153,7 @@ test("Record as decision writes a decision row for the message", async ({ page }
   const rootMessage = main.locator("article").filter({ hasText: THREAD.body });
   const sent = nextAppend(page);
   await rootMessage.getByRole("button", { name: "Record as decision" }).click();
-  const body = await sent;
+  const body = await appended(sent);
   expect(body.id).toBe("d-from-" + THREAD.root);
   await expect(rootMessage.getByRole("button", { name: "Recorded" })).toBeDisabled();
 
@@ -162,7 +174,7 @@ test("Mark done closes a waiting row", async ({ page }) => {
   await waiting.getByRole("button", { name: "Owner actions waiting row" }).click();
   const sent = nextAppend(page);
   await waiting.getByRole("button", { name: "Mark done" }).click();
-  expect((await sent).id).toBe(id);
+  expect((await appended(sent)).id).toBe(id);
   await expect(waiting.getByRole("button", { name: "Owner actions waiting row" })).toHaveCount(0);
   expect((await doc(page, "waiting", id))?.done).toEqual(expect.any(String));
   await page.reload();
@@ -212,7 +224,7 @@ test.describe("a participant to approve", () => {
     await row.click();
     const sent = nextAppend(page);
     await main.getByRole("button", { name: "Approve", exact: true }).click();
-    expect(await sent).toMatchObject({ collection: "participants", id: "omicron", data: { trust: "approved" } });
+    expect(await appended(sent)).toMatchObject({ collection: "participants", id: "omicron", data: { trust: "approved" } });
     await expect(row).not.toContainText("not approved");
     const entry = (JSON.parse(readFileSync(roster(), "utf8")) as { participants: { id: string; trust?: string }[] }).participants.find((p) => p.id === "omicron");
     expect(entry?.trust).toBe("approved");
