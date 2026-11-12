@@ -478,6 +478,9 @@ def _name(value) -> bool:
     return isinstance(value, str) and bool(value)
 
 
+_NO_BODY = object()  # what _read_json returns once it has answered an error
+
+
 class CrosstalkHandler(BaseHTTPRequestHandler):
     """The JSON API. Every response is JSON, except the page itself."""
 
@@ -507,8 +510,15 @@ class CrosstalkHandler(BaseHTTPRequestHandler):
             except Exception:
                 pass
 
+    def parse_request(self):
+        self._body_read = False  # per request: a keep-alive connection reuses the handler
+        return super().parse_request()
+
     def send_error(self, code, message=None, explain=None):
-        """Errors unsupported by a do_* method stay JSON (e.g. a 501)."""
+        """Errors unsupported by a do_* method stay JSON (e.g. a 501). Like the
+        standard library's, each one closes the connection: the request line or
+        the body may not have been read."""
+        self.close_connection = True
         try:
             self._error(code, message or "error")
         except Exception:
@@ -525,12 +535,31 @@ class CrosstalkHandler(BaseHTTPRequestHandler):
 
     # -- responses ---------------------------------------------------------
 
+    def _body_consumed(self) -> bool:
+        """True when no byte of this request's body is left on the connection.
+
+        A POST or PUT counts only once _read_json read the whole body; other
+        methods count when they declare no body.
+        """
+        if getattr(self, "_body_read", False):
+            return True
+        headers = getattr(self, "headers", None)
+        if headers is None or headers.get("Transfer-Encoding") is not None:
+            return False
+        if self.command in ("POST", "PUT", "PATCH"):
+            return False
+        return headers.get("Content-Length") in (None, "0")
+
     def _send(self, status: int, body: bytes, content_type: str, headers=None) -> None:
         self.send_response(status)
         self.send_header("Content-Type", content_type)
         self.send_header("Content-Length", str(len(body)))
         for name, value in (headers or []):
             self.send_header(name, value)
+        if self.close_connection or not self._body_consumed():
+            # An answer sent before the body was read: the body's bytes must
+            # never be read as the next request. send_header sets close_connection.
+            self.send_header("Connection", "close")
         self.end_headers()
         if self.command != "HEAD":
             self.wfile.write(body)
@@ -920,7 +949,7 @@ class CrosstalkHandler(BaseHTTPRequestHandler):
                 self._error(401, "no valid owner session")
             return
         body = self._read_json()
-        if body is None:
+        if body is _NO_BODY:
             return
         if not isinstance(body, dict):
             self._error(400, "the body must be a JSON object")
@@ -966,24 +995,37 @@ class CrosstalkHandler(BaseHTTPRequestHandler):
         self._json(200, {"ok": True, "id": ack_id, "written": True})
 
     def _read_json(self):
-        """The parsed body, or None once 400 has been answered."""
+        """The parsed body (any JSON value, `null` too), or _NO_BODY once an error
+        has been answered. An error before the whole body is read closes the
+        connection (_send)."""
+        if self.headers.get("Transfer-Encoding") is not None:
+            self._error(411, "send the body with a Content-Length; Transfer-Encoding is not supported")
+            return _NO_BODY
         try:
             length = int(self.headers.get("Content-Length") or 0)
         except ValueError:
             self._error(400, "bad Content-Length")
-            return None
+            return _NO_BODY
         if length <= 0:
             self._error(400, "the body is empty")
-            return None
+            return _NO_BODY
         if length > MAX_BODY:
             self._error(400, "the body is too big")
-            return None
-        raw = self.rfile.read(length)
+            return _NO_BODY
+        try:
+            raw = self.rfile.read(length)
+        except socket.timeout:
+            self._error(408, "the body did not arrive in time")
+            return _NO_BODY
+        if len(raw) < length:
+            self._error(400, "the body is shorter than its Content-Length")
+            return _NO_BODY
+        self._body_read = True
         try:
             return json.loads(raw.decode("utf-8"))
         except (UnicodeDecodeError, ValueError):
             self._error(400, "the body is not JSON")
-            return None
+            return _NO_BODY
 
     # -- who is writing ----------------------------------------------------
 
@@ -1052,7 +1094,7 @@ class CrosstalkHandler(BaseHTTPRequestHandler):
                        headers=[("Retry-After", str(int(retry)))])
             return
         body = self._read_json()
-        if body is None:
+        if body is _NO_BODY:
             return
         if not isinstance(body, dict):
             self._error(400, "the body must be a JSON object")
@@ -1086,7 +1128,7 @@ class CrosstalkHandler(BaseHTTPRequestHandler):
                 self._error(401, "no valid owner session")
             return
         body = self._read_json()
-        if body is None:
+        if body is _NO_BODY:
             return
         if not isinstance(body, dict):
             self._error(400, "the body must be a JSON object")
@@ -1122,7 +1164,7 @@ class CrosstalkHandler(BaseHTTPRequestHandler):
             self._error(403, "only the owner has a read state")
             return
         body = self._read_json()
-        if body is None:
+        if body is _NO_BODY:
             return
         keys = set(body) if isinstance(body, dict) else None
         root = self.state.root
@@ -1175,7 +1217,7 @@ class CrosstalkHandler(BaseHTTPRequestHandler):
 
     def _append(self):
         body = self._read_json()
-        if body is None:
+        if body is _NO_BODY:
             return
         if not isinstance(body, dict):
             self._error(400, "the body must be a JSON object")

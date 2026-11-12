@@ -254,6 +254,30 @@ def check(tmp, socks):
                  lambda: {"alpha-smoke-http", "beta-smoke-cli"} <= set(http(url + "/api/messages")[1]["docs"]))
     step("append through the CLI and through HTTP", appends)
 
+    def body_checks():
+        host, port = url.rsplit("/", 1)[1].rsplit(":", 1)
+        req = urllib.request.Request(url + "/api/append", data=b"null", method="POST",
+                                     headers={"Authorization": "Bearer " + tokens["alpha"],
+                                              "Content-Type": "application/json"})
+        try:
+            urllib.request.urlopen(req, timeout=10)
+            raise Failed("a null body was taken")
+        except urllib.error.HTTPError as e:
+            expect(e.code == 400, "a null body answered %d" % e.code)
+        second = b"GET /api/me HTTP/1.1\r\nHost: x\r\n\r\n"
+        out = b""
+        with socket.create_connection((host, int(port)), timeout=10) as s:
+            s.sendall(b"POST /api/nowhere HTTP/1.1\r\nHost: x\r\nContent-Length: %d\r\n\r\n%s"
+                      % (len(second), second))
+            while True:
+                chunk = s.recv(65536)
+                if not chunk:
+                    break
+                out += chunk
+        expect(out.count(b"HTTP/1.1 ") == 1 and out.startswith(b"HTTP/1.1 404 "),
+               "an unread body was read as a second request: %r" % out[:200])
+    step("a null body is 400; an unread body closes the connection", body_checks)
+
     def commands():
         out = relay(data, "inbox", "alpha").stdout
         expect("beta-smoke-cli" in out, "inbox alpha lacks the CLI request")

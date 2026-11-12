@@ -190,6 +190,8 @@ auto-granter on. The driver then checks:
   an owner message
 - a login with the `set-pin` PIN, one append through HTTP and one through
   `relay.py append`, then `inbox`, `check`, `state` and `queue`
+- a `null` body, which gets a 400, and a POST to an unknown path whose body
+  holds a second request: the server answers once and closes the connection
 
 Each check prints one `ok` line. The last line is `smoke: ok in N s`, and the
 exit status is 0 only when every check passes. On a failure it prints the

@@ -536,7 +536,19 @@ class AppendBodyTests(unittest.TestCase):
         self.assertFalse(self.log.exists())
 
     def test_a_body_over_the_limit_is_refused_unread(self):
-        status, body = self.post(self.padded(MAX_BODY + 1))
+        # Only the start of the body is sent: the server answers and closes without
+        # reading it. A server that did read it would wait, then answer 408.
+        old = CrosstalkHandler.timeout
+        CrosstalkHandler.timeout = 1.0
+        self.addCleanup(setattr, CrosstalkHandler, "timeout", old)
+        raw = self.padded(MAX_BODY + 1)
+        head = ("POST /api/append HTTP/1.1\r\nHost: x\r\nAuthorization: Bearer %s\r\n"
+                "Content-Length: %d\r\n\r\n" % (self.TOKEN, len(raw))).encode("latin-1")
+        with socket.create_connection(("127.0.0.1", self.srv.port), timeout=10) as s:
+            s.sendall(head + raw[:4096])
+            resp = s.makefile("rb").read()
+        status = int(resp.split(b" ", 2)[1])
+        body = json.loads(resp.split(b"\r\n\r\n", 1)[1].decode("utf-8"))
         self.assert_refused(status, body, "the body is too big")
 
     def test_a_body_at_the_limit_is_taken(self):
@@ -558,11 +570,9 @@ class AppendBodyTests(unittest.TestCase):
             status, body = self.post(raw)
             self.assert_refused(status, body, "the body must be a JSON object")
 
-    @unittest.expectedFailure
     def test_a_null_body_is_answered(self):
-        # Defect: _read_json returns None for the JSON `null`, which its callers
-        # read as "400 already sent", so the request gets no answer at all.
-        status, body = self.post(b"null", timeout=1)
+        # A parsed `null` is a body like any other non-object, not "400 already sent".
+        status, body = self.post(b"null", timeout=5)
         self.assert_refused(status, body, "the body must be a JSON object")
 
     def test_via_import_is_refused(self):
@@ -590,6 +600,174 @@ class AppendBodyTests(unittest.TestCase):
         for data in (None, [], "hi", 1):
             status, body = self.post(json.dumps(self.message(data=data)).encode("utf-8"))
             self.assert_refused(status, body, "data must be a JSON object")
+
+
+SMUGGLED = b"GET /api/me HTTP/1.1\r\nHost: x\r\n\r\n"
+
+
+class EarlyAnswerTests(unittest.TestCase):
+    """An answer sent before the body is read closes the connection, so body bytes
+    are never read as a second request; a `null` body gets a 400 on every route."""
+
+    TOKEN = "rev-early-answer-test-token"
+    OWNER = "owner-early-answer-test-token"
+
+    def setUp(self):
+        self.r = TempRepo()
+        self.r.__enter__()
+        self.addCleanup(self.r.__exit__, None, None, None)
+        self.r.write_roster()
+        self.srv = RunningServer(self.r.root, tokens={"rev": token_hash(self.TOKEN),
+                                                      "owner": token_hash(self.OWNER)}).start_server()
+        self.addCleanup(self.srv.close)
+
+    def exchange(self, raw, half_close=False, wait=3.0):
+        """(status codes answered, whether the server closed, raw bytes) for raw request bytes."""
+        s = socket.create_connection(("127.0.0.1", self.srv.port), timeout=wait)
+        out, closed = b"", False
+        try:
+            s.sendall(raw)
+            if half_close:
+                s.shutdown(socket.SHUT_WR)
+            while True:
+                chunk = s.recv(65536)
+                if not chunk:
+                    closed = True
+                    break
+                out += chunk
+        except socket.timeout:
+            pass
+        except ConnectionResetError:
+            closed = True
+        finally:
+            s.close()
+        return [int(c) for c in re.findall(rb"HTTP/1\.1 (\d{3}) ", out)], closed, out
+
+    def request(self, method, path, headers=(), body=b""):
+        head = "%s %s HTTP/1.1\r\nHost: x\r\n" % (method, path)
+        head += "".join("%s: %s\r\n" % h for h in headers)
+        return head.encode("latin-1") + b"\r\n" + body
+
+    def assert_answered_once_and_closed(self, raw, status, **kw):
+        codes, closed, out = self.exchange(raw, **kw)
+        self.assertEqual(codes, [status], out[:400])
+        self.assertTrue(closed, "the connection stayed open: %r" % out[:400])
+        self.assertIn(b"\r\nconnection: close\r\n", out.lower())
+
+    def length(self, n):
+        return ("Content-Length", str(n))
+
+    def owner_cookie(self):
+        status, _body, headers = request_with_headers(self.srv.url + "/api/login", "POST",
+                                                      {"token": self.OWNER})
+        self.assertEqual(status, 200)
+        return headers["Set-Cookie"].split(";")[0]
+
+    def test_each_early_answer_closes_the_connection(self):
+        bearer = ("Authorization", "Bearer " + self.TOKEN)
+        cases = [
+            ("too big", "POST", "/api/append", [bearer, self.length(MAX_BODY + 1)], 400),
+            ("unknown POST path", "POST", "/api/nowhere", [self.length(len(SMUGGLED))], 404),
+            ("unknown PUT path", "PUT", "/api/nowhere", [self.length(len(SMUGGLED))], 501),
+            ("unsupported method", "DELETE", "/api/append", [self.length(len(SMUGGLED))], 501),
+            ("onboard as a viewer", "POST", "/api/onboard", [self.length(len(SMUGGLED))], 401),
+            ("onboard as an editor", "POST", "/api/onboard", [bearer, self.length(len(SMUGGLED))], 403),
+            ("ack as a viewer", "POST", "/api/ack", [self.length(len(SMUGGLED))], 401),
+            ("read state as a viewer", "PUT", "/api/read-state", [self.length(len(SMUGGLED))], 403),
+            ("POST on the v2 page", "POST", "/v2/x", [self.length(len(SMUGGLED))], 405),
+            ("a GET with a body", "GET", "/api/me", [self.length(len(SMUGGLED))], 200),
+        ]
+        for name, method, path, headers, status in cases:
+            with self.subTest(name):
+                self.assert_answered_once_and_closed(
+                    self.request(method, path, headers, SMUGGLED + SMUGGLED), status)
+
+    def test_a_throttled_login_closes_the_connection(self):
+        for _ in range(10):
+            self.srv.state.record_login_failure()
+        self.assert_answered_once_and_closed(
+            self.request("POST", "/api/login", [self.length(len(SMUGGLED))], SMUGGLED), 429)
+
+    def test_a_bad_missing_or_zero_length_closes_the_connection(self):
+        for name, headers in (("bad", [("Content-Length", "abc")]), ("negative", [self.length(-5)]),
+                              ("zero", [self.length(0)]), ("missing", [])):
+            with self.subTest(name):
+                self.assert_answered_once_and_closed(
+                    self.request("POST", "/api/append", headers, SMUGGLED), 400)
+
+    def test_chunked_is_refused_once_and_closed(self):
+        chunked = b"5\r\nhello\r\n0\r\n\r\n" + SMUGGLED
+        for headers in ([("Transfer-Encoding", "chunked")],
+                        [("Transfer-Encoding", "chunked"), self.length(len(chunked))]):
+            with self.subTest(headers):
+                self.assert_answered_once_and_closed(
+                    self.request("POST", "/api/append", headers, chunked), 411)
+
+    def test_a_body_shorter_than_its_length_is_refused_and_closed(self):
+        self.assert_answered_once_and_closed(
+            self.request("POST", "/api/append", [self.length(100)], b'{"a": 1}'), 400, half_close=True)
+
+    def test_a_body_that_never_comes_gets_408_and_a_closed_connection(self):
+        old = CrosstalkHandler.timeout
+        CrosstalkHandler.timeout = 0.5
+        self.addCleanup(setattr, CrosstalkHandler, "timeout", old)
+        self.assert_answered_once_and_closed(
+            self.request("POST", "/api/append", [self.length(100)], b'{"a": 1}'), 408)
+
+    def test_a_read_body_keeps_the_connection_alive(self):
+        body = json.dumps({"from": "rev", "op": "set", "collection": "messages", "id": "rev-0001",
+                           "data": {"from": "rev", "kind": "reply", "summary": "hi"}}).encode("utf-8")
+        raw = self.request("POST", "/api/append", [("Authorization", "Bearer " + self.TOKEN),
+                                                   self.length(len(body))], body) + SMUGGLED
+        codes, closed, out = self.exchange(raw, wait=1.0)
+        self.assertEqual(codes, [201, 200], out[:400])
+        self.assertFalse(closed)
+        self.assertNotIn(b"connection: close", out.lower())
+        codes, closed, _out = self.exchange(SMUGGLED + SMUGGLED, wait=1.0)
+        self.assertEqual((codes, closed), ([200, 200], False))
+
+    def test_an_early_answer_after_a_read_body_still_closes(self):
+        # The handler lives across a keep-alive connection: what the first request
+        # read must not count for the second.
+        body = json.dumps({"from": "rev", "op": "set", "collection": "messages", "id": "rev-0001",
+                           "data": {"from": "rev", "kind": "reply", "summary": "hi"}}).encode("utf-8")
+        raw = (self.request("POST", "/api/append", [("Authorization", "Bearer " + self.TOKEN),
+                                                    self.length(len(body))], body)
+               + self.request("POST", "/api/nowhere", [self.length(len(SMUGGLED))], SMUGGLED + SMUGGLED))
+        codes, closed, out = self.exchange(raw)
+        self.assertEqual((codes, closed), ([201, 404], True), out[:600])
+
+    def test_a_bad_request_line_after_a_good_request_closes(self):
+        # The server reads at most 65537 bytes of a request line, so the next
+        # request would start right after them.
+        raw = SMUGGLED + b"X" * 65537 + SMUGGLED
+        codes, closed, out = self.exchange(raw)
+        self.assertEqual((codes, closed), ([200, 414], True), out[:600])
+
+    def test_a_null_body_is_400_on_every_route(self):
+        import http.client
+        cookie = ("Cookie", self.owner_cookie())
+        bearer = ("Authorization", "Bearer " + self.TOKEN)
+        for method, path, headers, error in (
+                ("POST", "/api/append", [bearer], "the body must be a JSON object"),
+                ("POST", "/api/login", [], "the body must be a JSON object"),
+                ("POST", "/api/onboard", [cookie], "the body must be a JSON object"),
+                ("POST", "/api/ack", [cookie], "the body must be a JSON object"),
+                ("PUT", "/api/read-state", [cookie], None)):
+            with self.subTest(path):
+                conn = http.client.HTTPConnection("127.0.0.1", self.srv.port, timeout=5)
+                try:
+                    conn.request(method, path, body=b"null",
+                                 headers=dict(headers, **{"Content-Type": "application/json"}))
+                    resp = conn.getresponse()
+                    body = json.loads(resp.read().decode("utf-8"))
+                finally:
+                    conn.close()
+                self.assertEqual(resp.status, 400, body)
+                if error:
+                    self.assertEqual(body, {"error": error})
+        self.assertEqual(list((self.r.root / "log").iterdir()), [])
+        self.assertFalse((self.r.root / "read-state.json").exists())
 
 
 class OwnerTests(unittest.TestCase):
