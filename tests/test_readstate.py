@@ -257,6 +257,72 @@ class RouteTests(unittest.TestCase):
             self.assertEqual(len(body["threads"]), 2)
             self.assertNotIn("unread_total", body)
 
+    def owner_get(self, srv, path):
+        status, body = request(srv.url + path, headers=self.auth(OWNER_TOKEN))
+        self.assertEqual(status, 200, body)
+        return body
+
+    def test_the_unread_counts_are_built_once_for_each_change(self):
+        paths = ["/api/threads?sort=new&unread=1", "/api/threads?sort=needs&unread=1&limit=1",
+                 "/api/threads?sort=hot", "/api/thread/alpha-root"]
+        with self.server() as srv, mock.patch.object(readstate, "load", wraps=readstate.load) as load:
+            for _ in range(3):
+                for path in paths:
+                    load.reset_mock()
+                    self.owner_get(srv, path)
+                    self.assertEqual(load.call_count, 1, path)
+            self.assertEqual(srv.state.unread_builds, 1)
+
+            self.put(srv, {"thread": "alpha-root", "t": "2026-10-21T10:05:00Z", "id": "beta-reply"})
+            for path in paths:
+                self.owner_get(srv, path)
+            self.assertEqual(srv.state.unread_builds, 2)
+            self.assertEqual(self.owner_get(srv, paths[0])["unread_total"], 1)
+
+            self.append("beta", line(2, "beta", id_="beta-new", t="2026-10-21T11:05:00Z",
+                                     data={"kind": "reply", "summary": "new", "replyTo": "alpha-root"}))
+            body = self.owner_get(srv, paths[0])
+            self.assertEqual(([t["root"] for t in body["threads"]], body["unread_total"]),
+                             (["alpha-root", "alpha-other"], 2))
+            for path in paths:
+                self.owner_get(srv, path)
+            self.assertEqual(srv.state.unread_builds, 3)
+
+    def test_unread_filter_keeps_the_needs_order(self):
+        with self.server() as srv:
+            needs = [t["root"] for t in self.owner_get(srv, "/api/threads?sort=needs")["threads"]]
+            body = self.owner_get(srv, "/api/threads?sort=needs&unread=1")
+            self.assertEqual([t["root"] for t in body["threads"]], needs)
+            self.assertEqual(body["unread_total"], 2)
+            self.put(srv, {"thread": "alpha-root", "t": "2026-10-21T10:05:00Z", "id": "beta-reply"})
+            body = self.owner_get(srv, "/api/threads?sort=needs&unread=1")
+            self.assertEqual(([t["root"] for t in body["threads"]], body["unread_total"]), (["alpha-other"], 1))
+
+    def test_unread_filter_reads_a_wrong_typed_state_as_empty(self):
+        (self.repo.root / readstate.FILE).write_text(json.dumps(
+            {"threads": 5, "muted": "alpha-root", "all_before": 7, "rev": "x"}), encoding="utf-8")
+        with self.server() as srv:
+            body = self.owner_get(srv, "/api/threads?sort=new&unread=1")
+        self.assertEqual(([t["root"] for t in body["threads"]], body["unread_total"]),
+                         (["alpha-other", "alpha-root"], 2))
+
+    def test_mark_all_with_ahead_also_marks_the_threads_dated_after_it(self):
+        with self.server() as srv:
+            self.assertEqual(self.put(srv, {"all_before": "2026-10-21T10:10:00Z"})[0], 200)
+            self.assertEqual(self.unread_by_root(srv), {"alpha-root": 0, "alpha-other": 1})
+            status, state = self.put(srv, {"all_before": "2026-10-21T10:10:00Z", "ahead": True})
+            self.assertEqual(status, 200, state)
+            self.assertEqual(state["threads"], {"alpha-other": {"t": "2026-10-21T10:30:00Z", "id": "alpha-other"}})
+            self.assertEqual(self.unread_by_root(srv), {"alpha-root": 0, "alpha-other": 0})
+            self.assertEqual(self.owner_get(srv, "/api/threads?sort=new&unread=1")["unread_total"], 0)
+            self.append("beta", line(2, "beta", id_="beta-after", t="2026-10-21T10:40:00Z",
+                                     data={"kind": "reply", "summary": "after", "replyTo": "alpha-other"}))
+            self.assertEqual(self.unread_by_root(srv), {"alpha-root": 0, "alpha-other": 1})
+            for bad in ("yes", 1, None):
+                status, reply = self.put(srv, {"all_before": "2026-10-21T10:10:00Z", "ahead": bad})
+                self.assertEqual(status, 400, bad)
+                self.assertIn("error", reply)
+
     def test_unread_filter_refuses_a_bad_value(self):
         with self.server() as srv:
             status, body = request(srv.url + "/api/threads?sort=new&unread=yes", headers=self.auth(OWNER_TOKEN))

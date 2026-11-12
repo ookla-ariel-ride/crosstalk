@@ -25,7 +25,7 @@ import threading
 import time
 from datetime import datetime
 from pathlib import Path
-from typing import List, Optional
+from typing import Dict, List, Optional, Tuple
 
 from .files import atomic_write_text
 
@@ -107,12 +107,23 @@ def mark(root: Path, thread: str, t: str, id: str) -> dict:
         return state
 
 
-def mark_all(root: Path, t: str) -> dict:
-    """Record that every message up to `t` is read; return the state."""
+def mark_all(root: Path, t: str, marks: Optional[Dict[str, Tuple[str, str]]] = None) -> dict:
+    """Record that every message up to `t` is read, and each thread of `marks` up to its (t, id); return the state.
+
+    One write: a mark that is not later than the thread's own mark is left out.
+    """
     with _lock:
         state = load(root)
+        changed = False
         if state["all_before"] is None or t > state["all_before"]:
             state["all_before"] = t
+            changed = True
+        for thread, (mt, mid) in (marks or {}).items():
+            old = state["threads"].get(thread)
+            if old is None or (mt, mid) > (old["t"], old["id"]):
+                state["threads"][thread] = {"t": mt, "id": mid}
+                changed = True
+        if changed:
             _save(root, state)
         return state
 
