@@ -36,7 +36,7 @@ from crosstalk.posters import claim_file, land_sync, post_incident, release_file
 from crosstalk.replay import enrich_messages, load_all_lines, replay  # noqa: E402
 from crosstalk.requests import no_answer, speaker_fields  # noqa: E402
 from crosstalk import inboxstate  # noqa: E402
-from crosstalk.reports import (inbox_report, load_docs, load_docs_and_times, new_report,  # noqa: E402
+from crosstalk.reports import (inbox_report, load_docs, load_docs_and_lines, new_report,  # noqa: E402
                                questions_report)
 from crosstalk.serve import serve  # noqa: E402
 from crosstalk.service import service_block, service_for  # noqa: E402
@@ -162,20 +162,21 @@ def cmd_inbox(args):
     if args.ack_to is not None and (args.new or args.ack or args.all or args.brief):
         err("--ack-to goes alone, without --new, --ack, --all or --brief")
         return 1
-    docs, times, fatal = load_docs_and_times(ROOT, roster)
+    docs, lines, fatal = load_docs_and_lines(ROOT, roster)
     if fatal:
         for p in fatal:
             err("%s:%d: %s" % (p.file, p.line, p.message))
         return 1
-    # Not after the clock: a row with a later line time stays new until a later ack.
-    now = time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime())
-    nxt = inboxstate.newest(times, now)
+    nxt = inboxstate.newest(lines)
     if args.ack_to is not None:
-        return _inbox_ack_to(args.pid, args.ack_to, nxt, now)
+        return _inbox_ack_to(args.pid, args.ack_to, nxt, lines)
     out = inbox_report(docs, args.pid, roster, include_answered=args.all,
                        now_iso=getattr(args, "now", None), service=service_for(CODE_ROOT, ROOT))
     if args.new:
-        out = new_report(out, times, inboxstate.load(ROOT).get(args.pid), nxt)
+        # An entry that cannot be true for this log (a number above its writer's top, or
+        # another fingerprint at that number) leaves that writer all new.
+        place = inboxstate.trusted(inboxstate.load(ROOT, lines).get(args.pid), lines)
+        out = new_report(out, lines, place, nxt)
     try:
         _print_inbox(out, args)
         sys.stdout.flush()
@@ -185,7 +186,7 @@ def cmd_inbox(args):
         os.dup2(os.open(os.devnull, os.O_WRONLY), sys.stdout.fileno())
         return 1
     if args.ack and nxt is not None:
-        inboxstate.move(ROOT, args.pid, nxt)
+        inboxstate.move(ROOT, args.pid, nxt, lines)
     return 0
 
 
@@ -213,28 +214,51 @@ def _print_inbox(out, args):
                                             len(out.get("stale_locks", []))))
 
 
-def _inbox_ack_to(pid, raw, nxt, now):
-    """`inbox <pid> --ack-to PLACE`: move the place to a `next` read earlier."""
+def _inbox_ack_to(pid, raw, nxt, lines):
+    """`inbox <pid> --ack-to PLACE`: move the place to a `next` read earlier.
+
+    Refused: a place that is not well-formed, one ahead of the log for any
+    writer, and one that is behind the stored place for some writer and ahead
+    of it for none (it would move nothing forward). The same place again is no
+    error. Otherwise each writer keeps the higher number.
+    """
     try:
         place = inboxstate.clean_place(json.loads(raw))
     except (ValueError, RecursionError):
         place = None
     if place is None:
-        err('--ack-to: not a place; give the JSON object {"t": ..., "seen": [...]} '
+        err('--ack-to: not a place; give the JSON object {"<writer>": [<seq>, "<fingerprint>"], ...} '
             "that inbox --new printed as next")
         return 1
-    stored = inboxstate.load(ROOT).get(pid)
-    if stored is not None and place["t"] < stored["t"]:
-        err("--ack-to: %s is behind the stored place %s" % (place["t"], stored["t"]))
+    top = {w: e[0] for w, e in (nxt or {}).items()}
+    seq_of = inboxstate.seq_of
+    ahead = sorted(w for w, e in place.items() if seq_of(e) > top.get(w, 0))
+    if ahead:
+        err("--ack-to: ahead of the log for %s (the log holds %s)"
+            % (", ".join("%s %d" % (w, seq_of(place[w])) for w in ahead),
+               ", ".join("%s %d" % (w, top.get(w, 0)) for w in ahead)))
         return 1
-    if place["t"] > now:
-        err("--ack-to: %s is after the clock (%s)" % (place["t"], now))
+    by_key = inboxstate.index(lines)
+    for w, e in sorted(place.items()):
+        fp = inboxstate.fingerprint(by_key[(w, seq_of(e))])
+        if fp is None or inboxstate.fp_of(e) not in (None, fp):
+            err("--ack-to: the fingerprint %s of %s %d does not match the log (%s); "
+                "the log changed since that next was printed" % (inboxstate.fp_of(e), w, seq_of(e), fp))
+            return 1
+        place[w] = [seq_of(e), fp]  # a bare number gets the fingerprint of its line
+    found = inboxstate.load(ROOT, lines).get(pid)
+    stored = inboxstate.trusted(found, lines) or {}
+    forward = any(seq_of(e) > seq_of(stored.get(w)) for w, e in place.items())
+    behind = any(seq_of(e) > seq_of(place.get(w)) for w, e in stored.items())
+    if behind and not forward:
+        err("--ack-to: %s is behind the stored place %s and moves nothing forward"
+            % (json.dumps(place, sort_keys=True), json.dumps(stored, sort_keys=True)))
         return 1
-    if nxt is None or place["t"] > nxt["t"]:
-        err("--ack-to: %s is ahead of the newest row of the log (%s)"
-            % (place["t"], nxt["t"] if nxt else "none"))
+    if found is None and not forward:
+        err("--ack-to: %s moves nothing forward, and %s has no stored place"
+            % (json.dumps(place, sort_keys=True), pid))
         return 1
-    print(json.dumps(inboxstate.move(ROOT, pid, place), sort_keys=True))
+    print(json.dumps(inboxstate.move(ROOT, pid, place, lines), sort_keys=True))
     return 0
 
 

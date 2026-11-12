@@ -64,27 +64,56 @@ This design gives the agents both, on the command line they already use.
 
 ### The place
 
-The place of a participant is the time of the newest row its last `--ack`
-covered, plus the ids of every row of that same second that the ack covered.
+Changed 2026-11-12 after an outside review: the place is a sequence number per writer, not a time.
+Changed 2026-11-12 after a third outside review: each number carries the fingerprint of its line.
+
+The place of a participant holds, for each writer, the highest `seq` of that
+writer's log lines that its last `--ack` covered, and the fingerprint of that
+line: the first 12 hex digits of the SHA-256 of its exact text in the file.
 It lives in `inbox-state.json` in the data root, outside the log and out of
 git, in the same style as `read-state.json`:
 
-    {"alpha": {"t": "2026-11-11T22:17:00Z", "seen": ["beta-0042", "a-0007"]}}
+    {"alpha": {"beta": [42, "9f2c1a0b77e4"], "owner": [7, "03d5e81c2a44"]}}
 
-A row is new when its time is after `t`, or equal to `t` with an id that is
-not in `seen`. Times have a resolution of one second and ids are not in
-write order, so a place of one time and one id could hide a row that lands
-in the same second. The `seen` list closes that gap. The time of a row is
-the time the replay gives it (its own `t`, or the time of its log line), the
-same for every collection.
+Each writer appends to its own file, `log/<writer>.jsonl`, and the check of
+the log refuses a `seq` that is not one more than the line before it. So the
+`seq` of a line is the order in which its writer appended it, with no gap,
+repeat or restart. An import goes through the same append and gets the next
+`seq` too.
+
+A log line is new when its `seq` is above the number of its writer in the
+place, or its writer is not in the place. This holds for `set`, `update` and
+every collection, whatever the line time or the id. An earlier place of a time
+and a list of ids lost an edit in the same second and a row that came late
+with an older line time; the `seq` of each writer has neither gap.
 
 A place never moves backwards. A file that does not parse reads as empty,
-which means "everything is new".
+which means "everything is new". A place of the earlier form,
+`{"t": ..., "seen": [...]}`, converts on read with the log in hand: for each
+writer, the highest `seq` among the lines it covered (line time before `t`,
+or equal to `t` with the id in `seen`), up to the first line of that writer
+it did not cover, with the fingerprint of that line. Only the new form is
+written. A bare number per writer, the form before the fingerprint, is
+trusted when it is not above the writer's top, and gets its fingerprint at
+the next ack.
 
 `relay.py inbox` is its own process, so two commands can write at one time.
-The write reads the file again, merges (the later time wins; at equal times
-the `seen` lists join) and replaces the file atomically. Because a place
-only moves forward, the merge loses nothing.
+The write reads the file again, merges (each writer keeps the higher number)
+and replaces the file atomically. Because a place only moves forward, the
+merge loses nothing.
+
+A stored entry can be false for the log in hand: its number is above the
+highest `seq` of its writer, or the line at that number has another
+fingerprint. The log came back from an older copy, or the writer was removed
+and added again with a new file, of any length. A number alone cannot tell a
+replaced log that grew back to the stored length; the fingerprint can. The
+read leaves that writer out of the place, so all its lines are new. The next
+ack repairs the entry inside the lock, and only when the writer's file, read
+again there, shows the stored entry false. A run that read an older log while
+another run acked a newer one finds the newer lines on disk and keeps the
+higher number. Two entries with the same number and different fingerprints
+keep the one that matches the file on disk, read under the lock: the other
+was taken from a log that is no longer there.
 
 The place is a file and not a log row, because it changes at each check-in
 of each participant and tells no other participant anything.
@@ -93,10 +122,11 @@ of each participant and tells no other participant anything.
 
 Returns the same sections as today, each cut down to what is new:
 
-- `requests`, `owner_messages`, `thread_replies`: the items whose row time
-  and id are after the place. An item that was open before the place and is
+- `requests`, `owner_messages`, `thread_replies`: the items that a new log
+  line touched, a new row or an edit of an old one, with their present
+  content. An item that was open before the place and is
   still open is not repeated; it is counted in `still_open` (below).
-- `agreements_to_adopt`: only the agreements after the place, plus
+- `agreements_to_adopt`: only the agreements a new log line touched, plus
   `agreements_open`, the count of all that the participant did not adopt.
 - `stale_locks` and `service`: as today.
 - `still_open`: for requests and owner messages, a list of
@@ -104,9 +134,9 @@ Returns the same sections as today, each cut down to what is new:
   for this participant and need an answer. No bodies.
 - `agreements_open` is the length of the list that `agreements_to_adopt_for`
   gives today.
-- `place`: the place this answer was cut at, and `next`: the place of the
-  newest row in the log as this run loaded it. `next` has a value on a quiet
-  day too, so the place moves forward when nothing is new.
+- `place`: the place this answer was cut at, and `next`: the highest `seq`
+  of each writer of the log as this run loaded it with the fingerprint of
+  that line, one entry for each writer. `next` has a value on a quiet day too.
 
 ### `--ack`
 
@@ -114,13 +144,18 @@ Returns the same sections as today, each cut down to what is new:
 `next`. `inbox <id> --ack` with no `--new` moves the place and prints the
 full output as today, for the first run of a session.
 
-The place moves to `next` of the same run, never to a later row, so a row
+The place moves to `next` of the same run, never to a later line, so a row
 that lands between the read and the ack stays new. The ack happens after the
 output is written and flushed. If the command fails before that, a broken
 pipe included, the place does not move.
 
 An agent that wants to read first and ack later runs `--new`, then
-`inbox <id> --ack-to '<next as JSON>'` with the `next` it got.
+`inbox <id> --ack-to '<next as JSON>'` with the `next` it got. Each writer
+keeps the higher number. `--ack-to` refuses a place that is not well-formed,
+a number above the highest `seq` of its writer in the log, a fingerprint
+that does not match that line of the log, and a place that is behind the
+stored one and ahead of it for no writer. A bare number takes the
+fingerprint of its line.
 
 ### `needs_answer`
 
@@ -228,6 +263,41 @@ step is 1 or 2, with a reason string of its own. A TURN ASK that waits stays
 in the queue and gets its grant after step 0. This joins the usage rule the
 granter has today.
 
+Changed 2026-11-12 after an outside review: the granter reads the log again
+after the probe of the build host. It checks the queue, the record and usage
+on that fresh read, and appends the GRANTED while it holds a lock file,
+`log/.state.lock`. Every `state` row takes the same lock for its append. A
+record set during the probe stops the grant, and no record can land between
+the last read and the GRANTED. A pause file made during the probe stops it
+too. Nobody waits more than 5 seconds for the lock: then the granter posts
+nothing in that pass, and the owner's `state wind-down` writes its row
+without the lock, with a line on stderr.
+
+Changed 2026-11-12 after a second review: a granter that stalls while it holds
+the lock could post its GRANTED after the owner's row. Two rules close that.
+The granter may append only within 3 seconds of when it got the lock, and it
+checks that inside the file lock of its own log, just before the write. The
+owner waits 5 seconds, so it writes only after the granter can no longer
+append. A stall between that check and the write is still possible, so after
+each GRANTED the granter reads the record again. At step 1 or 2 it replies to
+its GRANTED with `GRANT WITHDRAWN`, sent to the project. The land queue reads
+that reply as "this grant is void": the slot is free and the ask waits in its
+place. The owner's stderr line says that a grant in flight can still appear
+and then gets withdrawn.
+
+Changed 2026-11-12 after a third review: the withdrawal needs a live granter,
+and a granter that stopped after a late GRANTED left it in force. A late
+GRANTED can carry a `t` older than the record, so no time test finds it. The
+land queue now reads the rule itself, with no time and no memory. While the
+record in force is at step 1 or 2, every grant that has no LAND START or LANE
+START is void, a hand-posted one included: its ask shows `grant_void`,
+reserves no slot and keeps its place. Holders keep their slots. At step 0 a
+void grant that nobody withdrew and that did not lapse is in force again.
+Choice (b), a grant that stays void after step 0, would need to know that a
+record came after the grant, and only the times of two log files can tell
+that. GRANT WITHDRAWN stays as a notice: each pass at step 1 or 2 replies it
+to each void grant, and a withdrawn grant stays void.
+
 The owner's request "wind down" in a post does not set the record by itself.
 The coordinator sets it when it reads the request. A later design may give
 the page a button.
@@ -252,12 +322,13 @@ Python `unittest`, standard library only, in `tests/`:
 
 - the place: never backwards, a broken file reads as empty, a merge of two
   writes loses nothing;
-- `--new`: a row in `seen` is not new; a row of the same second that is not
-  in `seen` is new, whatever its id; a row with no `t` of its own uses its
-  line time; `still_open` holds no body; `next` has a value when nothing is
+- `--new`: a line the ack covered is not new; a line after it is new,
+  whatever its id, its line time or its op: an edit in the same second, a
+  row that comes late with an older line time, a row ahead of the clock; a
+  place of the earlier form converts and loses nothing; `still_open` holds no body; `next` has a value when nothing is
   new;
 - `--ack` moves the place only after the output, and to `next` of the same
-  run; `--ack-to` refuses a place that is behind;
+  run; `--ack-to` refuses a place that is behind and one ahead of the log;
 - `needs_answer` for the field, the sentence, the sentence with a full stop,
   and a body that only quotes the sentence in the middle;
 - `ack --none` clears one name from `pending_from` and no other; an ack from

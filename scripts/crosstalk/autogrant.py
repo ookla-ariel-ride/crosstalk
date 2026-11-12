@@ -15,6 +15,22 @@ set the granter does nothing. One pass (Granter.poll_once):
 4. The build host must answer a probe (buildhost.probe) with a 1-minute load
    under `autogrant.loadLimit`. A probe result is reused for PROBE_SEC. With
    no build host set (`buildHost.ssh`) this check is skipped.
+5. After the probe, under the state lock (logs.state_lock), the pause file
+   and steps 1 to 3 are checked again on a fresh snapshot and clock, and the
+   GRANTED is appended before the lock goes. A lock that stays busy for
+   logs.STATE_LOCK_WAIT seconds means no GRANTED in this pass. A wind-down
+   row takes the same lock for its append, so it lands either before that
+   last read or after the GRANTED.
+6. The granter holds the lock with `hold`: its append is refused when it got
+   the lock more than logs.STATE_HOLD_LIMIT seconds before. A wind-down row
+   waits longer than that before it writes without the lock, so a stalled
+   granter does not post its GRANTED after that row.
+7. The land queue itself reads a grant with no start as void while the
+   wind-down record is at step 1 or 2 (`grant_void`), so a GRANTED that
+   lands late reserves nothing. As a notice to the project, each pass, and
+   the pass that posted a GRANTED once more after its append, replies GRANT
+   WITHDRAWN (landqueue.GRANT_VOID) to each void grant, to the asking
+   project. The ask waits in its place and gets a new GRANTED after step 0.
 
 Then it replies to the ask as the coordinator with a GRANTED row that names
 the branches, the load, the usage and the other holders. Anything it cannot
@@ -34,7 +50,8 @@ from typing import Callable, Optional, Tuple
 
 from . import buildhost, config, state
 from .consults import post_reply
-from .landqueue import land_queue
+from .landqueue import GRANT_VOID, land_queue
+from .logs import StateHoldExpired, StateLockBusy, state_lock
 from .participants import load_roster
 
 PROBE_SEC = 60.0
@@ -84,9 +101,18 @@ def grant_text(ask: dict, holders: list, load: Optional[float], usage: Optional[
     facts.append("other holders: %s" % others)
     line = ", ".join(facts)
     body = ("GRANTED %s %s: one land run on the build host (auto-granted by the Crosstalk server). "
-            "%s. Post LAND START and LAND END. No answer needed."
-            % (ask["project"], branches, line[:1].upper() + line[1:]))
+            "%s. Post LAND START and LAND END. No answer needed.") % (
+        ask["project"], branches, line[:1].upper() + line[1:])
     return summary, body
+
+
+def void_text(ask: dict) -> Tuple[str, str]:
+    """(summary, body) of the GRANT WITHDRAWN reply to a grant the land queue reads as void."""
+    head = "%s %s %s" % (GRANT_VOID, ask["project"], ", ".join(ask.get("branches") or []) or "its branches")
+    body = ("%s: this grant is void during the wind-down (%s), and it has no start. "
+            "Do not start. The ask keeps its place and gets a new GRANTED after step 0. "
+            "No answer needed." % (head, ask["grant_void"]))
+    return head + ": " + ask["grant_void"], body
 
 
 class Granter:
@@ -101,6 +127,7 @@ class Granter:
                  probe: Optional[Callable[[], dict]] = None,
                  usage: Optional[Callable[[], Tuple[Optional[float], str]]] = None,
                  post: Callable[..., object] = post_reply,
+                 withdraw: Callable[..., object] = post_reply,
                  clock: Callable[[], float] = time.time,
                  pause_path: Optional[Path] = PAUSE_PATH, poll_sec: float = POLL_SEC,
                  roster: Optional[Callable[[], object]] = None):
@@ -109,6 +136,7 @@ class Granter:
         self.probe = probe
         self.usage = usage
         self.post = post
+        self.withdraw = withdraw
         self.clock = clock
         self.pause_path = pause_path
         self.poll_sec = poll_sec
@@ -140,18 +168,24 @@ class Granter:
             return None, "", False
         return read_usage(cfg["glob"], max_age=cfg["maxAgeMin"] * 60) + (True,)
 
-    def poll_once(self) -> Optional[str]:
-        """One pass; returns the ask id it granted, or None."""
-        if self.pause_path is not None and self.pause_path.exists():
-            self._say("paused (%s exists)" % self.pause_path)
-            return None
-        roster = self.roster()
-        poster = config.coordinator(roster)
-        if not poster:
-            self._say("off: the roster names no coordinator (relay in participants.json)")
-            return None
-        cfg = config.of(roster)
-        now = self.clock()
+    def _withdraw_void_grants(self, roster, poster: str) -> list:
+        """Reply GRANT WITHDRAWN to each grant the land queue reads as void (a wind-down
+        at step 1 or 2); returns the ask ids. The queue needs no reply to free the slot:
+        it tells the project not to start."""
+        docs, entries = self.snapshot()
+        q = land_queue(docs, projects=entries, now=self.clock(), coordinator=poster)
+        out = []
+        for w in q["waiting"]:
+            if "grant_void" in w:
+                summary, body = void_text(w)
+                self.withdraw(self.root, poster, w["granted"], summary, body=body, to=[w["project"]])
+                _warn("withdrew %s of %s: %s" % (w["granted"], w["id"], w["grant_void"]))
+                out.append(w["id"])
+        return out
+
+    def _check(self, roster, cfg: dict, poster: str, now: float):
+        """(ask, holders, usage, docs) from a fresh snapshot when the queue, the wind-down
+        record and usage allow a grant; else None (the reason is said)."""
         docs, entries = self.snapshot()
         q = land_queue(docs, projects=entries, now=now, coordinator=poster)
         if not q["may_start"]:
@@ -170,6 +204,32 @@ class Granter:
         if checked and usage >= limit:
             self._say("not granting %s: weekly usage %g (limit %g)" % (ask["id"], usage, limit))
             return None
+        return ask, q["holders"], usage, docs
+
+    def poll_once(self) -> Optional[str]:
+        """One pass; returns the ask id it granted, or None.
+
+        The checks run twice: once before the slow probe of the build host, and
+        again on a fresh snapshot after it, under the state lock that every
+        `state` row takes for its append. A wind-down record set during the
+        probe stops the grant, and none can land between the last read and the
+        GRANTED.
+        """
+        if self.pause_path is not None and self.pause_path.exists():
+            self._say("paused (%s exists)" % self.pause_path)
+            return None
+        roster = self.roster()
+        poster = config.coordinator(roster)
+        if not poster:
+            self._say("off: the roster names no coordinator (relay in participants.json)")
+            return None
+        cfg = config.of(roster)
+        self._withdraw_void_grants(roster, poster)
+        now = self.clock()
+        first = self._check(roster, cfg, poster, now)
+        if first is None:
+            return None
+        ask = first[0]
         load = None
         p = self._load(now, cfg["buildHost"]["ssh"])
         if p is not None:
@@ -181,8 +241,32 @@ class Granter:
             if load >= load_limit:
                 self._say("not granting %s: build host load %.1f (limit %g)" % (ask["id"], load, load_limit))
                 return None
-        summary, body = grant_text(ask, q["holders"], load, usage)
-        self.post(self.root, poster, ask["id"], summary, body=body)
+        # Read the log once before the lock: with the server's cached snapshot the
+        # last read under the lock then replays only what changed in between.
+        self.snapshot()
+        try:
+            with state_lock(self.root, hold=True):
+                # Read again what can change during the probe: the pause file, the
+                # clock and the log. The roster and config stay as read.
+                if self.pause_path is not None and self.pause_path.exists():
+                    self._say("paused (%s exists)" % self.pause_path)
+                    return None
+                fresh = self._check(roster, cfg, poster, self.clock())
+                if fresh is None:
+                    return None
+                # The post uses the docs of this last read: under the lock only
+                # that read and the append take time (logs.STATE_HOLD_LIMIT).
+                ask, holders, usage, docs = fresh
+                summary, body = grant_text(ask, holders, load, usage)
+                self.post(self.root, poster, ask["id"], summary, body=body, docs=docs)
+        except StateHoldExpired:
+            self._say("not granting %s: held the state lock too long" % ask["id"])
+            return None
+        except StateLockBusy:
+            self._say("not granting %s: the state lock is busy" % ask["id"])
+            return None
+        if ask["id"] in self._withdraw_void_grants(roster, poster):
+            return None
         self._probed = None  # the next grant probes afresh
         self._said = ""
         _warn("granted %s (%s)" % (ask["id"], summary))

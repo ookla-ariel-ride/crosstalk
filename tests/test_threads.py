@@ -223,12 +223,14 @@ class SortTests(unittest.TestCase):
                 doc["to"] = ["owner"]
             messages["m%06d" % i] = doc
         best = None
-        for _ in range(5):  # the best of five, so a loaded machine does not fail it
-            start = time.perf_counter()
+        # CPU time of this process, not wall time: other processes on a loaded
+        # machine do not count against it. The best of five takes out the rest.
+        for _ in range(5):
+            start = time.process_time()
             threads = build_threads(messages, "2026-10-28T00:00:00Z")
             for order in ("needs", "new", "hot", "unanswered"):
                 sort_threads(threads, order)
-            took = time.perf_counter() - start
+            took = time.process_time() - start
             best = took if best is None else min(best, took)
         self.assertEqual(len(threads), 10000)
         self.assertLess(best, 1.0)

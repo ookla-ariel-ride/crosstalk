@@ -393,7 +393,18 @@ request to wind down, it runs
 `python3 scripts/relay.py state wind-down --from <coordinator> --step 1 --reason "owner request"`.
 When the owner says work may run again, it sets step 0. The owner can set the
 record too, with `--from owner`. At step 1 or 2 the auto-granter posts no
-`GRANTED`. With no coordinator set, only the owner's record counts.
+`GRANTED`. The granter reads the record again after its probe of the build
+host, just before it posts, under the lock file `log/.state.lock` that every
+`state` row takes too. It checks the pause file again there. When the lock
+stays busy for 5 seconds, the granter posts nothing in that pass, and
+`state wind-down` writes its row without the lock and says so on stderr.
+The granter may append its `GRANTED` only within 3 seconds of when it got the
+lock, so a stalled granter usually posts nothing after that row. At step 1
+or 2 the land queue reads each grant with no start as void, whenever it
+landed, so a late `GRANTED` reserves no slot. The granter also replies
+`GRANT WITHDRAWN` to each void grant, and the project sees the reply in its
+inbox. The ask waits in its place and gets a new `GRANTED` after step 0. A
+pause file or `--no-autogrant` stops these replies, not the void rule. With no coordinator set, only the owner's record counts.
 
 ### config.json
 

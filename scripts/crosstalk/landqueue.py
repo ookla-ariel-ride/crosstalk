@@ -17,12 +17,18 @@ project that is already waiting adds its branches to that ask and keeps its
 place. To drop a branch, withdraw the ask and ask again.
 A start that names a branch its sender still holds replaces that run, which
 stopped with no LAND END. A LAND END from a sender that holds nothing closes
-its granted ask when it names one of the ask's branches.
+its granted ask when it names one of the ask's branches, as a start would: the
+branches that neither its GRANTED nor the LAND END names stay waiting.
 
 The coordinator's GRANTED reply to an ask (summary starting GRANTED, replyTo
 the ask) marks it granted: it reserves a slot until its LAND START or LANE START,
 or until GRANT_TTL_SEC passes with `now` given (the grant lapses). A re-ask
-clears the grant. A start takes the whole ask, except the branches that
+clears the grant, and so does the coordinator's GRANT WITHDRAWN reply to the
+GRANTED: the ask waits again in its place, with no slot reserved. While the
+wind-down record in force (state.wind_down) is at step 1 or 2, each granted
+ask that is still waiting (no start took it) shows `grant_void` and reserves
+nothing; holders keep their slots. No time is compared: at step 0 a grant that
+nobody withdrew and that did not lapse is in force again. A start takes the whole ask, except the branches that
 neither its GRANTED nor the start names: those stay waiting. `next` is the
 first waiting ask, not granted, from a project that is not holding. The queue
 is derived, never stored, so it cannot drift from the log.
@@ -38,6 +44,7 @@ from typing import Dict, Iterable, List, Optional
 
 MAX_HOLDERS = 2
 GRANT_TTL_SEC = 30 * 60
+GRANT_VOID = "GRANT WITHDRAWN"
 WORDS = ("TURN ASK", "LAND START", "LAND END", "LANE START", "LANE END")
 _WORD_RE = re.compile(r"^(%s)\b" % "|".join(WORDS))
 _HEAD_END_RE = re.compile(r":(?=\s|$)")
@@ -99,10 +106,11 @@ def _land_messages(docs: Dict, coordinator: str = "") -> List[tuple]:
             continue
         if coordinator and sender == coordinator:
             s = doc.get("summary")
-            if not (isinstance(s, str) and s.strip().startswith("GRANTED")
-                    and isinstance(doc.get("replyTo"), str)):
+            if not (isinstance(s, str) and isinstance(doc.get("replyTo"), str)):
                 continue
-            word = "GRANTED"
+            word = next((w for w in (GRANT_VOID, "GRANTED") if s.strip().startswith(w)), None)
+            if word is None:
+                continue
         else:
             word = land_word(doc.get("summary"))
             if word is None:
@@ -172,6 +180,15 @@ def land_queue(docs: Dict, max_holders: int = MAX_HOLDERS,
                         "ask": ask["id"] if ask else None})
 
     for t, did, sender, word, summary, reply_to in _land_messages(docs, coordinator):
+        if word == GRANT_VOID:
+            # replyTo is the GRANTED: the ask it granted waits again, in its place.
+            ask = next((w for w in waiting if w.get("granted") == reply_to), None)
+            if ask is not None:
+                for key in ("granted", "granted_t", "granted_branches"):
+                    ask.pop(key, None)
+            else:
+                notes.append("%s: %s for %s, which is no waiting grant" % (did, GRANT_VOID, reply_to))
+            continue
         if word == "GRANTED":
             ask = next((w for w in waiting if w["id"] == reply_to), None)
             if ask is not None:
@@ -212,22 +229,39 @@ def land_queue(docs: Dict, max_holders: int = MAX_HOLDERS,
             if held is None:
                 if word != "LAND END":
                     continue
-                # A granted ask whose branch landed (its start missed) is over too.
+                # A granted ask whose branch landed (its start missed) is over too,
+                # with the start's partition: the branches neither its GRANTED nor
+                # the LAND END names stay waiting, in the ask's place.
                 said = {tok.rstrip(".") for tok in _TOKEN_RE.findall(summary)}
                 if ask is not None and "granted" in ask and said & set(ask["branches"]):
-                    waiting.remove(ask)
-                    notes.append("%s: LAND END from %s closes granted ask %s" % (did, sender, ask["id"]))
+                    covered = ask.get("granted_branches")
+                    rest = [b for b in ask["branches"]
+                            if b not in covered and b not in said] if covered else []
+                    if rest:
+                        done = [b for b in ask["branches"] if b not in rest]
+                        ask["branches"] = rest
+                        for key in ("granted", "granted_t", "granted_branches"):
+                            ask.pop(key, None)
+                        notes.append("%s: LAND END from %s closes %s of granted ask %s; %s stay waiting"
+                                     % (did, sender, ", ".join(done), ask["id"], ", ".join(rest)))
+                    else:
+                        waiting.remove(ask)
+                        notes.append("%s: LAND END from %s closes granted ask %s" % (did, sender, ask["id"]))
                 else:
                     notes.append("%s: LAND END from %s, not holding" % (did, sender))
             else:
                 holders.remove(held)
     holding = {h["project"] for h in holders}
+    from .state import setters_of, wind_down  # here: state imports this module
+    step = wind_down(docs, None, setters_of(coordinator))["step"]
     reserved = 0
     for w in waiting:
         w["holding"] = w["project"] in holding
         if "granted" in w:
             granted_at = _epoch(w.get("granted_t", ""))
-            if now is not None and granted_at is not None and now - granted_at > GRANT_TTL_SEC:
+            if step in (1, 2):
+                w["grant_void"] = "wind-down step %d" % step
+            elif now is not None and granted_at is not None and now - granted_at > GRANT_TTL_SEC:
                 w["grant_lapsed"] = True
             elif not w["holding"]:
                 reserved += 1
