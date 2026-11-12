@@ -150,6 +150,11 @@ history and clears the stored last-visit time, so those replies never count as n
 - `filterIncludesSubAgents`: picking a project shows its sub-agents' messages; picking a sub-agent alone shows only it.
 - `filterSentTo`: the Sent by / Sent to / Either switch; "sent to" means `to` or an @mention, not a bare broadcast;
   the Help tab follows the same people filter.
+- `helpAckedNoAction`: an ack row counts as a reply from its writer: the Help card shows "acked, no action: Gamma"
+  and still waits on Beta; an ack row with a wrong id counts for nothing; an ack clears no name on a request
+  that names nobody.
+- `timelineAckedNoAction`: a request that acks alone closed leaves Help, and its timeline card still shows
+  "acked, no action: Beta · Gamma"; a note with an ack row shows no ack pill.
 - `filterHasReplies`: Has replies keeps only threads with a reply.
 - `filterUnanswered`: Unanswered keeps only requests still waiting on someone, by the Help tab's rule, and
   combines with Has replies.
