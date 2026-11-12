@@ -7,6 +7,7 @@ starts with fixed words:
     TURN ASK WITHDRAWN <project> ...   the asker drops its waiting ask
     LAND START <project> <branch> ...  the sender's ask becomes a holder
     LAND END <project> <branch> ...    the holder frees its slot
+    Turn free ...                      as LAND END, in any case: a stopped run frees its slot
     LANE START / LANE END              a gate run on the build host: holds and frees a slot
                                        only when the sender has a waiting ask
 
@@ -14,6 +15,9 @@ Only the sender of a message counts: a project asks, starts, ends and
 withdraws for itself. Asks wait in post order; a second TURN ASK from a
 project that is already waiting adds its branches to that ask and keeps its
 place. To drop a branch, withdraw the ask and ask again.
+A start that names a branch its sender still holds replaces that run, which
+stopped with no LAND END. A LAND END from a sender that holds nothing closes
+its granted ask when it names one of the ask's branches.
 
 The coordinator's GRANTED reply to an ask (summary starting GRANTED, replyTo
 the ask) marks it granted: it reserves a slot until its LAND START or LANE START,
@@ -42,6 +46,8 @@ _TOKEN_RE = re.compile(r"[A-Za-z0-9][A-Za-z0-9._/-]*")
 _MESSAGE_ID_RE = re.compile(r"-\d{8}T\d+Z?$")
 # What a project's land tool posts when it gives up its turn, landed or stopped.
 _TOOL_END_RE = re.compile(r"^land(?: --queue)?\b.*\bturn released\b")
+# What a project posts when its run stopped and it gives the slot back.
+_TURN_FREE_RE = re.compile(r"^turn free\b", re.I)
 # The lookarounds keep "tool-fix-1110" out of the longer name "tool-fix-1110-min".
 _DATED_BRANCH_RE = re.compile(r"(?<![\w.-])([a-z][a-z0-9.]*(?:-[a-z0-9.]+)*-\d{4})(?![\w-])")
 
@@ -53,7 +59,8 @@ def land_word(summary) -> Optional[str]:
     m = _WORD_RE.match(summary.strip())
     if m:
         return m.group(1)
-    return "LAND END" if _TOOL_END_RE.search(summary.strip()) else None
+    s = summary.strip()
+    return "LAND END" if _TOOL_END_RE.search(s) or _TURN_FREE_RE.match(s) else None
 
 
 def _rest(summary: str, word: str) -> str:
@@ -133,9 +140,17 @@ def land_queue(docs: Dict, max_holders: int = MAX_HOLDERS,
         return next((r for r in rows if r["project"] == project), None)
 
     def start(did, t, sender, names, ask, word):
-        if find(holders, sender) is not None:
-            notes.append("%s: %s from %s, already holding" % (did, word, sender))
-            return
+        held = find(holders, sender)
+        if held is not None:
+            # A start of a branch the sender already holds: its last run stopped
+            # with no LAND END, so this run replaces it.
+            mine = names or (ask["branches"] if ask else [])
+            if not set(mine) & set(held["branches"]):
+                notes.append("%s: %s from %s, already holding" % (did, word, sender))
+                return
+            holders.remove(held)
+            notes.append("%s: %s from %s replaces %s, which had no LAND END"
+                         % (did, word, sender, held["id"]))
         if len(holders) >= max_holders:
             notes.append("%s: %s from %s with %d holders already"
                          % (did, word, sender, len(holders)))
@@ -195,7 +210,14 @@ def land_queue(docs: Dict, max_holders: int = MAX_HOLDERS,
         elif word in ("LAND END", "LANE END"):
             held = find(holders, sender)
             if held is None:
-                if word == "LAND END":
+                if word != "LAND END":
+                    continue
+                # A granted ask whose branch landed (its start missed) is over too.
+                said = {tok.rstrip(".") for tok in _TOKEN_RE.findall(summary)}
+                if ask is not None and "granted" in ask and said & set(ask["branches"]):
+                    waiting.remove(ask)
+                    notes.append("%s: LAND END from %s closes granted ask %s" % (did, sender, ask["id"]))
+                else:
                     notes.append("%s: LAND END from %s, not holding" % (did, sender))
             else:
                 holders.remove(held)
