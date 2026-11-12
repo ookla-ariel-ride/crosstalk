@@ -1522,10 +1522,15 @@ td.num, td.t { font: 12px var(--mono); font-variant-numeric: tabular-nums; white
       var g = el("span"), e = el("span", "mark", w[1]);
       e.title = w[2]; e.setAttribute("role", "img"); e.setAttribute("aria-label", w[2]);
       g.appendChild(e); g.appendChild(document.createTextNode(" " + names.map(displayName).join(", ")));
+      if (line.childNodes.length) line.appendChild(document.createTextNode(" "));
       line.appendChild(g);
     });
     var owed = v.expects === true && Array.isArray(v.owed) ? v.owed.filter(function (pid) { return typeof pid === "string" && pid; }).sort(byName) : [];
-    if (owed.length) line.appendChild(el("span", null, "not yet: " + owed.map(displayName).join(", ")));
+    if (owed.length) {
+      // A space between the groups, so a copy reads "Beta ➖ Gamma"; the flex gap sets the room on screen.
+      if (line.childNodes.length) line.appendChild(document.createTextNode(" "));
+      line.appendChild(el("span", null, "not yet: " + owed.map(displayName).join(", ")));
+    }
     return line.childNodes.length ? line : null;
   }
   // One column per participant named in `positions`, in the row's order.

@@ -342,7 +342,7 @@ describe("Stream", () => {
       [keys.thread("alpha-0001"), { root: "alpha-0001", messages: marked }],
     ]);
     const root = document.querySelectorAll("article")[0] as HTMLElement;
-    expect(within(root).getByRole("img", { name: "acknowledged" }).closest("[data-marks]")?.textContent).toBe("✅ Betanot yet: relay-bot");
+    expect(within(root).getByRole("img", { name: "acknowledged" }).closest("[data-marks]")?.textContent).toBe("✅ Beta not yet: relay-bot");
     const reply = screen.getByText("Read reply").closest("article") as HTMLElement;
     expect(within(reply).queryByRole("img")).toBeNull();
   });
