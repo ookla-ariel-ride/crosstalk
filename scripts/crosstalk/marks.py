@@ -236,3 +236,56 @@ def view(docs: Dict, coll: str, did: str, roster, config, by_item=None) -> dict:
     return {"marks": _marks_of(docs, coll, did, roster, by_item),
             "owed": owed(docs, coll, did, roster, config, by_item),
             "expects": expects_mark(docs, coll, did, roster, config)}
+
+
+ROW_KIND = {"decisions": "decision", "lessons": "lesson"}
+
+
+def _posts_that_expect(docs: Dict, roster, config):
+    """(time, collection, id, doc) of each post that expects a mark, oldest first."""
+    out = []
+    for (coll, did), doc in docs.items():
+        if coll in MARKABLE and isinstance(doc, dict) and expects_mark(docs, coll, did, roster, config):
+            t = doc.get("t")
+            out.append((t if isinstance(t, str) else "", coll, did, doc))
+    out.sort(key=lambda r: (_parse_iso(r[0]) or 0.0, r[0], r[1], r[2]))
+    return out
+
+
+def item_of(docs: Dict, coll: str, did: str, doc: dict) -> dict:
+    """One post as the inbox lists it: id, collection, from (its writer), t, kind, summary, body."""
+    kind = doc.get("kind") if coll == "messages" else ROW_KIND.get(coll)
+    return {"id": did, "collection": coll, "from": writer_of(docs, coll, did), "t": doc.get("t"),
+            "kind": kind, "summary": doc.get("summary"), "body": doc.get("body")}
+
+
+def to_read(docs: Dict, pid: str, roster, config, by_item=None) -> List[dict]:
+    """The posts that owe pid's acknowledged mark, newest first, each as item_of gives it.
+    The inbox leaves out the ones it shows in another section (reports.inbox_report).
+    Pass the docs from replay.enrich_messages; by_item as in owed()."""
+    if by_item is None:
+        by_item = marks_by_item(docs, roster)
+    out = []
+    for _t, coll, did, doc in reversed(_posts_that_expect(docs, roster, config)):
+        if pid in owed(docs, coll, did, roster, config, by_item):
+            out.append(item_of(docs, coll, did, doc))
+    return out
+
+
+def missing(docs: Dict, roster, config, before: Optional[float] = None, by_item=None) -> List[dict]:
+    """Each post that expects a mark and has names that owe one, oldest first: view()
+    plus `id` and `collection`. With `before` (a POSIX time), only posts older than it,
+    and the posts whose time cannot be read: they miss marks, and their age is unknown.
+    Pass the docs from replay.enrich_messages."""
+    if by_item is None:
+        by_item = marks_by_item(docs, roster)
+    out = []
+    for t, coll, did, _doc in _posts_that_expect(docs, roster, config):
+        if before is not None:
+            when = _parse_iso(t)
+            if when is not None and when >= before:
+                continue
+        v = view(docs, coll, did, roster, config, by_item)
+        if v["owed"]:
+            out.append(dict(v, id=did, collection=coll))
+    return out

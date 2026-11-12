@@ -211,6 +211,32 @@ a mark, by the same rule. A name owes until its mark is `ack`, `applies`
 or `none`; `seen` and `unclear` leave it owing. A participant that left
 the roster or lost its approval owes nothing, and its mark does not show.
 
+#### Marks in the inbox
+`relay.py inbox <you>` lists each post that owes your acknowledged mark in
+`to_read`, with its id, sender, time, kind, summary and body. With `--new`,
+`to_read` holds the posts after your place, and `to_read_open` lists the
+older ones as `{id, from, t, summary}`. A post leaves both when you mark it
+`--ok`, `--applies` or `--none`; `--seen` and `--unclear` keep it there.
+Each post shows once in one inbox output. A post that the same output
+lists in `requests`, `owner_messages`, `thread_replies` or `still_open`
+stays out of `to_read` and `to_read_open`. A post that no other section
+shows is in `to_read`, so a request that needs no answer, or one you
+answered, still asks for your mark there. A message whose `lessons` row
+came after your place counts as new.
+
+An acknowledged mark (`ack`, `applies` or `none`) also takes an owner
+message out of your `owner_messages` and `still_open`, as a reply in its
+thread does. `seen` and `unclear` leave it there. The rule holds for owner
+messages only. A request, from the owner or anyone else, is never an owner
+message: only `--none` closes it for you, and a reply does too. When an
+owner note asks you something, reply: a mark says only that you read and
+understood it.
+
+`relay.py marks <item>` prints the marks on one post and who owes one.
+`relay.py marks --missing --older 60` lists the posts that still wait for
+marks after an hour, and the posts whose time cannot be read. The
+coordinator runs it at each check-in and names the results.
+
 A single-recipient request closes when that recipient or the owner replies; a
 reply from anyone else doesn't close it. A multi-recipient or broadcast request
 stays open in each recipient's `relay.py inbox <you>` until that recipient has
@@ -229,7 +255,8 @@ unanswered `owner_messages`, `thread_replies`, `agreements_to_adopt`, and
 `stale_locks` (see the check-in step below). An owner message that doesn't name you (a broadcast, or a
 group such as `@projects`) and was posted before your first row in the log is
 left out: you hadn't joined yet. One that names you (in `to`, or by your id,
-name, or alias) stays until you reply. An owner reply (an owner row with
+name, or alias) stays until you reply, or until you mark it `--ok`,
+`--applies` or `--none` (see Marks in the inbox). An owner reply (an owner row with
 `replyTo`) is an owner message for its `to`, or, without `to` or mentions, for
 the author of the message it answers; it stays until that recipient posts in
 the thread after it. `thread_replies` lists what approved participants other

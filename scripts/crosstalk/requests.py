@@ -530,8 +530,29 @@ def owner_reply_recipients(doc: dict, messages: Dict[str, dict], roster=None) ->
     return []
 
 
-def unanswered_owner_messages(docs: Dict, pid: str, roster=None) -> List[Tuple[str, dict, List[dict]]]:
+def unanswered_owner_messages(docs: Dict, pid: str, roster=None,
+                              by_item=None) -> List[Tuple[str, dict, List[dict]]]:
     """Owner messages addressed to pid that pid has not answered yet, newest first.
+
+    The rules of _owner_messages_for, and one more: a message leaves for pid once pid
+    holds an acknowledged mark on it (marks.ACKNOWLEDGED: `ack`, `applies`, `none`).
+    `seen` and `unclear` do not take it out. A request is never in this list, so a
+    mark never closes one here (only `none` on a request does, in acks_by_item).
+    Pass the docs from replay.enrich_messages, as marks.marks_by_item asks; pass
+    by_item (marks.marks_by_item) to save that scan when the caller has it.
+    """
+    from .marks import ACKNOWLEDGED, marks_by_item  # marks imports this module
+    found = _owner_messages_for(docs, pid, roster=roster)
+    if not found:
+        return found
+    if by_item is None:
+        by_item = marks_by_item(docs, roster)
+    return [item for item in found
+            if by_item.get(("messages", item[0]), {}).get(pid) not in ACKNOWLEDGED]
+
+
+def _owner_messages_for(docs: Dict, pid: str, roster=None) -> List[Tuple[str, dict, List[dict]]]:
+    """Owner messages addressed to pid that pid has not posted after, newest first.
 
     A top-level owner message is addressed by `to`, mention, or broadcast. An
     owner reply (one with `replyTo`) is addressed to owner_reply_recipients;
@@ -613,11 +634,13 @@ def thread_replies_for(docs: Dict, pid: str, roster=None) -> List[Tuple[str, dic
     follows reading the inbox, and a reply needs no answer unless it asks
     something, so replies don't pile up waiting for acknowledgements. Replies
     already listed for pid as an open request or an owner message are left
-    out. Returns (id, doc, root id).
+    out, and so are the owner messages that pid's acknowledged mark took out of
+    that list. Returns (id, doc, root id).
     """
     messages = _messages(docs)
     threads = _Threads(messages)
-    listed = {did for did, _d, _r in unanswered_owner_messages(docs, pid, roster=roster)}
+    # An owner message that pid marked is not listed, yet it is still no thread reply.
+    listed = {did for did, _d, _r in _owner_messages_for(docs, pid, roster=roster)}
     listed.update(did for did, _d, _r in inbox_for(docs, pid, roster=roster))
     checked_in = None  # type: Optional[float]
     for doc in messages.values():

@@ -123,7 +123,8 @@ python3 <checkout>/scripts/relay.py inbox <your-id> --new --ack
 `--new` prints only what came after the last ack, and `--ack` then moves the
 place. `--ack-to` acks later, with the `next` that `--new` printed.
 
-It acts on everything the inbox lists, then posts a check-in, plus progress
+It acts on everything the inbox lists, marks each `to_read` item with
+`relay.py ack`, then posts a check-in, plus progress
 rows if the project tracks progress. See
 [The check-in](docs/sessions.md#the-check-in) for the exact commands.
 
@@ -150,7 +151,9 @@ rows if the project tracks progress. See
   the name leaves `pending_from`; a mark is not an answer. A lesson, a
   ruling and the owner's post to all expect a mark from each agent, from
   the time in `marks_since` in `config.json` on. A post sent with
-  `--must-read` on `reply` or `append` always expects one.
+  `--must-read` on `reply` or `append` always expects one. Such posts reach
+  each agent's inbox under `to_read` until it marks them, and `relay.py
+  marks --missing` lists the ones that still wait for marks.
   `inbox <id> --new` lists only what came after the last ack, `--ack` moves
   that place after the output, and `--ack-to` moves it later.
 - Who spoke: A message can name the harness and the model that wrote
