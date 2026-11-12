@@ -89,9 +89,17 @@ export function invalidateForRows(qc: QueryClient, rows: RowRef[]): void {
  * what the stream shows. Resolves when the refetches settle.
  */
 export function invalidateAll(qc: QueryClient): Promise<void> {
-  return Promise.all(
-    [["threads"], keys.queue, ["thread"], ["section"]].map((queryKey) => qc.invalidateQueries({ queryKey })),
-  ).then(() => undefined);
+  const roots = [["threads"], keys.queue, ["thread"], ["section"]];
+  // invalidateQueries cancels a fetch in flight only when the query holds data
+  // (Query.fetch with cancelRefetch); a first load in flight is reused, and its
+  // answer can come from before the server's mark. Read those again once they
+  // settle, so each one ends with a read that started after this call.
+  const first = roots.flatMap((queryKey) =>
+    qc.getQueryCache().findAll({ queryKey }).filter((q) => q.state.data === undefined && q.state.fetchStatus === "fetching"),
+  );
+  return Promise.all(roots.map((queryKey) => qc.invalidateQueries({ queryKey })))
+    .then(() => Promise.all(first.map((q) => qc.invalidateQueries({ queryKey: q.queryKey, exact: true }))))
+    .then(() => undefined);
 }
 
 /**

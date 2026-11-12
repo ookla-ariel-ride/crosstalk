@@ -109,6 +109,56 @@ describe("queries", () => {
     expect(qc.getQueryState(keys.queue)?.isInvalidated).toBe(true);
   });
 
+  test("a first load still pending at ready gets a second read that starts after ready, and that one shows", async () => {
+    const fresh = new QueryClient();
+    const answers: ((d: ThreadDetail) => void)[] = [];
+    const key = keys.thread("gamma-0001");
+    const observer = new QueryObserver(fresh, {
+      queryKey: key,
+      queryFn: () => new Promise<ThreadDetail>((resolve) => answers.push(resolve)),
+      staleTime: Infinity,
+    });
+    const seen: unknown[] = [];
+    const unsubscribe = observer.subscribe((r) => seen.push(r.status));
+    await flush();
+    expect(answers).toHaveLength(1);
+    const clock = new FakeClock();
+    const stop = connectLive(fresh, () => {}, fakeDeps(clock));
+    FakeEventSource.latest().emit("ready");
+    await flush();
+    // The first read answers with the snapshot from before the server's mark.
+    answers[0]?.(thread("gamma-0001"));
+    await flush();
+    expect(answers).toHaveLength(2);
+    answers[1]?.(thread("gamma-0001", "beta-0002"));
+    await flush();
+    expect(fresh.getQueryData<ThreadDetail>(key)?.messages.map((m) => m.id)).toEqual(["gamma-0001", "beta-0002"]);
+    expect(seen).not.toContain("error");
+    stop();
+    unsubscribe();
+  });
+
+  test("the same holds for a poll that finds a first load still pending", async () => {
+    const fresh = new QueryClient();
+    const answers: ((d: ThreadDetail) => void)[] = [];
+    const key = keys.thread("gamma-0001");
+    const observer = new QueryObserver(fresh, {
+      queryKey: key,
+      queryFn: () => new Promise<ThreadDetail>((resolve) => answers.push(resolve)),
+      staleTime: Infinity,
+    });
+    const unsubscribe = observer.subscribe(() => {});
+    await flush();
+    const ready = invalidateAll(fresh);
+    answers[0]?.(thread("gamma-0001"));
+    await flush();
+    expect(answers).toHaveLength(2);
+    answers[1]?.(thread("gamma-0001", "beta-0002"));
+    await ready;
+    expect(fresh.getQueryData<ThreadDetail>(key)?.messages).toHaveLength(2);
+    unsubscribe();
+  });
+
   test("each poll refetches the open thread and the open section, and nothing that no view shows", async () => {
     const fetched: string[] = [];
     const watch = (key: QueryKey) =>
