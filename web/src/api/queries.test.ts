@@ -1,4 +1,4 @@
-import { QueryClient, type QueryKey } from "@tanstack/react-query";
+import { QueryClient, QueryObserver, type QueryKey } from "@tanstack/react-query";
 import { beforeEach, describe, expect, test } from "vitest";
 import { ApiError } from "./client";
 import { RETRY_MS } from "./events";
@@ -73,26 +73,43 @@ describe("queries", () => {
     expect(invalidated()).toEqual([JSON.stringify(keys.threads("new")), JSON.stringify(keys.threads("hot"))]);
   });
 
+  test("an ack row invalidates the thread list and the open threads: it can end a request's wait", () => {
+    invalidateForRows(qc, [row("acks", "owner--alpha-0001")]);
+    const got = invalidated();
+    expect(got).toEqual(
+      expect.arrayContaining([
+        JSON.stringify(keys.threads("new")),
+        JSON.stringify(keys.threads("hot")),
+        JSON.stringify(keys.thread("alpha-0001")),
+        JSON.stringify(keys.thread("beta-0009")),
+      ]),
+    );
+    expect(got.filter((k) => k.startsWith('["section"'))).toEqual([]);
+  });
+
   test("a row with no collection invalidates nothing", () => {
     invalidateForRows(qc, [{ from: "alpha", seq: null, collection: null, id: null }]);
     expect(invalidated()).toEqual([]);
   });
 
-  test("the stream opens again after a drop: the thread list, every thread and every section refetch", async () => {
+  test("the first ready event and each one after a drop refetch the thread list, every thread and every section", async () => {
     const clock = new FakeClock();
     const modes: string[] = [];
     const stop = connectLive(qc, (mode) => modes.push(mode), fakeDeps(clock));
-    FakeEventSource.latest().emit("open");
+    // The first ready event refetches too: a row written while the page loaded is in it.
+    FakeEventSource.latest().emit("ready");
+    expect(invalidated()).toEqual(CACHED.filter(([k]) => k[0] !== "vitals").map(([k]) => JSON.stringify(k)));
+    for (const [key, data] of CACHED) qc.setQueryData(key, data);
     expect(invalidated()).toEqual([]);
     FakeEventSource.latest().emit("error");
 
-    // A poll in poll mode invalidates the thread list (and the land queue, not cached here).
+    // A poll in poll mode invalidates what the stream shows (and the land queue, not cached here).
     clock.advance(15_000);
     await flush();
-    expect(invalidated()).toEqual([JSON.stringify(keys.threads("new")), JSON.stringify(keys.threads("hot"))]);
+    expect(invalidated()).toEqual(CACHED.filter(([k]) => k[0] !== "vitals").map(([k]) => JSON.stringify(k)));
 
     clock.advance(RETRY_MS - 15_000);
-    FakeEventSource.latest().emit("open");
+    FakeEventSource.latest().emit("ready");
     expect(modes).toEqual(["push", "poll", "push"]);
     expect(invalidated()).toEqual(CACHED.filter(([k]) => k[0] !== "vitals").map(([k]) => JSON.stringify(k)));
     stop();
@@ -106,11 +123,120 @@ describe("queries", () => {
     expect(qc.getQueryState(keys.queue)?.isInvalidated).toBe(true);
   });
 
+  test("a first load still pending at ready gets a second read that starts after ready, and that one shows", async () => {
+    const fresh = new QueryClient();
+    const answers: ((d: ThreadDetail) => void)[] = [];
+    const key = keys.thread("gamma-0001");
+    const observer = new QueryObserver(fresh, {
+      queryKey: key,
+      queryFn: () => new Promise<ThreadDetail>((resolve) => answers.push(resolve)),
+      staleTime: Infinity,
+    });
+    const seen: unknown[] = [];
+    const unsubscribe = observer.subscribe((r) => seen.push(r.status));
+    await flush();
+    expect(answers).toHaveLength(1);
+    const clock = new FakeClock();
+    const stop = connectLive(fresh, () => {}, fakeDeps(clock));
+    FakeEventSource.latest().emit("ready");
+    await flush();
+    // The first read answers with the snapshot from before the server's mark.
+    answers[0]?.(thread("gamma-0001"));
+    await flush();
+    expect(answers).toHaveLength(2);
+    answers[1]?.(thread("gamma-0001", "beta-0002"));
+    await flush();
+    expect(fresh.getQueryData<ThreadDetail>(key)?.messages.map((m) => m.id)).toEqual(["gamma-0001", "beta-0002"]);
+    expect(seen).not.toContain("error");
+    stop();
+    unsubscribe();
+  });
+
+  test("a rows event that finds a first load still pending gets a second read, and that one shows", async () => {
+    const fresh = new QueryClient();
+    const answers: ((d: ThreadDetail) => void)[] = [];
+    const key = keys.thread("gamma-0001");
+    const observer = new QueryObserver(fresh, {
+      queryKey: key,
+      queryFn: () => new Promise<ThreadDetail>((resolve) => answers.push(resolve)),
+      staleTime: Infinity,
+    });
+    const unsubscribe = observer.subscribe(() => {});
+    await flush();
+    // The row is new to every thread, so every thread is invalidated.
+    invalidateForRows(fresh, [row("messages", "beta-0002")]);
+    answers[0]?.(thread("gamma-0001"));
+    await flush();
+    expect(answers).toHaveLength(2);
+    answers[1]?.(thread("gamma-0001", "beta-0002"));
+    await flush();
+    expect(fresh.getQueryData<ThreadDetail>(key)?.messages).toHaveLength(2);
+    unsubscribe();
+  });
+
+  test("a first load that fails gets no chained read", async () => {
+    const fresh = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+    const fails: ((e: Error) => void)[] = [];
+    const observer = new QueryObserver(fresh, {
+      queryKey: keys.thread("gamma-0001"),
+      queryFn: () => new Promise<ThreadDetail>((_resolve, reject) => fails.push(reject)),
+      staleTime: Infinity,
+    });
+    const unsubscribe = observer.subscribe(() => {});
+    await flush();
+    const done = invalidateAll(fresh);
+    fails[0]?.(new Error("down"));
+    await done;
+    expect(fails).toHaveLength(1);
+    unsubscribe();
+  });
+
+  test("the same holds for a poll that finds a first load still pending", async () => {
+    const fresh = new QueryClient();
+    const answers: ((d: ThreadDetail) => void)[] = [];
+    const key = keys.thread("gamma-0001");
+    const observer = new QueryObserver(fresh, {
+      queryKey: key,
+      queryFn: () => new Promise<ThreadDetail>((resolve) => answers.push(resolve)),
+      staleTime: Infinity,
+    });
+    const unsubscribe = observer.subscribe(() => {});
+    await flush();
+    const ready = invalidateAll(fresh);
+    answers[0]?.(thread("gamma-0001"));
+    await flush();
+    expect(answers).toHaveLength(2);
+    answers[1]?.(thread("gamma-0001", "beta-0002"));
+    await ready;
+    expect(fresh.getQueryData<ThreadDetail>(key)?.messages).toHaveLength(2);
+    unsubscribe();
+  });
+
+  test("each poll refetches the open thread and the open section, and nothing that no view shows", async () => {
+    const fetched: string[] = [];
+    const watch = (key: QueryKey) =>
+      new QueryObserver(qc, { queryKey: key, queryFn: () => (fetched.push(JSON.stringify(key)), qc.getQueryData(key)), staleTime: Infinity }).subscribe(() => {});
+    const stops = [watch(keys.thread("alpha-0001")), watch(keys.section("agreements", ""))];
+    await flush();
+    fetched.length = 0;
+    const clock = new FakeClock();
+    const stop = connectLive(qc, () => {}, fakeDeps(clock));
+    FakeEventSource.latest().emit("error");
+    clock.advance(15_000);
+    await flush();
+    expect(fetched.sort()).toEqual([JSON.stringify(keys.section("agreements", "")), JSON.stringify(keys.thread("alpha-0001"))]);
+    // A thread and a section that no view shows are only marked stale.
+    expect(qc.getQueryState(keys.thread("beta-0009"))?.isInvalidated).toBe(true);
+    expect(qc.getQueryState(keys.section("decisions", ""))?.isInvalidated).toBe(true);
+    stop();
+    for (const s of stops) s();
+  });
+
   test("a return to push and each poll refetch the land queue", async () => {
     qc.setQueryData(keys.queue, { holders: [], waiting: [] });
     const clock = new FakeClock();
     const stop = connectLive(qc, () => {}, fakeDeps(clock));
-    FakeEventSource.latest().emit("open");
+    FakeEventSource.latest().emit("ready");
     FakeEventSource.latest().emit("error");
     clock.advance(15_000);
     await flush();

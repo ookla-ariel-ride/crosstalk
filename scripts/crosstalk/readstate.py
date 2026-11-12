@@ -4,7 +4,14 @@ and the time before which every message counts as read.
 The state lives in `read-state.json` in the data root, outside the message log
 and out of git:
 
-  {"threads": {root: {"t": iso, "id": message id}}, "muted": [root], "all_before": iso or null}
+  {"threads": {root: {"t": iso, "id": message id}}, "muted": [root], "all_before": iso or null,
+   "rev": n}
+
+`rev` never falls: each write that changes the state raises it by one, and
+never sets it below the present time in milliseconds. A file with no usable
+`rev` (missing, corrupt, or replaced) starts from the present time. The page
+keeps the state with the higher `rev`, so an older answer that arrives late
+never replaces a newer one, and a lost file does not freeze the page.
 
 A thread's mark is the time and id of the newest message the owner read. A
 mark never moves backwards, and neither does `all_before`. A file that does
@@ -15,6 +22,7 @@ Python 3.9, standard library only.
 """
 import json
 import threading
+import time
 from datetime import datetime
 from pathlib import Path
 from typing import List, Optional
@@ -28,8 +36,12 @@ _TIME_FORMAT = "%Y-%m-%dT%H:%M:%SZ"
 _lock = threading.Lock()
 
 
+def _now_ms() -> int:
+    return int(time.time() * 1000)
+
+
 def empty() -> dict:
-    return {"threads": {}, "muted": [], "all_before": None}
+    return {"threads": {}, "muted": [], "all_before": None, "rev": _now_ms()}
 
 
 def is_time(value) -> bool:
@@ -62,6 +74,9 @@ def _clean(raw) -> dict:
         state["muted"] = [root for i, root in enumerate(muted) if _is_id(root) and root not in muted[:i]]
     if is_time(raw.get("all_before")):
         state["all_before"] = raw["all_before"]
+    rev = raw.get("rev")
+    if isinstance(rev, int) and not isinstance(rev, bool) and rev >= 0:
+        state["rev"] = rev
     return state
 
 
@@ -76,6 +91,8 @@ def load(root: Path) -> dict:
 
 
 def _save(root: Path, state: dict) -> None:
+    """Write a changed state, with `rev` one higher, and not below the present time."""
+    state["rev"] = max(state["rev"] + 1, _now_ms())
     atomic_write_text(Path(root) / FILE, json.dumps(state, indent=2, ensure_ascii=False) + "\n")
 
 

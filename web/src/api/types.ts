@@ -144,6 +144,8 @@ export interface ReadState {
   threads: Record<string, ReadMark>;
   muted: string[];
   all_before: string | null;
+  /** The server's change count; a viewer's own state in localStorage has none. */
+  rev?: number;
 }
 
 /** The three bodies PUT /api/read-state takes. */

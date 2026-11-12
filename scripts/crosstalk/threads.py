@@ -25,6 +25,21 @@ ROUTINE_PREFIXES = ("LAND START", "LAND END", "GRANTED", "TURN ASK")
 _TIME_FORMAT = "%Y-%m-%dT%H:%M:%SZ"
 
 
+# The fields the index uses as keys or compares as text (_flags, roots, requests.py).
+_TEXT_FIELDS = ("kind", "from", "replyTo", "t")
+
+
+def readable(doc) -> Optional[dict]:
+    """The row as the index reads it: a field of _TEXT_FIELDS that holds no
+    text is left out, so {"kind": []} reads as no kind. None for a row that is
+    not an object. The log check (logs._validate) leaves the types inside a
+    row's data free, so a row can hold any JSON value in any field."""
+    if not isinstance(doc, dict):
+        return None
+    bad = [name for name in _TEXT_FIELDS if name in doc and not isinstance(doc[name], str)]
+    return {k: v for k, v in doc.items() if k not in bad} if bad else doc
+
+
 def _t(doc: dict) -> str:
     t = doc.get("t")
     return t if isinstance(t, str) else ""
@@ -76,8 +91,12 @@ def _routine(root_doc: dict, authors: List[str]) -> bool:
     return _summary(root_doc).lstrip().startswith(ROUTINE_PREFIXES)
 
 
-def _flags(messages: Dict[str, dict], roster) -> Tuple[set, set]:
-    """(ids that need the owner, ids of open requests), by the rules of requests.py."""
+def _flags(messages: Dict[str, dict], roster, acks: Optional[Dict[str, object]] = None) -> Tuple[set, set]:
+    """(ids that need the owner, ids of open requests), by the rules of requests.py.
+
+    `acks` (ack id -> doc) closes a recipient's part of a request as in requests.py:
+    acks_by_item reads them, so a row it does not count changes nothing.
+    """
     # Each helper reads only its own kind of message and the replies to it: hand it no more.
     by_kind = {"question": {}, "request": {}}  # type: Dict[str, Dict]
     kind_of = {}  # type: Dict[str, Dict]
@@ -95,10 +114,14 @@ def _flags(messages: Dict[str, dict], roster) -> Tuple[set, set]:
         if docs is not None:
             docs[("messages", did)] = doc
     questions, asks = by_kind["question"], by_kind["request"]
+    for aid, doc in (acks or {}).items():
+        asks[("acks", aid)] = doc
+    acked = requests_mod.acks_by_item(asks, roster=roster)
     needs = {did for did, _doc in requests_mod.open_owner_questions(questions, roster=roster)}
     # inbox_for also lists a broadcast request; the owner needs it only when named.
     needs.update(did for did, doc, replies in requests_mod.inbox_for(asks, "owner", roster=roster)
-                 if "owner" in requests_mod.pending_recipients(doc, replies, roster=roster))
+                 if "owner" in requests_mod.pending_recipients(doc, replies, roster=roster,
+                                                                acked=acked.get(did, ())))
     open_ = {did for did, _doc, _replies in requests_mod.open_requests(asks, roster=roster)}
     return needs, open_
 
@@ -125,10 +148,14 @@ class ThreadIndex:
     time, see serve.ReplayCache), else its replayed `t`. So a later `update` of
     an old message does not move it. `waiting` holds the ids of the open
     `waiting` rows: the thread of a message with one of those ids needs the owner.
+    `acks` holds the `acks` rows (id -> doc): an ack closes a recipient's part of a
+    request, as in requests.py.
     """
 
     def __init__(self, messages: Dict[str, dict], roster=None,
-                 created: Optional[Dict[str, str]] = None, waiting=()):
+                 created: Optional[Dict[str, str]] = None, waiting=(), acks: Optional[Dict[str, object]] = None):
+        messages = {did: row for did, row in ((did, readable(doc)) for did, doc in messages.items())
+                    if row is not None}
         self.messages = messages
         self._lock = threading.Lock()
         created = created or {}
@@ -140,7 +167,7 @@ class ThreadIndex:
             self.members.setdefault(root_of[did], []).append(did)
         self._times = [when for when, _did in timed]
         self._recent = [(messages[did].get("from"), root_of[did]) for _when, did in timed]
-        needs, open_ = _flags(messages, roster)
+        needs, open_ = _flags(messages, roster, acks)
         needs = {root_of[did] for did in needs | (set(waiting) & set(messages))}
         open_ = {root_of[did] for did in open_}
         self.by_root = {}  # type: Dict[str, dict]
@@ -243,13 +270,14 @@ class ThreadIndex:
         return out
 
 
-def build_threads(messages: Dict[str, dict], now: str, roster=None) -> List[dict]:
+def build_threads(messages: Dict[str, dict], now: str, roster=None,
+                  acks: Optional[Dict[str, object]] = None) -> List[dict]:
     """The threads of `messages` (message id -> replayed doc), `hot` as of `now`.
 
     `roster` (a Roster) decides trust and who a broadcast reaches, as in
     requests.py; None treats every sender as approved.
     """
-    return ThreadIndex(messages, roster).threads_at(now)
+    return ThreadIndex(messages, roster, acks=acks).threads_at(now)
 
 
 def _newest_first(t: dict) -> Tuple[str, str]:

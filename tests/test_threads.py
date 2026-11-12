@@ -164,6 +164,47 @@ class BuildTests(unittest.TestCase):
         self.assertFalse(threads["r2"]["needs_owner"])
         self.assertFalse(threads["peer"]["needs_owner"])
 
+    def test_an_ack_closes_a_request_as_requests_py_does(self):
+        # The same rule as requests.open_requests: an ack row with none: true counts as a reply.
+        messages = {
+            "r": msg("alpha", "2026-10-21T10:00:00Z", "please", kind="request", to=["owner"]),
+            "two": msg("alpha", "2026-10-21T10:00:00Z", "please", kind="request", to=["owner", "beta"]),
+        }
+        acks = {"owner--r": {"from": "owner", "item": "r", "none": True},
+                "owner--two": {"from": "owner", "item": "two", "none": True}}
+        threads = by_root(ThreadIndex(messages, acks=acks).threads_at(NOW))
+        self.assertFalse(threads["r"]["needs_owner"])
+        self.assertFalse(threads["r"]["unanswered"])
+        # One of two recipients acked: the request still waits for the other.
+        self.assertFalse(threads["two"]["needs_owner"])
+        self.assertTrue(threads["two"]["unanswered"])
+        acks = {"beta--two": {"from": "beta", "item": "two", "none": True}}
+        threads = by_root(build_threads(messages, NOW, acks=acks))
+        self.assertTrue(threads["two"]["needs_owner"])
+        self.assertTrue(threads["two"]["unanswered"])
+        self.assertTrue(threads["r"]["needs_owner"])
+
+    def test_an_ack_row_that_does_not_count_changes_nothing(self):
+        messages = {"r": msg("alpha", "2026-10-21T10:00:00Z", "please", kind="request", to=["owner"])}
+        for ack_id, ack in (("owner--r", {"from": "owner", "item": "r", "none": False}),
+                            ("owner--r", {"from": ["owner"], "item": "r", "none": True}),
+                            ("owner--r", {"from": "owner", "item": 7, "none": True}),
+                            ("beta--r", {"from": "owner", "item": "r", "none": True}),
+                            ("owner--r", "not a row")):
+            threads = by_root(build_threads(messages, NOW, acks={ack_id: ack}))
+            self.assertTrue(threads["r"]["needs_owner"], ack)
+            self.assertTrue(threads["r"]["unanswered"], ack)
+
+    def test_a_request_that_needs_no_answer_waits_for_nobody(self):
+        threads = by_root(build_threads({
+            "f": msg("alpha", "2026-10-21T10:00:00Z", "fyi", kind="request", to=["owner"], needs_answer=False),
+            "s": msg("alpha", "2026-10-21T10:00:00Z", "fyi", kind="request", to=["owner", "beta"],
+                     body="Done.\n\nNo answer needed."),
+        }, NOW))
+        for root in ("f", "s"):
+            self.assertFalse(threads[root]["needs_owner"], root)
+            self.assertFalse(threads[root]["unanswered"], root)
+
     def test_unanswered_is_an_open_request(self):
         threads = by_root(build_threads({
             "r": msg("alpha", "2026-10-21T10:00:00Z", "help", kind="request", to=["beta"]),
@@ -300,6 +341,23 @@ class RouteTests(unittest.TestCase):
             self.assertEqual(status, 200)
             self.assertEqual([t["root"] for t in body["threads"]], ["alpha-root1"])
             self.assertIsNone(body["next"])
+
+    def test_an_owner_ack_takes_a_request_off_the_waiting_list(self):
+        self.repo.write_log("alpha", rows() + [
+            line(5, "alpha", id_="alpha-ask", data={"kind": "request", "summary": "ask", "to": ["owner"]},
+                 t="2026-10-21T13:00:00Z")])
+        with RunningServer(self.repo.root) as srv:
+            def flags():
+                _status, body = request(srv.url + "/api/threads?sort=needs")
+                row = by_root(body["threads"])["alpha-ask"]
+                _status, one = request(srv.url + "/api/thread/alpha-ask")
+                self.assertEqual(one["thread"]["needs_owner"], row["needs_owner"])
+                return row["needs_owner"], row["unanswered"]
+            self.assertEqual(flags(), (True, True))
+            self.repo.write_log("owner", [line(1, "owner", collection="acks", id_="owner--alpha-ask",
+                                               data={"from": "owner", "item": "alpha-ask", "none": True},
+                                               t="2026-10-21T13:05:00Z")])
+            self.assertEqual(flags(), (False, False))
 
     def test_threads_route_serves_each_order(self):
         with RunningServer(self.repo.root) as srv:

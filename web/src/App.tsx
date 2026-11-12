@@ -3,6 +3,7 @@ import { MarkDoneButton, NewThread, OwnerScope, ownerActions, People } from "./f
 import { Conversations, NeedsYou } from "./features/conversations/Stream";
 import { SectionPage } from "./features/sections/SectionPage";
 import type { Route } from "./logic/route";
+import { Guard } from "./ui/Guard";
 import { Shell, useHashRoute } from "./ui/Shell";
 
 /** The page of a route. The streams carry the owner's controls, which read the roster once for the page. */
@@ -33,7 +34,10 @@ export function App() {
   const mode = useLive();
   return (
     <Shell route={route} mode={mode}>
-      {page(route)}
+      {/* A render error stays in the page of the route; another route starts clean. */}
+      <Guard key={JSON.stringify(route)} what="This page">
+        {page(route)}
+      </Guard>
     </Shell>
   );
 }

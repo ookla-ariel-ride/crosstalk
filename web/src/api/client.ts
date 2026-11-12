@@ -20,6 +20,7 @@ import type {
   ThreadsPage,
   Vitals,
 } from "./types";
+import { sectionPage, threadDetail, threadsPage } from "./normalize";
 
 /** A failed call: the HTTP status (0 when the server was not reached) and the server's message. */
 export class ApiError extends Error {
@@ -70,10 +71,10 @@ export function createApi(fetchFn: Fetch = (input, init) => fetch(input, init)) 
 
   return {
     getThreads: (sort: Sort, cursor?: string, limit?: number) =>
-      call<ThreadsPage>("/api/threads" + query({ sort, cursor, limit })),
-    getThread: (root: string) => call<ThreadDetail>("/api/thread/" + encodeURIComponent(root)),
+      call<unknown>("/api/threads" + query({ sort, cursor, limit })).then(threadsPage),
+    getThread: (root: string) => call<unknown>("/api/thread/" + encodeURIComponent(root)).then(threadDetail),
     getSection: (name: SectionName, opts: { cursor?: string; limit?: number; q?: string } = {}) =>
-      call<SectionPage>("/api/section/" + name + query(opts)),
+      call<unknown>("/api/section/" + name + query(opts)).then(sectionPage),
     getVitals: () => call<Vitals>("/api/vitals"),
     getHealth: () => call<Health>("/api/health"),
     getQueue: () => call<LandQueue>("/api/queue"),

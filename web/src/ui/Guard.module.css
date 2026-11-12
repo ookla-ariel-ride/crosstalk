@@ -1,0 +1,6 @@
+.failed {
+  margin: 0;
+  padding: 8px 0;
+  color: var(--muted);
+  font-size: var(--size-s);
+}

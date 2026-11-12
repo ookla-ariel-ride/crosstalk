@@ -1,9 +1,9 @@
 // React Query hooks over client.ts, and the live updates that keep them fresh.
-import { QueryClient, useInfiniteQuery, useQuery, useQueryClient } from "@tanstack/react-query";
+import { type InvalidateQueryFilters, QueryClient, useInfiniteQuery, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useEffect, useState } from "react";
 import { api, ApiError } from "./client";
 import { type EventsDeps, type Mode, startEvents } from "./events";
-import type { RosterEntry, RowRef, SectionName, Snapshot, Sort, ThreadDetail } from "./types";
+import type { ReadState, RosterEntry, RowRef, SectionName, Snapshot, Sort, ThreadDetail } from "./types";
 
 export const keys = {
   threads: (sort: Sort) => ["threads", sort] as const,
@@ -58,9 +58,9 @@ export function invalidateForRows(qc: QueryClient, rows: RowRef[]): void {
   }
 
   if (collections.has("messages")) {
-    void qc.invalidateQueries({ queryKey: ["threads"] });
+    void invalidate(qc, { queryKey: ["threads"] });
     // The land queue is read from the land messages (landqueue.py).
-    void qc.invalidateQueries({ queryKey: keys.queue });
+    void invalidate(qc, { queryKey: keys.queue });
     const holders: string[] = [];
     const held = new Set<string>();
     for (const [key, data] of qc.getQueriesData<ThreadDetail>({ queryKey: ["thread"] })) {
@@ -70,48 +70,69 @@ export function invalidateForRows(qc: QueryClient, rows: RowRef[]): void {
       for (const id of hits) held.add(id);
     }
     if (messageIds.size > held.size) {
-      void qc.invalidateQueries({ queryKey: ["thread"] });
+      void invalidate(qc, { queryKey: ["thread"] });
     } else {
-      for (const root of holders) void qc.invalidateQueries({ queryKey: keys.thread(root), exact: true });
+      for (const root of holders) void invalidate(qc, { queryKey: keys.thread(root), exact: true });
     }
   }
 
   // An open waiting row makes the thread of a message with its id need the owner.
-  if (collections.has("waiting") && !collections.has("messages")) void qc.invalidateQueries({ queryKey: ["threads"] });
+  if (collections.has("waiting") && !collections.has("messages")) void invalidate(qc, { queryKey: ["threads"] });
+  // An ack row can end a recipient's part of a request: the thread rows (list and open threads) change.
+  if (collections.has("acks") && !collections.has("messages")) {
+    if (!collections.has("waiting")) void invalidate(qc, { queryKey: ["threads"] });
+    void invalidate(qc, { queryKey: ["thread"] });
+  }
 
   const sections = new Set<SectionName>();
   for (const c of collections) for (const name of SECTIONS_OF[c] ?? []) sections.add(name);
-  for (const name of sections) void qc.invalidateQueries({ queryKey: ["section", name] });
-}
-
-/** Invalidate the thread list, every thread, every section and the land queue: what the stream shows. */
-export function invalidateAll(qc: QueryClient): void {
-  void qc.invalidateQueries({ queryKey: ["threads"] });
-  void qc.invalidateQueries({ queryKey: keys.queue });
-  void qc.invalidateQueries({ queryKey: ["thread"] });
-  void qc.invalidateQueries({ queryKey: ["section"] });
+  for (const name of sections) void invalidate(qc, { queryKey: ["section", name] });
 }
 
 /**
- * Start the live updates for `qc`. The stream has no replay, so a return from
- * poll to push refetches everything it shows; each poll refetches the thread
- * list and the land queue. The returned function stops it all.
+ * invalidateQueries, plus one more read for each matching query whose first
+ * load is in flight. invalidateQueries cancels a fetch in flight only when the
+ * query holds data (Query.fetch with cancelRefetch), so it reuses a first
+ * load, whose answer can come from before the change that called this. Each
+ * such query is read again once that load ends with data, so it ends with a
+ * read that started after this call. A first load that fails gets no second
+ * read: its error shows, and the next poll or event reads it again. Every
+ * invalidation in web/src goes through here.
+ */
+export function invalidate(qc: QueryClient, filters: InvalidateQueryFilters = {}): Promise<void> {
+  const first = qc.getQueryCache().findAll(filters).filter((q) => q.state.data === undefined && q.state.fetchStatus === "fetching");
+  return qc
+    .invalidateQueries(filters)
+    .then(() => Promise.all(first.filter((q) => q.state.data !== undefined).map((q) => qc.invalidateQueries({ queryKey: q.queryKey, exact: true }))))
+    .then(() => undefined);
+}
+
+/**
+ * Invalidate the thread list, every thread, every section and the land queue:
+ * what the stream shows. Resolves when the refetches settle.
+ */
+export function invalidateAll(qc: QueryClient): Promise<void> {
+  return Promise.all([["threads"], keys.queue, ["thread"], ["section"]].map((queryKey) => invalidate(qc, { queryKey }))).then(() => undefined);
+}
+
+/**
+ * Start the live updates for `qc`. The stream has no replay, so each ready
+ * event (the first one too: a row written while the page loaded) refetches
+ * everything it shows, and so does each poll: the thread list, the open
+ * threads, the open section and the land queue. The returned function stops
+ * it all.
  */
 export function connectLive(qc: QueryClient, onMode: (mode: Mode) => void, deps: EventsDeps = {}): () => void {
-  let mode: Mode | null = null;
   return startEvents(
     (rows) => invalidateForRows(qc, rows),
-    (next) => {
-      if (mode === "poll" && next === "push") invalidateAll(qc);
-      mode = next;
-      onMode(next);
-    },
+    onMode,
     {
       ...deps,
-      onPoll: () => {
-        void qc.invalidateQueries({ queryKey: ["threads"] });
-        void qc.invalidateQueries({ queryKey: keys.queue });
-      },
+      onReady: () => invalidateAll(qc),
+      // A poll cannot tell what changed, so it invalidates all that the stream
+      // shows. Only the queries an open view watches refetch (React Query's
+      // default refetchType "active"); the others refetch when a view opens.
+      onPoll: () => invalidateAll(qc),
     },
   );
 }
@@ -155,10 +176,23 @@ export function useMe() {
   return useQuery({ queryKey: keys.me, queryFn: api.getMe });
 }
 
+/**
+ * The read state to keep: the one with the higher `rev` (readstate.py raises
+ * it on each change), so an answer that arrives after a newer one is dropped.
+ */
+export function newerReadState(cur: ReadState | undefined, next: ReadState): ReadState {
+  return cur && (cur.rev ?? 0) > (next.rev ?? 0) ? cur : next;
+}
+
 /** The owner's read state; asked only when the caller is the owner (others get 403). */
 export function useReadState() {
+  const qc = useQueryClient();
   const me = useMe();
-  return useQuery({ queryKey: keys.readState, queryFn: api.getReadState, enabled: me.data?.isOwner === true });
+  return useQuery({
+    queryKey: keys.readState,
+    queryFn: () => api.getReadState().then((next) => newerReadState(qc.getQueryData<ReadState>(keys.readState), next)),
+    enabled: me.data?.isOwner === true,
+  });
 }
 
 /** The land queue; a land message changes it, so the live updates refetch it. */
