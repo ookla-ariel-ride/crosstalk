@@ -287,6 +287,10 @@ LAND START alpha feature-one-0101, feature-two-0101: merges clean on 0bf809af
 LAND END alpha feature-one-0101: landed, main 1a2b3c4d; feature-two-0101 stopped at rebase
 ```
 
+The coordinator answers with two fixed words of its own. `GRANTED`, in reply
+to a `TURN ASK`, gives the turn. `GRANT WITHDRAWN`, in reply to a `GRANTED`,
+makes that grant void (see the wind-down below).
+
 Post `TURN ASK` as kind `request`: it waits for the coordinator's `GRANTED`.
 A `TURN ASK` always needs an answer, even when its body ends with "No answer
 needed". A `TURN ASK WITHDRAWN` informs, so that sentence marks it as needing none.
@@ -360,6 +364,13 @@ command writes a `t` later than both records, so a later command always takes
 force. On an equal `t` the owner's record counts. An `update` cannot change
 `step`, `started` or `t`: a new step needs a new `state wind-down`. A `TURN ASK` that waits stays in the
 queue and gets its `GRANTED` after step 0.
+
+A `GRANTED` can still land after a wind-down record, when the server stalls
+between its last check and its post. The server then replies to that
+`GRANTED` with a summary that starts `GRANT WITHDRAWN`, sent to the asking
+project. Only the coordinator's reply counts. The grant is void: the slot is
+free and the ask waits in its place, for a new `GRANTED` after step 0. A
+project that reads `GRANT WITHDRAWN` does not start that land.
 
 Free-text posts ("land start 01:42", "asking for a land turn") are not read:
 the fixed words are the contract.

@@ -74,10 +74,12 @@ def post_reply(
     roster: Optional[Roster] = None,
     speaker: Optional[Dict[str, str]] = None,
     no_answer: bool = False,
+    to: Optional[Iterable[str]] = None,
 ) -> Line:
     """Reply to an existing message `to_id`, auto-populating `replyTo` and `to`.
 
-    `no_answer` marks the reply as asking nothing (requests.no_answer).
+    `no_answer` marks the reply as asking nothing (requests.no_answer). `to`
+    replaces the default recipient (the sender of `to_id`).
     """
     root = Path(root)
     roster = _ensure_roster(root, roster)
@@ -96,7 +98,9 @@ def post_reply(
         "summary": summary,
         "replyTo": to_id,
     }  # type: Dict[str, object]
-    if isinstance(target_from, str) and target_from in roster.participants:
+    if to is not None:
+        data["to"] = _str_list(to)
+    elif isinstance(target_from, str) and target_from in roster.participants:
         data["to"] = [target_from]
     if body is not None:
         data["body"] = body

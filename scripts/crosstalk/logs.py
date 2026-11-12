@@ -456,14 +456,29 @@ def state_lock_path(root: Path) -> Path:
 
 STATE_LOCK_WAIT = 5.0  # seconds a caller waits for the state lock
 STATE_LOCK_TRY = 0.05
+# The longest a `hold` holder (the granter) may keep the state lock and still
+# append. It is under STATE_LOCK_WAIT, so a holder that a forced writer gave up
+# on appends nothing after that writer's row.
+STATE_HOLD_LIMIT = 3.0
 
 
 class StateLockBusy(OSError):
     """The state lock stayed held for STATE_LOCK_WAIT seconds."""
 
 
+class StateHoldExpired(StateLockBusy):
+    """A `hold` holder kept the state lock past STATE_HOLD_LIMIT seconds; its append is refused."""
+
+
+def _check_hold() -> None:
+    """Refuse an append of a `hold` holder past STATE_HOLD_LIMIT (called inside the file lock)."""
+    since = getattr(_state_lock_depth, "hold_since", None)
+    if since is not None and time.monotonic() - since > STATE_HOLD_LIMIT:
+        raise StateHoldExpired("held the state lock for more than %g s" % STATE_HOLD_LIMIT)
+
+
 @contextmanager
-def state_lock(root: Path, force: bool = False):
+def state_lock(root: Path, force: bool = False, hold: bool = False):
     """Hold the exclusive state lock of `root`; again in the same thread, it is a no-op.
 
     A row of the `state` collection takes it around its append, and the granter
@@ -472,6 +487,12 @@ def state_lock(root: Path, force: bool = False):
     that is stuck blocks a caller for at most STATE_LOCK_WAIT seconds. Then a
     `force` caller (a state row: the owner's command must win) goes on without
     the lock and says so on stderr; any other caller gets StateLockBusy.
+
+    With `hold`, each append_line of this thread under the lock checks, inside
+    its file lock and just before it writes, that the lock was got at most
+    STATE_HOLD_LIMIT seconds ago; later it raises StateHoldExpired and writes
+    nothing. A forced writer waits longer than that, so it gives up on such a
+    holder only after the holder can no longer append.
     """
     depth = getattr(_state_lock_depth, "n", 0)
     if depth:
@@ -498,13 +519,16 @@ def state_lock(root: Path, force: bool = False):
         if not held and not force:
             raise StateLockBusy("the state lock %s stayed busy for %g s" % (path, STATE_LOCK_WAIT))
         if not held:
-            print("crosstalk: %s stayed busy for %g s; writing the state row without the state lock"
-                  % (path, STATE_LOCK_WAIT), file=sys.stderr)
+            print("crosstalk: %s stayed busy for %g s; writing the state row without the state lock."
+                  " A GRANTED in flight can still appear; the server then withdraws it"
+                  " (GRANT WITHDRAWN)." % (path, STATE_LOCK_WAIT), file=sys.stderr)
         _state_lock_depth.n = 1
+        _state_lock_depth.hold_since = time.monotonic() if (held and hold) else None
         try:
             yield
         finally:
             _state_lock_depth.n = 0
+            _state_lock_depth.hold_since = None
             if held:
                 fcntl.flock(f.fileno(), fcntl.LOCK_UN)
 
@@ -571,6 +595,7 @@ def _append_line(root: Path, from_: str, op: str, collection: str, id: str, data
             result = _validate(text, from_, last + 1, [])
             if isinstance(result, str):
                 raise ValueError(result)
+            _check_hold()
             f.seek(0, 2)
             f.write((text + "\n").encode("utf-8"))
             f.flush()

@@ -23,7 +23,8 @@ branches that neither its GRANTED nor the LAND END names stay waiting.
 The coordinator's GRANTED reply to an ask (summary starting GRANTED, replyTo
 the ask) marks it granted: it reserves a slot until its LAND START or LANE START,
 or until GRANT_TTL_SEC passes with `now` given (the grant lapses). A re-ask
-clears the grant. A start takes the whole ask, except the branches that
+clears the grant, and so does the coordinator's GRANT WITHDRAWN reply to the
+GRANTED: the ask waits again in its place, with no slot reserved. A start takes the whole ask, except the branches that
 neither its GRANTED nor the start names: those stay waiting. `next` is the
 first waiting ask, not granted, from a project that is not holding. The queue
 is derived, never stored, so it cannot drift from the log.
@@ -39,6 +40,7 @@ from typing import Dict, Iterable, List, Optional
 
 MAX_HOLDERS = 2
 GRANT_TTL_SEC = 30 * 60
+GRANT_VOID = "GRANT WITHDRAWN"
 WORDS = ("TURN ASK", "LAND START", "LAND END", "LANE START", "LANE END")
 _WORD_RE = re.compile(r"^(%s)\b" % "|".join(WORDS))
 _HEAD_END_RE = re.compile(r":(?=\s|$)")
@@ -100,10 +102,11 @@ def _land_messages(docs: Dict, coordinator: str = "") -> List[tuple]:
             continue
         if coordinator and sender == coordinator:
             s = doc.get("summary")
-            if not (isinstance(s, str) and s.strip().startswith("GRANTED")
-                    and isinstance(doc.get("replyTo"), str)):
+            if not (isinstance(s, str) and isinstance(doc.get("replyTo"), str)):
                 continue
-            word = "GRANTED"
+            word = next((w for w in (GRANT_VOID, "GRANTED") if s.strip().startswith(w)), None)
+            if word is None:
+                continue
         else:
             word = land_word(doc.get("summary"))
             if word is None:
@@ -173,6 +176,15 @@ def land_queue(docs: Dict, max_holders: int = MAX_HOLDERS,
                         "ask": ask["id"] if ask else None})
 
     for t, did, sender, word, summary, reply_to in _land_messages(docs, coordinator):
+        if word == GRANT_VOID:
+            # replyTo is the GRANTED: the ask it granted waits again, in its place.
+            ask = next((w for w in waiting if w.get("granted") == reply_to), None)
+            if ask is not None:
+                for key in ("granted", "granted_t", "granted_branches"):
+                    ask.pop(key, None)
+            else:
+                notes.append("%s: %s for %s, which is no waiting grant" % (did, GRANT_VOID, reply_to))
+            continue
         if word == "GRANTED":
             ask = next((w for w in waiting if w["id"] == reply_to), None)
             if ask is not None:

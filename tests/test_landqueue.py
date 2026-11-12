@@ -233,6 +233,19 @@ class GrantAndLaneTests(unittest.TestCase):
         self.assertNotIn("granted", q["waiting"][0])
         self.assertEqual(q["next"], "gamma")
 
+    def test_grant_withdrawn_frees_the_slot_and_the_ask_keeps_its_place(self):
+        grant = "relay-bot-03-2"  # docs_of id of granted(3, ...) below
+        void = {"kind": "reply", "replyTo": grant}
+        q = queue((1, "gamma", "TURN ASK gamma x-1110"), (2, "beta", "TURN ASK beta y-1110"),
+                  granted(3, self.ASK), (4, "relay-bot", "GRANT WITHDRAWN gamma x-1110", void))
+        self.assertEqual([(w["project"], "granted" in w) for w in q["waiting"]],
+                         [("gamma", False), ("beta", False)])
+        self.assertEqual((q["next"], q["slots_free"], q["holders"]), ("gamma", 2, []))
+        # only the coordinator's counts
+        q = queue((1, "gamma", "TURN ASK gamma x-1110"), (2, "beta", "TURN ASK beta y-1110"),
+                  granted(3, self.ASK), (4, "beta", "GRANT WITHDRAWN gamma x-1110", void))
+        self.assertEqual(q["waiting"][0]["granted"], grant)
+
     def test_a_branch_asked_after_the_grant_stays_waiting_at_the_start(self):
         # A project asks for a second branch as the server grants the first.
         msgs = [(1, "epsilon-kit", "TURN ASK epsilon-kit x-1110 2686753: one buildbox land run"),

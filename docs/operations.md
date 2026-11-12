@@ -397,7 +397,12 @@ record too, with `--from owner`. At step 1 or 2 the auto-granter posts no
 host, just before it posts, under the lock file `log/.state.lock` that every
 `state` row takes too. It checks the pause file again there. When the lock
 stays busy for 5 seconds, the granter posts nothing in that pass, and
-`state wind-down` writes its row without the lock and says so on stderr. With no coordinator set, only the owner's record counts.
+`state wind-down` writes its row without the lock and says so on stderr.
+The granter may append its `GRANTED` only within 3 seconds of when it got the
+lock, so a stalled granter posts nothing after that row. When a `GRANTED`
+still lands after a record at step 1 or 2, the granter replies to it with
+`GRANT WITHDRAWN`: the grant is void, the project sees the reply in its inbox,
+and the ask waits in its place for step 0. With no coordinator set, only the owner's record counts.
 
 ### config.json
 

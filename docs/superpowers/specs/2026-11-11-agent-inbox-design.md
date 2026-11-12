@@ -273,6 +273,20 @@ too. Nobody waits more than 5 seconds for the lock: then the granter posts
 nothing in that pass, and the owner's `state wind-down` writes its row
 without the lock, with a line on stderr.
 
+Changed 2026-11-12 after a second review: a granter that stalls while it holds
+the lock could post its GRANTED after the owner's row. Two rules close that.
+The granter may append only within 3 seconds of when it got the lock, and it
+checks that inside the file lock of its own log, just before the write. The
+owner waits 5 seconds, so it writes only after the granter can no longer
+append. A stall between that check and the write is still possible, so after
+each GRANTED the granter reads the record again. At step 1 or 2 it replies to
+its GRANTED with `GRANT WITHDRAWN`, sent to the project. The land queue reads
+that reply as "this grant is void": the slot is free and the ask waits in its
+place. Each pass also withdraws an auto-granted GRANTED of a waiting ask that
+is not older than the wind-down, for a granter that stopped before that
+second read. The owner's stderr line says that a grant in flight can still
+appear and then gets withdrawn.
+
 The owner's request "wind down" in a post does not set the record by itself.
 The coordinator sets it when it reads the request. A later design may give
 the page a button.

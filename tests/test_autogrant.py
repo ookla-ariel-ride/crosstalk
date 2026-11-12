@@ -1,9 +1,14 @@
 """The auto-granter: GRANTED for the next land turn when queue, usage and load allow."""
 import calendar
+import contextlib
+import copy
 import fcntl
+import io
 import json
 import os
 import tempfile
+import threading
+import time
 import unittest
 from unittest import mock
 from pathlib import Path
@@ -11,8 +16,13 @@ from pathlib import Path
 import helpers  # noqa: F401  (puts scripts/ on sys.path)
 
 from crosstalk.autogrant import Granter, grant_text, read_usage
-from crosstalk import logs
+from crosstalk import logs, state
+from crosstalk.consults import post_consult, post_reply
+from crosstalk.landqueue import land_queue
 from crosstalk.logs import state_lock_path
+from crosstalk.participants import load_roster
+from crosstalk.replay import enrich_messages, load_all_lines, replay
+from crosstalk.requests import thread_replies_for
 
 T = calendar.timegm((2026, 11, 8, 10, 10, 0))
 PROJECTS = {"gamma": {}, "beta": {}, "alpha": {}, "epsilon-kit": {}}
@@ -190,6 +200,104 @@ class GranterTests(unittest.TestCase):
         s, b = grant_text({"project": "gamma", "branches": []}, [], 3.0, 90)
         self.assertEqual(s, "GRANTED gamma its branches")
         self.assertIn("other holders: none", b)
+
+
+class RealLogTests(unittest.TestCase):
+    """The granter over a real log: the state lock, the hold limit and GRANT WITHDRAWN."""
+
+    def setUp(self):
+        self.r = helpers.TempRepo()
+        self.r.__enter__()
+        data = copy.deepcopy(helpers.SPEC_ROSTER)
+        data["relay"] = "relay-bot"
+        data["participants"].append(
+            {"id": "relay-bot", "name": "Relay Bot", "kind": "project", "color": "#2e7d32",
+             "colorDark": "#81c784", "checkInMin": 30, "trust": "approved"})
+        self.r.write_roster(data)
+        self.ask = post_consult(self.r.root, "alpha", "TURN ASK alpha feat-1112",
+                                to=["relay-bot"], roster=self.roster()).id
+
+    def tearDown(self):
+        self.r.__exit__(None, None, None)
+
+    def roster(self):
+        return load_roster(self.r.root / "participants.json")
+
+    def docs(self):
+        return enrich_messages(replay(load_all_lines(self.r.root, self.roster())),
+                               load_all_lines(self.r.root, self.roster()))
+
+    def granter(self, post=post_reply):
+        entries = {pid: {} for pid in self.roster().participants}
+        return Granter(self.r.root, lambda: (self.docs(), entries),
+                       probe=lambda: {"reachable": True, "load": [1.0, 1.0, 1.0]},
+                       post=post, pause_path=None)
+
+    def coordinator_posts(self, word):
+        return [(did, d) for (c, did), d in self.docs().items()
+                if c == "messages" and d.get("from") == "relay-bot"
+                and d.get("summary", "").startswith(word)]
+
+    def queue(self):
+        return land_queue(self.docs(), projects=self.roster().participants, now=time.time(),
+                          coordinator="relay-bot")
+
+    def test_granter_paused_after_its_last_check_posts_nothing_after_the_owner_timeout(self):
+        entered, resume, out = threading.Event(), threading.Event(), []
+
+        def post(*args, **kwargs):
+            entered.set()
+            resume.wait(10)
+            return post_reply(*args, **kwargs)
+        g = self.granter(post)
+        err = io.StringIO()
+        with mock.patch.object(logs, "STATE_LOCK_WAIT", 0.6), \
+                mock.patch.object(logs, "STATE_HOLD_LIMIT", 0.3), contextlib.redirect_stderr(err):
+            t = threading.Thread(target=lambda: out.append(g.poll_once()))
+            t.start()
+            self.assertTrue(entered.wait(10))
+            started = time.monotonic()
+            state.set_wind_down(self.r.root, "owner", 1, roster=self.roster())
+            self.assertLess(time.monotonic() - started, 5)
+            resume.set()
+            t.join(10)
+        self.assertEqual(out, [None])
+        self.assertEqual(self.coordinator_posts("GRANTED"), [])
+        self.assertEqual(state.wind_down(self.docs(), self.roster())["step"], 1)
+        self.assertIn("withdraw", err.getvalue())
+
+    def wind_down_first(self):
+        """Force the order: the owner's record lands, then the GRANTED."""
+        def post(root, pid, to_id, summary, body=None):
+            state.set_wind_down(root, "owner", 1, roster=self.roster())
+            return post_reply(root, pid, to_id, summary, body=body)
+        return self.granter(post)
+
+    def test_grant_that_lands_after_a_wind_down_is_withdrawn(self):
+        self.assertIsNone(self.wind_down_first().poll_once())
+        [(grant, _)] = self.coordinator_posts("GRANTED")
+        [(void, doc)] = self.coordinator_posts("GRANT WITHDRAWN")
+        self.assertEqual((doc["replyTo"], doc["to"]), (grant, ["alpha"]))
+        self.assertTrue(doc["summary"].startswith("GRANT WITHDRAWN alpha feat-1112"))
+        q = self.queue()
+        self.assertEqual(q["holders"], [])
+        self.assertEqual([(w["id"], "granted" in w) for w in q["waiting"]], [(self.ask, False)])
+        self.assertEqual(q["next"], "alpha")
+        self.assertIn(void, [did for did, _d, _r in thread_replies_for(self.docs(), "alpha",
+                                                                       roster=self.roster())])
+
+    def test_withdrawn_grant_gets_a_new_grant_after_step_0(self):
+        g = self.wind_down_first()
+        self.assertIsNone(g.poll_once())
+        g.post = post_reply
+        self.assertIsNone(g.poll_once())  # still step 1
+        state.set_wind_down(self.r.root, "owner", 0, roster=self.roster())
+        self.assertEqual(g.poll_once(), self.ask)
+        grants = self.coordinator_posts("GRANTED")
+        self.assertEqual(len(grants), 2)
+        self.assertEqual(len(self.coordinator_posts("GRANT WITHDRAWN")), 1)
+        [w] = self.queue()["waiting"]
+        self.assertEqual(w["granted"], max(did for did, _d in grants))
 
 
 class UsageTests(unittest.TestCase):
