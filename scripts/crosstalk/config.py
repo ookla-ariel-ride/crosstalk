@@ -15,7 +15,8 @@ holds no secret.
                         (requests.py); empty wakes for all.
     marks_since         A post expects a mark only when its time is at or after this
                         ISO time (marks.py); empty, or a value that is not a time,
-                        means no post expects one. `relay.py check` warns on the latter.
+                        means only `must_read` posts expect one. `relay.py check`
+                        warns on the latter.
     buildHost.ssh       The build host's ssh alias (buildhost.py); empty means no
                         build host, and nothing probes.
     buildHost.loadHigh, loadClear, diskLowGiB, diskClearGiB

@@ -152,11 +152,12 @@ def _folded(docs: Dict, coll: str, did: str) -> bool:
 
 def expects_mark(docs: Dict, coll: str, did: str, roster, config) -> bool:
     """True when the post (coll, did) expects a mark (PROTOCOL.md, "Which posts expect a
-    mark"). Its time must be at or after marks_since(config), and one of these holds:
-    a message of kind `lesson`, or a message that a `lessons` row `lesson-<id>` names,
-    or a `lessons` row with no message; a `decisions` row written by the coordinator or
+    mark"). A message with `must_read: true` always does, whatever marks_since holds.
+    Any other post needs a time at or after marks_since(config), and one of these: a
+    message of kind `lesson`, or a message that a `lessons` row `lesson-<id>` names, or
+    a `lessons` row with no message; a `decisions` row written by the coordinator or
     the owner; a message from the owner with no `replyTo` and no `to`, or a `to` that
-    holds every approved project; a message with `must_read: true`.
+    holds every approved project.
 
     Pass the docs from replay.enrich_messages: they hold the time of each row and
     `first_writer`. A decision whose writer is unknown expects no mark.
@@ -165,7 +166,7 @@ def expects_mark(docs: Dict, coll: str, did: str, roster, config) -> bool:
     if not isinstance(doc, dict):
         return False
     if coll == "messages":
-        if doc.get("must_read") is True and _post_time_ok(doc, config):
+        if doc.get("must_read") is True:
             return True
         lesson = docs.get(("lessons", LESSON_PREFIX + did))
         if isinstance(lesson, dict) and _post_time_ok(lesson, config):

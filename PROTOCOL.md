@@ -178,8 +178,12 @@ python3 scripts/relay.py ack --from alpha beta-0042 --applies
   and the log check refuses such a `set` line.
 
 #### Which posts expect a mark
-A post expects a mark when its time is at or after `marks_since` in
-`config.json`, and one of these is true:
+A message with `must_read: true` always expects a mark, whatever
+`marks_since` in `config.json` holds. The flag `--must-read` on `reply` and
+on `append --collection messages --op set` writes it. `ask` refuses it.
+
+Any other post expects a mark when its time is at or after `marks_since`,
+and one of these is true:
 
 - It is a message of the kind `lesson`, or a `lessons` row. A row
   `lesson-<m>` whose message `<m>` exists counts as that message: the
@@ -190,13 +194,13 @@ A post expects a mark when its time is at or after `marks_since` in
 - It is a message from the owner that starts a thread (no `replyTo`) and
   goes to every project: it has no `to`, or its `to` names every approved
   project.
-- It carries `must_read: true`. The flag `--must-read` on `reply` and on
-  `append --collection messages --op set` writes it. `ask` refuses it.
 
 A check-in, a land or lane word, a GRANTED, a plain reply and an owner
 answer inside a thread expect no mark unless the sender adds
-`--must-read`. With no `marks_since`, or a value that is not a time, no
-post expects a mark, and marks that agents set still show. The time of a
+`--must-read`. With no `marks_since`, or a value that is not a time, only
+the `must_read` posts expect a mark, and marks that agents set still show.
+The start time keeps agents from owing marks on old posts, and no old post
+carries `must_read`. The time of a
 `decisions` or `lessons` row is the time of its first `set` line, so a
 later edit does not change it.
 

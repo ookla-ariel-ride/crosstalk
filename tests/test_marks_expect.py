@@ -139,11 +139,20 @@ class ExpectTests(unittest.TestCase):
         self.assertFalse(self.expects("messages", self.lesson_id, self.config("2026-10-21T18:00:01Z")))
         self.assertFalse(self.expects("lessons", "lesson-solo", self.config("2026-10-21T18:00:01Z")))
 
-    def test_no_key_and_a_malformed_key_mean_no_post_expects(self):
+    def test_a_must_read_post_expects_whatever_marks_since_holds(self):
+        later = self.config("2026-10-21T18:00:01Z")
+        self.assertTrue(self.expects("messages", "alpha-c2", later))
+        self.assertTrue(self.expects("messages", "owner-ans2", later))
+        self.assertFalse(self.expects("messages", "owner-all", later))
+
+    def test_no_key_and_a_malformed_key_mean_only_must_read_posts_expect(self):
         for cfg in ({}, {"marks_since": ""}, {"marks_since": "soon"}, {"marks_since": 7}, None):
             self.assertIsNone(marks.marks_since(cfg), cfg)
             self.assertFalse(marks.expects_mark(self.docs(), "messages", self.lesson_id, self.roster(), cfg), cfg)
             self.assertEqual(marks.owed(self.docs(), "messages", self.lesson_id, self.roster(), cfg), [], cfg)
+            self.assertTrue(marks.expects_mark(self.docs(), "messages", "alpha-c2", self.roster(), cfg), cfg)
+            self.assertEqual(marks.owed(self.docs(), "messages", "alpha-c2", self.roster(), cfg),
+                             ["beta", "delta", "gamma"], cfg)
         self.assertEqual(marks.marks_since({"marks_since": " 2026-10-21 "}), "2026-10-21")
 
     def test_config_json_carries_the_key(self):
