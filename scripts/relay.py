@@ -167,9 +167,11 @@ def cmd_inbox(args):
         for p in fatal:
             err("%s:%d: %s" % (p.file, p.line, p.message))
         return 1
-    nxt = inboxstate.newest(times)
+    # Not after the clock: a row with a later line time stays new until a later ack.
+    now = time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime())
+    nxt = inboxstate.newest(times, now)
     if args.ack_to is not None:
-        return _inbox_ack_to(args.pid, args.ack_to, nxt)
+        return _inbox_ack_to(args.pid, args.ack_to, nxt, now)
     out = inbox_report(docs, args.pid, roster, include_answered=args.all,
                        now_iso=getattr(args, "now", None), service=service_for(CODE_ROOT, ROOT))
     if args.new:
@@ -211,7 +213,7 @@ def _print_inbox(out, args):
                                             len(out.get("stale_locks", []))))
 
 
-def _inbox_ack_to(pid, raw, nxt):
+def _inbox_ack_to(pid, raw, nxt, now):
     """`inbox <pid> --ack-to PLACE`: move the place to a `next` read earlier."""
     try:
         place = inboxstate.clean_place(json.loads(raw))
@@ -224,6 +226,9 @@ def _inbox_ack_to(pid, raw, nxt):
     stored = inboxstate.load(ROOT).get(pid)
     if stored is not None and place["t"] < stored["t"]:
         err("--ack-to: %s is behind the stored place %s" % (place["t"], stored["t"]))
+        return 1
+    if place["t"] > now:
+        err("--ack-to: %s is after the clock (%s)" % (place["t"], now))
         return 1
     if nxt is None or place["t"] > nxt["t"]:
         err("--ack-to: %s is ahead of the newest row of the log (%s)"

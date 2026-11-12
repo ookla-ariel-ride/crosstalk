@@ -238,7 +238,8 @@ everything is new.
   holds at most 20; `still_open_more` counts the rest.
 - `agreements_to_adopt` holds the new ones; `agreements_open` counts all.
 - `place` is where this answer starts and `next` is the newest row this run
-  read. `next` has a value on a quiet day too.
+  read whose time is not after the clock. `next` has a value on a quiet day
+  too. A row with a time after the clock stays new until a later ack.
 
 The JSON of `--new` is compact, on one line. `--new --brief` prints one line
 for each new item, with `!` in front when it needs an answer, then
@@ -258,8 +259,8 @@ python3 <checkout>/scripts/relay.py inbox <your-id> --ack-to '{"t": "2026-11-11T
 ```
 
 `--ack-to` goes alone. It refuses JSON that is not a place, a `t` behind the
-stored place, and a `t` after the newest row of the log. It prints the stored
-place.
+stored place, a `t` after the clock, and a `t` after the newest row of the
+log. It prints the stored place.
 
 ### Asking and answering (`consult` and `reply`)
 

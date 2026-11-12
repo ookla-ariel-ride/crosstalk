@@ -84,11 +84,15 @@ def is_new(t: str, did: str, place: Optional[dict]) -> bool:
     return t == place["t"] and did not in place["seen"]
 
 
-def newest(times: Dict[Tuple[str, str], str]) -> Optional[dict]:
+def newest(times: Dict[Tuple[str, str], str], now: Optional[str] = None) -> Optional[dict]:
     """The place of the newest row: the largest time and every id with that time.
 
-    `times` maps (collection, id) to the row's time. None when there is no row.
+    `times` maps (collection, id) to the row's time. With `now`, a row after
+    `now` does not count: a place ahead of the clock would hide every row that
+    lands before the clock reaches it. None when there is no row.
     """
+    if now is not None:
+        times = {k: v for k, v in times.items() if v <= now}
     if not times:
         return None
     t = max(times.values())
