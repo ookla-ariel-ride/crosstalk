@@ -10,7 +10,7 @@ from crosstalk.tokens import token_hash
 
 OWNER_TOKEN = "owner-test-token"
 BETA_TOKEN = "beta-test-token"
-EMPTY = {"threads": {}, "muted": [], "all_before": None}
+EMPTY = {"threads": {}, "muted": [], "all_before": None, "rev": 0}
 
 
 def msg(did, frm, t):
@@ -87,11 +87,25 @@ class StoreTests(unittest.TestCase):
         readstate.set_muted(self.root, "a", False)
         self.assertEqual(readstate.load(self.root)["muted"], ["x"])
 
+    def test_each_change_raises_rev_and_a_no_op_keeps_it(self):
+        self.assertEqual(readstate.mark(self.root, "a", "2026-10-21T10:05:00Z", "b")["rev"], 1)
+        self.assertEqual(readstate.mark(self.root, "a", "2026-10-21T10:00:00Z", "a")["rev"], 1)
+        self.assertEqual(readstate.mark_all(self.root, "2026-10-21T12:00:00Z")["rev"], 2)
+        self.assertEqual(readstate.set_muted(self.root, "a", True)["rev"], 3)
+        self.assertEqual(readstate.set_muted(self.root, "a", True)["rev"], 3)
+        self.assertEqual(readstate.load(self.root)["rev"], 3)
+
+    def test_a_bad_rev_in_the_file_reads_as_zero(self):
+        path = self.root / readstate.FILE
+        for rev in ('"7"', "-1", "true", "1.5", "null"):
+            path.write_text('{"threads": {}, "muted": [], "all_before": null, "rev": %s}' % rev, encoding="utf-8")
+            self.assertEqual(readstate.load(self.root)["rev"], 0, rev)
+
     def test_file_is_written_whole_and_git_ignored(self):
         readstate.mark(self.root, "a", "2026-10-21T10:05:00Z", "b")
         raw = json.loads((self.root / readstate.FILE).read_text(encoding="utf-8"))
         self.assertEqual(raw, {"threads": {"a": {"t": "2026-10-21T10:05:00Z", "id": "b"}},
-                               "muted": [], "all_before": None})
+                               "muted": [], "all_before": None, "rev": 1})
         ignore = (Path(__file__).resolve().parent.parent / ".gitignore").read_text(encoding="utf-8")
         self.assertIn(readstate.FILE, ignore.splitlines())
 
@@ -175,7 +189,7 @@ class RouteTests(unittest.TestCase):
             status, body = request(srv.url + "/api/read-state", headers=self.auth(OWNER_TOKEN))
         self.assertEqual(status, 200)
         self.assertEqual(body, {"threads": {"alpha-root": {"t": "2026-10-21T10:05:00Z", "id": "beta-reply"}},
-                                "muted": ["alpha-other"], "all_before": "2026-10-21T09:00:00Z"})
+                                "muted": ["alpha-other"], "all_before": "2026-10-21T09:00:00Z", "rev": 3})
 
     def test_threads_route_gives_the_owner_unread_counts(self):
         with self.server() as srv:

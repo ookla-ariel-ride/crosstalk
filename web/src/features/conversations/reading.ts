@@ -4,7 +4,7 @@
 import { useQueryClient } from "@tanstack/react-query";
 import { useSyncExternalStore } from "react";
 import { api } from "../../api/client";
-import { keys, useMe, useReadState } from "../../api/queries";
+import { keys, newerReadState, useMe, useReadState } from "../../api/queries";
 import type { ReadMark, ReadState } from "../../api/types";
 
 export const STORAGE_KEY = "crosstalk.read-state";
@@ -123,7 +123,8 @@ export function useReading(): Reading {
     return api
       .putReadState(body)
       .then((next) => {
-        qc.setQueryData(keys.readState, next);
+        // Two writes can answer out of order: keep the newer state.
+        qc.setQueryData<ReadState>(keys.readState, (cur) => newerReadState(cur, next));
         void qc.invalidateQueries({ queryKey: ["threads"] });
         return true;
       })

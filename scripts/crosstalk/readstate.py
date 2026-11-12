@@ -4,7 +4,12 @@ and the time before which every message counts as read.
 The state lives in `read-state.json` in the data root, outside the message log
 and out of git:
 
-  {"threads": {root: {"t": iso, "id": message id}}, "muted": [root], "all_before": iso or null}
+  {"threads": {root: {"t": iso, "id": message id}}, "muted": [root], "all_before": iso or null,
+   "rev": n}
+
+`rev` counts the changes: each write that changes the state raises it by one.
+The page keeps the state with the higher `rev`, so an older answer that
+arrives late never replaces a newer one.
 
 A thread's mark is the time and id of the newest message the owner read. A
 mark never moves backwards, and neither does `all_before`. A file that does
@@ -29,7 +34,7 @@ _lock = threading.Lock()
 
 
 def empty() -> dict:
-    return {"threads": {}, "muted": [], "all_before": None}
+    return {"threads": {}, "muted": [], "all_before": None, "rev": 0}
 
 
 def is_time(value) -> bool:
@@ -62,6 +67,9 @@ def _clean(raw) -> dict:
         state["muted"] = [root for i, root in enumerate(muted) if _is_id(root) and root not in muted[:i]]
     if is_time(raw.get("all_before")):
         state["all_before"] = raw["all_before"]
+    rev = raw.get("rev")
+    if isinstance(rev, int) and not isinstance(rev, bool) and rev >= 0:
+        state["rev"] = rev
     return state
 
 
@@ -76,6 +84,8 @@ def load(root: Path) -> dict:
 
 
 def _save(root: Path, state: dict) -> None:
+    """Write a changed state, with `rev` one higher."""
+    state["rev"] += 1
     atomic_write_text(Path(root) / FILE, json.dumps(state, indent=2, ensure_ascii=False) + "\n")
 
 

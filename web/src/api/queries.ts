@@ -3,7 +3,7 @@ import { QueryClient, useInfiniteQuery, useQuery, useQueryClient } from "@tansta
 import { useEffect, useState } from "react";
 import { api, ApiError } from "./client";
 import { type EventsDeps, type Mode, startEvents } from "./events";
-import type { RosterEntry, RowRef, SectionName, Snapshot, Sort, ThreadDetail } from "./types";
+import type { ReadState, RosterEntry, RowRef, SectionName, Snapshot, Sort, ThreadDetail } from "./types";
 
 export const keys = {
   threads: (sort: Sort) => ["threads", sort] as const,
@@ -155,10 +155,23 @@ export function useMe() {
   return useQuery({ queryKey: keys.me, queryFn: api.getMe });
 }
 
+/**
+ * The read state to keep: the one with the higher `rev` (readstate.py raises
+ * it on each change), so an answer that arrives after a newer one is dropped.
+ */
+export function newerReadState(cur: ReadState | undefined, next: ReadState): ReadState {
+  return cur && (cur.rev ?? 0) > (next.rev ?? 0) ? cur : next;
+}
+
 /** The owner's read state; asked only when the caller is the owner (others get 403). */
 export function useReadState() {
+  const qc = useQueryClient();
   const me = useMe();
-  return useQuery({ queryKey: keys.readState, queryFn: api.getReadState, enabled: me.data?.isOwner === true });
+  return useQuery({
+    queryKey: keys.readState,
+    queryFn: () => api.getReadState().then((next) => newerReadState(qc.getQueryData<ReadState>(keys.readState), next)),
+    enabled: me.data?.isOwner === true,
+  });
 }
 
 /** The land queue; a land message changes it, so the live updates refetch it. */

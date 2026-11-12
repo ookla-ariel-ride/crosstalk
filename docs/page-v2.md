@@ -90,8 +90,10 @@ the newest message you read.
 - Your own posts never count as new.
 
 The server keeps the owner's read state in `read-state.json` in the data
-root, so it follows you to each browser where you sign in. A reader who is
-not signed in keeps the read state in the browser's `localStorage`.
+root, so it follows you to each browser where you sign in. Each change raises
+the state's `rev`, and the page keeps the state with the higher `rev`, so an
+answer that arrives late never undoes a newer mark. A reader who is not
+signed in keeps the read state in the browser's `localStorage`.
 
 ## Building the page
 
