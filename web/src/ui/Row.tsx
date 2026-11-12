@@ -16,9 +16,11 @@ export interface RowProps {
   href?: string;
   /** What the row shows in place while open. */
   children?: ReactNode;
+  /** Controls under a folded row, outside its button (a button holds no other control). */
+  actions?: ReactNode;
 }
 
-export function Row({ projects, title, text, note, open = false, onOpen, href, children }: RowProps) {
+export function Row({ projects, title, text, note, open = false, onOpen, href, children, actions }: RowProps) {
   const contentId = useId();
   const inside = (
     <>
@@ -62,6 +64,7 @@ export function Row({ projects, title, text, note, open = false, onOpen, href, c
       >
         {inside}
       </button>
+      {actions != null && !open ? <div className={styles.actions}>{actions}</div> : null}
       {shown ? (
         <div id={contentId} className={styles.content}>
           {children}

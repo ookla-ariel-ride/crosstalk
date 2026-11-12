@@ -213,3 +213,10 @@
   color: var(--ink);
   font-size: var(--size-s);
 }
+
+/* The owner's ack on a request (`acks` row): one quiet line. */
+.acked {
+  margin: 6px 0 0;
+  color: var(--muted);
+  font-size: var(--size-s);
+}

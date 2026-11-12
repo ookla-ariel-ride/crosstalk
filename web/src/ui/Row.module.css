@@ -80,3 +80,8 @@
     animation: none;
   }
 }
+
+/* Under the title: past the bars column (30px) and the gap (10px). */
+.actions {
+  padding: 0 18px 10px 58px;
+}
