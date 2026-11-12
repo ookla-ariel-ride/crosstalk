@@ -14,7 +14,7 @@ test("an open thread shows the marks line of a marked lesson, and the line wraps
   await expect(line).toBeVisible();
   await expect(line.getByRole("img", { name: "acknowledged" })).toHaveAttribute("title", "acknowledged");
   await expect(line).toHaveText(
-    "✅ Delta, Epsilon, Gamma, Relay bot, Zeta🔧 Eta, Theta➖ Iota, Owner👀 Alpha › Beta, Kappa❓ Lambdanot yet: Alpha › Beta, Kappa, Lambda",
+    "✅ Delta, Epsilon, Gamma, Relay bot, Zeta 🔧 Eta, Theta ➖ Iota, Owner 👀 Alpha › Beta, Kappa ❓ Lambda not yet: Alpha › Beta, Kappa, Lambda",
   );
 
   // Playwright's docs: set the size before the page loads; a hash change alone loads nothing, so reload.

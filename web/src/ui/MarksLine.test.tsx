@@ -25,7 +25,7 @@ describe("MarksLine", () => {
       owed: ["delta", "epsilon"],
       expects: true,
     });
-    expect(container.textContent).toBe("✅ Alpha, Beta🔧 Beta › Helper➖ Gamma👀 Delta❓ Epsilonnot yet: Delta, Epsilon");
+    expect(container.textContent).toBe("✅ Alpha, Beta 🔧 Beta › Helper ➖ Gamma 👀 Delta ❓ Epsilon not yet: Delta, Epsilon");
   });
 
   test("each emoji has its word as a title and as its accessible name", () => {

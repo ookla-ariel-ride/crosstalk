@@ -232,6 +232,7 @@ class ReplayCache:
         self._thread_index = None
         self._marks_key = None
         self._marks = None
+        self._marks_lock = threading.Lock()
         self.thread_builds = 0
 
     def roster(self):
@@ -299,13 +300,24 @@ class ReplayCache:
         return self._mark_data()[1]
 
     def _mark_data(self):
+        """(page_views, counts) of the current snapshot. The work runs under its own
+        lock, not the shared one, so a read of the snapshot or the threads does not wait
+        for it; one reader builds it and the others wait for that result."""
         self.snapshot()
         with self._lock:
-            if self._marks_key != self._key or self._marks is None:
-                views = marks_mod.page_views(self._docs, self._roster, config_mod.of(self._roster))
-                self._marks = (views, marks_mod.counts(self._docs, self._roster, views))
-                self._marks_key = self._key
-            return self._marks
+            key, docs, roster = self._key, self._docs, self._roster
+            if self._marks_key == key and self._marks is not None:
+                return self._marks
+        with self._marks_lock:
+            with self._lock:
+                if self._marks_key == key and self._marks is not None:
+                    return self._marks
+            views = marks_mod.page_views(docs, roster, config_mod.of(roster))
+            data = (views, marks_mod.counts(docs, roster, views))
+            with self._lock:
+                if self._key == key:
+                    self._marks, self._marks_key = data, key
+            return data
 
     def threads(self) -> "threads_mod.ThreadIndex":
         """The threads of the current snapshot, built once for each cache key."""

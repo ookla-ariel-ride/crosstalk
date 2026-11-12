@@ -1,9 +1,17 @@
 """Marks in the data the v2 page loads: /api/thread, /api/threads and /api/section."""
+import threading
 import unittest
+from unittest import mock
 
 from helpers import RunningServer, TempRepo, line
 from test_marks_page import FORGED, ROSTER, SINCE, ack, msg
 from test_serve import request
+
+from crosstalk import config as config_mod
+from crosstalk import marks as marks_mod
+from crosstalk.participants import load_roster
+from crosstalk.replay import enrich_messages, load_all_lines, replay
+from crosstalk.serve import ReplayCache
 
 
 class MarksInV2RoutesTests(unittest.TestCase):
@@ -80,6 +88,58 @@ class MarksInV2RoutesTests(unittest.TestCase):
             body = self.get(path)
             for row in body.get("messages", body.get("rows", [])):
                 self.assertNotEqual(row.get("marks"), FORGED, (path, row["id"]))
+
+
+    def test_the_routes_agree_with_marks_view(self):
+        roster = load_roster(self.r.root / "participants.json")
+        lines = load_all_lines(self.r.root, roster)
+        docs = enrich_messages(replay(lines), lines)
+        cfg = config_mod.of(roster)
+        for root in ("alpha-l1", "alpha-c1"):
+            body = self.get("/api/thread/" + root)
+            for m in body["messages"]:
+                v = marks_mod.view(docs, "messages", m["id"], roster, cfg)
+                if v["marks"] or v["expects"]:
+                    self.assertEqual(m["marks"], v, m["id"])
+                else:
+                    self.assertNotIn("marks", m)
+        for name, coll in (("lessons", "lessons"), ("decisions", "decisions")):
+            for row in self.get("/api/section/" + name)["rows"]:
+                v = marks_mod.view(docs, coll, row["id"], roster, cfg)
+                if v["marks"] or v["expects"]:
+                    self.assertEqual(row["marks"], v, row["id"])
+                else:
+                    self.assertNotIn("marks", row)
+
+    def test_the_marks_data_is_built_outside_the_shared_cache_lock(self):
+        cache = ReplayCache(self.r.root)
+        held = []
+        real = marks_mod.page_views
+
+        def spy(*args, **kwargs):
+            free = cache._lock.acquire(blocking=False)
+            if free:
+                cache._lock.release()
+            held.append(not free)
+            return real(*args, **kwargs)
+
+        with mock.patch.object(marks_mod, "page_views", spy):
+            views = cache.marks()
+            counts = cache.mark_counts()
+        self.assertEqual(held, [False])
+        self.assertIn(("messages", "alpha-l1"), views)
+        self.assertEqual(counts[("messages", "alpha-l1")], {"acknowledged": 1, "expected": 2})
+
+    def test_two_readers_at_once_get_the_same_marks_data(self):
+        cache = ReplayCache(self.r.root)
+        out = []
+        readers = [threading.Thread(target=lambda: out.append(cache.marks())) for _ in range(4)]
+        for t in readers:
+            t.start()
+        for t in readers:
+            t.join()
+        self.assertEqual(len(out), 4)
+        self.assertTrue(all(v == out[0] for v in out))
 
 
 if __name__ == "__main__":

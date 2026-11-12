@@ -67,8 +67,8 @@ def inbox_report(docs: Dict, pid: str, roster: Roster, include_answered: bool = 
 
     `to_read` leaves out a post that this output shows in `requests`,
     `owner_messages` or `thread_replies`, so each post shows once. With
-    `to_read_all` it keeps them all, for new_report, which applies the same rule
-    to its own cut."""
+    `to_read_all` it keeps them all and sets `to_read_all: True`, for new_report,
+    which applies the same rule to its own cut and refuses a report without it."""
     requests = (
         all_requests_for(docs, pid, roster=roster)
         if include_answered
@@ -115,7 +115,9 @@ def inbox_report(docs: Dict, pid: str, roster: Roster, include_answered: bool = 
         "stale_locks": stale_locks_for(docs, pid, now_iso=now_iso),
         "service": SERVICE if service is None else service,
     }
-    if not to_read_all:
+    if to_read_all:
+        out["to_read_all"] = True
+    else:
         shown = _shown(out)
         out["to_read"] = [i for i in out["to_read"] if (i["collection"], i["id"]) not in shown]
     if pid == "owner":
@@ -149,10 +151,14 @@ def new_report(full: dict, lines: List[Line], place: Optional[dict],
     the same cut: the ones from before the place stay as `to_read_open`, without
     bodies, newest first, at most STILL_OPEN_MAX, and `to_read_open_more` counts
     the rest. A message whose `lesson-<id>` row came after the place counts as new.
-    Pass `full` from inbox_report(..., to_read_all=True): a post this output shows
-    in another section (_shown) leaves `to_read` and `to_read_open`. `next` is the
+    `full` must come from inbox_report(..., to_read_all=True), or a ValueError
+    says so: a post this output shows
+    in another section (_shown), or that `still_open_more` counts, leaves `to_read`
+    and `to_read_open`, so each post counts once. `next` is the
     place to ack: the highest `seq` of each writer of the log as this run loaded it.
     """
+    if full.get("to_read_all") is not True:
+        raise ValueError("new_report needs the report of inbox_report(..., to_read_all=True)")
     touched = {(ln.collection, ln.id) for ln in lines if is_new(ln, place)}
     times = {key: ln.t for key, ln in last_line_map(lines).items()}
 
@@ -175,7 +181,7 @@ def new_report(full: dict, lines: List[Line], place: Optional[dict],
     out["still_open"] = [{"id": d["id"], "from": d.get("from"), "t": d.get("t"),
                           "summary": d.get("summary")} for _rt, d in old[:STILL_OPEN_MAX]]
     out["still_open_more"] = max(0, len(old) - STILL_OPEN_MAX)
-    shown = _shown(out)
+    shown = _shown(out) | {("messages", d["id"]) for _rt, d in old}
     out["to_read"], old_read = [], []
     for item in full.get("to_read", []):
         key = (item["collection"], item["id"])

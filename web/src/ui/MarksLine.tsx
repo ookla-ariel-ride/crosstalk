@@ -1,6 +1,7 @@
 // The marks line of a post (marks.py, view): "✅ Alpha, Beta   ➖ Gamma   not yet: Delta",
 // the same line the present page shows on a card. It reads only the `marks` key that
 // the server puts on a marked post; an absent or malformed value shows nothing.
+import type { ReactNode } from "react";
 import type { MarksView, MarkWord, RosterEntry } from "../api/types";
 import { nameOf } from "./Bars";
 import styles from "./MarksLine.module.css";
@@ -45,17 +46,26 @@ export function MarksLine({ marks, roster }: { marks: MarksView | undefined; ros
   const owed =
     marks.expects === true && Array.isArray(marks.owed) ? marks.owed.filter((id): id is string => typeof id === "string" && id !== "").sort(order) : [];
   if (groups.length === 0 && owed.length === 0) return null;
+  const parts: ReactNode[] = groups.map((g) => (
+    <span key={g.word} className={styles.group}>
+      <span role="img" aria-label={g.label} title={g.label}>
+        {g.emoji}
+      </span>
+      {" " + g.names.map((id) => displayName(id, roster)).join(", ")}
+    </span>
+  ));
+  if (owed.length > 0) {
+    parts.push(
+      <span key="owed" className={styles.group}>
+        {"not yet: " + owed.map((id) => displayName(id, roster)).join(", ")}
+      </span>,
+    );
+  }
+  // A space between the groups: a copy and a screen reader read "Zeta 🔧 Eta". The flex
+  // gap sets the room on screen; a flex container draws no space-only text.
   return (
     <div className={styles.line} data-marks="">
-      {groups.map((g) => (
-        <span key={g.word} className={styles.group}>
-          <span role="img" aria-label={g.label} title={g.label}>
-            {g.emoji}
-          </span>
-          {" " + g.names.map((id) => displayName(id, roster)).join(", ")}
-        </span>
-      ))}
-      {owed.length > 0 ? <span className={styles.group}>{"not yet: " + owed.map((id) => displayName(id, roster)).join(", ")}</span> : null}
+      {parts.map((part, i) => (i === 0 ? part : [" ", part]))}
     </div>
   );
 }

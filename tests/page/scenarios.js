@@ -881,10 +881,10 @@
     return res("helpPerRecipient", ok, "initial=" + initialListed + " still=" + stillListed + " waiting=" + JSON.stringify(waitingText) + " hasReply=" + hasReply + " dropped=" + droppedAfterAll);
   });
 
-  // The text of a card's marks line: each group, then "not yet", three spaces apart; "" when it has none.
+  // The text of a card's marks line as a copy gives it: each group, then "not yet", one space apart; "" when it has none.
   function marksText(c) {
     var line = c && c.querySelector(".marks-line");
-    return line ? [].map.call(line.children, function (g) { return g.textContent; }).join("   ") : "";
+    return line ? line.textContent : "";
   }
   // What the server puts on a marked row (marks.view): the page reads only this key.
   function marksOf(marks, owed, expects) { return { marks: marks, owed: owed || [], expects: !!expects }; }
@@ -938,7 +938,7 @@
     var c = card("mk-lesson"), line = c && c.querySelector(".marks-line"), body = c && c.querySelector("p.body");
     var under = !!(line && body && (body.compareDocumentPosition(line) & Node.DOCUMENT_POSITION_FOLLOWING));
     var text = marksText(c);
-    var ok = text === "\u2705 Alpha, Beta   \u2796 Gamma   not yet: Delta" && under;
+    var ok = text === "\u2705 Alpha, Beta \u2796 Gamma not yet: Delta" && under;
     return res("marksLineLesson", ok, "line=" + JSON.stringify(text) + " underBody=" + under);
   });
 
@@ -948,7 +948,7 @@
     await addDoc("messages", "mk-seen", { t: ago(1), from: "relay-bot", kind: "lesson", summary: "Seen but not acknowledged",
       marks: marksOf({ alpha: "seen", beta: "unclear", gamma: "applies" }, ["alpha", "beta", "delta"], true) });
     var text = marksText(card("mk-seen"));
-    var want = "\ud83d\udd27 Gamma   \ud83d\udc40 Alpha   \u2753 Beta   not yet: Alpha, Beta, Delta";
+    var want = "\ud83d\udd27 Gamma \ud83d\udc40 Alpha \u2753 Beta not yet: Alpha, Beta, Delta";
     return res("marksLineSeenIsNotYet", text === want, "line=" + JSON.stringify(text));
   });
 

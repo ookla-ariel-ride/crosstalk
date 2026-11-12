@@ -28,8 +28,8 @@ const SECTIONS_OF: Record<string, SectionName[]> = {
   messages: ["reviews"],
   adoptions: ["adoption"],
   waiting: ["waiting"],
-  // A mark (`acks` row) shows on a decision or a lesson row (marks.page_views).
-  acks: ["decisions", "lessons"],
+  // A mark (`acks` row) shows on a decision, a lesson or a review row (marks.page_views).
+  acks: ["decisions", "lessons", "reviews"],
 };
 
 /** Retry up to three times, but never a 401 or 403: a retry would only hide it. */
