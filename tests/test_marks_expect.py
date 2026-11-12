@@ -161,6 +161,15 @@ class ExpectTests(unittest.TestCase):
         self.assertFalse(old & {i["id"] for i in marks.missing(docs, self.roster(), cfg)})
         self.assertTrue(self.expects("messages", "alpha-l2", self.config()))
 
+    def test_to_read_and_missing_parse_marks_since_once(self):
+        from unittest import mock
+        docs, roster = self.docs(), self.roster()
+        real = marks.marks_since
+        for fn in (lambda cfg: marks.to_read(docs, "beta", roster, cfg), lambda cfg: marks.missing(docs, roster, cfg)):
+            with mock.patch.object(marks, "marks_since", side_effect=real) as spy:
+                self.assertTrue(fn(self.config()))
+            self.assertEqual(spy.call_count, 1)
+
     def test_a_must_read_post_expects_whatever_marks_since_holds(self):
         later = self.config("2026-10-21T18:00:01Z")
         self.assertTrue(self.expects("messages", "alpha-c2", later))

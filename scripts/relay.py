@@ -794,7 +794,7 @@ def cmd_marks(args):
         for p in fatal:
             err("%s:%d: %s" % (p.file, p.line, p.message))
         return 1
-    config = config_mod.of(roster)
+    config = marks_mod.parsed(config_mod.of(roster))
     by_item = marks_mod.marks_by_item(docs, roster)
     if args.missing:
         before = None if args.older is None else time.time() - args.older * 60

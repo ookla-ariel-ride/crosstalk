@@ -146,6 +146,11 @@ class _ParsedConfig(dict):
         self.since_t = _parse_iso(since) if since is not None else None
 
 
+def parsed(config) -> "_ParsedConfig":
+    """config with marks_since parsed once, for a caller that asks about many posts."""
+    return config if isinstance(config, _ParsedConfig) else _ParsedConfig(config)
+
+
 def _since_t(config) -> Optional[float]:
     if isinstance(config, _ParsedConfig):
         return config.since_t
@@ -270,7 +275,7 @@ def page_views(docs: Dict, roster, config) -> Dict[Tuple[str, str], dict]:
     or expects one: the `marks` key of that row in the data the pages load. A row that
     is not here gets no key. Pass the docs from replay.enrich_messages."""
     by_item = marks_by_item(docs, roster)
-    config = _ParsedConfig(config)
+    config = parsed(config)
     out = {}
     for (coll, did), doc in docs.items():
         if coll not in MARKABLE or not isinstance(doc, dict):
@@ -350,6 +355,7 @@ def to_read(docs: Dict, pid: str, roster, config, by_item=None) -> List[dict]:
     Pass the docs from replay.enrich_messages; by_item as in owed()."""
     if by_item is None:
         by_item = marks_by_item(docs, roster)
+    config = parsed(config)
     out = []
     for _t, coll, did, doc in reversed(_posts_that_expect(docs, roster, config)):
         if pid in owed(docs, coll, did, roster, config, by_item):
@@ -364,6 +370,7 @@ def missing(docs: Dict, roster, config, before: Optional[float] = None, by_item=
     Pass the docs from replay.enrich_messages."""
     if by_item is None:
         by_item = marks_by_item(docs, roster)
+    config = parsed(config)
     out = []
     for t, coll, did, _doc in _posts_that_expect(docs, roster, config):
         if before is not None:
