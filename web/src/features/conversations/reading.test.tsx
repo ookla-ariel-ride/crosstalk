@@ -7,6 +7,7 @@ import { renderWith, thread, threads } from "../../ui/testing";
 import { type Reading, unreadThreads, useReading, useUnreadTotal } from "./reading";
 
 const OWNER = { name: "Owner", isOwner: true, canEdit: true, viewer: "owner" };
+const VIEWER = { name: null, isOwner: false, canEdit: false, viewer: "viewer" };
 const START: ReadState = { threads: {}, muted: [], all_before: null, rev: 0 };
 const MARK = { t: "2026-11-11T09:30:00Z", id: "beta-0004" };
 const ALL = "2026-11-11T09:40:00Z";
@@ -88,7 +89,7 @@ describe("unread threads", () => {
     expect(unreadThreads([rows[0]!, rows[0]!], START, true)).toHaveLength(1);
   });
 
-  test("the total counts the loaded pages of the needs order", () => {
+  test("a viewer's total counts the loaded pages of the needs order", () => {
     let total = -1;
     function Total() {
       total = useUnreadTotal();
@@ -96,23 +97,17 @@ describe("unread threads", () => {
     }
     const data = threads(...rows);
     const two = { ...data, pages: [...data.pages, { threads: [thread("gamma-0005", { unread: 3 })], next: null, server_time: "2026-11-11T10:00:00Z" }] };
-    renderWith(<Total />, [[keys.me, OWNER], [keys.readState, START], [keys.threads("needs"), two]]);
+    renderWith(<Total />, [[keys.me, VIEWER], [keys.threads("needs", "viewer"), two]]);
     expect(total).toBe(4);
   });
 
-  test("the owner's total is the server's count of unread threads when the view New has loaded", () => {
+  test("the owner's total is the server's count of unread threads, from its own query", () => {
     let total = -1;
     function Total() {
       total = useUnreadTotal();
       return null;
     }
-    const page = threads(thread("alpha-0001", { unread: 1, last_t: "2026-11-11T09:40:00Z" }));
-    renderWith(<Total />, [
-      [keys.me, OWNER],
-      [keys.readState, START],
-      [keys.threads("needs"), threads(...rows)],
-      [keys.threads("new"), { ...page, pages: [{ ...page.pages[0], unread_total: 37 }] }],
-    ]);
+    renderWith(<Total />, [[keys.me, OWNER], [keys.readState, START], [keys.threads("needs", "owner"), threads(...rows)], [keys.unreadTotal, 37]]);
     expect(total).toBe(37);
   });
 });

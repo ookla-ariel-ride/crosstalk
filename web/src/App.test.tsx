@@ -37,7 +37,7 @@ function data(me: Me, state: ReadState = EMPTY): [readonly unknown[], unknown][]
   const out: [readonly unknown[], unknown][] = [
     [keys.roster, SNAP],
     [keys.me, me],
-    [keys.threads("needs"), threads(Q1, Q2)],
+    [keys.threads("needs", me.viewer), threads(Q1, Q2)],
     [keys.thread("alpha-0001"), { root: "alpha-0001", messages: MESSAGES }],
   ];
   if (me.isOwner) out.push([keys.readState, state]);

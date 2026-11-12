@@ -94,7 +94,8 @@
   cursor: pointer;
 }
 
-.action:disabled {
+.action:disabled,
+.action[aria-disabled="true"] {
   color: var(--muted);
   cursor: default;
 }

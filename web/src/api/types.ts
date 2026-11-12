@@ -159,7 +159,7 @@ export interface ReadState {
 /** The three bodies PUT /api/read-state takes. */
 export type ReadStatePut =
   | { thread: string; t: string; id: string }
-  | { all_before: string }
+  | { all_before: string; ahead?: boolean }
   | { thread: string; muted: boolean };
 
 /** The code an install runs (service.version). */

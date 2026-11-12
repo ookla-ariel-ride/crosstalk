@@ -2,11 +2,14 @@
 import { type InvalidateQueryFilters, QueryClient, useInfiniteQuery, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useEffect, useState } from "react";
 import { api, ApiError } from "./client";
-import { type EventsDeps, type Mode, startEvents } from "./events";
+import { type EventsDeps, type Mode, startEvents, type TimerId } from "./events";
 import type { ReadState, RosterEntry, RowRef, SectionName, Snapshot, Sort, ThreadDetail } from "./types";
 
 export const keys = {
-  threads: (sort: Sort) => ["threads", sort] as const,
+  /** The role is in the key: a list the server filtered for the owner never shows to a viewer. */
+  threads: (sort: Sort, role?: string) => ["threads", sort, role ?? null] as const,
+  /** The owner's count of unread threads (`unread_total`); under "threads", so each list change reads it again. */
+  unreadTotal: ["threads", "unread-total"] as const,
   thread: (root: string) => ["thread", root] as const,
   section: (name: SectionName, q: string) => ["section", name, q] as const,
   vitals: ["vitals"] as const,
@@ -115,6 +118,9 @@ export function invalidateAll(qc: QueryClient): Promise<void> {
   return Promise.all([["threads"], keys.queue, ["thread"], ["section"]].map((queryKey) => invalidate(qc, { queryKey }))).then(() => undefined);
 }
 
+/** How long the rows of the stream gather before one invalidation, in ms. */
+export const ROWS_MS = 300;
+
 /**
  * Start the live updates for `qc`. The stream has no replay, so each ready
  * event (the first one too: a row written while the page loaded) refetches
@@ -123,18 +129,45 @@ export function invalidateAll(qc: QueryClient): Promise<void> {
  * it all.
  */
 export function connectLive(qc: QueryClient, onMode: (mode: Mode) => void, deps: EventsDeps = {}): () => void {
-  return startEvents(
-    (rows) => invalidateForRows(qc, rows),
+  const later = deps.setTimeout ?? ((fn: () => void, ms: number) => globalThis.setTimeout(fn, ms));
+  const cancel = deps.clearTimeout ?? ((id: TimerId | undefined) => globalThis.clearTimeout(id));
+  // The rows of ROWS_MS make one invalidation: a burst of posts reads each list once.
+  let batch: RowRef[] = [];
+  let timer: TimerId | undefined;
+  const drop = () => {
+    cancel(timer);
+    timer = undefined;
+    batch = [];
+  };
+  const stop = startEvents(
+    (rows) => {
+      batch.push(...rows);
+      timer ??= later(() => {
+        const rows = batch;
+        drop();
+        invalidateForRows(qc, rows);
+      }, ROWS_MS);
+    },
     onMode,
     {
       ...deps,
-      onReady: () => invalidateAll(qc),
+      onReady: () => {
+        drop();
+        return invalidateAll(qc);
+      },
       // A poll cannot tell what changed, so it invalidates all that the stream
       // shows. Only the queries an open view watches refetch (React Query's
       // default refetchType "active"); the others refetch when a view opens.
-      onPoll: () => invalidateAll(qc),
+      onPoll: () => {
+        drop();
+        return invalidateAll(qc);
+      },
     },
   );
+  return () => {
+    drop();
+    stop();
+  };
 }
 
 /** Keep the queries live while mounted; the mode is null until the stream answers. */
@@ -155,11 +188,21 @@ export function useThreads(sort: Sort, enabled = true) {
   const me = meQuery.data;
   const unread = sort === "new" && me?.isOwner === true;
   return useInfiniteQuery({
-    queryKey: keys.threads(sort),
+    queryKey: keys.threads(sort, me?.viewer),
     queryFn: ({ pageParam }) => api.getThreads(sort, pageParam, undefined, unread),
-    enabled: enabled && (sort !== "new" || !meQuery.isPending),
+    // The key names the role, so the list waits for /api/me.
+    enabled: enabled && !meQuery.isPending,
     initialPageParam: "",
     getNextPageParam: (last) => last.next,
+  });
+}
+
+/** The owner's count of unread threads: one page of one row of the view New, for its `unread_total`. */
+export function useUnreadCount(enabled: boolean) {
+  return useQuery({
+    queryKey: keys.unreadTotal,
+    queryFn: () => api.getThreads("new", undefined, 1, true).then((page) => page.unread_total ?? 0),
+    enabled,
   });
 }
 

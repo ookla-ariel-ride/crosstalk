@@ -4,7 +4,7 @@
 import { useQueryClient } from "@tanstack/react-query";
 import { useSyncExternalStore } from "react";
 import { api } from "../../api/client";
-import { invalidate, keys, newerReadState, useMe, useReadState, useThreads } from "../../api/queries";
+import { invalidate, keys, newerReadState, useMe, useReadState, useThreads, useUnreadCount } from "../../api/queries";
 import type { ReadMark, ReadState, Thread } from "../../api/types";
 
 export const STORAGE_KEY = "crosstalk.read-state";
@@ -114,15 +114,16 @@ export function unreadThreads(list: Thread[], state: ReadState, ready: boolean):
 }
 
 /**
- * How many threads are unread. For the owner, the server's count of the view
- * New (every unread thread); until it loads, and for a viewer, whose state is
- * local, the unread threads on the loaded pages of the needs order.
+ * How many threads are unread. For the owner, the server's count (every
+ * unread thread, loaded or not); until it loads, and for a viewer, whose state
+ * is local, the unread threads on the loaded pages of the needs order.
  */
 export function useUnreadTotal(): number {
   const { state, ready, self } = useReading();
+  const me = useMe();
   const owner = self === OWNER_ID;
-  const pages = useThreads("needs").data?.pages;
-  const server = useThreads("new", owner).data?.pages[0]?.unread_total;
+  const server = useUnreadCount(owner).data;
+  const pages = useThreads("needs", me.data !== undefined && !owner).data?.pages;
   if (owner && server !== undefined) return server;
   return unreadThreads(pages?.flatMap((p) => p.threads) ?? [], state, ready).length;
 }
@@ -145,9 +146,10 @@ export interface Reading {
   state: ReadState;
   markThread(root: string, mark: ReadMark): void;
   /**
-   * Mark every message up to `t` read, and each thread of `marks` up to its
-   * mark: the threads shown whose newest message is dated after `t`. False
-   * when a write of the owner's failed.
+   * Mark every message up to `t` read. The owner's server also marks each
+   * thread dated after `t`, loaded or not; a viewer's state marks each thread
+   * of `marks` up to its mark: the threads shown whose newest message is dated
+   * after `t`. False when the owner's write failed.
    */
   markAll(t: string, marks?: Record<string, ReadMark>): Promise<boolean>;
   /** How many times markAll ran in this tab; for the owner, once the server kept its writes. */
@@ -204,13 +206,13 @@ export function useReading(): Reading {
         for (const fn of listeners) fn();
       };
       if (owner) {
-        const writes = [
-          ...(all ? [send(`\n${t}`, { all_before: t })] : []),
-          ...later.map(([root, mark]) => send(`${root}\n${mark.t}\n${mark.id}`, { thread: root, t: mark.t, id: mark.id })),
-        ];
-        // The open threads drop "New since" only once the server kept every write.
-        return Promise.all(writes).then((oks) => {
-          if (!oks.every(Boolean)) return false;
+        // `ahead`: the server also marks each thread dated after `t` up to its
+        // newest message now, loaded or not; a later post stays new.
+        return send(`\n${t}\nahead`, { all_before: t, ahead: true }).then((ok) => {
+          if (!ok) return false;
+          // The server marked every unread thread: no count waits for the next read.
+          qc.setQueryData(keys.unreadTotal, 0);
+          // The open threads drop "New since" only once the server kept the write.
           done();
           return true;
         });

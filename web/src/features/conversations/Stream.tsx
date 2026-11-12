@@ -4,7 +4,7 @@
 import { useQueries, useQueryClient } from "@tanstack/react-query";
 import { memo, type ReactNode, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { ApiError, api } from "../../api/client";
-import { keys, useSection, useThread, useThreads } from "../../api/queries";
+import { keys, useSection, useThread, useThreads, useUnreadCount } from "../../api/queries";
 import type { ReadMark, SectionRow, Thread, ThreadDetail } from "../../api/types";
 import { afterSummary } from "../../logic/afterSummary";
 import { ago } from "../../logic/ago";
@@ -15,7 +15,7 @@ import { Guard } from "../../ui/Guard";
 import { Row } from "../../ui/Row";
 import { RowList } from "../../ui/RowList";
 import { useNow } from "../../ui/useNow";
-import { isLater, isUnread, unreadThreads, useReading, useUnreadTotal } from "./reading";
+import { isLater, isUnread, OWNER_ID, unreadThreads, useReading, useUnreadTotal } from "./reading";
 import { FoldLine, RoutineLine } from "./RoutineLine";
 import { SortBar } from "./SortBar";
 import styles from "./Stream.module.css";
@@ -26,6 +26,8 @@ export const MAX_OPEN = 20;
 const ROUTE_KEY = "crosstalk.route";
 /** How long the status line of "Mark all read" stays, in ms. */
 export const STATUS_MS = 5000;
+
+const NO_ROWS = new Map<string, Thread>();
 
 /** What the last "Mark all read" did: how many threads it marked, or that the write failed. */
 type MarkStatus = { ok: true; count: number } | { ok: false } | null;
@@ -194,12 +196,11 @@ export function Stream({ sort, open, onOpenChange, needsOnly = false, renderActi
   // reader; it leaves on the next load of the page or a change of the sort.
   const unreadOnly = sort === "new" && !needsOnly;
   const kept = useRef<{ sort: Sort; rows: Map<string, Thread> }>({ sort, rows: new Map() });
-  if (kept.current.sort !== sort) kept.current = { sort, rows: new Map() };
   const { state: readState, ready } = reading;
   const list = useMemo(() => {
     const base = needsOnly ? loaded.filter((t) => t.needs_owner) : loaded;
     if (!unreadOnly) return base;
-    const rows = kept.current.rows;
+    const rows = kept.current.sort === sort ? kept.current.rows : NO_ROWS;
     const listed = base.filter((t) => isUnread(t, readState, ready) || (openSet.has(t.root) && rows.has(t.root)));
     const roots = new Set(listed.map((t) => t.root));
     const extra = [...rows.values()].filter((t) => openSet.has(t.root) && !roots.has(t.root));
@@ -207,9 +208,13 @@ export function Stream({ sort, open, onOpenChange, needsOnly = false, renderActi
     const out = extra.length
       ? [...listed, ...extra].sort((a, b) => (isLater({ t: a.last_t, id: a.last_id }, { t: b.last_t, id: b.last_id }) ? -1 : 1))
       : listed;
-    for (const t of out) rows.set(t.root, t);
     return out;
-  }, [loaded, needsOnly, unreadOnly, readState, ready, openSet]);
+  }, [loaded, needsOnly, unreadOnly, readState, ready, openSet, sort]);
+  // Keep what this visit listed, after the render that listed it.
+  useEffect(() => {
+    if (kept.current.sort !== sort) kept.current = { sort, rows: new Map() };
+    if (unreadOnly) for (const t of list) kept.current.rows.set(t.root, t);
+  }, [list, sort, unreadOnly]);
 
   const linked = useMemo(() => {
     if (!pages) return [];
@@ -228,11 +233,13 @@ export function Stream({ sort, open, onOpenChange, needsOnly = false, renderActi
   }
   const changeRef = useRef(onOpenChange);
   changeRef.current = onOpenChange;
-  // The status line of "Mark all read": it goes after STATUS_MS or on the next action.
+  // The status line of "Mark all read". A success goes after STATUS_MS, a
+  // failure stays; either goes on the next action.
   const [status, setStatus] = useState<MarkStatus>(null);
   const [marking, setMarking] = useState(false);
+  const markButton = useRef<HTMLButtonElement>(null);
   useEffect(() => {
-    if (!status) return;
+    if (!status?.ok) return;
     const timer = setTimeout(() => setStatus(null), STATUS_MS);
     return () => clearTimeout(timer);
   }, [status]);
@@ -329,13 +336,18 @@ export function Stream({ sort, open, onOpenChange, needsOnly = false, renderActi
   // is later. A message that comes after the click stays new everywhere else.
   // The threads opened by id that no loaded page holds: their rows count too.
   const linkedRows = useQueries({ queries: linked.map((id) => ({ queryKey: keys.thread(id), queryFn: () => api.getThread(id) })) });
-  const unread = unreadThreads(
-    [...list, ...linkedRows.flatMap((q) => (q.data?.thread ? [q.data.thread] : []))],
-    reading.state,
-    reading.ready,
-  ).length;
+  // The owner's count is the server's, loaded or not; a viewer's (and the
+  // owner's until the server's loads) counts the loaded threads and the
+  // threads opened by id.
+  const owner = reading.self === OWNER_ID;
+  const server = useUnreadCount(owner).data;
+  const loadedUnread = unreadThreads([...list, ...linkedRows.flatMap((q) => (q.data?.thread ? [q.data.thread] : []))], reading.state, reading.ready).length;
+  const unread = owner && server !== undefined ? server : loadedUnread;
+  const off = !serverTime || !reading.ready || marking || unread === 0;
 
   const markAll = () => {
+    // The button stays focusable while off (aria-disabled): a click then does nothing.
+    if (off) return;
     const marks: Record<string, ReadMark> = {};
     const add = (row: Thread | undefined) => {
       if (!row || row.last_t <= serverTime) return;
@@ -345,6 +357,8 @@ export function Stream({ sort, open, onOpenChange, needsOnly = false, renderActi
     for (const t of loaded) add(t);
     for (const id of [...new Set([...loaded.map((t) => t.root), ...linked])]) add(qc.getQueryData<ThreadDetail>(keys.thread(id))?.thread);
     const count = unread;
+    // A click on Retry removes it: the focus goes to the button it repeats.
+    if (markButton.current && document.activeElement !== markButton.current) markButton.current.focus();
     setStatus(null);
     setMarking(true);
     void reading.markAll(serverTime, marks).then((ok) => {
@@ -405,12 +419,7 @@ export function Stream({ sort, open, onOpenChange, needsOnly = false, renderActi
           >
             Fold all
           </button>
-          <button
-            type="button"
-            className={styles.action}
-            onClick={markAll}
-            disabled={!serverTime || !reading.ready || marking || unread === 0}
-          >
+          <button ref={markButton} type="button" className={styles.action} onClick={markAll} aria-disabled={off}>
             {unread === 0 ? "All read" : `Mark all read (${unread})`}
           </button>
           {/* Always in the page, so a screen reader hears each change; it floats, so the head keeps its height. */}

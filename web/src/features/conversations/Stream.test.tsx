@@ -69,7 +69,7 @@ const hhmm = (iso: string) => {
 };
 
 function base(me: Me, state: ReadState | null, list: Thread[], sort: "needs" | "new" | "hot" | "unanswered" = "needs"): [QueryKey, unknown][] {
-  const data: [QueryKey, unknown][] = [snapshot(), [keys.me, me], [keys.threads(sort), threads(...list)], DETAIL];
+  const data: [QueryKey, unknown][] = [snapshot(), [keys.me, me], [keys.threads(sort, me.viewer), threads(...list)], DETAIL];
   if (state) data.push([keys.readState, state]);
   return data;
 }
@@ -197,18 +197,18 @@ describe("Stream", () => {
     const calls = spyFetch();
     await act(async () => fireEvent.click(screen.getByRole("button", { name: /^Mark all read/ })));
     // testing.tsx's thread pages carry server_time 2026-11-11T10:00:00Z.
-    expect(calls.filter((c) => c.method === "PUT").map((c) => c.body)).toEqual([{ all_before: "2026-11-11T10:00:00Z" }]);
+    expect(calls.filter((c) => c.method === "PUT").map((c) => c.body)).toEqual([{ all_before: "2026-11-11T10:00:00Z", ahead: true }]);
   });
 
-  test("mark all read also marks each shown thread whose newest message is dated after the server time", async () => {
+  test("the owner's mark all read asks the server to mark the threads dated after the server time too, in one write", async () => {
     const ahead = thread("beta-0007", { last_t: "2026-11-11T10:05:00Z", last_id: "beta-0008", unread: 1 });
     renderWith(<Stream sort="needs" open={[]} onOpenChange={() => {}} />, base(OWNER, EMPTY_STATE, [Q1, ahead]));
-    const calls = spyFetch();
+    const marked = { ...EMPTY_STATE, all_before: "2026-11-11T10:00:00Z", threads: { "beta-0007": { t: "2026-11-11T10:05:00Z", id: "beta-0008" } }, rev: 1 };
+    const calls = spyFetch(marked);
+    expect(screen.getAllByText(/new$/)).toHaveLength(2);
     await act(async () => fireEvent.click(screen.getByRole("button", { name: /^Mark all read/ })));
-    expect(calls.filter((c) => c.method === "PUT").map((c) => c.body)).toEqual([
-      { all_before: "2026-11-11T10:00:00Z" },
-      { thread: "beta-0007", t: "2026-11-11T10:05:00Z", id: "beta-0008" },
-    ]);
+    expect(calls.filter((c) => c.method === "PUT").map((c) => c.body)).toEqual([{ all_before: "2026-11-11T10:00:00Z", ahead: true }]);
+    await waitFor(() => expect(screen.queryAllByText(/new$/)).toHaveLength(0));
   });
 
   test("a viewer's mark all read keeps the time and the marks of the threads dated ahead", async () => {
@@ -249,7 +249,7 @@ describe("Stream", () => {
     expect(screen.queryAllByText("new")).toHaveLength(0);
     const later = thread("beta-0011", { title: "Came after the click", last_t: "2026-11-11T10:02:00Z", last_id: "beta-0011" });
     const reply = { ...Q1, last_t: "2026-11-11T10:03:00Z", last_id: "beta-0012" };
-    await act(async () => qc.setQueryData(keys.threads("needs"), { pages: [{ threads: [later, reply], next: null, server_time: "2026-11-11T10:04:00Z" }], pageParams: [""] }));
+    await act(async () => qc.setQueryData(keys.threads("needs", "viewer"), { pages: [{ threads: [later, reply], next: null, server_time: "2026-11-11T10:04:00Z" }], pageParams: [""] }));
     await waitFor(() => expect(screen.getAllByText("new")).toHaveLength(2));
   });
 
@@ -731,13 +731,45 @@ describe("Mark all read feedback", () => {
   ];
   const json = (body: unknown, status = 200) => new Response(JSON.stringify(body), { status, headers: { "Content-Type": "application/json" } });
 
-  test("the button shows how many loaded threads are unread; with none it reads All read and is disabled", () => {
+  test("the button shows how many loaded threads are unread; with none it reads All read and is off but focusable", () => {
     renderWith(<Stream sort="needs" open={[]} onOpenChange={() => {}} />, base(OWNER, EMPTY_STATE, unreadRows()));
     const button = screen.getByRole("button", { name: "Mark all read (2)" });
-    expect(button.hasAttribute("disabled")).toBe(false);
+    expect(button.getAttribute("aria-disabled")).toBe("false");
     cleanup();
     renderWith(<Stream sort="needs" open={[]} onOpenChange={() => {}} />, base(OWNER, EMPTY_STATE, [thread("alpha-0101", { unread: 0 })]));
-    expect(screen.getByRole("button", { name: "All read" }).hasAttribute("disabled")).toBe(true);
+    const off = screen.getByRole("button", { name: "All read" });
+    expect(off.getAttribute("aria-disabled")).toBe("true");
+    expect(off.hasAttribute("disabled")).toBe(false);
+    const calls = spyFetch();
+    fireEvent.click(off);
+    expect(calls.filter((c) => c.method === "PUT")).toHaveLength(0);
+  });
+
+  test("the owner's button, status and counts use the server's total, also when the loaded rows are all read", async () => {
+    const read = [thread("alpha-0301", { title: "Read one", unread: 0, last_t: "2026-11-11T09:00:00Z" })];
+    const { qc } = renderWith(<Stream sort="hot" open={[]} onOpenChange={() => {}} />, [...base(OWNER, EMPTY_STATE, read, "hot"), [keys.unreadTotal, 200]]);
+    const button = screen.getByRole("button", { name: "Mark all read (200)" });
+    expect(button.getAttribute("aria-disabled")).toBe("false");
+    expect(screen.getByRole("link", { name: "New (200)" })).toBeTruthy();
+    spyFetch({ ...EMPTY_STATE, all_before: "2026-11-11T10:00:00Z", rev: 1 });
+    await act(async () => fireEvent.click(button));
+    await waitFor(() => expect(screen.getByRole("status").textContent).toBe("Marked 200 threads read"));
+    expect(qc.getQueryData(keys.unreadTotal)).toBe(0);
+    expect(screen.getByRole("button", { name: "All read" }).getAttribute("aria-disabled")).toBe("true");
+    expect(document.activeElement).toBe(screen.getByRole("button", { name: "All read" }));
+  });
+
+  test("a viewer's button counts the loaded threads", () => {
+    renderWith(<Stream sort="needs" open={[]} onOpenChange={() => {}} />, [...base(VIEWER, null, [Q1]), [keys.unreadTotal, 200]]);
+    expect(screen.getByRole("button", { name: "Mark all read (1)" })).toBeTruthy();
+  });
+
+  test("a list the server filtered for the owner never shows to a viewer", () => {
+    renderWith(<Stream sort="new" open={[]} onOpenChange={() => {}} />, [
+      ...base(VIEWER, null, []).filter(([k]) => k[0] !== "threads"),
+      [keys.threads("new", "owner"), threads(thread("alpha-0401", { title: "Owner only", unread: 1 }))],
+    ]);
+    expect(screen.queryByText("Owner only")).toBeNull();
   });
 
   test("a muted thread that is hidden does not count", () => {
@@ -765,7 +797,7 @@ describe("Mark all read feedback", () => {
     await waitFor(() => expect(status.textContent).toBe("Marked 2 threads read"));
     // The server kept all_before: the rows read as read before the list loads again.
     expect(screen.queryAllByText(/^\d+ new$/)).toHaveLength(0);
-    expect(screen.getByRole("button", { name: "All read" }).hasAttribute("disabled")).toBe(true);
+    expect(screen.getByRole("button", { name: "All read" }).getAttribute("aria-disabled")).toBe("true");
   });
 
   test("the status line goes after a few seconds", async () => {
@@ -800,9 +832,32 @@ describe("Mark all read feedback", () => {
     await act(async () => fireEvent.click(screen.getByRole("button", { name: "Mark all read (2)" })));
     const status = screen.getByRole("status");
     await waitFor(() => expect(status.textContent).toMatch(/^Not saved/));
-    await act(async () => fireEvent.click(within(status).getByRole("button", { name: "Retry" })));
+    const retry = within(status).getByRole("button", { name: "Retry" });
+    retry.focus();
+    await act(async () => fireEvent.click(retry));
     expect(puts).toBe(2);
+    // The Retry button is gone: the focus is on the button it repeated, not on the page.
+    expect(document.activeElement).toBe(screen.getByRole("button", { name: /^(Mark all read|All read)/ }));
     await waitFor(() => expect(status.textContent).toBe("Marked 2 threads read"));
+  });
+
+  test("a failure stays until the next action; only a success goes after STATUS_MS", async () => {
+    renderWith(<Stream sort="needs" open={[]} onOpenChange={() => {}} />, base(OWNER, EMPTY_STATE, unreadRows()));
+    vi.stubGlobal("fetch", async (_url: string, init: RequestInit = {}) =>
+      init.method === "PUT" ? json({ error: "down" }, 500) : new Promise<Response>(() => {}),
+    );
+    await act(async () => fireEvent.click(screen.getByRole("button", { name: "Mark all read (2)" })));
+    const status = screen.getByRole("status");
+    await waitFor(() => expect(status.textContent).toMatch(/^Not saved/));
+    vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout"] });
+    try {
+      act(() => vi.advanceTimersByTime(STATUS_MS * 2));
+    } finally {
+      vi.useRealTimers();
+    }
+    expect(status.textContent).toMatch(/^Not saved/);
+    fireEvent.click(screen.getByRole("button", { name: /New ask/ }));
+    expect(status.textContent).toBe("");
   });
 });
 
@@ -842,7 +897,7 @@ describe("the view New", () => {
       </QueryClientProvider>,
     );
     expect(urls).toContain("/api/threads?sort=new");
-    await act(async () => qc.setQueryData(keys.threads("new"), threads(FRESH, READ)));
+    await act(async () => qc.setQueryData(keys.threads("new", "viewer"), threads(FRESH, READ)));
     expect(await screen.findByText("Fresh one")).toBeTruthy();
     expect(screen.queryByText("Already read")).toBeNull();
   });
@@ -858,7 +913,7 @@ describe("the view New", () => {
     await waitFor(() => expect(screen.getByText("All read. New posts show here.")).toBeTruthy());
     expect(screen.queryByText("Fresh one")).toBeNull();
     const later = { ...FRESH, unread: 1, last_t: "2026-11-11T10:05:00Z", last_id: "beta-0203" };
-    await act(async () => qc.setQueryData(keys.threads("new"), { pages: [{ threads: [later], next: null, server_time: "2026-11-11T10:06:00Z" }], pageParams: [""] }));
+    await act(async () => qc.setQueryData(keys.threads("new", "owner"), { pages: [{ threads: [later], next: null, server_time: "2026-11-11T10:06:00Z" }], pageParams: [""] }));
     await waitFor(() => expect(screen.getByText("Fresh one")).toBeTruthy());
     expect(screen.queryByText("All read. New posts show here.")).toBeNull();
   });
@@ -870,7 +925,7 @@ describe("the view New", () => {
     );
     await act(async () => fireEvent.click(screen.getByRole("button", { name: /^Mark all read/ })));
     // The server's next list leaves the read thread out; the open row stays where it was.
-    await act(async () => qc.setQueryData(keys.threads("new"), { pages: [{ threads: [], next: null, server_time: "2026-11-11T10:01:00Z" }], pageParams: [""] }));
+    await act(async () => qc.setQueryData(keys.threads("new", "owner"), { pages: [{ threads: [], next: null, server_time: "2026-11-11T10:01:00Z" }], pageParams: [""] }));
     await act(() => new Promise((ok) => setTimeout(ok, 20)));
     const list = screen.getByRole("list", { name: "Conversations" });
     expect(within(list).getByRole("button", { name: /Fresh one/ }).getAttribute("aria-expanded")).toBe("true");

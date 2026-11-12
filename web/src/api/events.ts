@@ -21,7 +21,7 @@ export const POLL_TIMEOUT_MS = 10_000;
 
 export type Mode = "push" | "poll";
 
-type TimerId = ReturnType<typeof globalThis.setTimeout> | number;
+export type TimerId = ReturnType<typeof globalThis.setTimeout> | number;
 
 export interface EventsDeps {
   EventSource?: new (url: string) => Pick<EventSource, "addEventListener" | "close">;
