@@ -69,7 +69,8 @@ def inbox_report(docs: Dict, pid: str, roster: Roster, include_answered: bool = 
         if include_answered
         else inbox_for(docs, pid, roster=roster)
     )
-    owner_msgs = unanswered_owner_messages(docs, pid, roster=roster)
+    by_item = marks_mod.marks_by_item(docs, roster)
+    owner_msgs = unanswered_owner_messages(docs, pid, roster=roster, by_item=by_item)
     acks = acks_by_item(docs, roster=roster)
     out = {
         "pid": pid,
@@ -103,7 +104,8 @@ def inbox_report(docs: Dict, pid: str, roster: Roster, include_answered: bool = 
             }
             for (did, doc, root) in thread_replies_for(docs, pid, roster=roster)
         ],
-        "to_read": marks_mod.to_read(docs, pid, roster, config_mod.of(roster) if config is None else config),
+        "to_read": marks_mod.to_read(docs, pid, roster, config_mod.of(roster) if config is None else config,
+                                     by_item),
         "agreements_to_adopt": agreements_to_adopt_for(docs, pid, roster=roster),
         "stale_locks": stale_locks_for(docs, pid, now_iso=now_iso),
         "service": SERVICE if service is None else service,

@@ -530,20 +530,23 @@ def owner_reply_recipients(doc: dict, messages: Dict[str, dict], roster=None) ->
     return []
 
 
-def unanswered_owner_messages(docs: Dict, pid: str, roster=None) -> List[Tuple[str, dict, List[dict]]]:
+def unanswered_owner_messages(docs: Dict, pid: str, roster=None,
+                              by_item=None) -> List[Tuple[str, dict, List[dict]]]:
     """Owner messages addressed to pid that pid has not answered yet, newest first.
 
     The rules of _owner_messages_for, and one more: a message leaves for pid once pid
     holds an acknowledged mark on it (marks.ACKNOWLEDGED: `ack`, `applies`, `none`).
     `seen` and `unclear` do not take it out. A request is never in this list, so a
     mark never closes one here (only `none` on a request does, in acks_by_item).
-    Pass the docs from replay.enrich_messages, as marks.marks_by_item asks.
+    Pass the docs from replay.enrich_messages, as marks.marks_by_item asks; pass
+    by_item (marks.marks_by_item) to save that scan when the caller has it.
     """
     from .marks import ACKNOWLEDGED, marks_by_item  # marks imports this module
     found = _owner_messages_for(docs, pid, roster=roster)
     if not found:
         return found
-    by_item = marks_by_item(docs, roster)
+    if by_item is None:
+        by_item = marks_by_item(docs, roster)
     return [item for item in found
             if by_item.get(("messages", item[0]), {}).get(pid) not in ACKNOWLEDGED]
 
