@@ -24,6 +24,7 @@ from crosstalk import mcp as mcp_mod  # noqa: E402
 from crosstalk import reviews as reviews_mod  # noqa: E402
 from crosstalk import adoption as adoption_mod  # noqa: E402
 from crosstalk import schedules as schedules_mod  # noqa: E402
+from crosstalk import state as state_mod  # noqa: E402
 from crosstalk import buildhost as buildhost_mod  # noqa: E402
 from crosstalk import config as config_mod  # noqa: E402
 from crosstalk import urgent as urgent_mod  # noqa: E402
@@ -698,6 +699,17 @@ def cmd_withdraw(args):
     return 0
 
 
+def cmd_state(args):
+    """state wind-down: the owner or the coordinator records the wind-down step; prints the row id."""
+    try:
+        ln = state_mod.set_wind_down(ROOT, args.from_, args.step, reason=args.reason)
+    except ValueError as e:
+        err(str(e))
+        return 1
+    print(ln.id)
+    return 0
+
+
 def cmd_adopt(args):
     try:
         res = adopt_agreement(
@@ -947,6 +959,16 @@ def build_parser():
     wd.add_argument("--summary", help="optional one-line reason")
     wd.add_argument("--id")
     wd.set_defaults(fn=cmd_withdraw)
+
+    sta = sub.add_parser("state", help="record the wind-down step (state wind-down)")
+    stasub = sta.add_subparsers(dest="state_cmd", required=True)
+    sta_wd = stasub.add_parser("wind-down", help="the owner or the coordinator sets the wind-down step; "
+                                                 "prints the row id")
+    sta_wd.add_argument("--from", dest="from_", required=True)
+    sta_wd.add_argument("--step", required=True, type=int, choices=state_mod.WIND_DOWN_STEPS,
+                        help="0: work may run; 1 or 2: wind down, and no GRANTED")
+    sta_wd.add_argument("--reason", help="one line: why")
+    sta.set_defaults(fn=cmd_state)
 
     ad = sub.add_parser("adopt", help="record adoption of an agreement and post a sync message")
     _speaker_flags(ad)

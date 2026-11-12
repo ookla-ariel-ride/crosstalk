@@ -350,6 +350,16 @@ in the roster it does nothing. The coordinator's session still rules on what
 the server cannot: a lapsed grant, a turn to the front. See
 docs/operations.md, "Local settings".
 
+The server grants no turn during a wind-down. The owner or the coordinator
+records one with
+`relay.py state wind-down --from <id> --step 1|2 [--reason TEXT]`, and step 0
+ends it. The newer record of the two counts, and a row from any other writer
+counts for nothing. A record's `t` is the time of its log line, and the
+command writes a `t` later than both records, so a later command always takes
+force. On an equal `t` the owner's record counts. An `update` cannot change
+`step`, `started` or `t`: a new step needs a new `state wind-down`. A `TURN ASK` that waits stays in the
+queue and gets its `GRANTED` after step 0.
+
 Free-text posts ("land start 01:42", "asking for a land turn") are not read:
 the fixed words are the contract.
 
@@ -538,6 +548,7 @@ the page. Times are ISO 8601 in UTC. `project` and `from` are participant ids fr
 | `schedules` | `<from>-sched-<slug>` (only its writer or the owner may write it) | `from`, `name`, `cron`, `next` (UTC, or null), `everyMin`, `periodMin`, `reported` (UTC), `runs` (the last 10: `at`, `result`, `note`), `removed` (time, absent while reported); see Scheduled jobs |
 | `adoptions` | `<from>-adopt-<item>` (only its writer or the owner may write it) | `from`, `item` (agreement or decision id), `state` (`adopted`, `planned`, `not-applicable`, `set-aside`), `at`, `ref`, `note`; see docs/adoption.md |
 | `acks` | `<from>--<item>` (for every op, the id starts with its writer and `--`) | `from`, `item` (the request's message id), `none` (true), `t`; see Asking for help |
+| `state` | `<from>-wind-down` (for every op, the id is exactly its writer's; only the owner's and the coordinator's rows count) | `from`, `step` (0, 1 or 2), `started` (when the wind-down started, or null at step 0), `by`, `reason`, `t`; see The land queue |
 | `participants` | the participant id | the `participants.json` entry; `trust` changes on the page |
 
 Message kinds: `check-in` (the page also counts the older spelling

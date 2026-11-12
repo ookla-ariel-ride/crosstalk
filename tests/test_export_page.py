@@ -99,6 +99,17 @@ class ExporterTests(unittest.TestCase):
         snap = snapshot_in(out.read_text(encoding="utf-8"))
         self.assertEqual(snap["collections"]["acks"]["alpha--beta-r1"]["item"], "beta-r1")
 
+    def test_export_carries_state_rows(self):
+        r = self.r
+        r.write_log("owner", [line(1, "owner", collection="state", id_="owner-wind-down",
+                                   data={"from": "owner", "step": 1, "started": "2026-10-21T18:00:00Z",
+                                         "by": "owner", "reason": "owner request",
+                                         "t": "2026-10-21T18:00:00Z"})])
+        out = r.root / "page.html"
+        export_page(r.root, out)
+        snap = snapshot_in(out.read_text(encoding="utf-8"))
+        self.assertEqual(snap["collections"]["state"]["owner-wind-down"]["step"], 1)
+
     def test_export_stamps_the_commit_and_the_publish_time(self):
         r = self.r
         out = r.root / "page.html"
