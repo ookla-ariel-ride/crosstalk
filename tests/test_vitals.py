@@ -102,5 +102,41 @@ class VitalsRouteTests(unittest.TestCase):
         self.assertIsNone(body["build_host"])
 
 
+    def test_vitals_carries_the_state_row(self):
+        with TempRepo() as r:
+            r.write_roster()
+            r.write_config({"usage": {"glob": str(r.root / "usage-*.json"), "limit": 90}})
+            (r.root / "usage-a.json").write_text(json.dumps({"weeklyUsage": 95}), encoding="utf-8")
+            with RunningServer(r.root) as srv:
+                srv.state.buildhost_state = r.root / "buildhost-state.json"
+                status, body = request(srv.url + "/api/vitals")
+        self.assertEqual(status, 200)
+        row = body["state"]
+        self.assertEqual(row["disk_free_gb"], body["disk_free_gb"])
+        self.assertEqual((row["usage"], row["usage_limit"], row["build_host"]), (95, 90, None))
+        self.assertEqual(row["wind_down"], {"step": 0, "started": None, "by": None, "reason": None})
+        self.assertEqual(row["land"]["holders"], [])
+        self.assertEqual((row["may_start"], row["may_start_why"]), (False, ["usage 95 at or over the limit 90"]))
+        self.assertNotIn("model_families", row)
+
+    def test_vitals_answer_without_the_state_row_when_the_log_cannot_be_read(self):
+        # As before the state row came: the readings do not need the log.
+        with TempRepo() as r:
+            r.write_roster()
+            r.write_config({"modelFamilies": [["^gpt-", "openai"]]})
+            with RunningServer(r.root) as srv:
+                srv.state.buildhost_state = r.root / "buildhost-state.json"
+
+                def unreadable():
+                    raise OSError("the log is gone")
+
+                srv.state.cache.snapshot = unreadable
+                status, body = request(srv.url + "/api/vitals")
+        self.assertEqual(status, 200)
+        self.assertIsNone(body["state"])
+        self.assertIsInstance(body["disk_free_gb"], int)
+        self.assertEqual(body["model_families"], [["^gpt-", "openai"]])
+
+
 if __name__ == "__main__":
     unittest.main()

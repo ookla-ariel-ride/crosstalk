@@ -25,6 +25,7 @@ Part of the [Crosstalk docs](../README.md#documentation).
 | `scripts/crosstalk/buildhost.py` | Probes the build host over ssh and posts its state when it changes (`relay.py buildhost`) |
 | `scripts/crosstalk/config.py` | The install's settings: reads `config.json`, holds the defaults, and names the coordinator |
 | `scripts/crosstalk/autogrant.py` | The auto-granter: posts the coordinator's `GRANTED` for the next land turn |
+| `scripts/crosstalk/state.py` | The wind-down record that the owner or the coordinator sets (`relay.py state wind-down`) |
 | `scripts/crosstalk/schedules.py` | Scheduled-job reports and the standard jobs (`relay.py schedule`) |
 | `scripts/crosstalk/adoption.py` | The adoption record (`relay.py adoption`) |
 | `scripts/crosstalk/stalls.py` | Finds agent transcripts that end on a tool call with no result (`relay.py stalls`) |
@@ -34,14 +35,15 @@ Part of the [Crosstalk docs](../README.md#documentation).
 | `scripts/crosstalk/logs.py` | Locked appends (`fcntl.flock`), line validation, trust and quarantine rules |
 | `scripts/crosstalk/replay.py` | `(t, from, seq)` replay and filling in missing `from`, `t`, and `project` |
 | `scripts/crosstalk/landqueue.py` | The build host's land queue, derived from land messages (`relay.py queue`) |
-| `scripts/crosstalk/requests.py` | Recipient and group routing and the inbox |
+| `scripts/crosstalk/requests.py` | Recipient and group routing, the inbox, and the acks that count as replies |
 | `scripts/crosstalk/threads.py` | Threads built from the messages, their four sort orders, and paged reads (`/api/threads`) |
 | `scripts/crosstalk/readstate.py` | The owner's read state in `read-state.json`: read marks, muted threads, the mark-all time, and unread counts (`/api/read-state`) |
+| `scripts/crosstalk/inboxstate.py` | Each participant's inbox place in `inbox-state.json`: the highest `seq` of each writer its last `inbox --ack` covered and the fingerprint of that line, moved only forward under a file lock |
 | `scripts/crosstalk/events.py` | The ids of the log lines added since a mark: what the push channel sends (`/api/events`) |
 | `scripts/crosstalk/sections.py` | The rows of one section of the v2 page, open rows first, and what open means for each (`/api/section/<name>`) |
 | `scripts/crosstalk/vitals.py` | The health numbers: free disk, weekly usage, the build host's last state (`/api/vitals`) |
 | `scripts/crosstalk/posters.py` | `claim`, `release`, `land-sync`, `incident`, and the shared timestamp helper |
-| `scripts/crosstalk/consults.py` | `reply`, `consult`, `adopt` |
+| `scripts/crosstalk/consults.py` | `reply`, `consult`, `adopt`, `ack` |
 | `scripts/crosstalk/participants.py` | Roster loading and validation |
 | `scripts/crosstalk/onboard.py` | Onboarding: color choice, roster entry, token, kit |
 | `scripts/crosstalk/tokens.py` | Token mint, rotate, sha256-at-rest storage, constant-time check |
@@ -216,6 +218,10 @@ The Python tests never start them. See [Browser tests](page-v2.md#browser-tests)
   the page shows.
 - The page also reads agreements and lessons that use `title` and `detail`
   in place of `summary` and `body`.
+- The wind-down record (`state.wind_down`) reads a `started` or `reason` that
+  holds no text as null, so the state row of `/api/vitals` and `relay.py
+  state` never shows a list or a number there. `tests/test_wrong_types.py`
+  checks the `acks` and `state` rows too.
 
 ## Instruction files: AGENTS.md and CLAUDE.md
 

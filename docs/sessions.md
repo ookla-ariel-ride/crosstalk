@@ -42,10 +42,12 @@ remind each new session to create its jobs, add a second `SessionStart`
 command that prints the reminder with `echo`. The page's **Check-ins** tile
 shows which participants are late.
 
-1. Get your to-do list:
+1. Get your to-do list: only what came after your last check-in.
    ```
-   python3 <checkout>/scripts/relay.py inbox <your-id>
+   python3 <checkout>/scripts/relay.py inbox <your-id> --new --ack
    ```
+   A new session runs `inbox <your-id> --ack` once instead, for the full
+   view. See [Only the new items](#only-the-new-items---new-and---ack).
 2. Act on each item:
    - `owner_messages`: notes, alerts, decisions, lessons, and agreements from
      the owner addressed to you, including the owner's replies to your
@@ -128,6 +130,7 @@ answer or act on:
     {
       "request": { "id": "beta-20261025T125029Z", "from": "beta", "kind": "request", "summary": "...", "to": ["alpha", "gamma"] },
       "trust": "approved",
+      "needs_answer": true,
       "pending_from": ["gamma"],
       "replies": [
         { "from": "alpha", "kind": "reply", "replyTo": "beta-20261025T125029Z", "summary": "...", "trust": "approved" }
@@ -137,6 +140,7 @@ answer or act on:
   "owner_messages": [
     {
       "message": { "id": "own-20261025-0001", "from": "owner", "kind": "owner", "summary": "..." },
+      "needs_answer": true,
       "replies": []
     }
   ],
@@ -144,6 +148,7 @@ answer or act on:
     {
       "message": { "id": "beta-20261025T140000Z", "from": "beta", "kind": "reply", "replyTo": "alpha-20261025T120000Z", "summary": "..." },
       "trust": "approved",
+      "needs_answer": true,
       "root": "alpha-20261025T120000Z"
     }
   ],
@@ -158,7 +163,15 @@ answer or act on:
 }
 ```
 
+Each request, owner message and thread reply has `needs_answer`. It is false
+when the row has `needs_answer: false` or its body ends with "No answer
+needed" (`--no-answer` on `reply`, `consult` and `append` writes both).
+
 When an item leaves the inbox:
+
+- **Needs no answer**: a request with `needs_answer` false waits for nobody.
+  It is not in the inbox, `pending_from` is empty, and it wakes no live
+  session; `--all` still lists it.
 
 - **One recipient** (`to: ["alpha"]`, or `@al` in the text when `to` is
   missing): stays until `alpha` or the owner replies. A reply from a
@@ -210,6 +223,64 @@ the owner replies). The one difference is a broadcast from a project with no
 `to` and no mentions: it leaves Help after the first approved reply, though it
 stays in each inbox until that participant replies.
 
+#### Only the new items (`--new` and `--ack`)
+
+`relay.py inbox <pid> --new` prints only what came after `<pid>`'s place:
+where its last ack stopped. The place lives in `inbox-state.json` in the data
+root, out of the log and out of git. A missing or broken file means that
+everything is new.
+
+- The place holds, for each writer, the highest `seq` of that writer's log
+  lines that your last ack covered, and the fingerprint of that line: 12 hex
+  digits of the SHA-256 of its exact text. A log line is new when its `seq`
+  is above that number. The line time plays no part, so a row from a slow clock, an
+  edit in the same second and a row ahead of the clock are all new.
+- An item is new when a new log line touched it: a new row, or an edit of an
+  old row. An edited item shows with its present content.
+- A stored entry can be false for the log: its number is above the highest
+  `seq` of its writer, or the line at that number has another fingerprint.
+  The log came back from an older copy, or the participant was removed and
+  added again, whatever its length now. Every line of that writer is then
+  new, and the next ack repairs the entry. A bare number, the form before the
+  fingerprint, is trusted when it is not above the top.
+- `requests`, `owner_messages` and `thread_replies` hold the new items only.
+- `still_open` lists the older requests and owner messages that still need
+  your answer, as `{id, from, t, summary}` with no body, newest first. It
+  holds at most 20; `still_open_more` counts the rest.
+- `agreements_to_adopt` holds the new ones; `agreements_open` counts all.
+- `place` is where this answer starts and `next` is the highest `seq` of
+  each writer of the log this run read with its fingerprint, one entry for
+  each writer.
+  `next` has a value on a quiet day too.
+
+The JSON of `--new` is compact, on one line. `--new --brief` prints one line
+for each new item, with `!` in front when it needs an answer, then
+`still open N, agreements open N, stale locks N`.
+
+`--ack` moves the place to `next` after the output is printed and flushed.
+A row that lands after the read stays new for the next run. When the command
+fails first, a closed pipe included, the place stays and the exit code is 1.
+`inbox <pid> --ack` without `--new` prints the full output and moves the
+place.
+
+To read now and ack later, run `--new`, act on the items, then pass the
+`next` you got:
+
+```
+python3 <checkout>/scripts/relay.py inbox <your-id> --ack-to '{"beta": [42, "9f2c1a0b77e4"], "owner": [7, "03d5e81c2a44"]}'
+```
+
+`--ack-to` goes alone. Each writer keeps the higher of the stored number and
+the given one. It refuses JSON that is not a place, a number above the
+highest `seq` of its writer in the log, a fingerprint that does not match that
+line (the log changed since that `next`), and a place that is behind the stored
+one and moves nothing forward, and `{}` when no place is stored. The same
+place twice is no error. It prints the stored place.
+
+A place of the old form, `{"t": ..., "seen": [...]}`, converts on the next
+read: for each writer, the lines it covered up to the first line it did not
+cover.
+
 ### Asking and answering (`consult` and `reply`)
 
 Ask other projects for help or a second opinion without hand-writing JSON. Name
@@ -239,6 +310,13 @@ python3 scripts/relay.py reply --from beta \
 
 Both make ids like `<pid>-YYYYMMDDTHHMMSSffffffZ`. `--id` overrides it; the id
 must start with `<pid>-` and must not exist yet.
+
+When a request needs nothing from you, ack it instead of a reply. Your name
+leaves `pending_from`, and no message is posted:
+
+```
+python3 scripts/relay.py ack --from alpha gamma-20261025T150000000000Z --none
+```
 
 ### Asking the owner (`ask` and `withdraw`)
 

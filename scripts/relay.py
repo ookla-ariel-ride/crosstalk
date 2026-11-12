@@ -14,7 +14,7 @@ ROOT = CODE_ROOT  # the data: log/, participants.json, tokens.json, kits/; main(
 sys.path.insert(0, str(CODE_ROOT / "scripts"))
 
 from crosstalk.consults import (  # noqa: E402
-    adopt_agreement, post_consult, post_question, post_reply, question_warning, withdraw_question)
+    ack_item, adopt_agreement, post_consult, post_question, post_reply, question_warning, withdraw_question)
 from crosstalk import deploy as deploy_mod  # noqa: E402
 from crosstalk.exporter import export_page  # noqa: E402
 from crosstalk.landqueue import land_queue  # noqa: E402
@@ -24,6 +24,7 @@ from crosstalk import mcp as mcp_mod  # noqa: E402
 from crosstalk import reviews as reviews_mod  # noqa: E402
 from crosstalk import adoption as adoption_mod  # noqa: E402
 from crosstalk import schedules as schedules_mod  # noqa: E402
+from crosstalk import state as state_mod  # noqa: E402
 from crosstalk import buildhost as buildhost_mod  # noqa: E402
 from crosstalk import config as config_mod  # noqa: E402
 from crosstalk import urgent as urgent_mod  # noqa: E402
@@ -33,8 +34,11 @@ from crosstalk.ownerpin import clear_pin, set_pin  # noqa: E402
 from crosstalk.participants import load_roster  # noqa: E402
 from crosstalk.posters import claim_file, land_sync, post_incident, release_file  # noqa: E402
 from crosstalk.replay import enrich_messages, load_all_lines, replay  # noqa: E402
-from crosstalk.requests import speaker_fields  # noqa: E402
-from crosstalk.reports import inbox_report, load_docs, questions_report  # noqa: E402
+from crosstalk.requests import no_answer, speaker_fields  # noqa: E402
+from crosstalk import inboxstate  # noqa: E402
+from crosstalk.files import utf8_json  # noqa: E402
+from crosstalk.reports import (inbox_report, load_docs, load_docs_and_lines, new_report,  # noqa: E402
+                               questions_report)
 from crosstalk.serve import serve  # noqa: E402
 from crosstalk.service import service_block, service_for  # noqa: E402
 from crosstalk.stalls import find_stalls  # noqa: E402
@@ -72,6 +76,9 @@ def cmd_check(args):
 
 
 def cmd_append(args):
+    if args.no_answer and not (args.collection == "messages" and args.op == "set"):
+        err("--no-answer is for a new message")
+        return 1
     try:
         if args.data is not None:
             text = args.data
@@ -87,6 +94,8 @@ def cmd_append(args):
     if args.collection == "messages" and args.op == "set":
         for name, value in speaker_fields(args).items():
             data.setdefault(name, value)
+        if args.no_answer:
+            no_answer(data)
     roster = load_roster(ROOT / "participants.json")
     for w in message_problems(args.collection, args.op, data, roster)[1]:
         err("warning: " + w)
@@ -142,28 +151,121 @@ def cmd_read(args):
 
 
 def cmd_inbox(args):
-    """Print the open requests addressed to a participant as JSON."""
+    """Print the open requests addressed to a participant as JSON.
+
+    `--new` cuts the answer at the participant's place, `--ack` then moves the
+    place to `next` once the output is flushed, and `--ack-to` moves it alone.
+    """
     roster = load_roster(ROOT / "participants.json")
     if args.pid not in roster.participants:
         err("unknown participant %r" % args.pid)
         return 1
-    docs, fatal = load_docs(ROOT, roster)
+    if args.ack_to is not None and (args.new or args.ack or args.all or args.brief):
+        err("--ack-to goes alone, without --new, --ack, --all or --brief")
+        return 1
+    docs, lines, fatal = load_docs_and_lines(ROOT, roster)
     if fatal:
         for p in fatal:
             err("%s:%d: %s" % (p.file, p.line, p.message))
         return 1
+    nxt = inboxstate.newest(lines)
+    if args.ack_to is not None:
+        return _inbox_ack_to(args.pid, args.ack_to, nxt, lines)
     out = inbox_report(docs, args.pid, roster, include_answered=args.all,
                        now_iso=getattr(args, "now", None), service=service_for(CODE_ROOT, ROOT))
-    if args.brief:
-        for key, label in (("owner_messages", "owner"), ("requests", "request"),
-                           ("thread_replies", "reply")):
-            for item in out.get(key, []):
-                doc = item.get("request") or item.get("message") or item
-                print(_brief_line(label, doc.get("id", "?"), doc, _row_time(doc)))
+    if args.new:
+        # An entry that cannot be true for this log (a number above its writer's top, or
+        # another fingerprint at that number) leaves that writer all new.
+        place = inboxstate.trusted(inboxstate.load(ROOT, lines).get(args.pid), lines)
+        out = new_report(out, lines, place, nxt)
+    try:
+        _print_inbox(out, args)
+        sys.stdout.flush()
+    except BrokenPipeError:
+        # Python flushes stdout again at exit; point it at devnull so that
+        # flush does not fail too. The place stays where it was.
+        os.dup2(os.open(os.devnull, os.O_WRONLY), sys.stdout.fileno())
+        return 1
+    if args.ack and nxt is not None:
+        inboxstate.move(ROOT, args.pid, nxt, lines)
+    return 0
+
+
+def _text(s: str) -> str:
+    """`s` as text stdout can encode: a lone surrogate (the log check accepts
+    "\\ud800") prints as its \\u escape, never fails the command."""
+    return s.encode("utf-8", "backslashreplace").decode("utf-8")
+
+
+def _print_inbox(out, args):
+    if not args.brief:
+        # `--new` is the check-in of every session, so it prints compact JSON;
+        # the full view keeps the indented form it always had.
+        layout = {"separators": (",", ":")} if args.new else {"indent": 2}
+        print(utf8_json(out, sort_keys=True, **layout))
+        return
+    sections = (("owner_messages", "owner"), ("requests", "request"), ("thread_replies", "reply"))
+    for key, label in sections:
+        for item in out.get(key, []):
+            doc = item.get("request") or item.get("message") or item
+            line = _brief_line(label, doc.get("id", "?"), doc, _row_time(doc))
+            print(_text(("!" if item.get("needs_answer") else " ") + line if args.new else line))
+    if args.new:
+        for doc in out.get("agreements_to_adopt", []):
+            print(_text(" " + _brief_line("adopt", doc.get("id", "?"), doc, _row_time(doc))))
+        print("still open %d, agreements open %d, stale locks %d" % (
+            len(out["still_open"]) + out["still_open_more"], out["agreements_open"],
+            len(out.get("stale_locks", []))))
+    else:
         print("adopt %d, stale locks %d" % (len(out.get("agreements_to_adopt", [])),
                                             len(out.get("stale_locks", []))))
-        return 0
-    print(json.dumps(out, ensure_ascii=False, sort_keys=True, indent=2))
+
+
+def _inbox_ack_to(pid, raw, nxt, lines):
+    """`inbox <pid> --ack-to PLACE`: move the place to a `next` read earlier.
+
+    Refused: a place that is not well-formed, one ahead of the log for any
+    writer, and one that is behind the stored place for some writer and ahead
+    of it for none (it would move nothing forward). The same place again is no
+    error. Otherwise each writer keeps the higher number.
+    """
+    try:
+        place = inboxstate.clean_place(json.loads(raw))
+    except (ValueError, RecursionError):
+        place = None
+    if place is None:
+        err('--ack-to: not a place; give the JSON object {"<writer>": [<seq>, "<fingerprint>"], ...} '
+            "that inbox --new printed as next")
+        return 1
+    top = {w: e[0] for w, e in (nxt or {}).items()}
+    seq_of = inboxstate.seq_of
+    ahead = sorted(w for w, e in place.items() if seq_of(e) > top.get(w, 0))
+    if ahead:
+        err("--ack-to: ahead of the log for %s (the log holds %s)"
+            % (", ".join("%s %d" % (w, seq_of(place[w])) for w in ahead),
+               ", ".join("%s %d" % (w, top.get(w, 0)) for w in ahead)))
+        return 1
+    by_key = inboxstate.index(lines)
+    for w, e in sorted(place.items()):
+        fp = inboxstate.fingerprint(by_key[(w, seq_of(e))])
+        if fp is None or inboxstate.fp_of(e) not in (None, fp):
+            err("--ack-to: the fingerprint %s of %s %d does not match the log (%s); "
+                "the log changed since that next was printed" % (inboxstate.fp_of(e), w, seq_of(e), fp))
+            return 1
+        place[w] = [seq_of(e), fp]  # a bare number gets the fingerprint of its line
+    found = inboxstate.load(ROOT, lines).get(pid)
+    stored = inboxstate.trusted(found, lines) or {}
+    forward = any(seq_of(e) > seq_of(stored.get(w)) for w, e in place.items())
+    behind = any(seq_of(e) > seq_of(place.get(w)) for w, e in stored.items())
+    if behind and not forward:
+        err("--ack-to: %s is behind the stored place %s and moves nothing forward"
+            % (json.dumps(place, sort_keys=True), json.dumps(stored, sort_keys=True)))
+        return 1
+    if found is None and not forward:
+        err("--ack-to: %s moves nothing forward, and %s has no stored place"
+            % (json.dumps(place, sort_keys=True), pid))
+        return 1
+    print(json.dumps(inboxstate.move(ROOT, pid, place, lines), sort_keys=True))
     return 0
 
 
@@ -446,6 +548,7 @@ def cmd_reply(args):
             refs=_flatten(args.refs),
             msg_id=args.id,
             speaker=speaker_fields(args),
+            no_answer=args.no_answer,
         )
     except ValueError as e:
         err(str(e))
@@ -465,6 +568,7 @@ def cmd_consult(args):
             to=_flatten(args.to),
             msg_id=args.id,
             speaker=speaker_fields(args),
+            no_answer=args.no_answer,
         )
     except ValueError as e:
         err(str(e))
@@ -475,6 +579,9 @@ def cmd_consult(args):
 
 def cmd_ask(args):
     """Post a question for the owner; prints the new message id."""
+    if args.no_answer:
+        err("a question to the owner needs an answer; ask takes no --no-answer")
+        return 1
     recommend = None
     if args.recommend is not None:
         n = len(args.options or [])
@@ -535,6 +642,30 @@ def cmd_queue(args):
             print(out["next"])
         return 0
     print(json.dumps(out, ensure_ascii=False, sort_keys=True, indent=2))
+    return 0
+
+
+def _print_state(key):
+    """The state row as JSON; with a key, one value (a string as it is): exit 1 for null, 2 for an unknown key."""
+    roster = load_roster(ROOT / "participants.json")
+    docs, fatal = load_docs(ROOT, roster)
+    if fatal:
+        for p in fatal:
+            err("%s:%d: %s" % (p.file, p.line, p.message))
+        return 1
+    row = state_mod.read(ROOT, docs, roster, roster.participants, config_mod.of(roster),
+                         buildhost_state=buildhost_mod.state_path_from_env())
+    if key is None:
+        print(utf8_json(row, sort_keys=True, indent=2))
+        return 0
+    try:
+        value = state_mod.get(row, key)
+    except KeyError:
+        err("state: no key %r in the state row" % key)
+        return 2
+    if value is None:
+        return 1
+    print(_text(value) if isinstance(value, str) else utf8_json(value, sort_keys=True))
     return 0
 
 
@@ -605,11 +736,39 @@ def cmd_schedule(args):
     return 0
 
 
+def cmd_ack(args):
+    """Record that you read a request and have nothing to do or say; prints the row id."""
+    try:
+        ln = ack_item(ROOT, args.from_, args.item)
+    except ValueError as e:
+        err(str(e))
+        return 1
+    print(ln.id)
+    return 0
+
+
 def cmd_withdraw(args):
     """Withdraw one of your own open questions; prints the new message id."""
     try:
         ln = withdraw_question(ROOT, args.from_, args.question, summary=args.summary,
                                msg_id=args.id, speaker=speaker_fields(args))
+    except ValueError as e:
+        err(str(e))
+        return 1
+    print(ln.id)
+    return 0
+
+
+def cmd_state(args):
+    """state [--get KEY]: print the state row (state.py) as JSON, or one value.
+    state wind-down: the owner or the coordinator records the wind-down step; prints the row id."""
+    if args.state_cmd is None:
+        return _print_state(args.get)
+    if args.get is not None:
+        err("state: --get reads the row; it does not go with %s" % args.state_cmd)
+        return 2
+    try:
+        ln = state_mod.set_wind_down(ROOT, args.from_, args.step, reason=args.reason)
     except ValueError as e:
         err(str(e))
         return 1
@@ -632,6 +791,9 @@ def cmd_adopt(args):
         return 1
     print(json.dumps(res, ensure_ascii=False, sort_keys=True))
     return 0
+
+
+NO_ANSWER_HELP = 'set needs_answer: false and end the body with "No answer needed."'
 
 
 def _speaker_flags(parser):
@@ -662,6 +824,7 @@ def build_parser():
     g = a.add_mutually_exclusive_group(required=True)
     g.add_argument("--data", help="JSON object")
     g.add_argument("--data-file", help="path to a JSON object file")
+    a.add_argument("--no-answer", action="store_true", help=NO_ANSWER_HELP + " (--collection messages --op set only)")
     a.set_defaults(fn=cmd_append)
 
     x = sub.add_parser("export-page", help="write one self-contained HTML page with the log inlined")
@@ -690,6 +853,12 @@ def build_parser():
     ib.add_argument("pid", metavar="PID")
     ib.add_argument("--all", action="store_true", help="include answered requests")
     ib.add_argument("--brief", action="store_true", help="one line per item")
+    ib.add_argument("--new", action="store_true",
+                    help="only the items that came after the last ack")
+    ib.add_argument("--ack", action="store_true",
+                    help="after the output, move the place to the newest row this run read")
+    ib.add_argument("--ack-to", metavar="PLACE",
+                    help="move the place to PLACE, a `next` that inbox --new printed (JSON)")
     ib.set_defaults(fn=cmd_inbox)
 
     st = sub.add_parser("stalls", help="list agents stuck on a tool call with no result")
@@ -767,6 +936,7 @@ def build_parser():
     rp.add_argument("--body")
     rp.add_argument("--ref", "--refs", dest="refs", action="append", nargs="+")
     rp.add_argument("--id")
+    rp.add_argument("--no-answer", action="store_true", help=NO_ANSWER_HELP)
     rp.set_defaults(fn=cmd_reply)
 
     cs = sub.add_parser("consult", help="post a peer consultation request; prints the new message id")
@@ -777,6 +947,7 @@ def build_parser():
     cs.add_argument("--ref", "--refs", dest="refs", action="append", nargs="+")
     cs.add_argument("--to", dest="to", action="append", nargs="+")
     cs.add_argument("--id")
+    cs.add_argument("--no-answer", action="store_true", help=NO_ANSWER_HELP + "; the request waits for nobody")
     cs.set_defaults(fn=cmd_consult)
 
     ak = sub.add_parser("ask", help="post a question for the owner; prints the new message id")
@@ -790,6 +961,7 @@ def build_parser():
                     help="one choice for the owner; give 2 to 6, in order")
     ak.add_argument("--recommend", type=int,
                     help="the choice you recommend, by number: 1 is the first --option")
+    ak.add_argument("--no-answer", action="store_true", help="refused: a question to the owner needs an answer")
     ak.set_defaults(fn=cmd_ask)
 
     qs = sub.add_parser("questions", help="print the open questions for the owner (JSON)")
@@ -839,6 +1011,13 @@ def build_parser():
     adsub.add_parser("summary", help="print the counts per project (JSON)")
     ad.set_defaults(fn=cmd_adoption)
 
+    ac = sub.add_parser("ack", help="record that a request needs nothing from you (--none); prints the row id")
+    ac.add_argument("--from", dest="from_", required=True)
+    ac.add_argument("item", metavar="ITEM", help="the request's message id")
+    ac.add_argument("--none", action="store_true", required=True,
+                    help="you read it and have nothing to do or say")
+    ac.set_defaults(fn=cmd_ack)
+
     wd = sub.add_parser("withdraw", help="withdraw one of your own open questions; prints the new message id")
     _speaker_flags(wd)
     wd.add_argument("--from", dest="from_", required=True)
@@ -846,6 +1025,19 @@ def build_parser():
     wd.add_argument("--summary", help="optional one-line reason")
     wd.add_argument("--id")
     wd.set_defaults(fn=cmd_withdraw)
+
+    sta = sub.add_parser("state", help="print the state row as JSON (--get KEY: one value); "
+                                       "state wind-down records the wind-down step")
+    sta.add_argument("--get", metavar="KEY", help="print one value by a dotted key (wind_down.step); "
+                                                  "exit 1 for null, 2 for an unknown key")
+    stasub = sta.add_subparsers(dest="state_cmd", required=False)
+    sta_wd = stasub.add_parser("wind-down", help="the owner or the coordinator sets the wind-down step; "
+                                                 "prints the row id")
+    sta_wd.add_argument("--from", dest="from_", required=True)
+    sta_wd.add_argument("--step", required=True, type=int, choices=state_mod.WIND_DOWN_STEPS,
+                        help="0: work may run; 1 or 2: wind down, and no GRANTED")
+    sta_wd.add_argument("--reason", help="one line: why")
+    sta.set_defaults(fn=cmd_state)
 
     ad = sub.add_parser("adopt", help="record adoption of an agreement and post a sync message")
     _speaker_flags(ad)

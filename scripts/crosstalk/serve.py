@@ -9,7 +9,7 @@ The server is the page host and the database:
   GET  /api/read-state  -> the owner's read state (readstate.py); the owner only
   PUT  /api/read-state  -> a thread's read mark, the mark-all time, or a mute; the owner only
   GET  /api/events      -> a Server-Sent Events stream of the ids of new log rows (events.py)
-  GET  /api/vitals      -> the health numbers: disk, usage, build host (vitals.py)
+  GET  /api/vitals      -> the health numbers: disk, usage, build host (vitals.py), and the state row (state.py)
   GET  /api/section/<name> -> one section of the v2 page, open rows first, a page at a time (sections.py)
   GET  /api/<collection>-> one collection replayed
   GET  /api/queue       -> the land queue of the build host (landqueue.py)
@@ -64,6 +64,7 @@ from . import autogrant as autogrant_mod
 from . import threads as threads_mod
 from . import readstate
 from . import events as events_mod
+from . import state as state_mod
 from . import vitals as vitals_mod
 from . import buildhost as buildhost_mod
 from . import sections as sections_mod
@@ -290,8 +291,9 @@ class ReplayCache:
                 messages = {did: doc for (coll, did), doc in self._docs.items() if coll == "messages"}
                 waiting = {did for (coll, did), doc in self._docs.items()
                            if coll == "waiting" and isinstance(doc, dict) and not doc.get("done")}
+                acks = {did: doc for (coll, did), doc in self._docs.items() if coll == "acks"}
                 self._thread_index = threads_mod.ThreadIndex(messages, self._roster, created=self._created,
-                                                             waiting=waiting)
+                                                             waiting=waiting, acks=acks)
                 self._thread_key = self._key
                 self.thread_builds += 1
             return self._thread_index
@@ -774,7 +776,18 @@ class CrosstalkHandler(BaseHTTPRequestHandler):
 
     def _vitals(self):
         cfg = config_mod.load(self.state.root)
-        out = vitals_mod.read(self.state.root, cfg, buildhost_state=self.state.buildhost_state)
+        now = time.time()
+        out = vitals_mod.read(self.state.root, cfg, buildhost_state=self.state.buildhost_state, now=now)
+        # The readings need no log: a log that cannot be read leaves out only the state row.
+        try:
+            docs, entries = self.state.cache.snapshot()
+        except (OSError, ValueError):
+            out["state"] = None
+        else:
+            # The same row as `relay.py state`, from these readings: no second vitals.read.
+            out["state"] = state_mod.read(self.state.root, docs, self.state.cache.roster(), entries, cfg,
+                                          buildhost_state=self.state.buildhost_state, now=now,
+                                          readings=dict(out))
         out["model_families"] = cfg["modelFamilies"]
         self._json(200, out)
 

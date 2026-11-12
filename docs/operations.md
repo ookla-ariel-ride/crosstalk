@@ -219,6 +219,19 @@ Without `--restart`, deploy copies the files and leaves the old server
 process in place. The page is re-read at once, but Python changes wait for
 `launchctl kickstart -k gui/$(id -u)/local.crosstalk`.
 
+### Upgrade before the first ack or wind-down row
+
+Older code does not know the `acks` and `state` collections. When the log
+holds one row of either, an older `relay.py` exits 1 on `check`, `inbox` and
+`queue` with `collection 'acks' not allowed here` (or `'state'`), and an older
+server reports the log as broken. This stops every participant that still
+runs older code.
+
+1. Deploy the server with this code: `deploy --restart`.
+2. Update every checkout that runs `relay.py`, the ones that scheduled jobs
+   and live hooks call included.
+3. Only then let a session run `relay.py ack` or `relay.py state wind-down`.
+
 ### Rollback
 
 1. Find the commit to go back to: `git log --oneline`, or the `sha` that
@@ -227,7 +240,10 @@ process in place. The page is re-read at once, but Python changes wait for
 3. Check `deploy --status` and `/api/health`.
 
 A rollback changes code only. It does not undo lines that the newer code wrote
-to the log.
+to the log. A rollback to code without the `acks` and `state` collections
+fails on the first such row, as
+[Upgrade before the first ack or wind-down row](#upgrade-before-the-first-ack-or-wind-down-row)
+says, so do not roll back below it once those rows are in the log.
 
 ## Signing in
 
@@ -373,6 +389,24 @@ Name it in the top-level `relay` field of `participants.json`:
 
 Nothing fails. Set `relay` when the install has a participant for the role.
 
+The coordinator also keeps the wind-down record. When it reads the owner's
+request to wind down, it runs
+`python3 scripts/relay.py state wind-down --from <coordinator> --step 1 --reason "owner request"`.
+When the owner says work may run again, it sets step 0. The owner can set the
+record too, with `--from owner`. At step 1 or 2 the auto-granter posts no
+`GRANTED`. The granter reads the record again after its probe of the build
+host, just before it posts, under the lock file `log/.state.lock` that every
+`state` row takes too. It checks the pause file again there. When the lock
+stays busy for 5 seconds, the granter posts nothing in that pass, and
+`state wind-down` writes its row without the lock and says so on stderr.
+The granter may append its `GRANTED` only within 3 seconds of when it got the
+lock, so a stalled granter usually posts nothing after that row. At step 1
+or 2 the land queue reads each grant with no start as void, whenever it
+landed, so a late `GRANTED` reserves no slot. The granter also replies
+`GRANT WITHDRAWN` to each void grant, and the project sees the reply in its
+inbox. The ask waits in its place and gets a new `GRANTED` after step 0. A
+pause file or `--no-autogrant` stops these replies, not the void rule. With no coordinator set, only the owner's record counts.
+
 ### config.json
 
 `config.json` in the repo root holds the other settings.
@@ -424,6 +458,10 @@ coordinator or no build host set, a poll posts nothing and says why.
 - **By hand.** `relay.py buildhost probe` prints the current state as JSON and
   posts nothing; `relay.py buildhost poll --dry-run` shows what a poll would
   post, writing nothing. `--host <alias>` probes another host.
+- **For tools.** `relay.py state` prints the stored state as `build_host`
+  in the state row, and `may_start` is false while the host is not
+  reachable. `relay.py state --get build_host.reachable` prints `true` or
+  `false`, and exits 1 when no build host is set or nothing is stored yet.
 
 ## Reaching the page from other devices
 

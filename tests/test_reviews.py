@@ -116,7 +116,7 @@ ROSTER = {
         {"id": "alpha", "name": "Alpha", "kind": "project", "color": "#b3261e", "colorDark": "#ef6a5f",
          "trust": "approved", "aliases": ["al"], "reviewDir": "REVIEWS/alpha"},
         {"id": "beta", "name": "Beta", "kind": "project", "color": "#1f5f8b", "colorDark": "#6fb2e2",
-         "trust": "approved", "reviewDir": "REVIEWS/beta"},
+         "trust": "approved", "aliases": ["be"], "reviewDir": "REVIEWS/beta"},
         {"id": "gamma", "name": "Gamma", "kind": "project", "color": "#c77700", "colorDark": "#f0a73a",
          "trust": "approved", "aliases": ["ga"], "reviewDir": "REVIEWS/gamma"},
         {"id": "codex", "name": "Codex", "kind": "reviewer", "color": "#00727a", "colorDark": "#45c2bf",
@@ -182,6 +182,28 @@ class ParseTests(unittest.TestCase):
         self.assertIsNone(P({"summary": "Agreement drafted"}))
         self.assertEqual(P({"summary": "Agree", "position": "object"}), "object")
         self.assertIsNone(P({"summary": None}))
+
+    def two(self):
+        from crosstalk.participants import Participant, Roster
+        return Roster(page="", relay="", participants={
+            "alpha": Participant(id="alpha", name="Alpha", kind="project", aliases=["al"]),
+            "beta": Participant(id="beta", name="Beta", kind="project", aliases=["be"])})
+
+    def test_position_after_the_repliers_own_label(self):
+        P, roster = reviews.position_of, self.two()
+        self.assertEqual(P({"from": "beta", "summary": "BE agrees: the reason holds"}, roster), "agree")
+        self.assertEqual(P({"from": "beta", "summary": "beta: object, see body"}, roster), "object")
+        self.assertEqual(P({"from": "beta", "summary": "Beta, agreed"}, roster), "agree")
+        self.assertEqual(P({"from": "beta", "summary": "beta objects"}), "object")
+        self.assertIsNone(P({"from": "beta", "summary": "BE agrees"}))
+        self.assertIsNone(P({"from": "beta", "summary": "BEagrees"}, roster))
+        self.assertIsNone(P({"from": "beta", "summary": "BE BE agrees"}, roster))
+
+    def test_another_name_before_the_word_is_no_position(self):
+        P, roster = reviews.position_of, self.two()
+        self.assertIsNone(P({"from": "beta", "summary": "AL objects, I do not"}, roster))
+        self.assertIsNone(P({"from": "beta", "summary": "alpha: agree"}, roster))
+        self.assertIsNone(P({"summary": "BE agrees"}, roster))
 
 
 class RosterTests(unittest.TestCase):
@@ -476,6 +498,13 @@ class OverrideTests(ScanBase):
         self.assertIn("Agree", ask["body"])
         self.assertIn("Object", ask["body"])
 
+    def test_ask_says_first_word(self):
+        self.resolve("alpha", "a1a1a1a", "reason")
+        self.scan()
+        d = self.msg(reviews.override_id("relay-bot", "alpha", A1, "d1" * 20))
+        self.assertIn("a summary whose first word is Agree or Object, before your name or anything else",
+                      self.msg(d["request"])["body"])
+
     def test_reviewers_rotate_between_the_other_two(self):
         self.resolve("alpha", "a1a1a1a", "reason one", 300)
         self.resolve("alpha", "a2a2a2a", "reason two", 301)
@@ -551,6 +580,16 @@ class OverrideTests(ScanBase):
         self.assertEqual(self.msg(oid)["status"], "agreed")
         self.assertEqual(self.msg(oid)["agreed"], [who])
         self.assertFalse(any(ln["id"].startswith("relay-bot-objection-") for ln in self.log_lines()))
+
+    def test_override_counts_a_reply_after_the_name(self):
+        oid, d = self.ask()
+        who = d["reviewer"]
+        roster = load_roster(self.root / "participants.json")
+        self.post(who, who + "-1", {"from": who, "kind": "reply", "replyTo": d["request"],
+                                    "summary": reviews.label(roster, who) + " agrees"})
+        self.scan()
+        self.assertEqual(self.msg(oid)["status"], "agreed")
+        self.assertEqual(self.msg(oid)["agreed"], [who])
 
     def test_position_field_and_latest_reply_win(self):
         oid, d = self.ask()

@@ -26,7 +26,8 @@ Objections are advisory: nothing blocks the branch. On each pass the scanner
 reads every open override's thread (one without the owner's `resolution`): a
 reply from an approved participant other than the coordinator, the owner and
 the branch's project counts by its `position` field ("agree" or "object") or else
-by its summary's first word (Agree/Agreed, Object/Objection). Each
+by its summary's first word (Agree/Agreed, Object/Objection), which may follow
+the replier's own id, name, alias or label ("BE agrees"). Each
 participant's latest such reply counts. The override's `status` becomes
 `objected` (any objection), `agreed`, or stays `awaiting`; each objection is
 forwarded once to the branch's project as a request (so it lands in its inbox).
@@ -143,13 +144,39 @@ def parse_meta(text: str) -> Dict[str, str]:
     return out
 
 
-def position_of(doc: dict) -> Optional[str]:
-    """`agree`, `object` or None: the reply's `position` field, else its summary's first word."""
+def _handles(pid: str, roster: Optional[Roster]) -> List[str]:
+    """pid's names in lower case, longest first: its id, and with a roster its name, aliases and label."""
+    names = {pid}
+    p = roster.participants.get(pid) if roster is not None else None
+    if p is not None:
+        names.update([p.name, label(roster, pid)] + list(p.aliases))
+    return sorted({n.lower() for n in names if n}, key=lambda n: (-len(n), n))
+
+
+def position_of(doc: dict, roster: Optional[Roster] = None) -> Optional[str]:
+    """`agree`, `object` or None: the reply's `position` field, else its summary's first word.
+
+    The first word may come after one of the replier's own handles (its id, and
+    with a roster its name, aliases and label) and a `:`, `,` or white space, as
+    in "BE agrees". Another participant's name before the word reads as no position.
+    """
     pos = doc.get("position")
     if isinstance(pos, str) and pos.strip().lower() in ("agree", "object"):
         return pos.strip().lower()
     s = doc.get("summary")
-    m = POSITION_RE.match(s) if isinstance(s, str) else None
+    if not isinstance(s, str):
+        return None
+    m = POSITION_RE.match(s)
+    frm = doc.get("from")
+    if not m and isinstance(frm, str) and frm:
+        lead = re.match(r"\W*", s).end()
+        low = s[lead:].lower()
+        for h in _handles(frm, roster):
+            sep = low[len(h):len(h) + 1]
+            if low.startswith(h) and (sep in (":", ",") or sep.isspace()):
+                m = POSITION_RE.match(s[lead + len(h) + 1:])
+                if m:
+                    break
     if not m:
         return None
     return "agree" if m.group(1).lower().startswith("agree") else "object"
@@ -212,7 +239,7 @@ def override_status(messages: Dict[str, dict], threads: _Threads, oid: str,
         frm = m.get("from")
         if frm in (config.coordinator(roster), "owner", project) or not _is_approved(frm, roster):
             continue
-        pos = position_of(m)
+        pos = position_of(m, roster)
         if pos is None:
             continue
         key = (m.get("t") if isinstance(m.get("t"), str) else "", did)
@@ -558,10 +585,10 @@ class Scanner:
                               % (label(roster, reviewer), name, tip[:7]),
                    "body": ("%s set aside %s on %s with `codex-review resolve`. Read the report%s and "
                             "the reason in the thread above, then answer in this thread with "
-                            "`relay.py reply --from %s --to-id %s` and a summary that starts with "
-                            "\"Agree:\" or \"Object:\" (or pass a `position` field of \"agree\" or "
-                            "\"object\"), saying why. Objections are advisory: nothing blocks the "
-                            "branch; %s and the owner see them."
+                            "`relay.py reply --from %s --to-id %s` and a summary whose first word is "
+                            "Agree or Object, before your name or anything else (or pass a `position` "
+                            "field of \"agree\" or \"object\"), saying why. Objections are advisory: "
+                            "nothing blocks the branch; %s and the owner see them."
                             % (name, _plural(facts["findings"]), tip[:7],
                                " at " + report if report else "", reviewer, ask_id(poster, pid, tip, diff),
                                name))}

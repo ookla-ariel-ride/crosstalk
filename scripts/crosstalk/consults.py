@@ -9,7 +9,7 @@ from .logs import Line, append_line, check_speaker
 from .participants import Roster, load_roster
 from .posters import next_stamp
 from .replay import enrich_messages, load_all_lines, replay
-from .requests import _is_approved, extract_mentions, owner_questions
+from .requests import ACK_SEP, _is_approved, extract_mentions, no_answer as _no_answer, owner_questions
 
 COMMIT_RE = re.compile(r"^[0-9a-fA-F]{7,40}$")
 _LAST_DT = None  # type: Optional[datetime]
@@ -73,14 +73,23 @@ def post_reply(
     msg_id: Optional[str] = None,
     roster: Optional[Roster] = None,
     speaker: Optional[Dict[str, str]] = None,
+    no_answer: bool = False,
+    to: Optional[Iterable[str]] = None,
+    docs: Optional[Dict] = None,
 ) -> Line:
-    """Reply to an existing message `to_id`, auto-populating `replyTo` and `to`."""
+    """Reply to an existing message `to_id`, auto-populating `replyTo` and `to`.
+
+    `no_answer` marks the reply as asking nothing (requests.no_answer). `to`
+    replaces the default recipient (the sender of `to_id`). `docs` are replayed
+    documents the caller just read; without them the log is read here.
+    """
     root = Path(root)
     roster = _ensure_roster(root, roster)
     _require_pid(pid, roster)
     summary = _clean_summary(summary)
-    lines = load_all_lines(root, roster)
-    docs = enrich_messages(replay(lines), lines)
+    if docs is None:
+        lines = load_all_lines(root, roster)
+        docs = enrich_messages(replay(lines), lines)
     target_doc = docs.get(("messages", to_id))
     if target_doc is None:
         raise ValueError("no such message %r" % to_id)
@@ -92,7 +101,9 @@ def post_reply(
         "summary": summary,
         "replyTo": to_id,
     }  # type: Dict[str, object]
-    if isinstance(target_from, str) and target_from in roster.participants:
+    if to is not None:
+        data["to"] = _str_list(to)
+    elif isinstance(target_from, str) and target_from in roster.participants:
         data["to"] = [target_from]
     if body is not None:
         data["body"] = body
@@ -100,6 +111,8 @@ def post_reply(
     if refs_list:
         data["refs"] = refs_list
     data.update(speaker or {})
+    if no_answer:
+        _no_answer(data)
     return append_line(root, pid, "set", "messages", mid, data, roster=roster)
 
 
@@ -113,8 +126,12 @@ def post_consult(
     msg_id: Optional[str] = None,
     roster: Optional[Roster] = None,
     speaker: Optional[Dict[str, str]] = None,
+    no_answer: bool = False,
 ) -> Line:
-    """Post a `kind: request` peer consultation message."""
+    """Post a `kind: request` peer consultation message.
+
+    `no_answer` marks it as asking nothing (requests.no_answer): it then waits for nobody.
+    """
     root = Path(root)
     roster = _ensure_roster(root, roster)
     _require_pid(pid, roster)
@@ -147,6 +164,8 @@ def post_consult(
         if mentioned:
             data["to"] = mentioned
     data.update(speaker or {})
+    if no_answer:
+        _no_answer(data)
     return append_line(root, pid, "set", "messages", mid, data, roster=roster)
 
 
@@ -241,6 +260,27 @@ def withdraw_question(
     }  # type: Dict[str, object]
     data.update(speaker or {})
     return append_line(root, pid, "set", "messages", mid, data, roster=roster)
+
+
+def ack_item(root: Path, pid: str, item_id: str, roster: Optional[Roster] = None) -> Line:
+    """Record that pid read the request item_id and has nothing to do or say: an `acks` row
+    that counts as pid's reply (requests.acks_by_item). It is not a message."""
+    root = Path(root)
+    roster = _ensure_roster(root, roster)
+    _require_pid(pid, roster)
+    if ACK_SEP in pid:
+        raise ValueError("participant %r holds '--', so it cannot ack; post a reply instead" % (pid,))
+    lines = load_all_lines(root, roster)
+    docs = enrich_messages(replay(lines), lines)
+    item = docs.get(("messages", item_id))
+    if item is None:
+        raise ValueError("no such message %r" % (item_id,))
+    if item.get("kind") == "question":
+        raise ValueError("a question to the owner gets an answer, not an ack")
+    if item.get("kind") != "request":
+        raise ValueError("message %r is not a request; only a request takes an ack" % (item_id,))
+    data = {"from": pid, "item": item_id, "none": True, "t": now_iso()}
+    return append_line(root, pid, "set", "acks", pid + ACK_SEP + item_id, data, roster=roster)
 
 
 def adopt_agreement(

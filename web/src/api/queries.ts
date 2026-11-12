@@ -78,6 +78,11 @@ export function invalidateForRows(qc: QueryClient, rows: RowRef[]): void {
 
   // An open waiting row makes the thread of a message with its id need the owner.
   if (collections.has("waiting") && !collections.has("messages")) void invalidate(qc, { queryKey: ["threads"] });
+  // An ack row can end a recipient's part of a request: the thread rows (list and open threads) change.
+  if (collections.has("acks") && !collections.has("messages")) {
+    if (!collections.has("waiting")) void invalidate(qc, { queryKey: ["threads"] });
+    void invalidate(qc, { queryKey: ["thread"] });
+  }
 
   const sections = new Set<SectionName>();
   for (const c of collections) for (const name of SECTIONS_OF[c] ?? []) sections.add(name);

@@ -1,9 +1,13 @@
 """Log lines: read, check and append."""
 import fcntl
+import hashlib
 import json
 import os
 import re
+import sys
+import threading
 import time
+from contextlib import contextmanager
 from datetime import datetime, timezone
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -13,7 +17,7 @@ from .participants import HARNESS_MAX, ID_RE, Roster, harness_problem
 
 LEGACY_PREFIXES = ("m-", "vc-", "own-", "a-", "d-", "w-", "l-", "p-", "i-", "lesson-")
 COLLECTIONS = ("messages", "agreements", "waiting", "locks", "lessons",
-               "decisions", "progress", "incidents", "schedules", "adoptions")
+               "decisions", "progress", "incidents", "schedules", "adoptions", "acks", "state")
 RUN_RESULTS = ("ok", "failed", "skipped")
 RUNS_KEPT = 10
 OWNER_COLLECTIONS = COLLECTIONS + ("participants",)
@@ -42,6 +46,9 @@ class Line:
     id: str
     data: dict = field(default_factory=dict)
     via: Optional[str] = None
+    # The first 12 hex digits of the SHA-256 of the line's exact text in its
+    # file, when it was read from or written to one (inboxstate.fingerprint).
+    fp: Optional[str] = field(default=None, compare=False, repr=False)
 
     def to_json(self) -> str:
         d = {"seq": self.seq, "t": self.t, "from": self.from_, "op": self.op,
@@ -125,6 +132,14 @@ def _validate(raw: str, owner: str, expected: int, _prior: List[Line],
     if d["collection"] == "messages" and d["data"].get("kind") == "owner" \
             and owner != "owner" and d.get("via") != "import":
         return "only 'owner' may post kind 'owner'"
+    if d["collection"] == "acks":
+        msg = ack_problem(d["op"], d["id"], owner, d["data"])
+        if msg:
+            return msg
+    if d["collection"] == "state":
+        msg = state_problem(d["op"], d["id"], owner, d["t"], d["data"])
+        if msg:
+            return msg
     if d["collection"] == "messages":
         for name in SPEAKER_FIELDS:
             if name in d["data"]:
@@ -139,7 +154,44 @@ def _validate(raw: str, owner: str, expected: int, _prior: List[Line],
         if msg:
             return msg
     return Line(seq=seq, t=d["t"], from_=d["from"], op=d["op"], collection=d["collection"],
-                id=d["id"], data=d["data"], via=via)
+                id=d["id"], data=d["data"], via=via,
+                fp=hashlib.sha256(raw.encode("utf-8")).hexdigest()[:12])
+
+
+def ack_problem(op: str, doc_id: str, owner: str, data: dict) -> Optional[str]:
+    """The reason an `acks` line is invalid, or None. Any approved writer may `update` any id,
+    so the id rule holds for every op: a reader trusts that `<writer>--` names the writer.
+    A writer whose id holds `--` cannot ack: its ids could equal another writer's."""
+    if "--" in owner:
+        return "participant %r holds '--', so it cannot ack; post a reply instead" % owner
+    if not doc_id.startswith(owner + "--"):
+        return "an ack id must start with %r" % (owner + "--")
+    if "from" in data and data["from"] != owner:
+        return "ack from %r is not its writer %r" % (data["from"], owner)
+    if op == "set":
+        item = data.get("item")
+        if "from" not in data or not isinstance(item, str) or not item:
+            return "an ack set needs from and a string item"
+        if doc_id != owner + "--" + item:
+            return "ack id %r must be %r" % (doc_id, owner + "--" + item)
+    return None
+
+
+def state_problem(op: str, doc_id: str, owner: str, t: str, data: dict) -> Optional[str]:
+    """The reason a `state` line is invalid, or None. For every op the id is exactly
+    `<writer>-wind-down` (state.py), so no writer can set or change another's record,
+    and a prefix such as `relay` of `relay-bot` cannot reach `relay-bot-wind-down`.
+    The record in force is chosen by its `t`, so a `set` carries the line's own time,
+    and an `update` cannot change `step`, `started` or `t`: a new step is a new `set`."""
+    if doc_id != owner + "-wind-down":
+        return "state id %r must be %r: only its writer may set or change it" % (doc_id, owner + "-wind-down")
+    if "from" in data and data["from"] != owner:
+        return "state from %r is not its writer %r" % (data["from"], owner)
+    if op == "set" and data.get("t") != t:
+        return "state t %r must be the line t %r" % (data.get("t"), t)
+    if op == "update" and any(k in data for k in ("step", "started", "t")):
+        return "an update cannot change step, started or t; run a new state wind-down"
+    return None
 
 
 def speaker_problem(name: str, value) -> Optional[str]:
@@ -396,14 +448,111 @@ def check_all(root: Path, roster: Roster) -> List[Problem]:
     return problems
 
 
+STATE_LOCK = ".state.lock"
+_state_lock_depth = threading.local()
+
+
+def state_lock_path(root: Path) -> Path:
+    """The lock file that orders `state` rows against the granter's GRANTED (in the git-ignored log/)."""
+    return Path(root) / "log" / STATE_LOCK
+
+
+STATE_LOCK_WAIT = 5.0  # seconds a caller waits for the state lock
+STATE_LOCK_TRY = 0.05
+# The longest a `hold` holder (the granter) may keep the state lock and still
+# append. It is under STATE_LOCK_WAIT, so a holder that a forced writer gave up
+# on appends nothing after that writer's row.
+STATE_HOLD_LIMIT = 3.0
+
+
+class StateLockBusy(OSError):
+    """The state lock stayed held for STATE_LOCK_WAIT seconds."""
+
+
+class StateHoldExpired(StateLockBusy):
+    """A `hold` holder kept the state lock past STATE_HOLD_LIMIT seconds; its append is refused."""
+
+
+def _check_hold() -> None:
+    """Refuse an append of a `hold` holder past STATE_HOLD_LIMIT (called inside the file lock)."""
+    since = getattr(_state_lock_depth, "hold_since", None)
+    if since is not None and time.monotonic() - since > STATE_HOLD_LIMIT:
+        raise StateHoldExpired("held the state lock for more than %g s" % STATE_HOLD_LIMIT)
+
+
+@contextmanager
+def state_lock(root: Path, force: bool = False, hold: bool = False):
+    """Hold the exclusive state lock of `root`; again in the same thread, it is a no-op.
+
+    A row of the `state` collection takes it around its append, and the granter
+    takes it from its last read of the log to its GRANTED append. A process
+    that dies drops its flock, so a crashed holder blocks nobody. A live holder
+    that is stuck blocks a caller for at most STATE_LOCK_WAIT seconds. Then a
+    `force` caller (a state row: the owner's command must win) goes on without
+    the lock and says so on stderr; any other caller gets StateLockBusy.
+
+    With `hold`, each append_line of this thread under the lock checks, inside
+    its file lock and just before it writes, that the lock was got at most
+    STATE_HOLD_LIMIT seconds ago; later it raises StateHoldExpired and writes
+    nothing. A forced writer waits longer than that, so it gives up on such a
+    holder only after the holder can no longer append.
+    """
+    depth = getattr(_state_lock_depth, "n", 0)
+    if depth:
+        _state_lock_depth.n = depth + 1
+        try:
+            yield
+        finally:
+            _state_lock_depth.n -= 1
+        return
+    path = state_lock_path(root)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    with open(str(path), "a") as f:
+        deadline = time.monotonic() + STATE_LOCK_WAIT
+        held = False
+        while True:
+            try:
+                fcntl.flock(f.fileno(), fcntl.LOCK_EX | fcntl.LOCK_NB)
+                held = True
+                break
+            except BlockingIOError:
+                if time.monotonic() >= deadline:
+                    break
+                time.sleep(STATE_LOCK_TRY)
+        if not held and not force:
+            raise StateLockBusy("the state lock %s stayed busy for %g s" % (path, STATE_LOCK_WAIT))
+        if not held:
+            print("crosstalk: %s stayed busy for %g s; writing the state row without the state lock."
+                  " A GRANTED in flight can still appear; the server then withdraws it"
+                  " (GRANT WITHDRAWN)." % (path, STATE_LOCK_WAIT), file=sys.stderr)
+        _state_lock_depth.n = 1
+        _state_lock_depth.hold_since = time.monotonic() if (held and hold) else None
+        try:
+            yield
+        finally:
+            _state_lock_depth.n = 0
+            _state_lock_depth.hold_since = None
+            if held:
+                fcntl.flock(f.fileno(), fcntl.LOCK_UN)
+
+
 def append_line(root: Path, from_: str, op: str, collection: str, id: str, data: dict,
                 t: Optional[str] = None, via: Optional[str] = None,
                 roster: Optional[Roster] = None) -> Line:
     """Append one line to log/<from_>.jsonl under an exclusive lock; returns the Line written.
 
     With a roster, a line that breaks the trust rules or the message shape rules is
-    refused before the file is opened.
+    refused before the file is opened. A `state` row also holds the state lock
+    (state_lock), so it never lands between the granter's last read and its GRANTED.
     """
+    if collection == "state":
+        with state_lock(root, force=True):
+            return _append_line(root, from_, op, collection, id, data, t, via, roster)
+    return _append_line(root, from_, op, collection, id, data, t, via, roster)
+
+
+def _append_line(root: Path, from_: str, op: str, collection: str, id: str, data: dict,
+                 t: Optional[str], via: Optional[str], roster: Optional[Roster]) -> Line:
     if not isinstance(from_, str) or not ID_RE.fullmatch(from_):
         # Checked before any path is built: on a case-insensitive disk "Codex" would
         # open codex.jsonl.
@@ -449,6 +598,7 @@ def append_line(root: Path, from_: str, op: str, collection: str, id: str, data:
             result = _validate(text, from_, last + 1, [])
             if isinstance(result, str):
                 raise ValueError(result)
+            _check_hold()
             f.seek(0, 2)
             f.write((text + "\n").encode("utf-8"))
             f.flush()

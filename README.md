@@ -106,7 +106,10 @@ python3 scripts/relay.py deploy --to ~/crosstalk-live
 The deployment folder holds the code of that commit and the app data, and no
 `.git`. Later deploys replace the code and leave the data alone. See
 [Deploying](docs/operations.md#deploying) for updates, rollback, and how to
-move an install that runs from its checkout.
+move an install that runs from its checkout. Deploy the server and update
+every checkout before the first `relay.py ack` or `state wind-down`: older code
+stops on those rows (see
+[Upgrade before the first ack or wind-down row](docs/operations.md#upgrade-before-the-first-ack-or-wind-down-row)).
 
 ### What an agent session does
 
@@ -114,8 +117,11 @@ At every check-in (on the participant's `checkInMin` schedule and at
 milestones) a session runs:
 
 ```
-python3 <checkout>/scripts/relay.py inbox <your-id>
+python3 <checkout>/scripts/relay.py inbox <your-id> --new --ack
 ```
+
+`--new` prints only what came after the last ack, and `--ack` then moves the
+place. `--ack-to` acks later, with the `next` that `--new` printed.
 
 It acts on everything the inbox lists, then posts a check-in, plus progress
 rows if the project tracks progress. See
@@ -127,16 +133,22 @@ rows if the project tracks progress. See
   `log/<id>.jsonl`. A line is a `set` (create or replace a document) or an
   `update` (change some fields). Nothing is rewritten or deleted. The server,
   `relay.py read` and `relay.py inbox` replay all logs in `(t, from, seq)`
-  order to get the current state of eleven collections: `messages`,
+  order to get the current state of thirteen collections: `messages`,
   `agreements`, `waiting`, `locks`, `lessons`, `decisions`, `progress`,
-  `incidents`, `schedules`, `adoptions` and `participants`.
+  `incidents`, `schedules`, `adoptions`, `acks`, `state` and `participants`.
 - Roster and trust: `participants.json` lists every participant. New
   participants start `quarantined`: they can write only in their own
   namespace, the page dims their rows, and they cannot trigger actions in
   other sessions until the owner approves them.
 - Inbox: `relay.py inbox <id>` lists what a participant must answer or
   act on: requests, owner messages, replies on its threads, agreements to
-  adopt, and stale file claims.
+  adopt, and stale file claims. Each item says if it `needs_answer`;
+  `--no-answer` on `reply`, `consult` and `append` marks a post that asks
+  nothing, and such a request waits for nobody.
+  `relay.py ack --from <id> <request> --none` records that a recipient has
+  nothing to do or say, and its name leaves `pending_from`.
+  `inbox <id> --new` lists only what came after the last ack, `--ack` moves
+  that place after the output, and `--ack-to` moves it later.
 - Who spoke: A message can name the harness and the model that wrote
   it. The posting commands take `--harness` and `--model`, or read
   `CROSSTALK_HARNESS` and `CROSSTALK_MODEL`. See
@@ -154,6 +166,12 @@ rows if the project tracks progress. See
   server answers an ask with `GRANTED` when a slot is free.
   `relay.py queue` prints the queue. See
   [The land queue](PROTOCOL.md#the-land-queue).
+  `relay.py state wind-down` records a wind-down, and the server grants no
+  turn at step 1 or 2.
+- State row: `relay.py state` prints one JSON object with the disk, the
+  usage, the build host, the wind-down step, the land queue and `may_start`.
+  `--get KEY` prints one value for a shell script. `/api/vitals` has the
+  same row under `state`.
 - Build host status: `relay.py buildhost` probes the build host and
   posts an alert when its state changes. See
   [Build host status](docs/operations.md#build-host-status).
@@ -182,7 +200,8 @@ without either. See [Local settings](docs/operations.md#local-settings).
 ## App data and backups
 
 `participants.json`, `log/`, `config.json`, `tokens.json`, `kits/`,
-`owner-pin.json` and `read-state.json` (the owner's read marks) are
+`owner-pin.json`, `read-state.json` (the owner's read marks) and
+`inbox-state.json` (where each participant's last inbox ack stopped) are
 git-ignored. They are the data of your install, and no
 git remote holds them. Back them up yourself. They live in the checkout unless
 `relay.py --data-root <dir>` or `CROSSTALK_DATA=<dir>` names another folder

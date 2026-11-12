@@ -9,10 +9,13 @@ import contextlib
 import copy
 import io
 import json
+import os
+import subprocess
+import sys
 import unittest
 from unittest import mock
 
-from helpers import SPEC_ROSTER, RunningServer, TempRepo, line
+from helpers import SPEC_ROSTER, RunningServer, TempRepo, line, relay_in
 from test_serve import request
 
 from crosstalk import events as events_mod
@@ -66,6 +69,18 @@ SECTION_FIELDS = {
 }
 
 
+BAD_T = "2026-10-21T10:01:00Z"  # the time of the bad line
+# The inbox side's collections: their ids are fixed by the writer (logs.ack_problem,
+# logs.state_problem), so each case carries its id.
+INBOX_CASES = {
+    "acks": ("alpha", "alpha--alpha-root", ("none", "item", "from", "t", "note"),
+             {"from": "alpha", "item": "alpha-root", "none": True, "t": T}),
+    # rev is the coordinator: its record counts, so the state row reads it.
+    "state": ("rev", "rev-wind-down", ("step", "started", "by", "reason", "from", "t"),
+              {"from": "rev", "step": 1, "started": BAD_T, "by": "rev", "reason": "test", "t": BAD_T}),
+}
+
+
 def roster():
     data = copy.deepcopy(SPEC_ROSTER)
     data["relay"] = "rev"  # the coordinator: its GRANTED rows and review rows count
@@ -73,19 +88,24 @@ def roster():
 
 
 def cases():
-    """(name, author, collection, data) for each bad row."""
+    """(name, author, collection, data, id) for each bad row."""
     out = []
     for base_name, base in MESSAGE_BASES.items():
         author = "rev" if base_name in ("granted", "review") else "alpha"
         for field in MESSAGE_FIELDS:
             for type_name, value in wrong(field).items():
                 out.append(("messages/%s.%s=%s" % (base_name, field, type_name), author, "messages",
-                            dict(base, **{field: value})))
+                            dict(base, **{field: value}), author + "-bad"))
     for coll, fields in SECTION_FIELDS.items():
         for field in fields:
             for type_name, value in wrong(field).items():
                 out.append(("%s.%s=%s" % (coll, field, type_name), "alpha", coll,
-                            {"summary": "bad row", field: value}))
+                            {"summary": "bad row", field: value}, "alpha-bad"))
+    for coll, (author, did, fields, base) in INBOX_CASES.items():
+        for field in fields:
+            for type_name, value in wrong(field).items():
+                out.append(("%s.%s=%s" % (coll, field, type_name), author, coll,
+                            dict(base, **{field: value}), did))
     return out
 
 
@@ -108,15 +128,14 @@ class WrongTypeTests(unittest.TestCase):
     def tearDown(self):
         self.repo.__exit__(None, None, None)
 
-    def write(self, author, coll, data):
+    def write(self, author, coll, data, bad_id):
         """Write the logs; False when _validate refuses the bad line."""
         alpha = good_lines()
         beta = [line(1, "beta", id_="beta-reply",
                      data={"kind": "reply", "summary": "good reply", "replyTo": "alpha-root"}, t=T)]
         rev = []
-        bad_id = author + "-bad"
         own = {"alpha": alpha, "rev": rev}[author]
-        own.append(line(len(own) + 1, author, coll, id_=bad_id, data=data, t="2026-10-21T10:01:00Z"))
+        own.append(line(len(own) + 1, author, coll, id_=bad_id, data=data, t=BAD_T))
         self.repo.write_log("alpha", alpha)
         self.repo.write_log("beta", beta)
         self.repo.write_log("rev", rev)
@@ -152,7 +171,16 @@ class WrongTypeTests(unittest.TestCase):
         for other in SECTION_FIELDS:
             self.assertIn("alpha-good-" + other, snapshot[other])
         docs = self.get(srv, "/api/" + coll)["docs"]
-        self.assertIn("alpha-root" if coll == "messages" else "alpha-good-" + coll, docs)
+        if coll in INBOX_CASES:
+            self.assertIn(INBOX_CASES[coll][1], docs)
+        else:
+            self.assertIn("alpha-root" if coll == "messages" else "alpha-good-" + coll, docs)
+        # The state object of /api/vitals reads the wind-down record and the queue:
+        # a field it cannot read is left out (null), and the request never fails.
+        wind = self.get(srv, "/api/vitals")["state"]["wind_down"]
+        self.assertIn(wind["step"], (0, 1, 2))
+        for name in ("started", "by", "reason"):
+            self.assertTrue(wind[name] is None or isinstance(wind[name], str), (name, wind[name]))
         for route in ("/api/queue", "/api/vitals", "/api/read-state", "/api/me", "/api/health", "/api/palette"):
             self.get(srv, route)
         rows, _mark = events_mod.since(self.repo.root, {})
@@ -161,13 +189,37 @@ class WrongTypeTests(unittest.TestCase):
     def test_no_v2_read_route_fails_on_a_wrong_typed_field(self):
         refused = []
         with RunningServer(self.repo.root, tokens={"owner": token_hash(OWNER_TOKEN)}) as srv:
-            for name, author, coll, data in cases():
-                if not self.write(author, coll, data):
+            for name, author, coll, data, did in cases():
+                if not self.write(author, coll, data, did):
                     refused.append(name)
                     continue
                 with self.subTest(case=name):
                     self.check_routes(srv, coll)
         print("\nwrong-type cases the log refuses: %s" % json.dumps(refused))
+
+
+class CliTests(unittest.TestCase):
+    """The inbox side's JSON and text output of relay.py never fails on a lone surrogate."""
+
+    def test_inbox_and_state_print_a_lone_surrogate(self):
+        with TempRepo() as repo:
+            repo.write_roster()
+            repo.write_log("beta", [line(1, "beta", data={"kind": "request", "summary": SURROGATE,
+                                                          "to": ["alpha"]}, t=T)])
+            repo.write_log("owner", [line(1, "owner", "state", id_="owner-wind-down", t=T, data={
+                "from": "owner", "step": 1, "started": T, "by": "owner", "reason": SURROGATE, "t": T})])
+            script = str(relay_in(repo.root))
+            env = dict(os.environ, PYTHONIOENCODING="utf-8")
+            for args in (["inbox", "alpha"], ["inbox", "alpha", "--new"], ["inbox", "alpha", "--brief"],
+                         ["inbox", "alpha", "--new", "--brief"], ["state"],
+                         ["state", "--get", "wind_down.reason"]):
+                with self.subTest(args=args):
+                    p = subprocess.run([sys.executable, script] + args, stdout=subprocess.PIPE,
+                                       stderr=subprocess.PIPE, cwd="/", env=env)
+                    self.assertEqual(p.returncode, 0, p.stderr.decode("utf-8", "replace"))
+                    text = p.stdout.decode("utf-8")  # valid UTF-8
+                    if "--brief" not in args and "--get" not in args:
+                        self.assertIsInstance(json.loads(text), dict)
 
 
 class InternalErrorTests(unittest.TestCase):

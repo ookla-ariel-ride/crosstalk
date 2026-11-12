@@ -26,7 +26,8 @@ MANIFEST = ".deployed.json"
 # The app data and the secrets of an install (.gitignore names the same paths).
 # A name that ends in "/" is a folder. Deploy never writes or removes these.
 DATA_PATHS = ("log/", "import/", "kits/", "local/", "participants.json", "config.json", "tokens.json",
-              "owner-pin.json", "owner-pin.json.tmp", "read-state.json")
+              "owner-pin.json", "owner-pin.json.tmp", "read-state.json",
+              "inbox-state.json", "inbox-state.json.lock")
 DEFAULT_PORT = 8484
 HEALTH_TIMEOUT = 30.0
 
