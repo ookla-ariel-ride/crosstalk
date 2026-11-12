@@ -4,6 +4,8 @@ participants.json
 config.json
 import/
 read-state.json
+inbox-state.json
+inbox-state.json.lock
 
 # Secrets
 tokens.json
