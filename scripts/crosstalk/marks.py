@@ -285,11 +285,31 @@ def with_marks(collections: Dict[str, Dict[str, dict]], views: Dict[Tuple[str, s
         for did, row in list(rows.items()):
             if not isinstance(row, dict):
                 continue
-            v = views.get((coll, did))
-            if v is not None:
-                rows[did] = dict(row, marks=v)
-            elif "marks" in row:
-                rows[did] = {k: val for k, val in row.items() if k != "marks"}
+            rows[did] = on_row(row, views.get((coll, did)))
+
+
+def counts(docs: Dict, roster, views: Dict[Tuple[str, str], dict]) -> Dict[Tuple[str, str], dict]:
+    """(collection, id) to {"acknowledged": n, "expected": m} for each post of views
+    (page_views) that expects a mark: m names owe a mark (markers), n of them hold an
+    acknowledged one. The v2 page shows it as "n of m acknowledged" on a thread row.
+    Pass the docs from replay.enrich_messages."""
+    out = {}
+    for (coll, did), v in views.items():
+        if v.get("expects") is not True:
+            continue
+        names = markers(docs, coll, did, roster)
+        out[(coll, did)] = {"acknowledged": len(names) - len(v.get("owed", ())), "expected": len(names)}
+    return out
+
+
+def on_row(row: dict, view: Optional[dict]) -> dict:
+    """row with `marks` set to view, or with no `marks` field when view is None: marks
+    come only from `acks` rows. The row is copied when it changes."""
+    if view is not None:
+        return dict(row, marks=view)
+    if "marks" in row:
+        return {k: val for k, val in row.items() if k != "marks"}
+    return row
 
 
 ROW_KIND = {"decisions": "decision", "lessons": "lesson"}

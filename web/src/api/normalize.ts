@@ -3,7 +3,7 @@
 // gets the type they expect here, as the present page does with String(text):
 // text stays text, a number or a boolean becomes its text, an object or a list
 // becomes its JSON, and null drops the field. The views then need no guards.
-import type { Message, RowRef, SectionPage, SectionRow, Thread, ThreadDetail, ThreadsPage } from "./types";
+import type { MarksCount, MarksView, MarkWord, Message, RowRef, SectionPage, SectionRow, Thread, ThreadDetail, ThreadsPage } from "./types";
 
 type Raw = Record<string, unknown>;
 
@@ -40,6 +40,31 @@ const MESSAGE_TEXT = ["t", "from", "kind", "summary", "body", "replyTo", "harnes
 /** The fields every row of the log may hold that the views read as text, or as a list for `to`. */
 const ROW_TEXT = ["t", "from", "kind", "summary", "body", "replyTo"];
 
+const MARK_WORDS: readonly string[] = ["seen", "ack", "applies", "none", "unclear"];
+
+/**
+ * The `marks` key of a post (marks.view), or undefined when it is not an object
+ * whose `marks` is an object. A name with a word that is not a mark, an `owed`
+ * item that is not a name, and an `expects` that is not true are left out.
+ */
+export function marksView(v: unknown): MarksView | undefined {
+  if (!isObject(v) || !isObject(v.marks)) return undefined;
+  const marks: Record<string, MarkWord> = {};
+  for (const [id, word] of Object.entries(v.marks)) {
+    if (id && typeof word === "string" && MARK_WORDS.includes(word)) marks[id] = word as MarkWord;
+  }
+  const owed = Array.isArray(v.owed) ? v.owed.filter((id): id is string => typeof id === "string" && id !== "") : [];
+  return { marks, owed, expects: v.expects === true };
+}
+
+/** A thread row's `marks_count`: two whole numbers, the first not above the second; else undefined. */
+function marksCount(v: unknown): MarksCount | undefined {
+  if (!isObject(v)) return undefined;
+  const { acknowledged: n, expected: m } = v;
+  if (typeof n !== "number" || typeof m !== "number" || !Number.isInteger(n) || !Number.isInteger(m)) return undefined;
+  return n >= 0 && n <= m ? { acknowledged: n, expected: m } : undefined;
+}
+
 function message(raw: unknown): Message | null {
   if (!isObject(raw)) return null;
   const out: Raw = { ...raw, id: text(raw.id) ?? "" };
@@ -51,7 +76,9 @@ function message(raw: unknown): Message | null {
   put(out, "important", typeof raw.important === "boolean" ? raw.important : undefined);
   put(out, "positions", isObject(raw.positions) ? raw.positions : undefined);
   put(out, "resolution", isObject(raw.resolution) ? raw.resolution : undefined);
-  put(out, "acked_by", Array.isArray(raw.acked_by) ? texts(raw.acked_by) : undefined);
+  // The marks line reads `marks`; the server's `acked_by` names the same `none` marks.
+  delete out.acked_by;
+  put(out, "marks", marksView(raw.marks));
   const depth = Number(raw.depth);
   out.depth = depth === 1 || depth === 2 ? depth : 0;
   out.quote = text(raw.quote) ?? null;
@@ -84,6 +111,8 @@ function thread(raw: Raw): Thread {
   };
   if (typeof raw.unread === "number") out.unread = raw.unread;
   if (Array.isArray(raw.owner_requests)) out.owner_requests = texts(raw.owner_requests);
+  const count = marksCount(raw.marks_count);
+  if (count) out.marks_count = count;
   return out;
 }
 
@@ -100,6 +129,7 @@ function sectionRow(raw: Raw): SectionRow {
   const out: Raw = { ...raw, id: text(raw.id) ?? "" };
   for (const key of ROW_TEXT) put(out, key, text(raw[key]));
   put(out, "to", texts(raw.to));
+  put(out, "marks", marksView(raw.marks));
   return out as SectionRow;
 }
 

@@ -4,13 +4,14 @@
 import { Fragment, type ReactNode, useContext, useEffect, useMemo, useRef, useState } from "react";
 import { ApiError } from "../../api/client";
 import { useRoster, useThread } from "../../api/queries";
-import type { Message, ReadMark, Thread } from "../../api/types";
+import type { Message, ReadMark, RosterEntry, Thread } from "../../api/types";
 import { afterSummary } from "../../logic/afterSummary";
 import { ago } from "../../logic/ago";
 import { speaker } from "../../logic/speaker";
 import { splitRead } from "../../logic/splitRead";
 import { Body } from "../../ui/Body";
 import { Guard } from "../../ui/Guard";
+import { MarksLine } from "../../ui/MarksLine";
 import { isLater, markOf, useReading } from "./reading";
 import { WatchContext } from "./seen";
 import styles from "./Stream.module.css";
@@ -41,7 +42,7 @@ function newest(messages: Message[]): ReadMark | undefined {
   return top;
 }
 
-function MessageView({ message, roster, now, children }: { message: Message; roster: Parameters<typeof speaker>[1]; now: Date; children?: ReactNode }) {
+function MessageView({ message, roster, now, children }: { message: Message; roster: Record<string, RosterEntry>; now: Date; children?: ReactNode }) {
   const t = message.t ?? "";
   // The summary, then the body without a first line that repeats it: an answer
   // keeps its first line (the summary) above its explanation (the body).
@@ -63,7 +64,7 @@ function MessageView({ message, roster, now, children }: { message: Message; ros
         </div>
       ) : null}
       {rest ? <Body text={rest} /> : null}
-      {message.kind === "request" && message.acked_by?.includes("owner") ? <p className={styles.acked}>Owner: no action needed</p> : null}
+      <MarksLine marks={message.marks} roster={roster} />
       {children}
     </article>
   );

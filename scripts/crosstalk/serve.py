@@ -5,7 +5,7 @@ The server is the page host and the database:
   GET  /                -> index.html, as it sits in the checkout
   GET  /api/snapshot    -> every collection replayed, plus server_time and commit
   GET  /api/threads     -> the threads in one sort order, a page at a time (threads.py)
-  GET  /api/thread/<id> -> the thread that holds a message: its messages, with depth and quote, and its list row
+  GET  /api/thread/<id> -> the thread that holds a message: its messages, with depth, quote and marks, and its list row
   GET  /api/read-state  -> the owner's read state (readstate.py); the owner only
   PUT  /api/read-state  -> a thread's read mark, the mark-all time, or a mute; the owner only
   GET  /api/events      -> a Server-Sent Events stream of the ids of new log rows (events.py)
@@ -291,10 +291,19 @@ class ReplayCache:
 
     def marks(self) -> Dict[Tuple[str, str], dict]:
         """marks.page_views of the current snapshot, built once for each cache key."""
+        return self._mark_data()[0]
+
+    def mark_counts(self) -> Dict[Tuple[str, str], dict]:
+        """marks.counts of the current snapshot: the "n of m acknowledged" of each post
+        that expects a mark, built once for each cache key."""
+        return self._mark_data()[1]
+
+    def _mark_data(self):
         self.snapshot()
         with self._lock:
             if self._marks_key != self._key or self._marks is None:
-                self._marks = marks_mod.page_views(self._docs, self._roster, config_mod.of(self._roster))
+                views = marks_mod.page_views(self._docs, self._roster, config_mod.of(self._roster))
+                self._marks = (views, marks_mod.counts(self._docs, self._roster, views))
                 self._marks_key = self._key
             return self._marks
 
@@ -689,6 +698,7 @@ class CrosstalkHandler(BaseHTTPRequestHandler):
             return
         if self._role() == "owner":
             items = self._with_unread(index, items)
+        items = self._with_counts(items)
         self._json(200, {"threads": items, "next": nxt, "server_time": now})
 
     def _section(self, name: str):
@@ -711,7 +721,7 @@ class CrosstalkHandler(BaseHTTPRequestHandler):
             self._error(500, "cannot read the log: %s" % e)
             return
         found, open_count = sections_mod.rows(name, docs, roster, changed=cache.changed,
-                                              q=query.get("q", [""])[-1])
+                                              q=query.get("q", [""])[-1], views=cache.marks())
         try:
             items, nxt = threads_mod.page(found, query.get("cursor", [""])[-1], limit)
         except ValueError as e:
@@ -745,7 +755,17 @@ class CrosstalkHandler(BaseHTTPRequestHandler):
         row = index.row(root, now_iso())
         if self._role() == "owner":
             row = self._with_unread(index, [row])[0]
+        row = self._with_counts([row])[0]
+        views = self.state.cache.marks()
+        messages = [marks_mod.on_row(m, views.get(("messages", m["id"]))) for m in messages]
         self._json(200, {"root": root, "messages": messages, "thread": row})
+
+    def _with_counts(self, items: List[dict]) -> List[dict]:
+        """The threads, a copy of each whose root expects a mark with its `marks_count`
+        (marks.counts): {"acknowledged": n, "expected": m}."""
+        counts = self.state.cache.mark_counts()
+        return [dict(t, marks_count=counts[("messages", t["root"])]) if ("messages", t["root"]) in counts else t
+                for t in items]
 
     def _events(self):
         """The push channel: Server-Sent Events, open until the client goes or the server stops.

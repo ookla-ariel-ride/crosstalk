@@ -96,4 +96,33 @@ describe("client", () => {
     const rows = await answer(200, JSON.stringify({ rows: [{ id: "own-9", summary: 7, to: "beta", from: null, done: null }], next: null, open: 1, total: 1 })).api.getSection("waiting");
     expect(rows.rows[0]).toEqual({ id: "own-9", summary: "7", to: ["beta"], done: null });
   });
+
+  test("a marks value keeps its known words and names, and a malformed one is dropped", async () => {
+    const good = { marks: { beta: "ack", gamma: "great", "": "seen", delta: 5 }, owed: ["gamma", 7, ""], expects: true };
+    const bad = [5, "ack", [], null, { marks: [] }, { marks: "x" }, { owed: [] }];
+    const messages = [{ id: "m0", marks: good }, ...bad.map((marks, i) => ({ id: "m" + (i + 1), marks }))];
+    const detail = await answer(200, JSON.stringify({ root: "m0", messages })).api.getThread("m0");
+    expect(detail.messages[0]?.marks).toEqual({ marks: { beta: "ack" }, owed: ["gamma"], expects: true });
+    for (const m of detail.messages.slice(1)) expect(m).not.toHaveProperty("marks");
+    // A message with no `expects` reads as one that expects nothing.
+    const plain = await answer(200, JSON.stringify({ root: "m", messages: [{ id: "m", marks: { marks: { beta: "seen" } } }] })).api.getThread("m");
+    expect(plain.messages[0]?.marks).toEqual({ marks: { beta: "seen" }, owed: [], expects: false });
+    const rows = await answer(200, JSON.stringify({ rows: [{ id: "l1", marks: good }, { id: "l2", marks: [] }], next: null, open: 0, total: 2 })).api.getSection("lessons");
+    expect(rows.rows[0]?.marks).toEqual({ marks: { beta: "ack" }, owed: ["gamma"], expects: true });
+    expect(rows.rows[1]).not.toHaveProperty("marks");
+  });
+
+  test("a thread row keeps a whole marks_count and drops any other", async () => {
+    const threads = [
+      { root: "a", marks_count: { acknowledged: 2, expected: 5 } },
+      { root: "b", marks_count: { acknowledged: "2", expected: 5 } },
+      { root: "c", marks_count: { acknowledged: 6, expected: 5 } },
+      { root: "d", marks_count: [2, 5] },
+      { root: "e", marks_count: { acknowledged: -1, expected: 5 } },
+      { root: "f", marks_count: { acknowledged: 1.5, expected: 5 } },
+    ];
+    const page = await answer(200, JSON.stringify({ threads, next: null, server_time: "x" })).api.getThreads("new");
+    expect(page.threads[0]?.marks_count).toEqual({ acknowledged: 2, expected: 5 });
+    for (const t of page.threads.slice(1)) expect(t).not.toHaveProperty("marks_count");
+  });
 });
