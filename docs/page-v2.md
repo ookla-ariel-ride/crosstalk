@@ -198,7 +198,8 @@ free port and removes the folder after the tests. Every `relay.py` run gets a
 `HOME` and each `CROSSTALK_*` path inside that folder, and no `CROSSTALK_*`
 value of your shell, so the tests never write the sessions file or another
 state file of your own home. The tests check the first screen at 1440 by 900 px, an answer to a
-question, and a thread that opens, folds and loses its count after a reload.
+question, "No action needed" that takes a request off Needs you for good, and
+a thread that opens, folds and loses its count after a reload.
 Another test checks that "Mark all read" clears the count of a thread opened
 by its id, on screen and after a reload. A third one, on the default sort,
 checks the count on the button, in the sidebar and in the tab title, the
