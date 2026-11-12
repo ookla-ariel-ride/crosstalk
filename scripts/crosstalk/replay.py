@@ -71,6 +71,16 @@ def first_set_map(lines: Iterable[Line]) -> Dict[DocKey, Line]:
     return first
 
 
+class Docs(dict):
+    """Replayed documents, plus `first_writer`: (collection, id) to the writer of the row's
+    first `set` line (else its last line). It lives beside the documents, not in them, so
+    the rows, the exported data and the snapshot keep their shape."""
+
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.first_writer = {}  # type: Dict[DocKey, str]
+
+
 def enrich_messages(docs: Dict[DocKey, dict], lines: Iterable[Line]) -> Dict[DocKey, dict]:
     """A copy of `docs` where every message a line wrote shows its writer and time.
 
@@ -79,12 +89,17 @@ def enrich_messages(docs: Dict[DocKey, dict], lines: Iterable[Line]) -> Dict[Doc
     the replay is enriched with the writing line's `from` and `t` when the doc lacks
     them. Dated collections (`progress`, `lessons`, `decisions`, `agreements`) also
     receive `t` from their first `set` line (or last line) when `data.t` is omitted.
+    The copy is a Docs, whose `first_writer` names the writer of each row (marks.writer_of).
     The log itself is never touched.
     """
-    docs = {k: copy.deepcopy(v) for k, v in docs.items()}
+    docs = Docs((k, copy.deepcopy(v)) for k, v in docs.items())
     lines_list = list(lines)
     last = last_line_map(lines_list)
     first_set = first_set_map(lines_list)
+    for key in docs:
+        ln = first_set.get(key) or last.get(key)
+        if ln is not None:
+            docs.first_writer[key] = ln.from_
     for (coll, did), doc in docs.items():
         if coll == "messages":
             ln = last.get((coll, did))

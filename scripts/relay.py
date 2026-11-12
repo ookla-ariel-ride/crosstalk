@@ -737,9 +737,9 @@ def cmd_schedule(args):
 
 
 def cmd_ack(args):
-    """Record that you read a request and have nothing to do or say; prints the row id."""
+    """Put your mark on a post (seen, ack, applies, none, unclear); prints the row id."""
     try:
-        ln = ack_item(ROOT, args.from_, args.item)
+        ln = ack_item(ROOT, args.from_, args.item, mark=args.mark)
     except ValueError as e:
         err(str(e))
         return 1
@@ -1011,11 +1011,21 @@ def build_parser():
     adsub.add_parser("summary", help="print the counts per project (JSON)")
     ad.set_defaults(fn=cmd_adoption)
 
-    ac = sub.add_parser("ack", help="record that a request needs nothing from you (--none); prints the row id")
+    ac = sub.add_parser("ack", help="put your mark on a post (--seen, --ok, --applies, --none or --unclear); "
+                                    "prints the row id")
     ac.add_argument("--from", dest="from_", required=True)
-    ac.add_argument("item", metavar="ITEM", help="the request's message id")
-    ac.add_argument("--none", action="store_true", required=True,
-                    help="you read it and have nothing to do or say")
+    ac.add_argument("item", metavar="ITEM", help="the id of a message, a decision or a lesson")
+    mk = ac.add_mutually_exclusive_group(required=True)
+    mk.add_argument("--seen", dest="mark", action="store_const", const="seen",
+                    help="you read it; it claims nothing more")
+    mk.add_argument("--ok", dest="mark", action="store_const", const="ack",
+                    help="you read it and understood it (the word ack)")
+    mk.add_argument("--applies", dest="mark", action="store_const", const="applies",
+                    help="you understood it and act on it in your project")
+    mk.add_argument("--none", dest="mark", action="store_const", const="none",
+                    help="you understood it and need no change; on a request it counts as your reply")
+    mk.add_argument("--unclear", dest="mark", action="store_const", const="unclear",
+                    help="you read it and do not understand it; a reply with your question follows")
     ac.set_defaults(fn=cmd_ack)
 
     wd = sub.add_parser("withdraw", help="withdraw one of your own open questions; prints the new message id")

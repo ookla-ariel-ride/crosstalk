@@ -334,8 +334,14 @@ def no_answer(data: dict) -> dict:
 ACK_SEP = "--"
 
 
+def _mark_of(doc: dict):
+    from .marks import mark_of  # marks imports this module
+    return mark_of(doc)
+
+
 def acks_by_item(docs: Dict, roster=None) -> Dict[str, Set[str]]:
-    """Item id to the ids of the participants that acked it with `none: true`.
+    """Item id to the ids of the participants that acked it with the mark `none`
+    (marks.mark_of: `mark: "none"`, or `none: true` with no other known mark).
 
     A row counts when its id is from + ACK_SEP + item, `from` is approved and holds
     no ACK_SEP, and `item` is a `kind: "request"` message in docs. Any other row
@@ -343,7 +349,7 @@ def acks_by_item(docs: Dict, roster=None) -> Dict[str, Set[str]]:
     """
     out = {}  # type: Dict[str, Set[str]]
     for (coll, did), doc in docs.items():
-        if coll != "acks" or not isinstance(doc, dict) or doc.get("none") is not True:
+        if coll != "acks" or not isinstance(doc, dict) or _mark_of(doc) != "none":
             continue
         frm, item = doc.get("from"), doc.get("item")
         if not isinstance(frm, str) or ACK_SEP in frm or not isinstance(item, str) \

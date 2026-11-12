@@ -13,6 +13,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Dict, List, Optional, Tuple
 
+from .marks import MARKS
 from .participants import HARNESS_MAX, ID_RE, Roster, harness_problem
 
 LEGACY_PREFIXES = ("m-", "vc-", "own-", "a-", "d-", "w-", "l-", "p-", "i-", "lesson-")
@@ -174,6 +175,8 @@ def ack_problem(op: str, doc_id: str, owner: str, data: dict) -> Optional[str]:
             return "an ack set needs from and a string item"
         if doc_id != owner + "--" + item:
             return "ack id %r must be %r" % (doc_id, owner + "--" + item)
+        if "mark" in data and not (isinstance(data["mark"], str) and data["mark"] in MARKS):
+            return "ack mark %r is not one of %s" % (data["mark"], ", ".join(MARKS))
     return None
 
 
