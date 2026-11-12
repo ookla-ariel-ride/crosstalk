@@ -1011,7 +1011,7 @@ class CrosstalkHandler(BaseHTTPRequestHandler):
                              check_in_min=body.get("checkInMin"),
                              parent=body.get("parent"),
                              color=body.get("color"), color_dark=body.get("colorDark"),
-                             harness=body.get("harness"))
+                             harness=body.get("harness"), code_root=self.state.code_root)
         except ValueError as e:
             self._error(400, str(e))
             return
