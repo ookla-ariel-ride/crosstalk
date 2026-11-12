@@ -6,7 +6,7 @@
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useEffect, useState } from "react";
 import { api } from "../../api/client";
-import { keys } from "../../api/queries";
+import { invalidate, keys } from "../../api/queries";
 import type { Message, RosterEntry, Thread } from "../../api/types";
 import { nameOf } from "../../ui/Bars";
 import { approveParticipant, holdAgreement, markDone, recordDecision, reply, splitPost } from "./actions";
@@ -91,7 +91,7 @@ export function OwnerActions({ thread, message }: { thread: Thread; message: Mes
       setTries((n) => n + 1);
       return;
     }
-    const timer = setTimeout(() => void qc.invalidateQueries({ queryKey: keys.thread(thread.root) }), sentAt + ANSWER_WAIT_MS - Date.now());
+    const timer = setTimeout(() => void invalidate(qc, { queryKey: keys.thread(thread.root) }), sentAt + ANSWER_WAIT_MS - Date.now());
     return () => clearTimeout(timer);
   }, [sentAt, late, answerDraft, qc, thread.root]);
 

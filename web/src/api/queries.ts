@@ -1,5 +1,5 @@
 // React Query hooks over client.ts, and the live updates that keep them fresh.
-import { QueryClient, useInfiniteQuery, useQuery, useQueryClient } from "@tanstack/react-query";
+import { type InvalidateQueryFilters, QueryClient, useInfiniteQuery, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useEffect, useState } from "react";
 import { api, ApiError } from "./client";
 import { type EventsDeps, type Mode, startEvents } from "./events";
@@ -58,9 +58,9 @@ export function invalidateForRows(qc: QueryClient, rows: RowRef[]): void {
   }
 
   if (collections.has("messages")) {
-    void qc.invalidateQueries({ queryKey: ["threads"] });
+    void invalidate(qc, { queryKey: ["threads"] });
     // The land queue is read from the land messages (landqueue.py).
-    void qc.invalidateQueries({ queryKey: keys.queue });
+    void invalidate(qc, { queryKey: keys.queue });
     const holders: string[] = [];
     const held = new Set<string>();
     for (const [key, data] of qc.getQueriesData<ThreadDetail>({ queryKey: ["thread"] })) {
@@ -70,18 +70,36 @@ export function invalidateForRows(qc: QueryClient, rows: RowRef[]): void {
       for (const id of hits) held.add(id);
     }
     if (messageIds.size > held.size) {
-      void qc.invalidateQueries({ queryKey: ["thread"] });
+      void invalidate(qc, { queryKey: ["thread"] });
     } else {
-      for (const root of holders) void qc.invalidateQueries({ queryKey: keys.thread(root), exact: true });
+      for (const root of holders) void invalidate(qc, { queryKey: keys.thread(root), exact: true });
     }
   }
 
   // An open waiting row makes the thread of a message with its id need the owner.
-  if (collections.has("waiting") && !collections.has("messages")) void qc.invalidateQueries({ queryKey: ["threads"] });
+  if (collections.has("waiting") && !collections.has("messages")) void invalidate(qc, { queryKey: ["threads"] });
 
   const sections = new Set<SectionName>();
   for (const c of collections) for (const name of SECTIONS_OF[c] ?? []) sections.add(name);
-  for (const name of sections) void qc.invalidateQueries({ queryKey: ["section", name] });
+  for (const name of sections) void invalidate(qc, { queryKey: ["section", name] });
+}
+
+/**
+ * invalidateQueries, plus one more read for each matching query whose first
+ * load is in flight. invalidateQueries cancels a fetch in flight only when the
+ * query holds data (Query.fetch with cancelRefetch), so it reuses a first
+ * load, whose answer can come from before the change that called this. Each
+ * such query is read again once that load ends with data, so it ends with a
+ * read that started after this call. A first load that fails gets no second
+ * read: its error shows, and the next poll or event reads it again. Every
+ * invalidation in web/src goes through here.
+ */
+export function invalidate(qc: QueryClient, filters: InvalidateQueryFilters = {}): Promise<void> {
+  const first = qc.getQueryCache().findAll(filters).filter((q) => q.state.data === undefined && q.state.fetchStatus === "fetching");
+  return qc
+    .invalidateQueries(filters)
+    .then(() => Promise.all(first.filter((q) => q.state.data !== undefined).map((q) => qc.invalidateQueries({ queryKey: q.queryKey, exact: true }))))
+    .then(() => undefined);
 }
 
 /**
@@ -89,17 +107,7 @@ export function invalidateForRows(qc: QueryClient, rows: RowRef[]): void {
  * what the stream shows. Resolves when the refetches settle.
  */
 export function invalidateAll(qc: QueryClient): Promise<void> {
-  const roots = [["threads"], keys.queue, ["thread"], ["section"]];
-  // invalidateQueries cancels a fetch in flight only when the query holds data
-  // (Query.fetch with cancelRefetch); a first load in flight is reused, and its
-  // answer can come from before the server's mark. Read those again once they
-  // settle, so each one ends with a read that started after this call.
-  const first = roots.flatMap((queryKey) =>
-    qc.getQueryCache().findAll({ queryKey }).filter((q) => q.state.data === undefined && q.state.fetchStatus === "fetching"),
-  );
-  return Promise.all(roots.map((queryKey) => qc.invalidateQueries({ queryKey })))
-    .then(() => Promise.all(first.map((q) => qc.invalidateQueries({ queryKey: q.queryKey, exact: true }))))
-    .then(() => undefined);
+  return Promise.all([["threads"], keys.queue, ["thread"], ["section"]].map((queryKey) => invalidate(qc, { queryKey }))).then(() => undefined);
 }
 
 /**

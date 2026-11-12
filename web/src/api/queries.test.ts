@@ -138,6 +138,45 @@ describe("queries", () => {
     unsubscribe();
   });
 
+  test("a rows event that finds a first load still pending gets a second read, and that one shows", async () => {
+    const fresh = new QueryClient();
+    const answers: ((d: ThreadDetail) => void)[] = [];
+    const key = keys.thread("gamma-0001");
+    const observer = new QueryObserver(fresh, {
+      queryKey: key,
+      queryFn: () => new Promise<ThreadDetail>((resolve) => answers.push(resolve)),
+      staleTime: Infinity,
+    });
+    const unsubscribe = observer.subscribe(() => {});
+    await flush();
+    // The row is new to every thread, so every thread is invalidated.
+    invalidateForRows(fresh, [row("messages", "beta-0002")]);
+    answers[0]?.(thread("gamma-0001"));
+    await flush();
+    expect(answers).toHaveLength(2);
+    answers[1]?.(thread("gamma-0001", "beta-0002"));
+    await flush();
+    expect(fresh.getQueryData<ThreadDetail>(key)?.messages).toHaveLength(2);
+    unsubscribe();
+  });
+
+  test("a first load that fails gets no chained read", async () => {
+    const fresh = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+    const fails: ((e: Error) => void)[] = [];
+    const observer = new QueryObserver(fresh, {
+      queryKey: keys.thread("gamma-0001"),
+      queryFn: () => new Promise<ThreadDetail>((_resolve, reject) => fails.push(reject)),
+      staleTime: Infinity,
+    });
+    const unsubscribe = observer.subscribe(() => {});
+    await flush();
+    const done = invalidateAll(fresh);
+    fails[0]?.(new Error("down"));
+    await done;
+    expect(fails).toHaveLength(1);
+    unsubscribe();
+  });
+
   test("the same holds for a poll that finds a first load still pending", async () => {
     const fresh = new QueryClient();
     const answers: ((d: ThreadDetail) => void)[] = [];
