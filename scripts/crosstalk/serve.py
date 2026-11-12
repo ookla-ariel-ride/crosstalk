@@ -821,7 +821,7 @@ class CrosstalkHandler(BaseHTTPRequestHandler):
             except ValueError as e:
                 self._error(400, str(e))
                 return
-            items = self._with_unread(index, items, state)
+            items = self._with_counts(self._with_unread(index, items, state))
             self._json(200, {"threads": items, "next": nxt, "server_time": now, "unread_total": len(fresh)})
             return
         try:

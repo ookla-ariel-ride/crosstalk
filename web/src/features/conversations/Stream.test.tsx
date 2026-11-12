@@ -787,6 +787,14 @@ describe("Mark all read feedback", () => {
     expect(screen.queryByText("Owner only")).toBeNull();
   });
 
+  test("a row shows its unread count and its marks count together", () => {
+    const row = thread("alpha-0501", { title: "Marked lesson", unread: 2, last_t: "2026-11-11T09:40:00Z", marks_count: { acknowledged: 3, expected: 5 } });
+    renderWith(<Stream sort="needs" open={[]} onOpenChange={() => {}} />, base(OWNER, EMPTY_STATE, [row]));
+    const button = screen.getByRole("button", { name: /Marked lesson/ });
+    expect(within(button).getByText("2 new")).toBeTruthy();
+    expect(within(button).getByText("3 of 5 acknowledged")).toBeTruthy();
+  });
+
   test("a muted thread that is hidden does not count", () => {
     const state = { ...EMPTY_STATE, muted: ["beta-0104"] };
     renderWith(<Stream sort="needs" open={[]} onOpenChange={() => {}} />, base(OWNER, state, unreadRows()));

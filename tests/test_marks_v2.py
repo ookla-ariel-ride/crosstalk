@@ -61,6 +61,18 @@ class MarksInV2RoutesTests(unittest.TestCase):
         self.assertEqual(rows["alpha-l1"]["marks_count"], {"acknowledged": 1, "expected": 2})
         self.assertNotIn("marks_count", rows["alpha-c1"])
 
+    def test_the_owners_unread_list_counts_the_marks_too(self):
+        from crosstalk.tokens import token_hash
+        token = "owner-token-for-marks-v2-0123456789"
+        with RunningServer(self.r.root, tokens={"owner": token_hash(token)}) as srv:
+            status, body = request(srv.url + "/api/threads?sort=new&unread=1",
+                                   headers={"Authorization": "Bearer " + token})
+        self.assertEqual(status, 200, body)
+        rows = {t["root"]: t for t in body["threads"]}
+        self.assertEqual(rows["alpha-l1"]["marks_count"], {"acknowledged": 1, "expected": 2})
+        self.assertNotIn("marks_count", rows["alpha-c1"])
+        self.assertGreater(rows["alpha-l1"]["unread"], 0)
+
     def test_a_count_follows_a_new_mark(self):
         later = line(2, "gamma", collection="acks", id_="gamma--alpha-l1", t="2026-10-21T18:05:00Z",
                      data={"from": "gamma", "item": "alpha-l1", "mark": "none", "t": "2026-10-21T18:05:00Z"})
