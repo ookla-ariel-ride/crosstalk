@@ -177,6 +177,10 @@
   font-weight: 600;
 }
 
+.summary {
+  font-weight: 600;
+}
+
 .when {
   margin-left: 8px;
   color: var(--muted);

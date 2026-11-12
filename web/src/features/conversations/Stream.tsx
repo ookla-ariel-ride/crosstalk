@@ -5,6 +5,7 @@ import { memo, type ReactNode, useCallback, useEffect, useMemo, useRef, useState
 import { ApiError } from "../../api/client";
 import { useSection, useThread, useThreads } from "../../api/queries";
 import type { SectionRow, Thread } from "../../api/types";
+import { afterSummary } from "../../logic/afterSummary";
 import { ago } from "../../logic/ago";
 import { foldRoutine } from "../../logic/foldRoutine";
 import { href, type Route, route as routeOf, type Sort } from "../../logic/route";
@@ -109,18 +110,19 @@ function WaitingList({ rows, now, actions }: { rows: SectionRow[]; now: Date; ac
       estimateSize={64}
       renderRow={(row) => {
         const shown = open.includes(row.id);
+        const rest = afterSummary(str(row.body), str(row.summary));
         return (
           <Row
             projects={str(row.project) ? [str(row.project)] : []}
             title={str(row.summary) || row.id}
-            text={str(row.body).split("\n")[0]}
+            text={rest.split("\n")[0]}
             note={<span className={styles.noteLine}>{"waiting since " + ago(str(row.since), now)}</span>}
             open={shown}
             onOpen={() => setOpen(shown ? open.filter((id) => id !== row.id) : [...open, row.id])}
           >
             {shown ? (
               <div className={styles.thread}>
-                <Body text={str(row.body)} />
+                <Body text={rest} />
                 <div className={styles.end}>{actions?.(row)}</div>
               </div>
             ) : null}

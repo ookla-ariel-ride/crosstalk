@@ -228,6 +228,22 @@ describe("Stream", () => {
     expect(within(root).getByText("alpha, model not stated")).toBeTruthy();
   });
 
+  test("a multiline answer keeps its first line after another reply; a body that repeats the summary shows it once", () => {
+    const answered = [
+      MESSAGES[0] as Message,
+      message("own-0002", "2026-11-11T09:10:00Z", { from: "owner", summary: "Keep the log", body: "We revisit it in a month." }),
+      message("beta-0003", "2026-11-11T09:20:00Z", { from: "beta", summary: "Agreed", body: "Agreed\n\nI keep the log as it is." }),
+    ];
+    const data = base(OWNER, EMPTY_STATE, [Q1]).map(([k, v]): [QueryKey, unknown] =>
+      k[0] === "thread" ? [k, { root: "alpha-0001", messages: answered }] : [k, v],
+    );
+    renderWith(<Stream sort="needs" open={["alpha-0001"]} onOpenChange={() => {}} />, data);
+    const answer = screen.getByText("Keep the log").closest("article") as HTMLElement;
+    expect(within(answer).getByText("We revisit it in a month.")).toBeTruthy();
+    const reply = screen.getByText("I keep the log as it is.").closest("article") as HTMLElement;
+    expect(within(reply).getAllByText("Agreed")).toHaveLength(1);
+  });
+
   test("renderActions shows under each message and at the end of the thread", () => {
     renderWith(
       <Stream sort="needs" open={["alpha-0001"]} onOpenChange={() => {}} renderActions={(t, m) => <span>{"act " + (m ? m.id : "end:" + t.root)}</span>} />,
@@ -478,6 +494,14 @@ describe("NeedsYou", () => {
     fireEvent.click(row);
     expect(screen.queryByText("The old one expires.")).toBeTruthy();
     expect(screen.getByText("done alpha-w0001")).toBeTruthy();
+  });
+
+  test("a waiting row whose body repeats its summary shows that line once", () => {
+    const rows = [{ id: "alpha-w0002", summary: "Renew the cert", body: "Renew the cert\n\nIt ends on Monday.", project: "alpha", since: "2026-11-11T08:00:00Z", done: null }];
+    renderWith(<NeedsYou />, [...base(OWNER, EMPTY_STATE, [Q1]), [keys.section("waiting", ""), { pages: [{ rows, next: null, open: 1, total: 1 }], pageParams: [""] }]]);
+    fireEvent.click(screen.getByRole("button", { name: /Renew the cert/ }));
+    expect(screen.getAllByText("It ends on Monday.")).toHaveLength(2);
+    expect(screen.getAllByText("Renew the cert")).toHaveLength(1);
   });
 
   test("shows only the threads that need the owner, in the needs order", () => {

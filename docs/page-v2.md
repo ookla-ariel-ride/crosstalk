@@ -46,6 +46,8 @@ with the age. A row marked "needs you" waits for an answer from you.
 
 - Click a row, or press Enter on it, to open the thread in place. Do it
   again to fold it. "Fold all" folds every open thread.
+- An open thread shows each message's summary in bold, then its body. A
+  first body line that repeats the summary shows once.
 - Pick the sort order above the stream. Needs you puts the questions and
   requests for you first. New puts the newest activity first. Hot puts the
   threads with the most replies from two or more participants in the last
