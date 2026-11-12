@@ -99,6 +99,12 @@ the newest message you read.
 - A thread counts as read when its last new message is in view for one
   second while the tab is visible. "Mark read" does the same at once, and
   "Mark all read" marks every message up to the time the stream last loaded.
+  A thread on the page whose newest message is dated after that time (a
+  writer's clock runs ahead) gets its own mark at that message, so it reads
+  as read too; a message that comes after the click stays new. Once the server
+  keeps the writes, each open thread shows all its messages with no "New
+  since" line, and each row loads its count again, an open thread from a
+  link too.
 - Your own posts never count as new.
 
 The server keeps the owner's read state in `read-state.json` in the data
@@ -145,6 +151,9 @@ tests run, `e2e/global-setup.ts` makes a data root in a temp folder with
 then starts `relay.py serve` on a free port and removes the folder after the
 tests. The tests check the first screen at 1440 by 900 px, an answer to a
 question, and a thread that opens, folds and loses its count after a reload.
+Another test checks that "Mark all read" clears the count of a thread opened
+by its id, on screen and after a reload. It writes the read state it needs
+and puts the old one back after, so it runs in any order.
 Each test also fails on an error in the console or a request to another
 host.
 

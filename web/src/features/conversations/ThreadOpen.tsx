@@ -1,7 +1,7 @@
 // An open thread: the read messages folded behind one line, the line "New
 // since HH:MM", then the new ones. The thread is marked read when its last new
 // message was in view for a second, or on "Mark read".
-import { type ReactNode, useContext, useEffect, useMemo, useRef, useState } from "react";
+import { Fragment, type ReactNode, useContext, useEffect, useMemo, useRef, useState } from "react";
 import { ApiError } from "../../api/client";
 import { useRoster, useThread } from "../../api/queries";
 import type { Message, ReadMark, Thread } from "../../api/types";
@@ -102,6 +102,9 @@ export function ThreadOpen({ thread, now, renderActions }: ThreadOpenProps) {
   // The split stays as it was when the thread opened, so a mark does not
   // fold the messages being read.
   const [split, setSplit] = useState<ReadMark | undefined | null>(null);
+  // "Mark all read" moves the split to the newest message drawn at the click,
+  // with every message in view: no line "New since", and nothing folds away.
+  const [runs, setRuns] = useState(reading.markAllRuns);
   const lastFresh = useRef<HTMLDivElement>(null);
 
   const messages = query.data?.messages;
@@ -113,6 +116,13 @@ export function ThreadOpen({ thread, now, renderActions }: ThreadOpenProps) {
 
   // A mark names the newest message drawn when it is made, never one of a later fetch.
   const top = messages ? newest(messages) : undefined;
+  if (runs !== reading.markAllRuns) {
+    setRuns(reading.markAllRuns);
+    if (parts && parts.fresh.length > 0) {
+      setSplit(top);
+      setShowEarlier(true);
+    }
+  }
   const markRead = () => {
     if (top) reading.markThread(thread.root, top);
   };
@@ -159,21 +169,18 @@ export function ThreadOpen({ thread, now, renderActions }: ThreadOpenProps) {
           {earlier.length === 1 ? "Show 1 earlier message" : `Show ${earlier.length} earlier messages`}
         </button>
       ) : null}
-      {showEarlier ? earlier.map(view) : null}
-      {earlier.length > 0 && fresh.length > 0 && split ? (
-        <p className={styles.newSince}>
-          <span>New since {clock(split.t)}</span>
-        </p>
-      ) : null}
-      {fresh.map((m, i) =>
-        i === fresh.length - 1 ? (
-          <div key={m.id} ref={lastFresh}>
-            {view(m)}
-          </div>
-        ) : (
-          view(m)
-        ),
-      )}
+      {/* One keyed list for both parts: a message that moves from the new part
+          to the earlier one keeps its place in the tree, so it does not mount again. */}
+      {[...(showEarlier ? earlier : []), ...fresh].map((m) => (
+        <Fragment key={m.id}>
+          {m === fresh[0] && earlier.length > 0 && split ? (
+            <p className={styles.newSince}>
+              <span>New since {clock(split.t)}</span>
+            </p>
+          ) : null}
+          <div ref={m.id === lastId ? lastFresh : undefined}>{view(m)}</div>
+        </Fragment>
+      ))}
       <div className={styles.end}>
         {unread ? (
           <button type="button" className={styles.action} onClick={markRead}>

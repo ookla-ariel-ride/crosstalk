@@ -1,6 +1,7 @@
 // @vitest-environment jsdom
 import { QueryClient, QueryClientProvider, type QueryKey } from "@tanstack/react-query";
-import { act, fireEvent, render, screen, within } from "@testing-library/react";
+import { act, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
+import { useEffect } from "react";
 import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
 import { keys } from "../../api/queries";
 import type { Me, Message, ReadState, Thread } from "../../api/types";
@@ -196,6 +197,74 @@ describe("Stream", () => {
     await act(async () => fireEvent.click(screen.getByRole("button", { name: "Mark all read" })));
     // testing.tsx's thread pages carry server_time 2026-11-11T10:00:00Z.
     expect(calls.filter((c) => c.method === "PUT").map((c) => c.body)).toEqual([{ all_before: "2026-11-11T10:00:00Z" }]);
+  });
+
+  test("mark all read also marks each shown thread whose newest message is dated after the server time", async () => {
+    const ahead = thread("beta-0007", { last_t: "2026-11-11T10:05:00Z", last_id: "beta-0008", unread: 1 });
+    renderWith(<Stream sort="needs" open={[]} onOpenChange={() => {}} />, base(OWNER, EMPTY_STATE, [Q1, ahead]));
+    const calls = spyFetch();
+    await act(async () => fireEvent.click(screen.getByRole("button", { name: "Mark all read" })));
+    expect(calls.filter((c) => c.method === "PUT").map((c) => c.body)).toEqual([
+      { all_before: "2026-11-11T10:00:00Z" },
+      { thread: "beta-0007", t: "2026-11-11T10:05:00Z", id: "beta-0008" },
+    ]);
+  });
+
+  test("a viewer's mark all read keeps the time and the marks of the threads dated ahead", async () => {
+    const ahead = thread("beta-0007", { last_t: "2026-11-11T10:05:00Z", last_id: "beta-0008" });
+    renderWith(<Stream sort="needs" open={[]} onOpenChange={() => {}} />, base(VIEWER, null, [Q1, ahead]));
+    expect(screen.getAllByText("new")).toHaveLength(2);
+    await act(async () => fireEvent.click(screen.getByRole("button", { name: "Mark all read" })));
+    const stored = JSON.parse(window.localStorage.getItem(STORAGE_KEY) ?? "null");
+    expect(stored.all_before).toBe("2026-11-11T10:00:00Z");
+    expect(stored.threads).toEqual({ "beta-0007": { t: "2026-11-11T10:05:00Z", id: "beta-0008" } });
+    expect(screen.queryAllByText("new")).toHaveLength(0);
+  });
+
+  test("after mark all read the open thread shows no line new since and keeps its messages in view", async () => {
+    const state = { ...EMPTY_STATE, threads: { "alpha-0001": { t: "2026-11-11T09:10:00Z", id: "beta-0002" } } };
+    renderWith(<Stream sort="needs" open={["alpha-0001"]} onOpenChange={() => {}} />, base(OWNER, state, [Q1]));
+    expect(screen.getByText("New since " + hhmm("2026-11-11T09:10:00Z"))).toBeTruthy();
+    spyFetch({ ...state, all_before: "2026-11-11T10:00:00Z" });
+    await act(async () => fireEvent.click(screen.getByRole("button", { name: "Mark all read" })));
+    expect(screen.queryByText(/New since/)).toBeNull();
+    expect(screen.getByText("Newest reply")).toBeTruthy();
+    expect(screen.queryByRole("button", { name: /earlier message/ })).toBeNull();
+  });
+
+  test("a failed mark all read write leaves the line new since", async () => {
+    const state = { ...EMPTY_STATE, threads: { "alpha-0001": { t: "2026-11-11T09:10:00Z", id: "beta-0002" } } };
+    renderWith(<Stream sort="needs" open={["alpha-0001"]} onOpenChange={() => {}} />, base(OWNER, state, [Q1]));
+    vi.stubGlobal("fetch", async (_url: string, init: RequestInit = {}) =>
+      init.method === "PUT" ? new Response(JSON.stringify({ error: "down" }), { status: 500 }) : new Promise<Response>(() => {}),
+    );
+    await act(async () => fireEvent.click(screen.getByRole("button", { name: "Mark all read" })));
+    expect(screen.getByText("New since " + hhmm("2026-11-11T09:10:00Z"))).toBeTruthy();
+  });
+
+  test("a row that arrives after mark all read stays new", async () => {
+    const { qc } = renderWith(<Stream sort="needs" open={[]} onOpenChange={() => {}} />, base(VIEWER, null, [Q1]));
+    await act(async () => fireEvent.click(screen.getByRole("button", { name: "Mark all read" })));
+    expect(screen.queryAllByText("new")).toHaveLength(0);
+    const later = thread("beta-0011", { title: "Came after the click", last_t: "2026-11-11T10:02:00Z", last_id: "beta-0011" });
+    const reply = { ...Q1, last_t: "2026-11-11T10:03:00Z", last_id: "beta-0012" };
+    await act(async () => qc.setQueryData(keys.threads("needs"), { pages: [{ threads: [later, reply], next: null, server_time: "2026-11-11T10:04:00Z" }], pageParams: [""] }));
+    await waitFor(() => expect(screen.getAllByText("new")).toHaveLength(2));
+  });
+
+  test("mark all read keeps the messages in view mounted, with their actions", async () => {
+    const mounts: string[] = [];
+    function Probe({ id }: { id: string }) {
+      useEffect(() => void mounts.push(id), [id]);
+      return null;
+    }
+    const state = { ...EMPTY_STATE, threads: { "alpha-0001": { t: "2026-11-11T09:10:00Z", id: "beta-0002" } } };
+    const actions = (_t: Thread, m: Message | null) => (m ? <Probe id={m.id} /> : null);
+    renderWith(<Stream sort="needs" open={["alpha-0001"]} onOpenChange={() => {}} renderActions={actions} />, base(OWNER, state, [Q1]));
+    expect(mounts).toEqual(["alpha-0003", "beta-0004"]);
+    spyFetch({ ...state, all_before: "2026-11-11T10:00:00Z" });
+    await act(async () => fireEvent.click(screen.getByRole("button", { name: "Mark all read" })));
+    expect(mounts).toEqual(["alpha-0003", "beta-0004", "alpha-0001", "beta-0002"]);
   });
 
   test("a muted thread leaves the stream until a message in it addresses the owner", () => {
@@ -420,6 +489,24 @@ describe("the mark race", () => {
 });
 
 describe("open ids", () => {
+  test("mark all read refreshes a thread that an id link opened", async () => {
+    const linked = thread("zeta-0001", { title: "A linked thread", unread: 1, last_t: "2026-11-11T09:55:00Z", last_id: "zeta-0002" });
+    const msgs = [message("zeta-0001", "2026-11-11T08:00:00Z", { depth: 0 }), message("zeta-0002", "2026-11-11T09:55:00Z", { from: "beta" })];
+    const data = base(OWNER, EMPTY_STATE, [Q1]);
+    data.push([keys.thread("zeta-0001"), { root: "zeta-0001", thread: linked, messages: msgs }]);
+    renderWith(<Stream sort="needs" open={["zeta-0001"]} onOpenChange={() => {}} />, data);
+    expect(screen.getByText("1 new")).toBeTruthy();
+    const after = { ...EMPTY_STATE, all_before: "2026-11-11T10:00:00Z" };
+    vi.stubGlobal("fetch", async (url: string, init: RequestInit = {}) => {
+      const json = (body: unknown) => new Response(JSON.stringify(body), { status: 200, headers: { "Content-Type": "application/json" } });
+      if (init.method === "PUT") return json(after);
+      if (url.startsWith("/api/thread/zeta-0001")) return json({ root: "zeta-0001", thread: { ...linked, unread: 0 }, messages: msgs });
+      return new Promise<Response>(() => {});
+    });
+    await act(async () => fireEvent.click(screen.getByRole("button", { name: "Mark all read" })));
+    await waitFor(() => expect(screen.queryByText("1 new")).toBeNull());
+  });
+
   test("two fast clicks open two threads", () => {
     const onOpenChange = vi.fn();
     renderWith(<Stream sort="needs" open={[]} onOpenChange={onOpenChange} />, base(OWNER, EMPTY_STATE, [Q1, thread("beta-0009", { title: "Second" })]));

@@ -18,6 +18,7 @@ export const FIXTURE = {
   openQuestion: "Ship the beta build today?",
   answerQuestion: "Which port should the test server use?",
   thread: "Schema change ready",
+  linked: "Cache warmed",
   ownerRequest: "Read the new runbook",
 };
 
@@ -81,6 +82,10 @@ function buildFixture(root: string): string {
     "--data", JSON.stringify({ from: "alpha", kind: "request", summary: FIXTURE.ownerRequest, body: "It is in docs/.", to: ["owner"] }));
   relay(root, "reply", ...who, "--from", "alpha", "--to-id", "beta-e2e-schema", "--summary", "Looks good", "--body", "I read the migration.");
   relay(root, "reply", ...who, "--from", "relay-bot", "--to-id", "beta-e2e-schema", "--summary", "Merged", "--body", "The branch is merged.");
+  // A thread with a reply, so the unanswered order leaves it out: the stream shows it as a thread opened by its id.
+  relay(root, "append", ...who, "--from", "beta", "--op", "set", "--collection", "messages", "--id", "beta-e2e-cache",
+    "--data", JSON.stringify({ from: "beta", kind: "sync", summary: FIXTURE.linked, body: "The cache is warm.", to: ["alpha"] }));
+  relay(root, "reply", ...who, "--from", "alpha", "--to-id", "beta-e2e-cache", "--summary", "Thanks", "--body", "I saw it.");
   // The owner read the thread's root before the replies came.
   writeFileSync(join(root, "read-state.json"),
     JSON.stringify({ threads: { "beta-e2e-schema": { t: timeOf(root, "beta-e2e-schema"), id: "beta-e2e-schema" } }, muted: [], all_before: null }));
@@ -133,5 +138,7 @@ export default async function globalSetup() {
   });
   process.env.CROSSTALK_E2E_URL = `http://127.0.0.1:${port}`;
   process.env.CROSSTALK_E2E_PIN = pin;
+  // The data root, for a test that sets the read state and puts it back.
+  process.env.CROSSTALK_E2E_ROOT = root;
   return stop;
 }
