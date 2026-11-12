@@ -142,5 +142,23 @@ class MarksInV2RoutesTests(unittest.TestCase):
         self.assertTrue(all(v == out[0] for v in out))
 
 
+class ForgedMarksOnEverySectionTests(unittest.TestCase):
+    def test_no_section_row_keeps_a_marks_field_of_the_log(self):
+        from crosstalk import sections
+        roster = load_roster_from(ROSTER)
+        for name in sections.SECTIONS:
+            coll = sections.COLLECTION[name]
+            doc = {"summary": "a row", "from": "alpha", "kind": "review", "t": SINCE, "marks": FORGED}
+            rows, _open = sections.rows(name, {(coll, "alpha-x1"): doc}, roster)
+            for row in rows:
+                self.assertNotIn("marks", row, name)
+
+
+def load_roster_from(data):
+    with TempRepo() as r:
+        r.write_roster(data)
+        return load_roster(r.root / "participants.json")
+
+
 if __name__ == "__main__":
     unittest.main()

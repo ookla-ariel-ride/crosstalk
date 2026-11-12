@@ -89,7 +89,7 @@ def rows(name: str, docs: Dict[Tuple[str, str], dict], roster,
     gives None, the doc's own `t` stands in. Ties go to the higher id. `q`
     keeps the docs where one of the section's FIELDS holds it, case ignored,
     as plain text. A row of a message, a decision or a lesson gets its `marks` from
-    `views` (marks.page_views) and never keeps a `marks` field of the log.
+    `views` (marks.page_views); no row keeps a `marks` field of the log.
     An unknown name is a KeyError.
     """
     if name not in SECTIONS:
@@ -115,7 +115,7 @@ def rows(name: str, docs: Dict[Tuple[str, str], dict], roster,
     found.sort(key=lambda r: (r[1], r[2]), reverse=True)
     found.sort(key=lambda r: not r[0])  # stable: open first, each part newest first
     out = [dict(doc, id=did) for _open, _when, did, doc in found]
-    if coll in marks_mod.MARKABLE:
-        views = views or {}
-        out = [marks_mod.on_row(row, views.get((coll, row["id"]))) for row in out]
+    # Marks come only from `acks` rows: a row of any other collection has none.
+    views = (views or {}) if coll in marks_mod.MARKABLE else {}
+    out = [marks_mod.on_row(row, views.get((coll, row["id"]))) for row in out]
     return out, sum(1 for r in found if r[0])
