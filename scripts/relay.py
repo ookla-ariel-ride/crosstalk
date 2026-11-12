@@ -27,6 +27,7 @@ from crosstalk import schedules as schedules_mod  # noqa: E402
 from crosstalk import state as state_mod  # noqa: E402
 from crosstalk import buildhost as buildhost_mod  # noqa: E402
 from crosstalk import config as config_mod  # noqa: E402
+from crosstalk import marks as marks_mod  # noqa: E402
 from crosstalk import urgent as urgent_mod  # noqa: E402
 from crosstalk.logs import append_line, check_all, message_problems  # noqa: E402
 from crosstalk.onboard import onboard, regenerate_kit  # noqa: E402
@@ -64,6 +65,9 @@ def run_check(stream):
 
 def cmd_check(args):
     fatal, _ = run_check(sys.stdout)
+    since = marks_mod.since_problem(ROOT)
+    if since:
+        print("warning: " + since)
     if fatal:
         return 1
     files = sorted((ROOT / "log").glob("*.jsonl"))
@@ -76,9 +80,10 @@ def cmd_check(args):
 
 
 def cmd_append(args):
-    if args.no_answer and not (args.collection == "messages" and args.op == "set"):
-        err("--no-answer is for a new message")
-        return 1
+    for flag, on in (("--no-answer", args.no_answer), ("--must-read", args.must_read)):
+        if on and not (args.collection == "messages" and args.op == "set"):
+            err("%s is for a new message" % flag)
+            return 1
     try:
         if args.data is not None:
             text = args.data
@@ -96,6 +101,8 @@ def cmd_append(args):
             data.setdefault(name, value)
         if args.no_answer:
             no_answer(data)
+        if args.must_read:
+            data["must_read"] = True
     roster = load_roster(ROOT / "participants.json")
     for w in message_problems(args.collection, args.op, data, roster)[1]:
         err("warning: " + w)
@@ -549,6 +556,7 @@ def cmd_reply(args):
             msg_id=args.id,
             speaker=speaker_fields(args),
             no_answer=args.no_answer,
+            must_read=args.must_read,
         )
     except ValueError as e:
         err(str(e))
@@ -581,6 +589,9 @@ def cmd_ask(args):
     """Post a question for the owner; prints the new message id."""
     if args.no_answer:
         err("a question to the owner needs an answer; ask takes no --no-answer")
+        return 1
+    if args.must_read:
+        err("a question to the owner asks no mark; ask takes no --must-read")
         return 1
     recommend = None
     if args.recommend is not None:
@@ -794,6 +805,7 @@ def cmd_adopt(args):
 
 
 NO_ANSWER_HELP = 'set needs_answer: false and end the body with "No answer needed."'
+MUST_READ_HELP = "set must_read: true: every agent the post reaches owes a mark (relay.py ack)"
 
 
 def _speaker_flags(parser):
@@ -825,6 +837,7 @@ def build_parser():
     g.add_argument("--data", help="JSON object")
     g.add_argument("--data-file", help="path to a JSON object file")
     a.add_argument("--no-answer", action="store_true", help=NO_ANSWER_HELP + " (--collection messages --op set only)")
+    a.add_argument("--must-read", action="store_true", help=MUST_READ_HELP + " (--collection messages --op set only)")
     a.set_defaults(fn=cmd_append)
 
     x = sub.add_parser("export-page", help="write one self-contained HTML page with the log inlined")
@@ -937,6 +950,7 @@ def build_parser():
     rp.add_argument("--ref", "--refs", dest="refs", action="append", nargs="+")
     rp.add_argument("--id")
     rp.add_argument("--no-answer", action="store_true", help=NO_ANSWER_HELP)
+    rp.add_argument("--must-read", action="store_true", help=MUST_READ_HELP)
     rp.set_defaults(fn=cmd_reply)
 
     cs = sub.add_parser("consult", help="post a peer consultation request; prints the new message id")
@@ -962,6 +976,7 @@ def build_parser():
     ak.add_argument("--recommend", type=int,
                     help="the choice you recommend, by number: 1 is the first --option")
     ak.add_argument("--no-answer", action="store_true", help="refused: a question to the owner needs an answer")
+    ak.add_argument("--must-read", action="store_true", help="refused: a question to the owner asks no mark")
     ak.set_defaults(fn=cmd_ask)
 
     qs = sub.add_parser("questions", help="print the open questions for the owner (JSON)")

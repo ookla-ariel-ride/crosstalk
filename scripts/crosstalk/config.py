@@ -13,6 +13,9 @@ holds no secret.
     broadcastWakesFrom  A peer's request with no `to` and no mention goes to every
                         approved project when its time is at or after this
                         (requests.py); empty wakes for all.
+    marks_since         A post expects a mark only when its time is at or after this
+                        ISO time (marks.py); empty, or a value that is not a time,
+                        means no post expects one. `relay.py check` warns on the latter.
     buildHost.ssh       The build host's ssh alias (buildhost.py); empty means no
                         build host, and nothing probes.
     buildHost.loadHigh, loadClear, diskLowGiB, diskClearGiB
@@ -45,6 +48,7 @@ DEFAULTS = {
     "repoUrl": "",
     "rulingsSince": "",
     "broadcastWakesFrom": "",
+    "marks_since": "",
     "buildHost": {"ssh": "", "loadHigh": 12.0, "loadClear": 10.0, "diskLowGiB": 50.0, "diskClearGiB": 55.0},
     "autogrant": {"loadLimit": 12.0},
     "usage": {"glob": "", "limit": 90.0, "stopLimit": 95.0, "graceMin": 0.0, "maxAgeMin": 45.0},

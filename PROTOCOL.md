@@ -177,6 +177,36 @@ python3 scripts/relay.py ack --from alpha beta-0042 --applies
   `none`. A row whose `mark` is not one of the five words reads as no mark,
   and the log check refuses such a `set` line.
 
+#### Which posts expect a mark
+A post expects a mark when its time is at or after `marks_since` in
+`config.json`, and one of these is true:
+
+- It is a message of the kind `lesson`, or a `lessons` row. A row
+  `lesson-<m>` whose message `<m>` exists counts as that message: the
+  message expects the mark, and the row does not.
+- It is a `decisions` row that the coordinator or the owner wrote, because
+  a ruling of either binds every project. The writer is the writer of the
+  first log line.
+- It is a message from the owner that starts a thread (no `replyTo`) and
+  goes to every project: it has no `to`, or its `to` names every approved
+  project.
+- It carries `must_read: true`. The flag `--must-read` on `reply` and on
+  `append --collection messages --op set` writes it. `ask` refuses it.
+
+A check-in, a land or lane word, a GRANTED, a plain reply and an owner
+answer inside a thread expect no mark unless the sender adds
+`--must-read`. With no `marks_since`, or a value that is not a time, no
+post expects a mark, and marks that agents set still show. The time of a
+`decisions` or `lessons` row is the time of its first `set` line, so a
+later edit does not change it.
+
+Who owes a mark: each approved participant of the kind `project` or
+`agent`, except the writer and the owner. A reviewer, a researcher, a tool
+and a person owe none. When the post has a `to`, only the names in it owe
+a mark, by the same rule. A name owes until its mark is `ack`, `applies`
+or `none`; `seen` and `unclear` leave it owing. A participant that left
+the roster or lost its approval owes nothing, and its mark does not show.
+
 A single-recipient request closes when that recipient or the owner replies; a
 reply from anyone else doesn't close it. A multi-recipient or broadcast request
 stays open in each recipient's `relay.py inbox <you>` until that recipient has
