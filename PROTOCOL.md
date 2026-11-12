@@ -354,7 +354,10 @@ The server grants no turn during a wind-down. The owner or the coordinator
 records one with
 `relay.py state wind-down --from <id> --step 1|2 [--reason TEXT]`, and step 0
 ends it. The newer record of the two counts, and a row from any other writer
-counts for nothing. A `TURN ASK` that waits stays in the
+counts for nothing. A record's `t` is the time of its log line, and the
+command writes a `t` later than both records, so a later command always takes
+force. On an equal `t` the owner's record counts. An `update` cannot change
+`step`, `started` or `t`: a new step needs a new `state wind-down`. A `TURN ASK` that waits stays in the
 queue and gets its `GRANTED` after step 0.
 
 Free-text posts ("land start 01:42", "asking for a land turn") are not read:

@@ -130,7 +130,7 @@ def _validate(raw: str, owner: str, expected: int, _prior: List[Line],
         if msg:
             return msg
     if d["collection"] == "state":
-        msg = state_problem(d["id"], owner, d["data"])
+        msg = state_problem(d["op"], d["id"], owner, d["t"], d["data"])
         if msg:
             return msg
     if d["collection"] == "messages":
@@ -169,14 +169,20 @@ def ack_problem(op: str, doc_id: str, owner: str, data: dict) -> Optional[str]:
     return None
 
 
-def state_problem(doc_id: str, owner: str, data: dict) -> Optional[str]:
+def state_problem(op: str, doc_id: str, owner: str, t: str, data: dict) -> Optional[str]:
     """The reason a `state` line is invalid, or None. For every op the id is exactly
     `<writer>-wind-down` (state.py), so no writer can set or change another's record,
-    and a prefix such as `relay` of `relay-bot` cannot reach `relay-bot-wind-down`."""
+    and a prefix such as `relay` of `relay-bot` cannot reach `relay-bot-wind-down`.
+    The record in force is chosen by its `t`, so a `set` carries the line's own time,
+    and an `update` cannot change `step`, `started` or `t`: a new step is a new `set`."""
     if doc_id != owner + "-wind-down":
         return "state id %r must be %r: only its writer may set or change it" % (doc_id, owner + "-wind-down")
     if "from" in data and data["from"] != owner:
         return "state from %r is not its writer %r" % (data["from"], owner)
+    if op == "set" and data.get("t") != t:
+        return "state t %r must be the line t %r" % (data.get("t"), t)
+    if op == "update" and any(k in data for k in ("step", "started", "t")):
+        return "an update cannot change step, started or t; run a new state wind-down"
     return None
 
 

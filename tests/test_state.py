@@ -76,7 +76,41 @@ class WindDownTests(unittest.TestCase):
         self.assertEqual((coord["from"], coord["by"], coord["step"], coord["reason"]),
                          ("relay-bot", "relay-bot", 2, None))
         self.assertEqual(coord["started"], own["started"])  # the record in force was at step 1
-        self.assertIn(self.current()["step"], (1, 2))
+        # the later command takes force, also within the same second
+        self.assertEqual(self.current(), {"step": 2, "started": own["started"], "by": "relay-bot",
+                                          "reason": None})
+        self.assertGreater(coord["t"], own["t"])
+
+    def test_a_later_command_always_takes_force(self):
+        roster = self.roster()
+        for pid, step in (("owner", 1), ("relay-bot", 0), ("owner", 2), ("relay-bot", 1), ("owner", 0)):
+            ln = state.set_wind_down(self.r.root, pid, step, roster=roster)
+            self.assertEqual(ln.t, ln.data["t"])
+            self.assertEqual((self.current()["step"], self.current()["by"]), (step, pid))
+
+    def test_future_t_through_append_is_refused(self):
+        state.set_wind_down(self.r.root, "owner", 1, roster=self.roster())
+        for pid in ("owner", "relay-bot"):
+            for t in ("2099-01-01T00:00:00Z", None):
+                data = row(pid, 0, t)
+                if t is None:
+                    del data["t"]
+                p = self.run_cli("append", "--from", pid, "--op", "set", "--collection", "state",
+                                 "--id", pid + "-wind-down", "--data", json.dumps(data))
+                self.assertEqual(p.returncode, 1, (pid, t))
+                self.assertIn("line t", p.stderr)
+        self.assertEqual(self.current()["step"], 1)
+        state.set_wind_down(self.r.root, "relay-bot", 0, roster=self.roster())
+        self.assertEqual(self.current()["by"], "relay-bot")
+
+    def test_update_cannot_change_the_step(self):
+        state.set_wind_down(self.r.root, "owner", 1, reason="stop", roster=self.roster())
+        for data in ({"step": 0}, {"t": "2099-01-01T00:00:00Z"}, {"started": None}):
+            p = self.run_cli("append", "--from", "owner", "--op", "update", "--collection", "state",
+                             "--id", "owner-wind-down", "--data", json.dumps(data))
+            self.assertEqual(p.returncode, 1, data)
+            self.assertIn("new state wind-down", p.stderr)
+        self.assertEqual(self.current()["step"], 1)
 
     def test_newest_of_owner_and_coordinator_wins(self):
         roster = self.roster()
@@ -111,10 +145,9 @@ class WindDownTests(unittest.TestCase):
         self.assertEqual(self.docs(), {})
 
     def test_other_writer_row_counts_for_nothing(self):
-        p = self.run_cli("append", "--from", "beta", "--op", "set", "--collection", "state",
-                         "--id", "beta-wind-down",
-                         "--data", json.dumps(row("beta", 2, "2026-11-11T10:00:00Z")))
-        self.assertEqual(p.returncode, 0, p.stderr)
+        t = "2099-01-01T00:00:00Z"  # newer than any record; append_line is what relay.py append runs
+        append_line(self.r.root, "beta", "set", "state", "beta-wind-down", row("beta", 2, t), t=t,
+                    roster=self.roster())
         self.assertIn(("state", "beta-wind-down"), self.docs())
         self.assertEqual(self.current(), NONE)
 
@@ -138,7 +171,8 @@ class WindDownTests(unittest.TestCase):
         with self.assertRaises(ValueError):
             append_line(self.r.root, "relay", "set", "state", "relay-wind-down",
                         row("relay-bot", 2, "2026-11-11T10:00:00Z"), roster=roster)
-        append_line(self.r.root, "relay", "set", "state", "relay-wind-down", data, roster=roster)
+        append_line(self.r.root, "relay", "set", "state", "relay-wind-down", data, t=data["t"],
+                    roster=roster)
         self.assertEqual(self.current(), NONE)
 
     def test_update_by_another_writer_is_refused(self):
