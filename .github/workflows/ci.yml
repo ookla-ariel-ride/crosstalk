@@ -1,0 +1,103 @@
+# The tests of each pull request and each push to main. docs/development.md
+# (section "Continuous integration") describes the jobs.
+name: CI
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  python:
+    name: Python tests and smoke suite
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-python@v7
+        with:
+          python-version: "3.9"
+      # Every test file but test_wrong_types.py, which has its own job.
+      - name: Python tests
+        working-directory: tests
+        run: python3 -m unittest $(ls test_*.py | grep -v '^test_wrong_types\.py$' | sed 's/\.py$//')
+      - name: Smoke suite
+        run: sh tests/smoke/run.sh
+
+  wrong-types:
+    name: Wrong-typed rows (test_wrong_types.py)
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-python@v7
+        with:
+          python-version: "3.9"
+      - name: test_wrong_types.py
+        run: python3 -m unittest discover -s tests -p test_wrong_types.py
+
+  web:
+    name: v2 page
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    defaults:
+      run:
+        working-directory: web
+    steps:
+      - uses: actions/checkout@v7
+      # The browser tests start relay.py serve.
+      - uses: actions/setup-python@v7
+        with:
+          python-version: "3.9"
+      # No .nvmrc and no engines field: Node 24 meets the engines of vite,
+      # vitest and jsdom in package-lock.json.
+      - uses: actions/setup-node@v7
+        with:
+          node-version: "24"
+          cache: npm
+          cache-dependency-path: web/package-lock.json
+      - run: npm ci
+      - run: npm run typecheck
+      - run: npm test
+      - run: npm run build
+      - name: web/dist matches the build
+        run: git diff --exit-code -- dist
+      - uses: actions/cache@v6
+        with:
+          path: ~/.cache/ms-playwright
+          key: playwright-${{ runner.os }}-${{ hashFiles('web/package-lock.json') }}
+      - run: npx playwright install --with-deps chromium
+      - run: npx playwright test
+
+  gitleaks:
+    name: gitleaks on the new commits
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    env:
+      GITLEAKS_VERSION: 8.30.1
+      GITLEAKS_SHA256: 551f6fc83ea457d62a0d98237cbad105af8d557003051f41f3e7ca7b3f2470eb
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+      - name: Install gitleaks
+        run: |
+          f=gitleaks_${GITLEAKS_VERSION}_linux_x64.tar.gz
+          curl -sSfL -o "$RUNNER_TEMP/$f" "https://github.com/gitleaks/gitleaks/releases/download/v${GITLEAKS_VERSION}/$f"
+          echo "$GITLEAKS_SHA256  $RUNNER_TEMP/$f" | sha256sum -c -
+          tar -xzf "$RUNNER_TEMP/$f" -C "$RUNNER_TEMP" gitleaks
+      - name: Scan the commits
+        env:
+          BASE: ${{ github.event_name == 'pull_request' && github.event.pull_request.base.sha || github.event.before }}
+          HEAD: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
+        run: |
+          if [ "$BASE" = 0000000000000000000000000000000000000000 ]; then range="$HEAD"; else range="$BASE..$HEAD"; fi
+          "$RUNNER_TEMP/gitleaks" git --redact --no-banner --log-level warn \
+            --log-opts="--diff-merges=separate $range" .

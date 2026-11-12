@@ -237,6 +237,8 @@ sh tests/smoke/run.sh
 The page scenarios in `tests/page/` and the server scenarios in
 `tests/server/` have their own steps. See
 [Running the tests](docs/development.md#running-the-tests).
+GitHub Actions runs these tests, the v2 page's tests and gitleaks on each pull
+request (see [Continuous integration](docs/development.md#continuous-integration)).
 
 ## Secret scanning
 
