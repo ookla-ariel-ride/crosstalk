@@ -228,7 +228,9 @@ An acknowledged mark (`ack`, `applies` or `none`) also takes an owner
 message out of your `owner_messages` and `still_open`, as a reply in its
 thread does. `seen` and `unclear` leave it there. The rule holds for owner
 messages only. A request, from the owner or anyone else, is never an owner
-message: only `--none` closes it for you, and a reply does too.
+message: only `--none` closes it for you, and a reply does too. When an
+owner note asks you something, reply: a mark says only that you read and
+understood it.
 
 `relay.py marks <item>` prints the marks on one post and who owes one.
 `relay.py marks --missing --older 60` lists the posts that still wait for
