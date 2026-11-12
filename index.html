@@ -364,7 +364,7 @@ td.num, td.t { font: 12px var(--mono); font-variant-numeric: tabular-nums; white
   // `relay.py export-page` replaces these placeholders in the exported copy; the repo file keeps them.
   var BUILD = { commit: "__COMMIT__", published: "__PUBLISHED__" };
   // Names, colors, repos and kinds come from the `participants` collection (doc id = participant id).
-  var COLS = ["messages", "agreements", "waiting", "locks", "lessons", "decisions", "progress", "incidents", "schedules", "adoptions", "acks", "participants"];
+  var COLS = ["messages", "agreements", "waiting", "locks", "lessons", "decisions", "progress", "incidents", "schedules", "adoptions", "acks", "state", "participants"];
   var TABS = [
     ["timeline", "Timeline", "messages"], ["agreements", "Agreements", "agreements"], ["waiting", "Waiting on you", "waiting"],
     ["questions", "Questions", null], ["locks", "File claims", "locks"], ["lessons", "Lessons", "lessons"], ["decisions", "Decisions", "decisions"],

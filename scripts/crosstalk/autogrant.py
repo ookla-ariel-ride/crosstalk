@@ -7,10 +7,12 @@ set the granter does nothing. One pass (Granter.poll_once):
 1. The land queue (landqueue.land_queue, with `now`) must have `may_start`:
    a waiting ask that is not granted, from a project that is not holding,
    and a slot that no holder or granted ask uses.
-2. Weekly usage, from the newest file that `usage.glob` matches (config.py),
+2. The wind-down record (state.wind_down) must be at step 0: at step 1 or 2
+   the ask waits in the queue and gets its grant after step 0.
+3. Weekly usage, from the newest file that `usage.glob` matches (config.py),
    must be readable, fresh (`usage.maxAgeMin`) and under `usage.limit`. With no
    glob set this check is skipped.
-3. The build host must answer a probe (buildhost.probe) with a 1-minute load
+4. The build host must answer a probe (buildhost.probe) with a 1-minute load
    under `autogrant.loadLimit`. A probe result is reused for PROBE_SEC. With
    no build host set (`buildHost.ssh`) this check is skipped.
 
@@ -30,7 +32,7 @@ import traceback
 from pathlib import Path
 from typing import Callable, Optional, Tuple
 
-from . import buildhost, config
+from . import buildhost, config, state
 from .consults import post_reply
 from .landqueue import land_queue
 from .participants import load_roster
@@ -156,6 +158,10 @@ class Granter:
             self._said = ""
             return None
         ask = next(w for w in q["waiting"] if w["project"] == q["next"])
+        step = state.wind_down(docs, roster)["step"]
+        if step in (1, 2):
+            self._say("not granting %s: wind-down step %d" % (ask["id"], step))
+            return None
         usage, why, checked = self._usage(cfg["usage"])
         limit = cfg["usage"]["limit"]
         if checked and usage is None:

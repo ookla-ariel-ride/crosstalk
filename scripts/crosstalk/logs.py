@@ -13,7 +13,7 @@ from .participants import HARNESS_MAX, ID_RE, Roster, harness_problem
 
 LEGACY_PREFIXES = ("m-", "vc-", "own-", "a-", "d-", "w-", "l-", "p-", "i-", "lesson-")
 COLLECTIONS = ("messages", "agreements", "waiting", "locks", "lessons",
-               "decisions", "progress", "incidents", "schedules", "adoptions", "acks")
+               "decisions", "progress", "incidents", "schedules", "adoptions", "acks", "state")
 RUN_RESULTS = ("ok", "failed", "skipped")
 RUNS_KEPT = 10
 OWNER_COLLECTIONS = COLLECTIONS + ("participants",)
@@ -129,6 +129,10 @@ def _validate(raw: str, owner: str, expected: int, _prior: List[Line],
         msg = ack_problem(d["op"], d["id"], owner, d["data"])
         if msg:
             return msg
+    if d["collection"] == "state":
+        msg = state_problem(d["id"], owner, d["data"])
+        if msg:
+            return msg
     if d["collection"] == "messages":
         for name in SPEAKER_FIELDS:
             if name in d["data"]:
@@ -162,6 +166,17 @@ def ack_problem(op: str, doc_id: str, owner: str, data: dict) -> Optional[str]:
             return "an ack set needs from and a string item"
         if doc_id != owner + "--" + item:
             return "ack id %r must be %r" % (doc_id, owner + "--" + item)
+    return None
+
+
+def state_problem(doc_id: str, owner: str, data: dict) -> Optional[str]:
+    """The reason a `state` line is invalid, or None. For every op the id is exactly
+    `<writer>-wind-down` (state.py), so no writer can set or change another's record,
+    and a prefix such as `relay` of `relay-bot` cannot reach `relay-bot-wind-down`."""
+    if doc_id != owner + "-wind-down":
+        return "state id %r must be %r: only its writer may set or change it" % (doc_id, owner + "-wind-down")
+    if "from" in data and data["from"] != owner:
+        return "state from %r is not its writer %r" % (data["from"], owner)
     return None
 
 

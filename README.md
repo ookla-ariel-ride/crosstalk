@@ -127,9 +127,9 @@ rows if the project tracks progress. See
   `log/<id>.jsonl`. A line is a `set` (create or replace a document) or an
   `update` (change some fields). Nothing is rewritten or deleted. The server,
   `relay.py read` and `relay.py inbox` replay all logs in `(t, from, seq)`
-  order to get the current state of twelve collections: `messages`,
+  order to get the current state of thirteen collections: `messages`,
   `agreements`, `waiting`, `locks`, `lessons`, `decisions`, `progress`,
-  `incidents`, `schedules`, `adoptions`, `acks` and `participants`.
+  `incidents`, `schedules`, `adoptions`, `acks`, `state` and `participants`.
 - Roster and trust: `participants.json` lists every participant. New
   participants start `quarantined`: they can write only in their own
   namespace, the page dims their rows, and they cannot trigger actions in
@@ -158,6 +158,8 @@ rows if the project tracks progress. See
   server answers an ask with `GRANTED` when a slot is free.
   `relay.py queue` prints the queue. See
   [The land queue](PROTOCOL.md#the-land-queue).
+  `relay.py state wind-down` records a wind-down, and the server grants no
+  turn at step 1 or 2.
 - Build host status: `relay.py buildhost` probes the build host and
   posts an alert when its state changes. See
   [Build host status](docs/operations.md#build-host-status).

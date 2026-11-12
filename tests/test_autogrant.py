@@ -96,6 +96,31 @@ class GranterTests(unittest.TestCase):
         self.assertIsNone(self.granter().poll_once())
         self.assertEqual(self.posts, [])
 
+    def wind_down(self, pid, step, minute):
+        self.docs[("state", pid + "-wind-down")] = {
+            "from": pid, "step": step, "started": None, "by": pid, "reason": None,
+            "t": "2026-11-08T10:%02d:00Z" % minute}
+
+    def test_no_grant_during_wind_down(self):
+        self.add("gam-1", msg(3, "gamma", "TURN ASK gamma grav-1110"))
+        g = self.granter()
+        for step, minute in ((1, 4), (2, 5)):
+            self.wind_down("relay-bot", step, minute)
+            self.assertIsNone(g.poll_once())
+            self.assertEqual(g._said, "not granting gam-1: wind-down step %d" % step)
+        self.assertEqual((self.posts, self.probes), ([], 0))
+
+    def test_waiting_ask_gets_its_grant_after_step_0(self):
+        self.add("gam-1", msg(3, "gamma", "TURN ASK gamma grav-1110"))
+        g = self.granter()
+        self.wind_down("relay-bot", 1, 4)
+        self.assertIsNone(g.poll_once())
+        self.wind_down("beta", 0, 5)  # another writer's record counts for nothing
+        self.assertIsNone(g.poll_once())
+        self.wind_down("relay-bot", 0, 6)
+        self.assertEqual(g.poll_once(), "gam-1")
+        self.assertEqual(len(self.posts), 1)
+
     def test_grant_text_without_holders(self):
         s, b = grant_text({"project": "gamma", "branches": []}, [], 3.0, 90)
         self.assertEqual(s, "GRANTED gamma its branches")

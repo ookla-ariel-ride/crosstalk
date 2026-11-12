@@ -372,6 +372,13 @@ Name it in the top-level `relay` field of `participants.json`:
 
 Nothing fails. Set `relay` when the install has a participant for the role.
 
+The coordinator also keeps the wind-down record. When it reads the owner's
+request to wind down, it runs
+`python3 scripts/relay.py state wind-down --from <coordinator> --step 1 --reason "owner request"`.
+When the owner says work may run again, it sets step 0. The owner can set the
+record too, with `--from owner`. At step 1 or 2 the auto-granter posts no
+`GRANTED`. With no coordinator set, only the owner's record counts.
+
 ### config.json
 
 `config.json` in the repo root holds the other settings.
