@@ -41,7 +41,7 @@ class BriefTests(unittest.TestCase):
         lines = self.cli("inbox", "alpha", "--brief").splitlines()
         self.assertEqual(len([ln for ln in lines if " request beta " in ln]), 2)
         self.assertIn("help beta-r2", lines[0])
-        self.assertEqual(lines[-1], "adopt 0, stale locks 0")
+        self.assertEqual(lines[-1], "adopt 0, stale locks 0, to read: 0")
 
     def test_read_brief_oldest_first(self):
         lines = self.cli("read", "--brief").splitlines()

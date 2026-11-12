@@ -217,15 +217,21 @@ def _print_inbox(out, args):
             doc = item.get("request") or item.get("message") or item
             line = _brief_line(label, doc.get("id", "?"), doc, _row_time(doc))
             print(_text(("!" if item.get("needs_answer") else " ") + line if args.new else line))
+    for doc in out.get("to_read", []):
+        line = _brief_line("read", doc.get("id", "?"), doc, _row_time(doc))
+        print(_text(" " + line if args.new else line))
+    # "to read" counts every post that owes your mark: the new ones above and,
+    # with --new, the ones from before the place (to_read_open).
+    to_read = len(out.get("to_read", [])) + len(out.get("to_read_open", [])) + out.get("to_read_open_more", 0)
     if args.new:
         for doc in out.get("agreements_to_adopt", []):
             print(_text(" " + _brief_line("adopt", doc.get("id", "?"), doc, _row_time(doc))))
-        print("still open %d, agreements open %d, stale locks %d" % (
+        print("still open %d, agreements open %d, stale locks %d, to read: %d" % (
             len(out["still_open"]) + out["still_open_more"], out["agreements_open"],
-            len(out.get("stale_locks", []))))
+            len(out.get("stale_locks", [])), to_read))
     else:
-        print("adopt %d, stale locks %d" % (len(out.get("agreements_to_adopt", [])),
-                                            len(out.get("stale_locks", []))))
+        print("adopt %d, stale locks %d, to read: %d" % (len(out.get("agreements_to_adopt", [])),
+                                                         len(out.get("stale_locks", [])), to_read))
 
 
 def _inbox_ack_to(pid, raw, nxt, lines):
@@ -758,6 +764,70 @@ def cmd_ack(args):
     return 0
 
 
+def _mark_lines(v):
+    """The text of one post's marks: each mark with its names, then who owes one."""
+    out = []
+    for word in marks_mod.MARKS:
+        names = sorted(p for p, w in v["marks"].items() if w == word)
+        if names:
+            out.append("%s %s" % (marks_mod.EMOJI[word], ", ".join(names)))
+    if not v["expects"]:
+        out.append("expects no mark")
+    else:
+        out.append("not yet: %s" % (", ".join(v["owed"]) or "nobody"))
+    return out
+
+
+def cmd_marks(args):
+    """marks <item>: the marks on one post and who owes one.
+    marks --missing [--older M]: each post that expects a mark and still has names that owe one."""
+    if (args.item is None) == (not args.missing):
+        err("marks: give an item id or --missing, not both")
+        return 2
+    if args.older is not None and not args.missing:
+        err("marks: --older goes with --missing")
+        return 2
+    roster = load_roster(ROOT / "participants.json")
+    docs, fatal = load_docs(ROOT, roster)
+    if fatal:
+        for p in fatal:
+            err("%s:%d: %s" % (p.file, p.line, p.message))
+        return 1
+    config = config_mod.of(roster)
+    by_item = marks_mod.marks_by_item(docs, roster)
+    if args.missing:
+        before = None if args.older is None else time.time() - args.older * 60
+        rows = marks_mod.missing(docs, roster, config, before=before, by_item=by_item)
+        if args.json:
+            print(utf8_json(rows, sort_keys=True, indent=2))
+            return 0
+        for v in rows:
+            doc = docs[(v["collection"], v["id"])]
+            frm = marks_mod.writer_of(docs, v["collection"], v["id"]) or "?"
+            print(_text(_brief_line("marks", v["id"], dict(doc, **{"from": frm}), _row_time(doc))))
+            for ln in _mark_lines(v):
+                print("  " + ln)
+        return 0
+    ref = marks_mod.item_ref(docs, args.item)
+    if ref is None:
+        err("marks: no message, decision or lesson %r in the log" % args.item)
+        return 1
+    v = dict(marks_mod.view(docs, ref[0], ref[1], roster, config, by_item), id=ref[1], collection=ref[0])
+    if args.json:
+        print(utf8_json(v, sort_keys=True, indent=2))
+    else:
+        for ln in _mark_lines(v):
+            print(ln)
+    return 0
+
+
+def _minutes(raw):
+    value = int(raw)
+    if value < 0:
+        raise argparse.ArgumentTypeError("must be 0 or more minutes")
+    return value
+
+
 def cmd_withdraw(args):
     """Withdraw one of your own open questions; prints the new message id."""
     try:
@@ -1042,6 +1112,16 @@ def build_parser():
     mk.add_argument("--unclear", dest="mark", action="store_const", const="unclear",
                     help="you read it and do not understand it; a reply with your question follows")
     ac.set_defaults(fn=cmd_ack)
+
+    mr = sub.add_parser("marks", help="print the marks on one post and who owes one; "
+                                      "--missing lists every post that still waits for marks")
+    mr.add_argument("item", metavar="ITEM", nargs="?", help="the id of a message, a decision or a lesson")
+    mr.add_argument("--missing", action="store_true",
+                    help="list each post that expects a mark and has names that owe one, oldest first")
+    mr.add_argument("--older", metavar="MINUTES", type=_minutes,
+                    help="with --missing: only posts older than this many minutes")
+    mr.add_argument("--json", action="store_true", help="print JSON")
+    mr.set_defaults(fn=cmd_marks)
 
     wd = sub.add_parser("withdraw", help="withdraw one of your own open questions; prints the new message id")
     _speaker_flags(wd)

@@ -2,6 +2,8 @@
 from pathlib import Path
 from typing import Dict, List, Optional, Tuple
 
+from . import config as config_mod
+from . import marks as marks_mod
 from .inboxstate import is_new
 from .logs import Line, Problem, check_all
 from .participants import Roster
@@ -55,10 +57,13 @@ def load_docs(root: Path, roster: Roster) -> Tuple[Optional[Dict], List[Problem]
 
 
 def inbox_report(docs: Dict, pid: str, roster: Roster, include_answered: bool = False,
-                 now_iso: Optional[str] = None, service: Optional[dict] = None) -> dict:
+                 now_iso: Optional[str] = None, service: Optional[dict] = None,
+                 config: Optional[dict] = None) -> dict:
     """What `relay.py inbox <pid>` prints: requests, owner messages, replies on pid's
-    threads, agreements, stale locks, and for the owner the open questions for it.
-    `service` defaults to SERVICE (service.service_for gives one with a data root)."""
+    threads, the posts that owe pid's mark (`to_read`, marks.to_read), agreements,
+    stale locks, and for the owner the open questions for it.
+    `service` defaults to SERVICE (service.service_for gives one with a data root);
+    `config` defaults to the settings the roster carries (config.of)."""
     requests = (
         all_requests_for(docs, pid, roster=roster)
         if include_answered
@@ -98,6 +103,7 @@ def inbox_report(docs: Dict, pid: str, roster: Roster, include_answered: bool = 
             }
             for (did, doc, root) in thread_replies_for(docs, pid, roster=roster)
         ],
+        "to_read": marks_mod.to_read(docs, pid, roster, config_mod.of(roster) if config is None else config),
         "agreements_to_adopt": agreements_to_adopt_for(docs, pid, roster=roster),
         "stale_locks": stale_locks_for(docs, pid, now_iso=now_iso),
         "service": SERVICE if service is None else service,
@@ -118,8 +124,11 @@ def new_report(full: dict, lines: List[Line], place: Optional[dict],
 
     The open requests and owner messages from before the place that still need
     an answer stay as `still_open`, without bodies, newest first, at most
-    STILL_OPEN_MAX; `still_open_more` counts the rest. `next` is the place to
-    ack: the highest `seq` of each writer of the log as this run loaded it.
+    STILL_OPEN_MAX; `still_open_more` counts the rest. The `to_read` posts follow
+    the same cut: the ones from before the place stay as `to_read_open`, without
+    bodies, newest first, at most STILL_OPEN_MAX, and `to_read_open_more` counts
+    the rest. `next` is the place to ack: the highest `seq` of each writer of the
+    log as this run loaded it.
     """
     touched = {(ln.collection, ln.id) for ln in lines if is_new(ln, place)}
     times = {key: ln.t for key, ln in last_line_map(lines).items()}
@@ -143,6 +152,12 @@ def new_report(full: dict, lines: List[Line], place: Optional[dict],
     out["still_open"] = [{"id": d["id"], "from": d.get("from"), "t": d.get("t"),
                           "summary": d.get("summary")} for _rt, d in old[:STILL_OPEN_MAX]]
     out["still_open_more"] = max(0, len(old) - STILL_OPEN_MAX)
+    out["to_read"], old_read = [], []
+    for item in full.get("to_read", []):
+        (out["to_read"] if new(item["collection"], item["id"]) else old_read).append(item)
+    out["to_read_open"] = [{k: d.get(k) for k in ("id", "from", "t", "summary")}
+                           for d in old_read[:STILL_OPEN_MAX]]
+    out["to_read_open_more"] = max(0, len(old_read) - STILL_OPEN_MAX)
     agreements = full.get("agreements_to_adopt", [])
     out["agreements_to_adopt"] = [a for a in agreements if new("agreements", a["id"])]
     out["agreements_open"] = len(agreements)

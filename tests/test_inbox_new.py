@@ -463,9 +463,9 @@ class InboxNewTests(unittest.TestCase):
         self.assertEqual(len(lines), 3, p.stdout)
         self.assertTrue(lines[0].startswith(" ") and "owner-m1" in lines[0], lines[0])
         self.assertTrue(lines[1].startswith("!") and "beta-r2" in lines[1], lines[1])
-        self.assertEqual(lines[2], "still open 1, agreements open 1, stale locks 0")
+        self.assertEqual(lines[2], "still open 1, agreements open 1, stale locks 0, to read: 0")
         plain = self.run_cli("inbox", "alpha", "--brief").stdout.splitlines()
-        self.assertEqual(plain[-1], "adopt 1, stale locks 0")
+        self.assertEqual(plain[-1], "adopt 1, stale locks 0, to read: 0")
 
     def test_quiet_check_in_is_small(self):
         roster = json.loads(json.dumps(SPEC_ROSTER))
