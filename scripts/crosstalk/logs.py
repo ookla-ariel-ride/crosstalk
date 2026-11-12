@@ -3,7 +3,9 @@ import fcntl
 import json
 import os
 import re
+import threading
 import time
+from contextlib import contextmanager
 from datetime import datetime, timezone
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -440,14 +442,60 @@ def check_all(root: Path, roster: Roster) -> List[Problem]:
     return problems
 
 
+STATE_LOCK = ".state.lock"
+_state_lock_depth = threading.local()
+
+
+def state_lock_path(root: Path) -> Path:
+    """The lock file that orders `state` rows against the granter's GRANTED (in the git-ignored log/)."""
+    return Path(root) / "log" / STATE_LOCK
+
+
+@contextmanager
+def state_lock(root: Path):
+    """Hold the exclusive state lock of `root`; again in the same thread, it is a no-op.
+
+    A row of the `state` collection takes it around its append, and the granter
+    takes it from its last read of the log to its GRANTED append. A process
+    that dies drops its flock, so a crashed holder blocks nobody.
+    """
+    depth = getattr(_state_lock_depth, "n", 0)
+    if depth:
+        _state_lock_depth.n = depth + 1
+        try:
+            yield
+        finally:
+            _state_lock_depth.n -= 1
+        return
+    path = state_lock_path(root)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    with open(str(path), "a") as f:
+        fcntl.flock(f.fileno(), fcntl.LOCK_EX)
+        _state_lock_depth.n = 1
+        try:
+            yield
+        finally:
+            _state_lock_depth.n = 0
+            fcntl.flock(f.fileno(), fcntl.LOCK_UN)
+
+
 def append_line(root: Path, from_: str, op: str, collection: str, id: str, data: dict,
                 t: Optional[str] = None, via: Optional[str] = None,
                 roster: Optional[Roster] = None) -> Line:
     """Append one line to log/<from_>.jsonl under an exclusive lock; returns the Line written.
 
     With a roster, a line that breaks the trust rules or the message shape rules is
-    refused before the file is opened.
+    refused before the file is opened. A `state` row also holds the state lock
+    (state_lock), so it never lands between the granter's last read and its GRANTED.
     """
+    if collection == "state":
+        with state_lock(root):
+            return _append_line(root, from_, op, collection, id, data, t, via, roster)
+    return _append_line(root, from_, op, collection, id, data, t, via, roster)
+
+
+def _append_line(root: Path, from_: str, op: str, collection: str, id: str, data: dict,
+                 t: Optional[str], via: Optional[str], roster: Optional[Roster]) -> Line:
     if not isinstance(from_, str) or not ID_RE.fullmatch(from_):
         # Checked before any path is built: on a case-insensitive disk "Codex" would
         # open codex.jsonl.

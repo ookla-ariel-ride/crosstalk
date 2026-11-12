@@ -1,5 +1,6 @@
 """The auto-granter: GRANTED for the next land turn when queue, usage and load allow."""
 import calendar
+import fcntl
 import json
 import os
 import tempfile
@@ -9,6 +10,7 @@ from pathlib import Path
 import helpers  # noqa: F401  (puts scripts/ on sys.path)
 
 from crosstalk.autogrant import Granter, grant_text, read_usage
+from crosstalk.logs import state_lock_path
 
 T = calendar.timegm((2026, 11, 8, 10, 10, 0))
 PROJECTS = {"gamma": {}, "beta": {}, "alpha": {}, "epsilon-kit": {}}
@@ -31,6 +33,7 @@ class GranterTests(unittest.TestCase):
         self.tmp = tempfile.TemporaryDirectory()
         self.pause = Path(self.tmp.name) / "off"
         self.relay = "relay-bot"
+        self.during_probe = None
 
     def tearDown(self):
         self.tmp.cleanup()
@@ -41,6 +44,8 @@ class GranterTests(unittest.TestCase):
     def granter(self):
         def probe():
             self.probes += 1
+            if self.during_probe is not None:
+                self.during_probe()
             return self.probe
 
         def post(root, pid, to_id, summary, body=None):
@@ -49,7 +54,7 @@ class GranterTests(unittest.TestCase):
             self.add("relay-bot-g%d" % len(self.posts),
                      {"from": pid, "kind": "reply", "replyTo": to_id, "summary": summary,
                       "t": "2026-11-08T10:09:00Z"})
-        return Granter(Path(self.tmp.name), lambda: (self.docs, PROJECTS), probe=probe,
+        return Granter(Path(self.tmp.name), lambda: (dict(self.docs), PROJECTS), probe=probe,
                        usage=lambda: self.usage, post=post, clock=lambda: T,
                        pause_path=self.pause,
                        roster=lambda: helpers.plain_roster(self.relay, list(PROJECTS) + ["relay-bot"]))
@@ -120,6 +125,45 @@ class GranterTests(unittest.TestCase):
         self.wind_down("relay-bot", 0, 6)
         self.assertEqual(g.poll_once(), "gam-1")
         self.assertEqual(len(self.posts), 1)
+
+    def test_wind_down_set_during_the_probe_stops_the_grant(self):
+        self.add("gam-1", msg(3, "gamma", "TURN ASK gamma grav-1110"))
+        self.during_probe = lambda: self.wind_down("owner", 2, 4)
+        g = self.granter()
+        self.assertIsNone(g.poll_once())
+        self.assertEqual((self.posts, self.probes), ([], 1))
+        self.assertEqual(g._said, "not granting gam-1: wind-down step 2")
+
+    def test_usage_over_the_limit_during_the_probe_stops_the_grant(self):
+        self.add("gam-1", msg(3, "gamma", "TURN ASK gamma grav-1110"))
+        self.during_probe = lambda: setattr(self, "usage", (97.0, ""))
+        self.assertIsNone(self.granter().poll_once())
+        self.assertEqual(self.posts, [])
+
+    def test_ask_granted_by_hand_during_the_probe_gets_no_second_grant(self):
+        self.add("gam-1", msg(3, "gamma", "TURN ASK gamma grav-1110"))
+        self.during_probe = lambda: self.add("relay-bot-h1", {
+            "from": "relay-bot", "kind": "reply", "replyTo": "gam-1",
+            "summary": "GRANTED gamma grav-1110", "t": "2026-11-08T10:04:00Z"})
+        self.assertIsNone(self.granter().poll_once())
+        self.assertEqual(self.posts, [])
+
+    def test_grant_is_appended_under_the_state_lock(self):
+        self.add("gam-1", msg(3, "gamma", "TURN ASK gamma grav-1110"))
+        held = []
+
+        def post(root, pid, to_id, summary, body=None):
+            with open(str(state_lock_path(root)), "a") as f:
+                try:
+                    fcntl.flock(f.fileno(), fcntl.LOCK_EX | fcntl.LOCK_NB)
+                except BlockingIOError:
+                    held.append(True)
+                else:
+                    fcntl.flock(f.fileno(), fcntl.LOCK_UN)
+        g = self.granter()
+        g.post = post
+        self.assertEqual(g.poll_once(), "gam-1")
+        self.assertEqual(held, [True])
 
     def test_grant_text_without_holders(self):
         s, b = grant_text({"project": "gamma", "branches": []}, [], 3.0, 90)

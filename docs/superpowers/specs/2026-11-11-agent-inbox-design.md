@@ -251,6 +251,13 @@ step is 1 or 2, with a reason string of its own. A TURN ASK that waits stays
 in the queue and gets its grant after step 0. This joins the usage rule the
 granter has today.
 
+Changed 2026-11-12 after an outside review: the granter reads the log again
+after the probe of the build host. It checks the queue, the record and usage
+on that fresh read, and appends the GRANTED while it holds a lock file,
+`log/.state.lock`. Every `state` row takes the same lock for its append. A
+record set during the probe stops the grant, and no record can land between
+the last read and the GRANTED.
+
 The owner's request "wind down" in a post does not set the record by itself.
 The coordinator sets it when it reads the request. A later design may give
 the page a button.

@@ -15,6 +15,10 @@ set the granter does nothing. One pass (Granter.poll_once):
 4. The build host must answer a probe (buildhost.probe) with a 1-minute load
    under `autogrant.loadLimit`. A probe result is reused for PROBE_SEC. With
    no build host set (`buildHost.ssh`) this check is skipped.
+5. After the probe, under the state lock (logs.state_lock), steps 1 to 3 run
+   again on a fresh snapshot, and the GRANTED is appended before the lock
+   goes. A wind-down row takes the same lock for its append, so it lands
+   either before that last read or after the GRANTED.
 
 Then it replies to the ask as the coordinator with a GRANTED row that names
 the branches, the load, the usage and the other holders. Anything it cannot
@@ -35,6 +39,7 @@ from typing import Callable, Optional, Tuple
 from . import buildhost, config, state
 from .consults import post_reply
 from .landqueue import land_queue
+from .logs import state_lock
 from .participants import load_roster
 
 PROBE_SEC = 60.0
@@ -140,18 +145,9 @@ class Granter:
             return None, "", False
         return read_usage(cfg["glob"], max_age=cfg["maxAgeMin"] * 60) + (True,)
 
-    def poll_once(self) -> Optional[str]:
-        """One pass; returns the ask id it granted, or None."""
-        if self.pause_path is not None and self.pause_path.exists():
-            self._say("paused (%s exists)" % self.pause_path)
-            return None
-        roster = self.roster()
-        poster = config.coordinator(roster)
-        if not poster:
-            self._say("off: the roster names no coordinator (relay in participants.json)")
-            return None
-        cfg = config.of(roster)
-        now = self.clock()
+    def _check(self, roster, cfg: dict, poster: str, now: float):
+        """(ask, holders, usage) from a fresh snapshot when the queue, the wind-down
+        record and usage allow a grant; else None (the reason is said)."""
         docs, entries = self.snapshot()
         q = land_queue(docs, projects=entries, now=now, coordinator=poster)
         if not q["may_start"]:
@@ -170,6 +166,31 @@ class Granter:
         if checked and usage >= limit:
             self._say("not granting %s: weekly usage %g (limit %g)" % (ask["id"], usage, limit))
             return None
+        return ask, q["holders"], usage
+
+    def poll_once(self) -> Optional[str]:
+        """One pass; returns the ask id it granted, or None.
+
+        The checks run twice: once before the slow probe of the build host, and
+        again on a fresh snapshot after it, under the state lock that every
+        `state` row takes for its append. A wind-down record set during the
+        probe stops the grant, and none can land between the last read and the
+        GRANTED.
+        """
+        if self.pause_path is not None and self.pause_path.exists():
+            self._say("paused (%s exists)" % self.pause_path)
+            return None
+        roster = self.roster()
+        poster = config.coordinator(roster)
+        if not poster:
+            self._say("off: the roster names no coordinator (relay in participants.json)")
+            return None
+        cfg = config.of(roster)
+        now = self.clock()
+        first = self._check(roster, cfg, poster, now)
+        if first is None:
+            return None
+        ask = first[0]
         load = None
         p = self._load(now, cfg["buildHost"]["ssh"])
         if p is not None:
@@ -181,8 +202,13 @@ class Granter:
             if load >= load_limit:
                 self._say("not granting %s: build host load %.1f (limit %g)" % (ask["id"], load, load_limit))
                 return None
-        summary, body = grant_text(ask, q["holders"], load, usage)
-        self.post(self.root, poster, ask["id"], summary, body=body)
+        with state_lock(self.root):
+            fresh = self._check(roster, cfg, poster, now)
+            if fresh is None:
+                return None
+            ask, holders, usage = fresh
+            summary, body = grant_text(ask, holders, load, usage)
+            self.post(self.root, poster, ask["id"], summary, body=body)
         self._probed = None  # the next grant probes afresh
         self._said = ""
         _warn("granted %s (%s)" % (ask["id"], summary))

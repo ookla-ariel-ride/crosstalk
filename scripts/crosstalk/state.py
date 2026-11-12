@@ -20,7 +20,7 @@ from typing import Dict, Iterable, Optional
 
 from . import config
 from .landqueue import land_queue
-from .logs import Line, append_line, parse_utc, utc_text
+from .logs import Line, append_line, parse_utc, state_lock, utc_text
 from .participants import load_roster
 from .replay import load_all_lines, replay
 
@@ -84,6 +84,13 @@ def set_wind_down(root: Path, pid: str, step: int, reason: Optional[str] = None,
         raise ValueError("wind-down step must be one of %s, not %r"
                          % (", ".join(str(s) for s in WIND_DOWN_STEPS), step))
     reason = reason.strip() if isinstance(reason, str) else None
+    # The time is taken under the state lock, so it is not earlier than a GRANTED
+    # the granter appended while this command waited for the lock.
+    with state_lock(root):
+        return _set_wind_down(root, pid, step, reason, roster)
+
+
+def _set_wind_down(root: Path, pid: str, step: int, reason: Optional[str], roster) -> Line:
     docs = replay(load_all_lines(root, roster))
     # Later than every record that counts, so this one takes force even within the same second.
     when = max([datetime.now(timezone.utc)] + [r[0] + timedelta(seconds=1) for r in _records(docs, roster)])

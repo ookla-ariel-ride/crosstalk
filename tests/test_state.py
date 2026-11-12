@@ -1,15 +1,17 @@
 """The wind-down record: only the owner and the coordinator set it, and the newest of theirs counts."""
 import copy
+import fcntl
 import json
 import os
 import subprocess
 import sys
+import threading
 import unittest
 
 from helpers import SPEC_ROSTER, TempRepo, line, relay_in
 
 from crosstalk import state
-from crosstalk.logs import append_line
+from crosstalk.logs import append_line, state_lock_path
 from crosstalk.participants import load_roster
 from crosstalk.replay import load_all_lines, replay
 
@@ -103,6 +105,21 @@ class WindDownTests(unittest.TestCase):
         self.assertEqual(self.current()["step"], 1)
         state.set_wind_down(self.r.root, "relay-bot", 0, roster=self.roster())
         self.assertEqual(self.current()["by"], "relay-bot")
+
+    def test_a_state_row_waits_for_the_state_lock(self):
+        # The granter holds this lock from its last read of the log to its GRANTED.
+        with open(str(state_lock_path(self.r.root)), "a") as f:
+            fcntl.flock(f.fileno(), fcntl.LOCK_EX)
+            worker = threading.Thread(target=state.set_wind_down,
+                                      args=(self.r.root, "owner", 1), kwargs={"roster": self.roster()})
+            worker.start()
+            worker.join(0.5)
+            self.assertTrue(worker.is_alive())
+            self.assertEqual(self.current()["step"], 0)
+            fcntl.flock(f.fileno(), fcntl.LOCK_UN)
+        worker.join(10)
+        self.assertFalse(worker.is_alive())
+        self.assertEqual(self.current()["step"], 1)
 
     def test_update_cannot_change_the_step(self):
         state.set_wind_down(self.r.root, "owner", 1, reason="stop", roster=self.roster())

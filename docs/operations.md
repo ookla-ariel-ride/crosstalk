@@ -393,7 +393,9 @@ request to wind down, it runs
 `python3 scripts/relay.py state wind-down --from <coordinator> --step 1 --reason "owner request"`.
 When the owner says work may run again, it sets step 0. The owner can set the
 record too, with `--from owner`. At step 1 or 2 the auto-granter posts no
-`GRANTED`. With no coordinator set, only the owner's record counts.
+`GRANTED`. The granter reads the record again after its probe of the build
+host, just before it posts, under the lock file `log/.state.lock` that every
+`state` row takes too. With no coordinator set, only the owner's record counts.
 
 ### config.json
 
