@@ -5,6 +5,7 @@ import urllib.error
 import urllib.request
 
 from helpers import RunningServer, TempRepo, line
+from test_marks_inbox import MarksInboxBase
 from test_serve import request, request_with_headers
 
 from crosstalk.logs import read_log
@@ -121,6 +122,17 @@ class OwnerAckTests(unittest.TestCase):
         self.assertIn("not a request", body["error"])
         self.assertEqual(self.acks(), [])
 
+    def test_an_old_none_row_on_a_message_that_is_no_request_is_still_refused(self):
+        # A row of the form before marks (`none: true`, no `mark`) on a sync is no reason for 200.
+        self.r.write_log("owner", [
+            msg(1, "owner", "own-1", kind="owner", summary="Done", replyTo="alpha-r4"),
+            line(2, "owner", "acks", "owner--alpha-s1", data={"from": "owner", "item": "alpha-s1", "none": True}),
+        ])
+        status, body = self.ack({"item": "alpha-s1"})
+        self.assertEqual(status, 400)
+        self.assertIn("not a request", body["error"])
+        self.assertEqual(len(self.acks()), 1)
+
     def test_a_no_change_mark_that_is_already_there_writes_nothing(self):
         # A row with only `mark: "none"` (no `none` field) is the owner's no-change mark too.
         self.r.write_log("owner", [
@@ -191,6 +203,30 @@ class OwnerAckTests(unittest.TestCase):
         self.assertEqual((row.data["from"], row.data["item"], row.data["mark"], row.data["none"]),
                          ("owner", "alpha-r1", "none", True))
         self.assertRegex(row.data["t"], r"^\d{4}-\d\d-\d\dT\d\d:\d\d:\d\dZ$")
+
+
+class LaterMarkThroughTheLessonCliTests(MarksInboxBase):
+    """relay.py inbox: a later mark through `lesson-<request id>` replaces the `none` mark,
+    so the request waits for its writer again (pending_from)."""
+
+    def setUp(self):
+        super().setUp()
+        self.r.write_log("beta", [
+            msg(1, "beta", "beta-c0", kind="sync", summary="hello"),
+            msg(2, "beta", "beta-r1", kind="request", summary="Look at this", to=["gamma"]),
+            line(3, "beta", "lessons", "lesson-beta-r1", data={"project": "beta", "summary": "A lesson"}),
+        ])
+
+    def pending(self):
+        rows = [r for r in self.inbox("gamma")["requests"] if r["request"]["id"] == "beta-r1"]
+        return rows[0]["pending_from"] if rows else None
+
+    def test_none_then_a_later_mark_on_the_lesson_puts_gamma_back_in_pending_from(self):
+        self.assertEqual(self.pending(), ["gamma"])
+        self.ack("gamma", "beta-r1", "--none")
+        self.assertIn(self.pending(), (None, []))
+        self.ack("gamma", "lesson-beta-r1", "--seen")
+        self.assertEqual(self.pending(), ["gamma"])
 
 
 if __name__ == "__main__":
