@@ -168,7 +168,8 @@ and puts the old one back after, so it runs in any order. One test opens the
 lesson that twelve participants marked: it checks the marks line and the
 count on the row, and that at 360 px wide the line wraps and the page does not
 scroll sideways. Another checks that a sign-in writes the sessions file
-inside the temp folder.
+inside the temp folder and leaves the one in your home as it was: it compares
+that file's size and time, and never opens it.
 Each test also fails on an error in the console or a request to another
 host.
 
