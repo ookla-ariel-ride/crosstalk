@@ -24,7 +24,11 @@ The coordinator's GRANTED reply to an ask (summary starting GRANTED, replyTo
 the ask) marks it granted: it reserves a slot until its LAND START or LANE START,
 or until GRANT_TTL_SEC passes with `now` given (the grant lapses). A re-ask
 clears the grant, and so does the coordinator's GRANT WITHDRAWN reply to the
-GRANTED: the ask waits again in its place, with no slot reserved. A start takes the whole ask, except the branches that
+GRANTED: the ask waits again in its place, with no slot reserved. While the
+wind-down record in force (state.wind_down) is at step 1 or 2, each granted
+ask that is still waiting (no start took it) shows `grant_void` and reserves
+nothing; holders keep their slots. No time is compared: at step 0 a grant that
+nobody withdrew and that did not lapse is in force again. A start takes the whole ask, except the branches that
 neither its GRANTED nor the start names: those stay waiting. `next` is the
 first waiting ask, not granted, from a project that is not holding. The queue
 is derived, never stored, so it cannot drift from the log.
@@ -248,12 +252,16 @@ def land_queue(docs: Dict, max_holders: int = MAX_HOLDERS,
             else:
                 holders.remove(held)
     holding = {h["project"] for h in holders}
+    from .state import setters_of, wind_down  # here: state imports this module
+    step = wind_down(docs, None, setters_of(coordinator))["step"]
     reserved = 0
     for w in waiting:
         w["holding"] = w["project"] in holding
         if "granted" in w:
             granted_at = _epoch(w.get("granted_t", ""))
-            if now is not None and granted_at is not None and now - granted_at > GRANT_TTL_SEC:
+            if step in (1, 2):
+                w["grant_void"] = "wind-down step %d" % step
+            elif now is not None and granted_at is not None and now - granted_at > GRANT_TTL_SEC:
                 w["grant_lapsed"] = True
             elif not w["holding"]:
                 reserved += 1

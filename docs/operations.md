@@ -399,10 +399,12 @@ host, just before it posts, under the lock file `log/.state.lock` that every
 stays busy for 5 seconds, the granter posts nothing in that pass, and
 `state wind-down` writes its row without the lock and says so on stderr.
 The granter may append its `GRANTED` only within 3 seconds of when it got the
-lock, so a stalled granter posts nothing after that row. When a `GRANTED`
-still lands after a record at step 1 or 2, the granter replies to it with
-`GRANT WITHDRAWN`: the grant is void, the project sees the reply in its inbox,
-and the ask waits in its place for step 0. With no coordinator set, only the owner's record counts.
+lock, so a stalled granter usually posts nothing after that row. At step 1
+or 2 the land queue reads each grant with no start as void, whenever it
+landed, so a late `GRANTED` reserves no slot. The granter also replies
+`GRANT WITHDRAWN` to each void grant, and the project sees the reply in its
+inbox. The ask waits in its place and gets a new `GRANTED` after step 0. A
+pause file or `--no-autogrant` stops these replies, not the void rule. With no coordinator set, only the owner's record counts.
 
 ### config.json
 

@@ -282,10 +282,21 @@ append. A stall between that check and the write is still possible, so after
 each GRANTED the granter reads the record again. At step 1 or 2 it replies to
 its GRANTED with `GRANT WITHDRAWN`, sent to the project. The land queue reads
 that reply as "this grant is void": the slot is free and the ask waits in its
-place. Each pass also withdraws an auto-granted GRANTED of a waiting ask that
-is not older than the wind-down, for a granter that stopped before that
-second read. The owner's stderr line says that a grant in flight can still
-appear and then gets withdrawn.
+place. The owner's stderr line says that a grant in flight can still appear
+and then gets withdrawn.
+
+Changed 2026-11-12 after a third review: the withdrawal needs a live granter,
+and a granter that stopped after a late GRANTED left it in force. A late
+GRANTED can carry a `t` older than the record, so no time test finds it. The
+land queue now reads the rule itself, with no time and no memory. While the
+record in force is at step 1 or 2, every grant that has no LAND START or LANE
+START is void, a hand-posted one included: its ask shows `grant_void`,
+reserves no slot and keeps its place. Holders keep their slots. At step 0 a
+void grant that nobody withdrew and that did not lapse is in force again.
+Choice (b), a grant that stays void after step 0, would need to know that a
+record came after the grant, and only the times of two log files can tell
+that. GRANT WITHDRAWN stays as a notice: each pass at step 1 or 2 replies it
+to each void grant, and a withdrawn grant stays void.
 
 The owner's request "wind down" in a post does not set the record by itself.
 The coordinator sets it when it reads the request. A later design may give

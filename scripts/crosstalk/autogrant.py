@@ -25,13 +25,12 @@ set the granter does nothing. One pass (Granter.poll_once):
    the lock more than logs.STATE_HOLD_LIMIT seconds before. A wind-down row
    waits longer than that before it writes without the lock, so a stalled
    granter does not post its GRANTED after that row.
-7. After the append it reads the wind-down record again. At step 1 or 2 it
-   replies to its own GRANTED with GRANT WITHDRAWN (landqueue.GRANT_VOID),
-   to the asking project: the grant is void and the ask waits in its place.
-   This covers a stall between the hold check and the write. Each pass also
-   withdraws an auto-granted GRANTED of a waiting ask whose `t` is not before
-   the `started` of the wind-down in force, for a granter that stopped
-   between its GRANTED and that read.
+7. The land queue itself reads a grant with no start as void while the
+   wind-down record is at step 1 or 2 (`grant_void`), so a GRANTED that
+   lands late reserves nothing. As a notice to the project, each pass, and
+   the pass that posted a GRANTED once more after its append, replies GRANT
+   WITHDRAWN (landqueue.GRANT_VOID) to each void grant, to the asking
+   project. The ask waits in its place and gets a new GRANTED after step 0.
 
 Then it replies to the ask as the coordinator with a GRANTED row that names
 the branches, the load, the usage and the other holders. Anything it cannot
@@ -58,7 +57,6 @@ from .participants import load_roster
 PROBE_SEC = 60.0
 POLL_SEC = 10.0
 PAUSE_PATH = Path.home() / ".crosstalk-autogrant-off"
-AUTO_MARK = "(auto-granted by the Crosstalk server)"
 
 
 def _warn(msg: str) -> None:
@@ -102,19 +100,19 @@ def grant_text(ask: dict, holders: list, load: Optional[float], usage: Optional[
         facts.append("weekly usage %g" % usage)
     facts.append("other holders: %s" % others)
     line = ", ".join(facts)
-    body = ("GRANTED %s %s: one land run on the build host " + AUTO_MARK + ". "
+    body = ("GRANTED %s %s: one land run on the build host (auto-granted by the Crosstalk server). "
             "%s. Post LAND START and LAND END. No answer needed.") % (
         ask["project"], branches, line[:1].upper() + line[1:])
     return summary, body
 
 
-def void_text(ask: dict, step: int) -> Tuple[str, str]:
-    """(summary, body) of the GRANT WITHDRAWN reply to a GRANTED that came after a wind-down record."""
+def void_text(ask: dict) -> Tuple[str, str]:
+    """(summary, body) of the GRANT WITHDRAWN reply to a grant the land queue reads as void."""
     head = "%s %s %s" % (GRANT_VOID, ask["project"], ", ".join(ask.get("branches") or []) or "its branches")
-    body = ("%s: a wind-down record (step %d) came before this GRANTED, so the grant is void. "
+    body = ("%s: this grant is void during the wind-down (%s), and it has no start. "
             "Do not start. The ask keeps its place and gets a new GRANTED after step 0. "
-            "No answer needed." % (head, step))
-    return head + ": wind-down step %d" % step, body
+            "No answer needed." % (head, ask["grant_void"]))
+    return head + ": " + ask["grant_void"], body
 
 
 class Granter:
@@ -170,25 +168,18 @@ class Granter:
             return None, "", False
         return read_usage(cfg["glob"], max_age=cfg["maxAgeMin"] * 60) + (True,)
 
-    def _void_late_grants(self, roster, poster: str, just: Optional[str] = None) -> list:
-        """At wind-down step 1 or 2, reply GRANT WITHDRAWN to each GRANTED that came after
-        the record: the one for ask `just` (posted in this pass), and each auto-granted one
-        of a waiting ask with a `t` not before `started`. Returns the ask ids."""
+    def _withdraw_void_grants(self, roster, poster: str) -> list:
+        """Reply GRANT WITHDRAWN to each grant the land queue reads as void (a wind-down
+        at step 1 or 2); returns the ask ids. The queue needs no reply to free the slot:
+        it tells the project not to start."""
         docs, entries = self.snapshot()
-        wind = state.wind_down(docs, roster)
-        if wind["step"] not in (1, 2):
-            return []
         q = land_queue(docs, projects=entries, now=self.clock(), coordinator=poster)
         out = []
         for w in q["waiting"]:
-            grant = w.get("granted")
-            doc = docs.get(("messages", grant)) or {}
-            late = (isinstance(wind["started"], str) and isinstance(doc.get("t"), str)
-                    and doc["t"] >= wind["started"] and AUTO_MARK in str(doc.get("body") or ""))
-            if grant and (w["id"] == just or late):
-                summary, body = void_text(w, wind["step"])
-                self.withdraw(self.root, poster, grant, summary, body=body, to=[w["project"]])
-                _warn("withdrew %s of %s: wind-down step %d" % (grant, w["id"], wind["step"]))
+            if "grant_void" in w:
+                summary, body = void_text(w)
+                self.withdraw(self.root, poster, w["granted"], summary, body=body, to=[w["project"]])
+                _warn("withdrew %s of %s: %s" % (w["granted"], w["id"], w["grant_void"]))
                 out.append(w["id"])
         return out
 
@@ -233,7 +224,7 @@ class Granter:
             self._say("off: the roster names no coordinator (relay in participants.json)")
             return None
         cfg = config.of(roster)
-        self._void_late_grants(roster, poster)
+        self._withdraw_void_grants(roster, poster)
         now = self.clock()
         first = self._check(roster, cfg, poster, now)
         if first is None:
@@ -269,7 +260,7 @@ class Granter:
         except StateLockBusy:
             self._say("not granting %s: the state lock is busy" % ask["id"])
             return None
-        if self._void_late_grants(roster, poster, just=ask["id"]):
+        if ask["id"] in self._withdraw_void_grants(roster, poster):
             return None
         self._probed = None  # the next grant probes afresh
         self._said = ""

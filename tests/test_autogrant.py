@@ -300,6 +300,34 @@ class RealLogTests(unittest.TestCase):
         self.assertEqual(w["granted"], max(did for did, _d in grants))
 
 
+    def test_late_grant_with_an_older_t_is_void_after_a_restart_with_no_marker(self):
+        # The finding: the GRANTED's t was taken before the stall, so it is older
+        # than the record's `started`; the granter that posted it is gone.
+        grant = post_reply(self.r.root, "relay-bot", self.ask, "GRANTED alpha feat-1112").id
+        state.set_wind_down(self.r.root, "owner", 1, roster=self.roster())
+        docs = self.docs()
+        self.assertLessEqual(docs[("messages", grant)]["t"],
+                             state.wind_down(docs, self.roster())["started"])
+        q = self.queue()
+        self.assertEqual(q["holders"], [])
+        [w] = q["waiting"]
+        self.assertEqual((w["id"], w["grant_void"], q["slots_free"]), (self.ask, "wind-down step 1", 2))
+        g = self.granter()  # a new granter: no memory of the grant
+        self.assertIsNone(g.poll_once())
+        self.assertEqual(self.coordinator_posts("GRANT WITHDRAWN")[0][1]["replyTo"], grant)
+        state.set_wind_down(self.r.root, "owner", 0, roster=self.roster())
+        self.assertEqual(g.poll_once(), self.ask)
+        self.assertNotEqual(self.queue()["waiting"][0]["granted"], grant)
+
+    def test_void_grant_nobody_withdrew_is_in_force_again_at_step_0(self):
+        grant = post_reply(self.r.root, "relay-bot", self.ask, "GRANTED alpha feat-1112").id
+        state.set_wind_down(self.r.root, "owner", 2, roster=self.roster())
+        self.assertIn("grant_void", self.queue()["waiting"][0])
+        state.set_wind_down(self.r.root, "owner", 0, roster=self.roster())
+        [w] = self.queue()["waiting"]
+        self.assertEqual((w["granted"], "grant_void" in w), (grant, False))
+
+
 class UsageTests(unittest.TestCase):
     def test_newest_fresh_file_wins_and_stale_is_refused(self):
         with tempfile.TemporaryDirectory() as d:

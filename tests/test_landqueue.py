@@ -246,6 +246,37 @@ class GrantAndLaneTests(unittest.TestCase):
                   granted(3, self.ASK), (4, "beta", "GRANT WITHDRAWN gamma x-1110", void))
         self.assertEqual(q["waiting"][0]["granted"], grant)
 
+    def wound(self, step, *msgs, by="owner"):
+        """The queue with a wind-down record of `by` at `step` (minute 30)."""
+        docs = docs_of(*msgs)
+        docs[("state", by + "-wind-down")] = {"from": by, "step": step, "started": None, "by": by,
+                                              "reason": None, "t": "2026-11-08T10:30:00Z"}
+        return land_queue(docs, projects=PROJECTS, coordinator="relay-bot")
+
+    def test_a_hand_posted_grant_without_a_start_is_void_during_step_1(self):
+        msgs = ((1, "gamma", "TURN ASK gamma x-1110"), (2, "beta", "TURN ASK beta y-1110"),
+                granted(3, self.ASK))
+        for step in (1, 2):
+            q = self.wound(step, *msgs)
+            gam = q["waiting"][0]
+            self.assertEqual((gam["id"], gam["grant_void"]), (self.ASK, "wind-down step %d" % step))
+            self.assertEqual((q["holders"], q["slots_free"]), ([], 2))
+        # the coordinator's own record counts too; another writer's does not
+        self.assertIn("grant_void", self.wound(1, *msgs, by="relay-bot")["waiting"][0])
+        self.assertNotIn("grant_void", self.wound(1, *msgs, by="beta")["waiting"][0])
+        # (a): at step 0 the grant that did not lapse is in force again
+        q = self.wound(0, *msgs)
+        self.assertNotIn("grant_void", q["waiting"][0])
+        self.assertEqual((q["waiting"][0]["granted"], q["slots_free"], q["next"]),
+                         ("relay-bot-03-2", 1, "beta"))
+
+    def test_a_holder_with_land_start_keeps_its_slot_through_steps_1_and_2(self):
+        msgs = ((1, "gamma", "TURN ASK gamma x-1110"), granted(3, self.ASK),
+                (4, "gamma", "LAND START gamma x-1110"))
+        for step in (1, 2):
+            q = self.wound(step, *msgs)
+            self.assertEqual(([h["project"] for h in q["holders"]], q["slots_free"]), (["gamma"], 1))
+
     def test_a_branch_asked_after_the_grant_stays_waiting_at_the_start(self):
         # A project asks for a second branch as the server grants the first.
         msgs = [(1, "epsilon-kit", "TURN ASK epsilon-kit x-1110 2686753: one buildbox land run"),

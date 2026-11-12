@@ -33,10 +33,13 @@ def wind_down_id(pid: str) -> str:
     return pid + WIND_DOWN_SUFFIX
 
 
-def _setters(roster) -> tuple:
-    """The writers whose record counts: the owner, then the coordinator if one is set."""
-    coord = config.coordinator(roster)
+def setters_of(coord: str) -> tuple:
+    """The writers whose record counts: the owner, then the coordinator `coord` if one is set."""
     return ("owner", coord) if coord and coord != "owner" else ("owner",)
+
+
+def _setters(roster) -> tuple:
+    return setters_of(config.coordinator(roster))
 
 
 def _step(value) -> Optional[int]:
@@ -45,10 +48,10 @@ def _step(value) -> Optional[int]:
     return value
 
 
-def _records(docs: Dict, roster) -> list:
+def _records(docs: Dict, roster, setters: Optional[tuple] = None) -> list:
     """(time, pid, doc) for each setter's row that counts, the owner's first."""
     out = []
-    for pid in _setters(roster):
+    for pid in setters or _setters(roster):
         doc = docs.get((COLLECTION, wind_down_id(pid)))
         if not isinstance(doc, dict) or _step(doc.get("step")) is None:
             continue
@@ -58,10 +61,11 @@ def _records(docs: Dict, roster) -> list:
     return out
 
 
-def wind_down(docs: Dict, roster) -> dict:
-    """The record in force: {"step", "started", "by", "reason"}; step 0 and nulls with none."""
+def wind_down(docs: Dict, roster, setters: Optional[tuple] = None) -> dict:
+    """The record in force: {"step", "started", "by", "reason"}; step 0 and nulls with none.
+    `setters` (setters_of) replaces the roster's when the caller has only the coordinator."""
     best = None
-    for rec in _records(docs, roster):
+    for rec in _records(docs, roster, setters):
         if best is None or rec[0] > best[0]:
             best = rec
     if best is None:

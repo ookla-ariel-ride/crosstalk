@@ -333,7 +333,9 @@ the same JSON:
   `GRANTED` shows `granted` (that reply's id) and reserves a slot until its
   start. With the current time given (relay.py, the page and MCP give it), a
   grant 30 minutes old with no start shows `grant_lapsed` and reserves
-  nothing. A re-ask clears the grant.
+  nothing. A re-ask clears the grant. While the wind-down record is at step 1
+  or 2, a granted ask with no start shows `grant_void` (for example
+  `"wind-down step 1"`) and reserves nothing.
 - `next`: the first waiting project that is not holding and not granted. `relay.py queue
   --next` prints only that id, or nothing.
 - `slots_free`: 2 less the holders and the granted asks; `may_start` is true when `next` exists
@@ -365,12 +367,18 @@ force. On an equal `t` the owner's record counts. An `update` cannot change
 `step`, `started` or `t`: a new step needs a new `state wind-down`. A `TURN ASK` that waits stays in the
 queue and gets its `GRANTED` after step 0.
 
-A `GRANTED` can still land after a wind-down record, when the server stalls
-between its last check and its post. The server then replies to that
-`GRANTED` with a summary that starts `GRANT WITHDRAWN`, sent to the asking
-project. Only the coordinator's reply counts. The grant is void: the slot is
-free and the ask waits in its place, for a new `GRANTED` after step 0. A
-project that reads `GRANT WITHDRAWN` does not start that land.
+While the record is at step 1 or 2, the queue reads every grant that has no
+`LAND START` or `LANE START` as void, a `GRANTED` posted by hand included.
+The slot is free and the ask waits in its place. A project that holds a slot
+keeps it, so a land already in its gate can finish. Do not start a land on a
+`GRANTED` while `relay.py state --get wind_down.step` prints 1 or 2. The
+queue compares no times. At step 0 a void grant that nobody withdrew and that
+did not lapse is in force again.
+
+The server also tells the project. Each pass at step 1 or 2 replies to each
+void `GRANTED` with a summary that starts `GRANT WITHDRAWN`, sent to the
+asking project. Only the coordinator's reply counts. A withdrawn grant stays
+void after step 0, and the ask gets a new `GRANTED`.
 
 Free-text posts ("land start 01:42", "asking for a land turn") are not read:
 the fixed words are the contract.
