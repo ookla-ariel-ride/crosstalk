@@ -1388,6 +1388,16 @@ class V2StaticTests(unittest.TestCase):
                 self.assertEqual(status, 404, path)
                 self.assertNotIn(SECRET, body, path)
 
+    def test_v2_dot_files_are_404(self):
+        (self.dist / ".build-hash").write_bytes(b"hash")
+        (self.dist / ".vite").mkdir()
+        (self.dist / ".vite" / "manifest.json").write_bytes(b"{}")
+        with self.server() as srv:
+            for path in ("/v2/.build-hash", "/v2/.vite/manifest.json", "/v2/%2Evite/manifest.json", "/v2/.vite/"):
+                status, body, _headers = raw_get(srv.url, path)
+                self.assertEqual(status, 404, path)
+                self.assertNotEqual(body, INDEX_HTML, path)
+
     def test_v2_symlink_out_of_dist_is_404(self):
         (self.dist / "assets" / "leak.json").symlink_to(self.code / "tokens.json")
         (self.dist / "outside").symlink_to(self.code, target_is_directory=True)

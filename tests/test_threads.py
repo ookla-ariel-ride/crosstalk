@@ -7,7 +7,7 @@ from helpers import RunningServer, TempRepo, line
 from test_serve import request
 
 from crosstalk.serve import ReplayCache
-from crosstalk.threads import build_threads, page, sort_threads
+from crosstalk.threads import ThreadIndex, build_threads, page, sort_threads
 
 NOW = "2026-10-21T18:00:00Z"
 
@@ -117,6 +117,32 @@ class BuildTests(unittest.TestCase):
         }, NOW))
         self.assertEqual(threads["a"]["hot"], 3)
         self.assertEqual(threads["solo"]["hot"], 0)
+
+    def test_created_times_drive_order_last_t_and_hot(self):
+        """An update moves the replayed `t`; the created time keeps the message in its place."""
+        messages = {
+            "a": msg("alpha", "2026-10-21T17:50:00Z", "root, edited"),  # replayed `t` of an update
+            "b": msg("beta", "2026-10-21T17:10:00Z", "reply", reply_to="a"),
+        }
+        index = ThreadIndex(messages, created={"a": "2026-10-21T15:00:00Z", "b": "2026-10-21T17:10:00Z"})
+        t = index.threads_at(NOW)[0]
+        self.assertEqual([m["id"] for m in index.thread("a")], ["a", "b"])
+        self.assertEqual([m["t"] for m in index.thread("a")], ["2026-10-21T15:00:00Z", "2026-10-21T17:10:00Z"])
+        self.assertEqual((t["last_t"], t["last_id"], t["preview"]), ("2026-10-21T17:10:00Z", "b", "reply"))
+        self.assertEqual(t["hot"], 0)  # only beta wrote in the last hour
+
+    def test_root_of_any_message(self):
+        index = ThreadIndex({"a": msg("alpha", "2026-10-21T10:00:00Z"),
+                             "b": msg("beta", "2026-10-21T10:01:00Z", reply_to="a")})
+        self.assertEqual((index.root_of.get("b"), index.root_of.get("a"), index.root_of.get("x")), ("a", "a", None))
+
+    def test_needs_owner_for_an_open_waiting_row_of_the_same_id(self):
+        threads = by_root(ThreadIndex({
+            "w": msg("owner", "2026-10-21T10:00:00Z", "to do", kind="owner"),
+            "n": msg("alpha", "2026-10-21T10:00:00Z", "note", kind="note"),
+        }, waiting={"w", "gone"}).threads_at(NOW))
+        self.assertTrue(threads["w"]["needs_owner"])
+        self.assertFalse(threads["n"]["needs_owner"])
 
     def test_needs_owner_for_an_open_question(self):
         threads = by_root(build_threads({
@@ -301,7 +327,7 @@ class RouteTests(unittest.TestCase):
 
     def test_thread_route_unknown_root_is_404(self):
         with RunningServer(self.repo.root) as srv:
-            for root in ("nope", "beta-kid", urllib.parse.quote("a/b", safe="")):
+            for root in ("nope", urllib.parse.quote("a/b", safe="")):
                 status, _body = request(srv.url + "/api/thread/" + root)
                 self.assertEqual(status, 404, root)
 

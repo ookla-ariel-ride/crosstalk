@@ -3,11 +3,12 @@
 // The server sorts; the page never sorts a list itself.
 import { memo, type ReactNode, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { ApiError } from "../../api/client";
-import { useThreads } from "../../api/queries";
-import type { Thread } from "../../api/types";
+import { useSection, useThread, useThreads } from "../../api/queries";
+import type { SectionRow, Thread } from "../../api/types";
 import { ago } from "../../logic/ago";
 import { foldRoutine } from "../../logic/foldRoutine";
 import { href, type Route, route as routeOf, type Sort } from "../../logic/route";
+import { Body } from "../../ui/Body";
 import { Row } from "../../ui/Row";
 import { RowList } from "../../ui/RowList";
 import { useNow } from "../../ui/useNow";
@@ -63,6 +64,73 @@ const ThreadRow = memo(function ThreadRow({ thread, open, onToggle, now, renderA
   );
 });
 
+interface LinkedProps {
+  id: string;
+  now: Date;
+  onToggle: (id: string) => void;
+  /** The id names a message whose thread has another root: open that root in its place. */
+  onResolve: (id: string, root: string) => void;
+  renderActions?: RenderActions;
+}
+
+/** An open thread that no loaded page holds, as an id link opens it: the thread that holds `id`. */
+function LinkedThread({ id, now, onToggle, onResolve, renderActions }: LinkedProps) {
+  const query = useThread(id);
+  const root = query.data?.root;
+  useEffect(() => {
+    if (root !== undefined && root !== id) onResolve(id, root);
+  }, [id, root, onResolve]);
+  if (query.isError) {
+    const gone = query.error instanceof ApiError && query.error.status === 404;
+    return (
+      <p className={styles.state}>
+        {gone ? `No thread holds ${id}.` : `The thread of ${id} did not load. Fold it and open it again.`}{" "}
+        <button type="button" className={styles.action} onClick={() => onToggle(id)}>
+          Fold
+        </button>
+      </p>
+    );
+  }
+  const thread = query.data?.thread;
+  if (!thread || root !== id) return <p className={styles.state}>Loading.</p>;
+  return <ThreadRow thread={thread} open onToggle={onToggle} now={now} renderActions={renderActions} />;
+}
+
+/** The open waiting rows (the present page's Waiting on you): each opens in place to its body and actions. */
+function WaitingList({ rows, now, actions }: { rows: SectionRow[]; now: Date; actions?: (row: SectionRow) => ReactNode }) {
+  const [open, setOpen] = useState<string[]>([]);
+  const str = (v: unknown) => (typeof v === "string" ? v : "");
+  return (
+    <RowList
+      short
+      label="Waiting on you"
+      items={rows}
+      itemKey={(row) => row.id}
+      estimateSize={64}
+      renderRow={(row) => {
+        const shown = open.includes(row.id);
+        return (
+          <Row
+            projects={str(row.project) ? [str(row.project)] : []}
+            title={str(row.summary) || row.id}
+            text={str(row.body).split("\n")[0]}
+            note={<span className={styles.noteLine}>{"waiting since " + ago(str(row.since), now)}</span>}
+            open={shown}
+            onOpen={() => setOpen(shown ? open.filter((id) => id !== row.id) : [...open, row.id])}
+          >
+            {shown ? (
+              <div className={styles.thread}>
+                <Body text={str(row.body)} />
+                <div className={styles.end}>{actions?.(row)}</div>
+              </div>
+            ) : null}
+          </Row>
+        );
+      }}
+    />
+  );
+}
+
 /** Draws the next page when the list nears its end; the button is the keyboard path. */
 function LoadMore({ load, busy }: { load: () => void; busy: boolean }) {
   const loadRef = useRef(load);
@@ -86,9 +154,11 @@ export interface StreamProps {
   renderActions?: RenderActions;
   /** What shows above the heading, such as the owner's "Start a thread". */
   top?: ReactNode;
+  /** What shows first under the heading, such as the open waiting rows; the stream is then never "empty". */
+  lead?: ReactNode;
 }
 
-export function Stream({ sort, open, onOpenChange, needsOnly = false, renderActions, top }: StreamProps) {
+export function Stream({ sort, open, onOpenChange, needsOnly = false, renderActions, top, lead }: StreamProps) {
   const query = useThreads(sort);
   const reading = useReading();
   const now = useNow();
@@ -96,12 +166,15 @@ export function Stream({ sort, open, onOpenChange, needsOnly = false, renderActi
   const pages = query.data?.pages;
   const muted = reading.state.muted;
   const loaded = useMemo(() => pages?.flatMap((p) => p.threads) ?? [], [pages]);
-  // The open ids that name a loaded thread, each once: a gone id or a
-  // duplicate does not count toward the cap and does not enable "Fold all".
-  const shownOpen = useMemo(() => {
+  // The open ids, each once. An id that no loaded thread has as its root
+  // shows above the list, once the list is in: a thread on a later page, or a
+  // message an id link names.
+  const shownOpen = useMemo(() => [...new Set(open)], [open]);
+  const linked = useMemo(() => {
+    if (!pages) return [];
     const roots = new Set(loaded.map((t) => t.root));
-    return [...new Set(open)].filter((root) => roots.has(root));
-  }, [open, loaded]);
+    return shownOpen.filter((id) => !roots.has(id));
+  }, [pages, loaded, shownOpen]);
 
   // The set the next toggle starts from. A toggle sets it at once, so a second
   // click before the route changes builds on the first; a new route resets it.
@@ -116,6 +189,11 @@ export function Stream({ sort, open, onOpenChange, needsOnly = false, renderActi
   const onToggle = useCallback((root: string) => {
     const current = openRef.current;
     const next = current.includes(root) ? current.filter((r) => r !== root) : [...current, root].slice(-MAX_OPEN);
+    openRef.current = next;
+    changeRef.current(next);
+  }, []);
+  const onResolve = useCallback((id: string, root: string) => {
+    const next = [...new Set(openRef.current.map((o) => (o === id ? root : o)))];
     openRef.current = next;
     changeRef.current(next);
   }, []);
@@ -186,12 +264,14 @@ export function Stream({ sort, open, onOpenChange, needsOnly = false, renderActi
     body = (
       <p className={styles.state}>
         {denied
-          ? "The server needs you to sign in to read the threads. Sign in on the People page, then come back."
+          ? "The server needs you to sign in to read the threads. Sign in on the Roster page, then come back."
           : "The threads did not load. Check that the relay server runs, then reload the page."}
       </p>
     );
   } else if (query.isPending) {
     body = <p className={styles.state}>Loading.</p>;
+  } else if (items.length === 0 && lead) {
+    body = null;
   } else if (items.length === 0) {
     body = (
       <p className={styles.state}>
@@ -230,6 +310,17 @@ export function Stream({ sort, open, onOpenChange, needsOnly = false, renderActi
           </button>
         </div>
       </div>
+      {lead}
+      {linked.length > 0 ? (
+        <RowList
+          short
+          label="Opened threads"
+          items={linked}
+          itemKey={(id) => id}
+          estimateSize={64}
+          renderRow={(id) => <LinkedThread id={id} now={now} onToggle={onToggle} onResolve={onResolve} renderActions={renderActions} />}
+        />
+      ) : null}
       {body}
     </>
   );
@@ -278,8 +369,15 @@ export function Conversations({
   return <Stream sort={route.sort} open={open} onOpenChange={onOpenChange} renderActions={renderActions} top={top} />;
 }
 
-/** The Needs you page: the stream in the needs order, only the threads that need the owner. */
-export function NeedsYou({ renderActions }: { renderActions?: RenderActions }) {
+/**
+ * The Needs you page: the open waiting rows, then the stream in the needs
+ * order with only the threads that need the owner.
+ */
+export function NeedsYou({ renderActions, waitingActions }: { renderActions?: RenderActions; waitingActions?: (row: SectionRow) => ReactNode }) {
   const [open, setOpen] = useState<string[]>([]);
-  return <Stream sort="needs" open={open} onOpenChange={setOpen} needsOnly renderActions={renderActions} />;
+  const now = useNow();
+  const pages = useSection("waiting").data?.pages;
+  const rows = useMemo(() => pages?.flatMap((p) => p.rows).filter((r) => !r.done) ?? [], [pages]);
+  const lead = rows.length ? <WaitingList rows={rows} now={now} actions={waitingActions} /> : null;
+  return <Stream sort="needs" open={open} onOpenChange={setOpen} needsOnly renderActions={renderActions} lead={lead} />;
 }

@@ -62,6 +62,17 @@ export function route(hash: string): Route {
   return home();
 }
 
+/**
+ * The hash that opens the thread of `id` from the page at `hash`: on the
+ * stream it keeps the sort and the open threads and adds `id` last; from any
+ * other page it opens the stream in the needs order.
+ */
+export function withOpen(hash: string, id: string): string {
+  const r = route(hash);
+  const open = r.name === "conversations" ? r.open.filter((o) => o !== id) : [];
+  return href({ name: "conversations", sort: r.name === "conversations" ? r.sort : "needs", open: [...open, id] });
+}
+
 /** The hash of a route; `route(href(r))` gives `r` back. */
 export function href(r: Route): string {
   switch (r?.name) {

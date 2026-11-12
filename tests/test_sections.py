@@ -61,9 +61,45 @@ class OpenRuleTests(unittest.TestCase):
             docs = {(coll, "d1"): {"summary": "x"}, ("messages", "m1"): {"summary": "x"}}
             self.assertEqual(self.open_ids(name, docs), (set(), {"d1"}), name)
 
+    def test_waiting_open_until_done_and_a_row_a_message_holds_is_left_out(self):
+        docs = {("waiting", "w1"): {"summary": "a", "done": None}, ("waiting", "w2"): {"summary": "b", "done": T(5)},
+                ("waiting", "w3"): {"summary": "c", "done": None}, ("messages", "w3"): {"summary": "c"}}
+        self.assertEqual(self.open_ids("waiting", docs), ({"w1"}, {"w1", "w2"}))
+
     def test_unknown_section_is_a_key_error(self):
         with self.assertRaises(KeyError):
             sections.rows("messages", {}, plain_roster("", []))
+
+
+class SearchTests(unittest.TestCase):
+    """`q` reads the fields each section shows, not only summary and body."""
+
+    CASES = (
+        ("locks", "locks", {"path": "web/src/App.tsx", "note": "Moving the shell", "repo": "alpha-repo",
+                            "project": "beta"}, ("app.tsx", "the shell", "alpha-repo", "beta")),
+        ("schedules", "schedules", {"name": "nightly-gate", "about": "Runs the gate", "cron": "0 3 * * *"},
+         ("nightly", "the gate", "0 3")),
+        ("adoption", "adoptions", {"item": "lean read", "note": "half done", "ref": "relay-bot-0007"},
+         ("lean read", "half done", "relay-bot-0007")),
+        ("progress", "progress", {"item": "boot rom", "game": "pinball", "note": "dumped"},
+         ("boot rom", "pinball", "dumped")),
+        ("lessons", "lessons", {"title": "Old title", "fix": "Pin the version"}, ("old title", "pin the")),
+        ("incidents", "incidents", {"title": "Disk full", "fix": "Pruned", "project": "beta"},
+         ("disk", "pruned", "beta")),
+        ("waiting", "waiting", {"summary": "Crosstalk feature", "body": "An inbox", "project": "alpha"},
+         ("feature", "inbox", "alpha")),
+    )
+
+    def test_q_matches_the_fields_each_section_shows(self):
+        for name, coll, doc, needles in self.CASES:
+            docs = {(coll, "r1"): doc, (coll, "r2"): {"summary": "unrelated"}}
+            for needle in needles:
+                rows, _ = sections.rows(name, docs, plain_roster("", []), q=needle.upper())
+                self.assertEqual([r["id"] for r in rows], ["r1"], (name, needle))
+
+    def test_q_does_not_read_a_field_the_section_does_not_show(self):
+        docs = {("locks", "r1"): {"path": "x", "secretish": "needle"}}
+        self.assertEqual(sections.rows("locks", docs, plain_roster("", []), q="needle")[0], [])
 
 
 class OrderTests(unittest.TestCase):
@@ -135,7 +171,7 @@ class RouteTests(unittest.TestCase):
 
     def test_unknown_section_is_404(self):
         with RunningServer(self.repo.root) as srv:
-            for name in ("nope", "messages", "waiting", "adoptions", ""):
+            for name in ("nope", "messages", "adoptions", ""):
                 status, body = self.get(srv, name)
                 self.assertEqual(status, 404, name)
                 self.assertIn("error", body)

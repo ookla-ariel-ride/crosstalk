@@ -35,8 +35,12 @@ def _summary(doc: dict) -> str:
     return s if isinstance(s, str) else ""
 
 
-def roots(messages: Dict[str, dict]) -> Dict[str, str]:
-    """Each message id mapped to the id of its thread's root."""
+def roots(messages: Dict[str, dict], when=None) -> Dict[str, str]:
+    """Each message id mapped to the id of its thread's root.
+
+    `when` gives a message's time (its id in, a time out); the default reads its `t`.
+    """
+    when = when or (lambda did: _t(messages[did]))
     root_of = {}  # type: Dict[str, str]
     for start in messages:
         if start in root_of:
@@ -56,7 +60,7 @@ def roots(messages: Dict[str, dict]) -> Dict[str, str]:
                 break
             if parent in on_path:
                 cycle = path[on_path[parent]:]
-                root = min(cycle, key=lambda d: (_t(messages[d]), d))
+                root = min(cycle, key=lambda d: (when(d), d))
                 break
             cur = parent
         for did in path:
@@ -115,20 +119,29 @@ class ThreadIndex:
 
     The log's `t` is always `%Y-%m-%dT%H:%M:%SZ` (logs.py checks it), so times
     compare as strings and the last hour is a bisect over the sorted times.
+
+    One time for each message drives the member order, `last_t`, `hot` and the
+    `t` that thread() sends: its created time from `created` (message id ->
+    time, see serve.ReplayCache), else its replayed `t`. So a later `update` of
+    an old message does not move it. `waiting` holds the ids of the open
+    `waiting` rows: the thread of a message with one of those ids needs the owner.
     """
 
-    def __init__(self, messages: Dict[str, dict], roster=None):
+    def __init__(self, messages: Dict[str, dict], roster=None,
+                 created: Optional[Dict[str, str]] = None, waiting=()):
         self.messages = messages
         self._lock = threading.Lock()
-        root_of = roots(messages)
-        timed = sorted((_t(doc), did) for did, doc in messages.items())
+        created = created or {}
+        self.when = {did: created.get(did) or _t(doc) for did, doc in messages.items()}
+        self.root_of = root_of = roots(messages, self.when.__getitem__)
+        timed = sorted((when, did) for did, when in self.when.items())
         self.members = {}  # type: Dict[str, List[str]]
         for _when, did in timed:
             self.members.setdefault(root_of[did], []).append(did)
         self._times = [when for when, _did in timed]
         self._recent = [(messages[did].get("from"), root_of[did]) for _when, did in timed]
         needs, open_ = _flags(messages, roster)
-        needs = {root_of[did] for did in needs}
+        needs = {root_of[did] for did in needs | (set(waiting) & set(messages))}
         open_ = {root_of[did] for did in open_}
         self.by_root = {}  # type: Dict[str, dict]
         for root, ids in self.members.items():
@@ -145,7 +158,7 @@ class ThreadIndex:
                 "preview": _summary(messages[last]),
                 "projects": authors,
                 "count": len(ids),
-                "last_t": _t(messages[last]),
+                "last_t": self.when[last],
                 "last_id": last,
                 "needs_owner": root in needs,
                 "unanswered": root in open_,
@@ -184,6 +197,12 @@ class ThreadIndex:
             self._refresh_hot(now)
             return list(self.by_root.values())
 
+    def row(self, root: str, now: str) -> Optional[dict]:
+        """The list row of the thread `root`, with `hot` as of `now`, or None."""
+        with self._lock:
+            self._refresh_hot(now)
+            return self.by_root.get(root)
+
     def page(self, order: str, now: str, cursor: Optional[str],
              limit: Optional[int] = DEFAULT_LIMIT) -> Tuple[List[dict], Optional[str]]:
         """One page of the threads in `order` as of `now` (see page()).
@@ -203,7 +222,7 @@ class ThreadIndex:
             return [self.by_root[r] for r in items], nxt
 
     def thread(self, root: str) -> Optional[List[dict]]:
-        """The messages of one thread in time order with `id`, `depth` and `quote`, or None."""
+        """The messages of one thread in created order with `id`, `depth`, `quote` and the created `t`, or None."""
         ids = self.members.get(root)
         if ids is None:
             return None
@@ -217,7 +236,10 @@ class ThreadIndex:
                 depth, quote = 1, None
             else:
                 depth, quote = 2, _summary(self.messages[parent])
-            out.append(dict(doc, id=did, depth=depth, quote=quote))
+            row = dict(doc, id=did, depth=depth, quote=quote)
+            if self.when[did]:
+                row["t"] = self.when[did]
+            out.append(row)
         return out
 
 

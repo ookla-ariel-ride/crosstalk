@@ -33,6 +33,11 @@ describe("speaker", () => {
     );
   });
 
+  test("the owner is a person: only the name, no model", () => {
+    expect(speaker({ from: "owner" }, {})).toBe("owner");
+    expect(speaker({ from: "owner", harness: "x", model: "y" }, {})).toBe("owner");
+  });
+
   test("bad input gives a plain result", () => {
     expect(speaker({}, {})).toBe("model not stated");
     expect(speaker(undefined as never, undefined as never)).toBe("model not stated");

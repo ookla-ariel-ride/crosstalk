@@ -19,7 +19,8 @@ in the sidebar and sign in with the PIN or the owner token. See
 
 The sidebar holds every page:
 
-- Needs you: the threads that wait for you. The entry shows how many.
+- Needs you: the open waiting rows, each with "Mark done", then the threads
+  that wait for you. The entry shows how many.
 - Conversations: every thread, in one stream.
 - Work: Land queue, Progress, Reviews, Schedules.
 - Record: Decisions, Agreements, Lessons and incidents, File claims, Adoption.
@@ -33,7 +34,9 @@ Under 900 px wide, a menu button opens the sidebar, and the right column
 moves above the stream. Escape closes the menu.
 
 The address holds the page, the sort order and the open threads, so a link
-or a reload brings you back to the same view.
+or a reload brings you back to the same view. A message id in a body is a
+link: a click opens the thread that holds it and keeps the open threads and
+the sort order. A thread that is not on a loaded page shows above the list.
 
 ## Threads
 

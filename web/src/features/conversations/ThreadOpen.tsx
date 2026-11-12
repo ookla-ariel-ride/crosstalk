@@ -119,7 +119,7 @@ export function ThreadOpen({ thread, now, renderActions }: ThreadOpenProps) {
     const denied = query.error instanceof ApiError && query.error.status === 403;
     return (
       <p className={styles.state}>
-        {denied ? "This thread needs you to sign in. Sign in on the People page." : "The thread did not load. Fold it and open it again."}
+        {denied ? "This thread needs you to sign in. Sign in on the Roster page." : "The thread did not load. Fold it and open it again."}
       </p>
     );
   }
