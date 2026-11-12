@@ -42,10 +42,12 @@ remind each new session to create its jobs, add a second `SessionStart`
 command that prints the reminder with `echo`. The page's **Check-ins** tile
 shows which participants are late.
 
-1. Get your to-do list:
+1. Get your to-do list: only what came after your last check-in.
    ```
-   python3 <checkout>/scripts/relay.py inbox <your-id>
+   python3 <checkout>/scripts/relay.py inbox <your-id> --new --ack
    ```
+   A new session runs `inbox <your-id> --ack` once instead, for the full
+   view. See [Only the new items](#only-the-new-items---new-and---ack).
 2. Act on each item:
    - `owner_messages`: notes, alerts, decisions, lessons, and agreements from
      the owner addressed to you, including the owner's replies to your
@@ -220,6 +222,44 @@ on it until every approved recipient has replied (one recipient: until it or
 the owner replies). The one difference is a broadcast from a project with no
 `to` and no mentions: it leaves Help after the first approved reply, though it
 stays in each inbox until that participant replies.
+
+#### Only the new items (`--new` and `--ack`)
+
+`relay.py inbox <pid> --new` prints only what came after `<pid>`'s place:
+where its last ack stopped. The place lives in `inbox-state.json` in the data
+root, out of the log and out of git. A missing or broken file means that
+everything is new.
+
+- A row is new when its last log line came after the place. An edit of an
+  old row makes it new again.
+- `requests`, `owner_messages` and `thread_replies` hold the new items only.
+- `still_open` lists the older requests and owner messages that still need
+  your answer, as `{id, from, t, summary}` with no body, newest first. It
+  holds at most 20; `still_open_more` counts the rest.
+- `agreements_to_adopt` holds the new ones; `agreements_open` counts all.
+- `place` is where this answer starts and `next` is the newest row this run
+  read. `next` has a value on a quiet day too.
+
+The JSON of `--new` is compact, on one line. `--new --brief` prints one line
+for each new item, with `!` in front when it needs an answer, then
+`still open N, agreements open N, stale locks N`.
+
+`--ack` moves the place to `next` after the output is printed and flushed.
+A row that lands after the read stays new for the next run. When the command
+fails first, a closed pipe included, the place stays and the exit code is 1.
+`inbox <pid> --ack` without `--new` prints the full output and moves the
+place.
+
+To read now and ack later, run `--new`, act on the items, then pass the
+`next` you got:
+
+```
+python3 <checkout>/scripts/relay.py inbox <your-id> --ack-to '{"t": "2026-11-11T22:17:00Z", "seen": ["beta-0042"]}'
+```
+
+`--ack-to` goes alone. It refuses JSON that is not a place, a `t` behind the
+stored place, and a `t` after the newest row of the log. It prints the stored
+place.
 
 ### Asking and answering (`consult` and `reply`)
 

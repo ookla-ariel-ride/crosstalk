@@ -2,9 +2,10 @@
 from pathlib import Path
 from typing import Dict, List, Optional, Tuple
 
+from .inboxstate import is_new
 from .logs import Problem, check_all
 from .participants import Roster
-from .replay import enrich_messages, load_all_lines, replay
+from .replay import enrich_messages, last_line_map, load_all_lines, replay
 from .requests import (
     acks_by_item,
     agreements_to_adopt_for,
@@ -21,6 +22,7 @@ from .requests import (
 from .service import SERVICE
 
 MESSAGES_LIMIT_MAX = 100
+STILL_OPEN_MAX = 20
 
 
 def trust_of(pid, roster: Roster) -> str:
@@ -29,17 +31,30 @@ def trust_of(pid, roster: Roster) -> str:
     return p.trust if p is not None else "unknown"
 
 
+def load_docs_and_times(root: Path, roster: Roster
+                        ) -> Tuple[Optional[Dict], Dict[Tuple[str, str], str], List[Problem]]:
+    """Replayed, enriched docs and the time of each row, or (None, {}, fatal problems).
+
+    The time of a row is the `t` of the last log line that touched it: an edit
+    of an old row makes it new again for `inbox --new`, and a row whose own `t`
+    lies behind the clock still lands after the place it was written after.
+    """
+    fatal = [p for p in check_all(root, roster) if p.fatal]
+    if fatal:
+        return None, {}, fatal
+    lines = load_all_lines(root, roster)
+    times = {key: ln.t for key, ln in last_line_map(lines).items()}
+    return enrich_messages(replay(lines), lines), times, []
+
+
 def load_docs(root: Path, roster: Roster) -> Tuple[Optional[Dict], List[Problem]]:
     """Replayed, enriched docs, or (None, fatal problems) when any log is broken.
 
     relay.py read and inbox refuse to answer from a broken log; so does every
     caller of this function.
     """
-    fatal = [p for p in check_all(root, roster) if p.fatal]
-    if fatal:
-        return None, fatal
-    lines = load_all_lines(root, roster)
-    return enrich_messages(replay(lines), lines), []
+    docs, _times, fatal = load_docs_and_times(root, roster)
+    return docs, fatal
 
 
 def inbox_report(docs: Dict, pid: str, roster: Roster, include_answered: bool = False,
@@ -95,6 +110,44 @@ def inbox_report(docs: Dict, pid: str, roster: Roster, include_answered: bool = 
             {"question": dict(doc, id=did), "trust": trust_of(doc.get("from"), roster)}
             for (did, doc) in open_owner_questions(docs, roster=roster)
         ]
+    return out
+
+
+def new_report(full: dict, times: Dict[Tuple[str, str], str], place: Optional[dict],
+               nxt: Optional[dict]) -> dict:
+    """What `relay.py inbox <pid> --new` prints: the items of `full` (an
+    `inbox_report`) that came after `place`.
+
+    The open requests and owner messages from before the place that still need
+    an answer stay as `still_open`, without bodies, newest first, at most
+    STILL_OPEN_MAX; `still_open_more` counts the rest. `next` is the place to
+    ack: the newest row of the log as this run loaded it.
+    """
+    def new(coll, did):
+        rt = times.get((coll, did))
+        return rt is None or is_new(rt, did, place)
+
+    out = {k: full[k] for k in ("pid", "roster", "stale_locks", "service", "owner_questions")
+           if k in full}
+    old = []
+    for key, field in (("requests", "request"), ("owner_messages", "message"),
+                       ("thread_replies", "message")):
+        out[key] = []
+        for item in full.get(key, []):
+            doc = item[field]
+            if new("messages", doc["id"]):
+                out[key].append(item)
+            elif key != "thread_replies" and item.get("needs_answer"):
+                old.append((times.get(("messages", doc["id"]), ""), doc))
+    old.sort(key=lambda r: (r[0], r[1]["id"]), reverse=True)
+    out["still_open"] = [{"id": d["id"], "from": d.get("from"), "t": d.get("t"),
+                          "summary": d.get("summary")} for _rt, d in old[:STILL_OPEN_MAX]]
+    out["still_open_more"] = max(0, len(old) - STILL_OPEN_MAX)
+    agreements = full.get("agreements_to_adopt", [])
+    out["agreements_to_adopt"] = [a for a in agreements if new("agreements", a["id"])]
+    out["agreements_open"] = len(agreements)
+    out["place"] = place
+    out["next"] = nxt
     return out
 
 

@@ -34,7 +34,9 @@ from crosstalk.participants import load_roster  # noqa: E402
 from crosstalk.posters import claim_file, land_sync, post_incident, release_file  # noqa: E402
 from crosstalk.replay import enrich_messages, load_all_lines, replay  # noqa: E402
 from crosstalk.requests import no_answer, speaker_fields  # noqa: E402
-from crosstalk.reports import inbox_report, load_docs, questions_report  # noqa: E402
+from crosstalk import inboxstate  # noqa: E402
+from crosstalk.reports import (inbox_report, load_docs, load_docs_and_times, new_report,  # noqa: E402
+                               questions_report)
 from crosstalk.serve import serve  # noqa: E402
 from crosstalk.service import service_block, service_for  # noqa: E402
 from crosstalk.stalls import find_stalls  # noqa: E402
@@ -147,28 +149,86 @@ def cmd_read(args):
 
 
 def cmd_inbox(args):
-    """Print the open requests addressed to a participant as JSON."""
+    """Print the open requests addressed to a participant as JSON.
+
+    `--new` cuts the answer at the participant's place, `--ack` then moves the
+    place to `next` once the output is flushed, and `--ack-to` moves it alone.
+    """
     roster = load_roster(ROOT / "participants.json")
     if args.pid not in roster.participants:
         err("unknown participant %r" % args.pid)
         return 1
-    docs, fatal = load_docs(ROOT, roster)
+    if args.ack_to is not None and (args.new or args.ack or args.all or args.brief):
+        err("--ack-to goes alone, without --new, --ack, --all or --brief")
+        return 1
+    docs, times, fatal = load_docs_and_times(ROOT, roster)
     if fatal:
         for p in fatal:
             err("%s:%d: %s" % (p.file, p.line, p.message))
         return 1
+    nxt = inboxstate.newest(times)
+    if args.ack_to is not None:
+        return _inbox_ack_to(args.pid, args.ack_to, nxt)
     out = inbox_report(docs, args.pid, roster, include_answered=args.all,
                        now_iso=getattr(args, "now", None), service=service_for(CODE_ROOT, ROOT))
-    if args.brief:
-        for key, label in (("owner_messages", "owner"), ("requests", "request"),
-                           ("thread_replies", "reply")):
-            for item in out.get(key, []):
-                doc = item.get("request") or item.get("message") or item
-                print(_brief_line(label, doc.get("id", "?"), doc, _row_time(doc)))
+    if args.new:
+        out = new_report(out, times, inboxstate.load(ROOT).get(args.pid), nxt)
+    try:
+        _print_inbox(out, args)
+        sys.stdout.flush()
+    except BrokenPipeError:
+        # Python flushes stdout again at exit; point it at devnull so that
+        # flush does not fail too. The place stays where it was.
+        os.dup2(os.open(os.devnull, os.O_WRONLY), sys.stdout.fileno())
+        return 1
+    if args.ack and nxt is not None:
+        inboxstate.move(ROOT, args.pid, nxt)
+    return 0
+
+
+def _print_inbox(out, args):
+    if not args.brief:
+        # `--new` is the check-in of every session, so it prints compact JSON;
+        # the full view keeps the indented form it always had.
+        layout = {"separators": (",", ":")} if args.new else {"indent": 2}
+        print(json.dumps(out, ensure_ascii=False, sort_keys=True, **layout))
+        return
+    sections = (("owner_messages", "owner"), ("requests", "request"), ("thread_replies", "reply"))
+    for key, label in sections:
+        for item in out.get(key, []):
+            doc = item.get("request") or item.get("message") or item
+            line = _brief_line(label, doc.get("id", "?"), doc, _row_time(doc))
+            print(("!" if item.get("needs_answer") else " ") + line if args.new else line)
+    if args.new:
+        for doc in out.get("agreements_to_adopt", []):
+            print(" " + _brief_line("adopt", doc.get("id", "?"), doc, _row_time(doc)))
+        print("still open %d, agreements open %d, stale locks %d" % (
+            len(out["still_open"]) + out["still_open_more"], out["agreements_open"],
+            len(out.get("stale_locks", []))))
+    else:
         print("adopt %d, stale locks %d" % (len(out.get("agreements_to_adopt", [])),
                                             len(out.get("stale_locks", []))))
-        return 0
-    print(json.dumps(out, ensure_ascii=False, sort_keys=True, indent=2))
+
+
+def _inbox_ack_to(pid, raw, nxt):
+    """`inbox <pid> --ack-to PLACE`: move the place to a `next` read earlier."""
+    try:
+        place = inboxstate.clean_place(json.loads(raw))
+    except (ValueError, RecursionError):
+        place = None
+    if place is None:
+        err('--ack-to: not a place; give the JSON object {"t": ..., "seen": [...]} '
+            "that inbox --new printed as next")
+        return 1
+    stored = inboxstate.load(ROOT).get(pid)
+    if stored is not None and place["t"] < stored["t"]:
+        err("--ack-to: %s is behind the stored place %s" % (place["t"], stored["t"]))
+        return 1
+    if nxt is None or place["t"] > nxt["t"]:
+        err("--ack-to: %s is ahead of the newest row of the log (%s)"
+            % (place["t"], nxt["t"] if nxt else "none"))
+        return 1
+    print(json.dumps(inboxstate.move(ROOT, pid, place), sort_keys=True))
     return 0
 
 
@@ -715,6 +775,12 @@ def build_parser():
     ib.add_argument("pid", metavar="PID")
     ib.add_argument("--all", action="store_true", help="include answered requests")
     ib.add_argument("--brief", action="store_true", help="one line per item")
+    ib.add_argument("--new", action="store_true",
+                    help="only the items that came after the last ack")
+    ib.add_argument("--ack", action="store_true",
+                    help="after the output, move the place to the newest row this run read")
+    ib.add_argument("--ack-to", metavar="PLACE",
+                    help="move the place to PLACE, a `next` that inbox --new printed (JSON)")
     ib.set_defaults(fn=cmd_inbox)
 
     st = sub.add_parser("stalls", help="list agents stuck on a tool call with no result")
