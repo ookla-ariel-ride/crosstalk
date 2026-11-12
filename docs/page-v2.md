@@ -142,12 +142,14 @@ the newest message you read.
   but keeps the focus. After a click, a status line under the buttons says
   what happened, such as "Marked 200 threads read". If the server did not
   keep the write, it says "Not saved" with a Retry button, and the line stays
-  until your next action; Retry puts the focus back on "Mark all read". A
-  success line goes after 5 seconds or at your next action. For the owner,
-  the server also marks each thread whose newest message is dated after that
-  time (a writer's clock runs ahead), loaded or not; a reader who is not
-  signed in gets such a mark for each thread on the page. A message that
-  comes after the click stays new. Once the server keeps the write, each open
+  until your next action or until nothing is left to mark; Retry puts the
+  focus back on "Mark all read". A success line goes after 5 seconds or at
+  your next action. For the owner, the server also marks each thread whose
+  newest message is dated after its own clock (a writer's clock runs ahead),
+  loaded or not. A post that came after the page loaded stays new, so the
+  button can show a count again once the server answers. A reader who is not
+  signed in gets a mark for each thread on the page dated after the load. A
+  message that comes after the click stays new. Once the server keeps the write, each open
   thread shows all its messages with no "New since" line, and each row loads
   its count again, an open thread from a link too.
 - Your own posts never count as new.
