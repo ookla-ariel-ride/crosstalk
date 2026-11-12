@@ -115,6 +115,27 @@ describe("answer buttons", () => {
     expect(screen.queryByRole("button", { name: "Keep the log" })).toBeNull();
   });
 
+  test("a sent answer keeps the controls shut while the thread may still show it", () => {
+    drafts.set("answer:alpha-0001", { subject: "", text: "", id: "own-9", answeredAt: Date.now() - 10_000 });
+    renderActions(OWNER);
+    expect((screen.getByRole("button", { name: "Keep the log" }) as HTMLButtonElement).disabled).toBe(true);
+    expect(screen.getByText("Answer sent")).toBeTruthy();
+  });
+
+  test("a thread loaded 60 s after the answer, with the question still open, opens the controls again", async () => {
+    drafts.set("answer:alpha-0001", { subject: "", text: "", id: "own-9", answeredAt: Date.now() - 59_950 });
+    renderActions(OWNER);
+    const calls = serve({ "/api/thread/alpha-0001": [200, DETAIL] });
+    expect((screen.getByRole("button", { name: "Keep the log" }) as HTMLButtonElement).disabled).toBe(true);
+    // At 60 s the page loads the thread again; it still shows the question open.
+    expect(await screen.findByText("Your answer did not reach the thread. Answer again.")).toBeTruthy();
+    expect(calls.some((c) => c.url === "/api/thread/alpha-0001")).toBe(true);
+    expect((screen.getByRole("button", { name: "Keep the log" }) as HTMLButtonElement).disabled).toBe(false);
+    expect(screen.queryByText("Answer sent")).toBeNull();
+    // A new answer gets a new message id, not the one of the answer that did not arrive.
+    expect(drafts.get("answer:alpha-0001")?.id ?? null).toBeNull();
+  });
+
   test("write an answer opens the composer", async () => {
     renderActions(OWNER);
     const calls = serve({ "/api/append": [201, {}] });
@@ -126,7 +147,7 @@ describe("answer buttons", () => {
     await waitFor(() => expect(posts(calls, "/api/append")).toHaveLength(1));
     expect(posts(calls, "/api/append")[0]?.body).toMatchObject({ data: { summary: "Neither", body: "We wait a week." } });
     // A sent answer leaves no text in the draft store, only the mark that it was sent.
-    await waitFor(() => expect(drafts.get("answer:alpha-0001")).toMatchObject({ subject: "", text: "", answered: true }));
+    await waitFor(() => expect(drafts.get("answer:alpha-0001")).toMatchObject({ subject: "", text: "", answeredAt: expect.any(Number) }));
   });
 });
 

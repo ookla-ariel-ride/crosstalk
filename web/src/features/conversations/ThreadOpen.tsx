@@ -138,7 +138,7 @@ export function ThreadOpen({ thread, now, renderActions }: ThreadOpenProps) {
 
   const { earlier, fresh } = parts;
   const view = (m: Message) => (
-    <Guard key={m.id} what={"Message " + m.id}>
+    <Guard key={m.id} what={"Message " + m.id} data={m}>
       <MessageView message={m} roster={roster} now={now}>
         {renderActions?.(thread, m)}
       </MessageView>

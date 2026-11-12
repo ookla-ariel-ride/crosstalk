@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, test, vi } from "vitest";
-import { POLL_MS, RETRY_MS, startEvents } from "./events";
+import { POLL_MS, POLL_TIMEOUT_MS, READY_MS, RETRY_MS, startEvents } from "./events";
 import { FakeClock, FakeEventSource, fakeDeps, flush } from "./fakes";
 
 let clock: FakeClock;
@@ -43,6 +43,92 @@ describe("events", () => {
     FakeEventSource.latest().emit("rows", "not json");
     FakeEventSource.latest().emit("rows", JSON.stringify({ rows: "x" }));
     expect(onRows).not.toHaveBeenCalled();
+  });
+
+  test("a rows event skips a bad element and passes the rest on", () => {
+    const onRows = vi.fn();
+    startEvents(onRows, vi.fn(), fakeDeps(clock));
+    const good = { from: "alpha", seq: 7, collection: "messages", id: "alpha-0007" };
+    FakeEventSource.latest().emit("rows", JSON.stringify({ rows: [null, 5, "x", [1], good] }));
+    expect(onRows).toHaveBeenCalledWith([good]);
+  });
+
+  test("no ready within READY_MS: the page polls and keeps the stream; a later ready stops the poll", async () => {
+    const onMode = vi.fn();
+    const onPoll = vi.fn();
+    const deps = { ...fakeDeps(clock), onPoll };
+    startEvents(vi.fn(), onMode, deps);
+    const es = FakeEventSource.latest();
+    clock.advance(READY_MS - 1);
+    expect(onMode).not.toHaveBeenCalled();
+    clock.advance(1);
+    expect(onMode.mock.calls).toEqual([["poll"]]);
+    expect(es.closed).toBe(false);
+    clock.advance(POLL_MS);
+    await flush();
+    expect(onPoll).toHaveBeenCalledTimes(1);
+    es.emit("ready");
+    expect(onMode.mock.calls).toEqual([["poll"], ["push"]]);
+    expect(clock.pending).toBe(0);
+  });
+
+  test("a rows event after the wait for ready also stops the poll", () => {
+    const onMode = vi.fn();
+    startEvents(vi.fn(), onMode, fakeDeps(clock));
+    clock.advance(READY_MS);
+    FakeEventSource.latest().emit("rows", JSON.stringify({ rows: [] }));
+    expect(onMode.mock.calls).toEqual([["poll"], ["push"]]);
+    expect(clock.pending).toBe(0);
+  });
+
+  test("a health read that never answers ends after POLL_TIMEOUT_MS, and the next poll runs", async () => {
+    const signals: AbortSignal[] = [];
+    const deps = { ...fakeDeps(clock), onPoll: vi.fn() };
+    deps.fetch = (_input: string, init?: RequestInit) => {
+      if (init?.signal) signals.push(init.signal);
+      return new Promise<Response>(() => {});
+    };
+    startEvents(vi.fn(), vi.fn(), deps);
+    FakeEventSource.latest().emit("error");
+    clock.advance(POLL_MS);
+    await flush();
+    expect(signals).toHaveLength(1);
+    clock.advance(POLL_TIMEOUT_MS);
+    await flush();
+    expect(signals[0]?.aborted).toBe(true);
+    clock.advance(POLL_MS - POLL_TIMEOUT_MS);
+    await flush();
+    expect(signals).toHaveLength(2);
+  });
+
+  test("an onPoll that never settles ends after POLL_TIMEOUT_MS too", async () => {
+    const onPoll = vi.fn(() => new Promise<void>(() => {}));
+    const deps = { ...fakeDeps(clock), onPoll };
+    startEvents(vi.fn(), vi.fn(), deps);
+    FakeEventSource.latest().emit("error");
+    clock.advance(POLL_MS);
+    await flush();
+    clock.advance(POLL_TIMEOUT_MS);
+    await flush();
+    clock.advance(POLL_MS - POLL_TIMEOUT_MS);
+    await flush();
+    expect(onPoll).toHaveBeenCalledTimes(2);
+  });
+
+  test("a switch back to push ends the poll in flight", async () => {
+    const signals: AbortSignal[] = [];
+    const deps = { ...fakeDeps(clock), onPoll: vi.fn() };
+    deps.fetch = (_input: string, init?: RequestInit) => {
+      if (init?.signal) signals.push(init.signal);
+      return new Promise<Response>(() => {});
+    };
+    startEvents(vi.fn(), vi.fn(), deps);
+    clock.advance(READY_MS + POLL_MS);
+    await flush();
+    expect(signals).toHaveLength(1);
+    FakeEventSource.latest().emit("ready");
+    expect(signals[0]?.aborted).toBe(true);
+    expect(clock.pending).toBe(0);
   });
 
   test("events falls back to polling and recovers", async () => {

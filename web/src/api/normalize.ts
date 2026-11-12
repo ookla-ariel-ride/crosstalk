@@ -3,7 +3,7 @@
 // gets the type they expect here, as the present page does with String(text):
 // text stays text, a number or a boolean becomes its text, an object or a list
 // becomes its JSON, and null drops the field. The views then need no guards.
-import type { Message, SectionPage, SectionRow, Thread, ThreadDetail, ThreadsPage } from "./types";
+import type { Message, RowRef, SectionPage, SectionRow, Thread, ThreadDetail, ThreadsPage } from "./types";
 
 type Raw = Record<string, unknown>;
 
@@ -110,4 +110,15 @@ export function sectionPage(raw: unknown): SectionPage {
     open: num(r.open),
     total: num(r.total),
   };
+}
+
+/** The `rows` of a `rows` event (GET /api/events); an element that is not an object is left out. */
+export function rowRefs(raw: unknown): RowRef[] {
+  const rows = isObject(raw) && Array.isArray(raw.rows) ? raw.rows : [];
+  return rows.filter(isObject).map((r) => ({
+    from: text(r.from) ?? "",
+    seq: typeof r.seq === "number" ? r.seq : null,
+    collection: text(r.collection) ?? null,
+    id: text(r.id) ?? null,
+  }));
 }

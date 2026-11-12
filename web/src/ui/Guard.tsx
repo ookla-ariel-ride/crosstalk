@@ -8,6 +8,8 @@ import styles from "./Guard.module.css";
 export interface GuardProps {
   /** What the part is, for the message: "Message beta-0002", "This page". */
   what: string;
+  /** The part's data: when it changes, a failed Guard shows the part again. */
+  data?: unknown;
   children: ReactNode;
 }
 
@@ -16,6 +18,11 @@ export class Guard extends Component<GuardProps, { failed: boolean }> {
 
   static getDerivedStateFromError() {
     return { failed: true };
+  }
+
+  componentDidUpdate(prev: GuardProps) {
+    // A refetch can bring the row back fixed: try it again.
+    if (this.state.failed && prev.data !== this.props.data) this.setState({ failed: false });
   }
 
   render() {

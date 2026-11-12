@@ -163,7 +163,7 @@ export function SectionList({ label, count, items, pending, error, retry, more, 
           estimateSize={60}
           renderRow={(item, index) => (
             <>
-              <Guard what={"Row " + item.key}>
+              <Guard what={"Row " + item.key} data={item.view}>
                 <Row
                   projects={item.view.projects}
                   title={item.view.title}

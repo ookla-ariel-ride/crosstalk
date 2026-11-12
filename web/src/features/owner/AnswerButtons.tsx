@@ -18,7 +18,8 @@ export function AnswerButtons({ question }: { question: Message }) {
   // One page sends one answer for a question: a choice and the composer share
   // one lock and one message id, so a second answer cannot start while one is
   // on its way, and a try after a failure rewrites the same row. A sent answer shuts every
-  // control here until the refetched thread shows it answered.
+  // control here until the refetched thread shows it answered, or until
+  // OwnerActions finds it missing ANSWER_WAIT_MS later.
   const sending = useSend(true);
   const lock = useRef(false);
   const [writingBusy, setWritingBusy] = useState(false);
@@ -38,14 +39,15 @@ export function AnswerButtons({ question }: { question: Message }) {
   const [sent, setSent] = useState(false);
   // A row that mounts again after a sent answer, before the thread shows it,
   // finds the mark in the draft store and stays shut (OwnerActions drops it).
-  const shut = sending.busy || sending.done || sent || drafts.get(draft)?.answered === true;
+  const shut = sending.busy || sending.done || sent || drafts.get(draft)?.answeredAt !== undefined;
+  const lost = !shut && drafts.get(draft)?.lost === true;
 
   async function pick(text: string) {
     if (lock.current) return;
     lock.current = true;
     // An answer sent by a choice leaves no half-written answer behind, only the
     // mark that it was sent; a failure opens the lock again.
-    if (await sending.run(() => answer(question.id, text, asker, answerId()))) keepDraft(draft, { subject: "", text: "", answered: true });
+    if (await sending.run(() => answer(question.id, text, asker, answerId()))) keepDraft(draft, { subject: "", text: "", answeredAt: Date.now(), lost: false });
     else lock.current = false;
   }
 
@@ -79,6 +81,7 @@ export function AnswerButtons({ question }: { question: Message }) {
         Write an answer
       </button>
       {shut && !sending.busy ? <span className={styles.state}>Answer sent</span> : null}
+      {lost ? <p className={styles.state}>Your answer did not reach the thread. Answer again.</p> : null}
       <Failure error={sending.error} />
       {/* A choice on its way keeps the box shown but shut, with its text. */}
       {writing && !sending.done && !sent ? (
@@ -92,7 +95,7 @@ export function AnswerButtons({ question }: { question: Message }) {
           onClose={() => {
             // A sent answer leaves its mark; Cancel drops the text, not the id
             // of a try that may have landed.
-            if (landed.current) keepDraft(draft, { answered: true });
+            if (landed.current) keepDraft(draft, { answeredAt: Date.now(), lost: false });
             else if (id.current) keepDraft(draft, { id: id.current });
             setWriting(false);
           }}

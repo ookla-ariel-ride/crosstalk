@@ -3,7 +3,7 @@
 // inside an OwnerScope that reads the roster once for all of them. A viewer
 // gets a "Sign in" link where an action waits (the thread, an open question)
 // and nothing else; while the role loads, nothing shows. The server still guards each write.
-import { useQuery } from "@tanstack/react-query";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useEffect, useState } from "react";
 import { api } from "../../api/client";
 import { keys } from "../../api/queries";
@@ -12,7 +12,7 @@ import { nameOf } from "../../ui/Bars";
 import { approveParticipant, holdAgreement, markDone, recordDecision, reply, splitPost } from "./actions";
 import { AnswerButtons } from "./AnswerButtons";
 import { Composer } from "./Composer";
-import { drafts } from "./drafts";
+import { ANSWER_WAIT_MS, drafts, keepDraft } from "./drafts";
 import styles from "./owner.module.css";
 import { ActionButton, SIGN_IN, useIsOwner, useOwnerData } from "./shared";
 
@@ -70,8 +70,27 @@ export function OwnerActions({ thread, message }: { thread: Thread; message: Mes
   // The loaded thread shows the question closed: the mark of a sent answer has done its work.
   const closedId = state === "answered" || state === "withdrawn" ? message?.id : undefined;
   useEffect(() => {
-    if (closedId !== undefined && drafts.get("answer:" + closedId)?.answered) drafts.delete("answer:" + closedId);
+    if (closedId !== undefined && drafts.get("answer:" + closedId)?.answeredAt !== undefined) drafts.delete("answer:" + closedId);
   }, [closedId]);
+  // A sent answer that the thread still does not show ANSWER_WAIT_MS later did
+  // not arrive: load the thread again then, and when it still shows the
+  // question open, drop the mark. The controls open again with a new id and
+  // say why; the key gives AnswerButtons fresh state.
+  const qc = useQueryClient();
+  const answerDraft = message ? "answer:" + message.id : "";
+  const sentAt = state === "open" ? drafts.get(answerDraft)?.answeredAt : undefined;
+  const [tries, setTries] = useState(0);
+  const late = sentAt !== undefined && detail.dataUpdatedAt - sentAt >= ANSWER_WAIT_MS;
+  useEffect(() => {
+    if (sentAt === undefined) return;
+    if (late) {
+      keepDraft(answerDraft, { answeredAt: undefined, id: null, lost: true });
+      setTries((n) => n + 1);
+      return;
+    }
+    const timer = setTimeout(() => void qc.invalidateQueries({ queryKey: keys.thread(thread.root) }), sentAt + ANSWER_WAIT_MS - Date.now());
+    return () => clearTimeout(timer);
+  }, [sentAt, late, answerDraft, qc, thread.root]);
 
   if (owner === null) return null;
   if (!owner)
@@ -92,7 +111,7 @@ export function OwnerActions({ thread, message }: { thread: Thread; message: Mes
   const recorded = !!records && (records.decisions.has(message.id) || records.decisions.has("d-from-" + message.id));
   return (
     <div className={styles.actions}>
-      {state === "open" ? <AnswerButtons question={message} /> : null}
+      {state === "open" ? <AnswerButtons key={tries} question={message} /> : null}
       {state === "answered" || state === "withdrawn" ? <span className={styles.state}>{state === "answered" ? "Answered" : "Withdrawn"}</span> : null}
       <ReplyControl id={message.id} draft={"reply:" + message.id} from={message.from} roster={roster} />
       {from !== "owner" && has(roster, from) && roster?.[from]?.trust !== "approved" ? (

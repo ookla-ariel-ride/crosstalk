@@ -237,7 +237,7 @@ export function Stream({ sort, open, onOpenChange, needsOnly = false, renderActi
     switch (item.type) {
       case "thread":
         return (
-          <Guard what={"Thread " + item.thread.root}>
+          <Guard what={"Thread " + item.thread.root} data={item.thread}>
             <ThreadRow thread={item.thread} open={openSet.has(item.thread.root)} onToggle={onToggle} now={now} renderActions={renderActions} />
           </Guard>
         );

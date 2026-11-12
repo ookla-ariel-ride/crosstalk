@@ -173,7 +173,7 @@ describe("drafts", () => {
     fireEvent.click(screen.getByRole("button", { name: "Keep the log" }));
     await waitFor(() => expect(screen.getByText("Answer sent")).toBeTruthy());
     // Only the mark that it was sent stays, with no text.
-    expect(drafts.get("answer:alpha-0001")).toMatchObject({ subject: "", text: "", answered: true });
+    expect(drafts.get("answer:alpha-0001")).toMatchObject({ subject: "", text: "", answeredAt: expect.any(Number) });
   });
 });
 
