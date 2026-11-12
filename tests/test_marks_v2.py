@@ -1,5 +1,7 @@
 """Marks in the data the v2 page loads: /api/thread, /api/threads and /api/section."""
+import contextlib
 import threading
+import time
 import unittest
 from unittest import mock
 
@@ -130,16 +132,51 @@ class MarksInV2RoutesTests(unittest.TestCase):
         self.assertIn(("messages", "alpha-l1"), views)
         self.assertEqual(counts[("messages", "alpha-l1")], {"acknowledged": 1, "expected": 2})
 
-    def test_two_readers_at_once_get_the_same_marks_data(self):
-        cache = ReplayCache(self.r.root)
-        out = []
-        readers = [threading.Thread(target=lambda: out.append(cache.marks())) for _ in range(4)]
-        for t in readers:
-            t.start()
-        for t in readers:
-            t.join()
-        self.assertEqual(len(out), 4)
-        self.assertTrue(all(v == out[0] for v in out))
+    def readers_at_once(self, cache, n=4):
+        """n threads read cache.marks() at once while page_views takes 0.2 s: (results, page_views calls)."""
+        real, calls, out = marks_mod.page_views, [], []
+
+        def slow(*args, **kwargs):
+            calls.append(1)
+            time.sleep(0.2)
+            return real(*args, **kwargs)
+
+        cache.snapshot()
+        with mock.patch.object(marks_mod, "page_views", slow):
+            readers = [threading.Thread(target=lambda: out.append(cache.marks())) for _ in range(n)]
+            for t in readers:
+                t.start()
+            for t in readers:
+                t.join()
+        return out, len(calls)
+
+    def test_readers_at_once_build_the_marks_data_once_and_share_it(self):
+        out, calls = self.readers_at_once(ReplayCache(self.r.root))
+        self.assertEqual((len(out), calls), (4, 1))
+        self.assertTrue(all(v is out[0] for v in out))
+        # The check has teeth: without _marks_lock each reader builds its own copy.
+        unlocked = ReplayCache(self.r.root)
+        unlocked._marks_lock = contextlib.nullcontext()
+        out, calls = self.readers_at_once(unlocked)
+        self.assertGreater(calls, 1)
+
+
+class ForgedMarksOnEverySectionTests(unittest.TestCase):
+    def test_no_section_row_keeps_a_marks_field_of_the_log(self):
+        from crosstalk import sections
+        roster = load_roster_from(ROSTER)
+        for name in sections.SECTIONS:
+            coll = sections.COLLECTION[name]
+            doc = {"summary": "a row", "from": "alpha", "kind": "review", "t": SINCE, "marks": FORGED}
+            rows, _open = sections.rows(name, {(coll, "alpha-x1"): doc}, roster)
+            for row in rows:
+                self.assertNotIn("marks", row, name)
+
+
+def load_roster_from(data):
+    with TempRepo() as r:
+        r.write_roster(data)
+        return load_roster(r.root / "participants.json")
 
 
 if __name__ == "__main__":

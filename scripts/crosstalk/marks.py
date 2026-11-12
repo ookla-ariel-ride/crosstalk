@@ -146,6 +146,11 @@ class _ParsedConfig(dict):
         self.since_t = _parse_iso(since) if since is not None else None
 
 
+def parsed(config) -> "_ParsedConfig":
+    """config with marks_since parsed once, for a caller that asks about many posts."""
+    return config if isinstance(config, _ParsedConfig) else _ParsedConfig(config)
+
+
 def _since_t(config) -> Optional[float]:
     if isinstance(config, _ParsedConfig):
         return config.since_t
@@ -153,11 +158,22 @@ def _since_t(config) -> Optional[float]:
     return _parse_iso(since) if since is not None else None
 
 
-def _post_time_ok(doc, config) -> bool:
+def post_time(docs: Dict, coll: str, did: str):
+    """The time of a post: for a message its created time (replay.Docs.created, the first
+    `set` line), so that an edit does not make an old post new; else the row's `t`, which
+    enrich_messages takes from the first `set` line when the row has none."""
+    created = getattr(docs, "created", {}).get((coll, did))
+    if created is not None:
+        return created
+    doc = docs.get((coll, did))
+    return doc.get("t") if isinstance(doc, dict) else None
+
+
+def _post_time_ok(docs: Dict, coll: str, did: str, config) -> bool:
     since = _since_t(config)
     if since is None:
         return False
-    t = _parse_iso(doc.get("t"))
+    t = _parse_iso(post_time(docs, coll, did))
     return t is not None and t >= since
 
 
@@ -185,9 +201,9 @@ def expects_mark(docs: Dict, coll: str, did: str, roster, config) -> bool:
         if doc.get("must_read") is True:
             return True
         lesson = docs.get(("lessons", LESSON_PREFIX + did))
-        if isinstance(lesson, dict) and _post_time_ok(lesson, config):
+        if isinstance(lesson, dict) and _post_time_ok(docs, "lessons", LESSON_PREFIX + did, config):
             return True
-        if not _post_time_ok(doc, config):
+        if not _post_time_ok(docs, coll, did, config):
             return False
         if doc.get("kind") == "lesson":
             return True
@@ -198,7 +214,7 @@ def expects_mark(docs: Dict, coll: str, did: str, roster, config) -> bool:
             return True
         return all(pid in to for pid, entry in _participants(roster).items()
                    if _kind(entry) == "project" and _is_approved(pid, roster))
-    if not _post_time_ok(doc, config):
+    if not _post_time_ok(docs, coll, did, config):
         return False
     if coll == "lessons":
         return not _folded(docs, coll, did)
@@ -259,7 +275,7 @@ def page_views(docs: Dict, roster, config) -> Dict[Tuple[str, str], dict]:
     or expects one: the `marks` key of that row in the data the pages load. A row that
     is not here gets no key. Pass the docs from replay.enrich_messages."""
     by_item = marks_by_item(docs, roster)
-    config = _ParsedConfig(config)
+    config = parsed(config)
     out = {}
     for (coll, did), doc in docs.items():
         if coll not in MARKABLE or not isinstance(doc, dict):
@@ -320,7 +336,7 @@ def _posts_that_expect(docs: Dict, roster, config):
     out = []
     for (coll, did), doc in docs.items():
         if coll in MARKABLE and isinstance(doc, dict) and expects_mark(docs, coll, did, roster, config):
-            t = doc.get("t")
+            t = post_time(docs, coll, did)
             out.append((t if isinstance(t, str) else "", coll, did, doc))
     out.sort(key=lambda r: (_parse_iso(r[0]) or 0.0, r[0], r[1], r[2]))
     return out
@@ -339,6 +355,7 @@ def to_read(docs: Dict, pid: str, roster, config, by_item=None) -> List[dict]:
     Pass the docs from replay.enrich_messages; by_item as in owed()."""
     if by_item is None:
         by_item = marks_by_item(docs, roster)
+    config = parsed(config)
     out = []
     for _t, coll, did, doc in reversed(_posts_that_expect(docs, roster, config)):
         if pid in owed(docs, coll, did, roster, config, by_item):
@@ -353,6 +370,7 @@ def missing(docs: Dict, roster, config, before: Optional[float] = None, by_item=
     Pass the docs from replay.enrich_messages."""
     if by_item is None:
         by_item = marks_by_item(docs, roster)
+    config = parsed(config)
     out = []
     for t, coll, did, _doc in _posts_that_expect(docs, roster, config):
         if before is not None:

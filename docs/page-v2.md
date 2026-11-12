@@ -60,6 +60,8 @@ names that owe one hold an acknowledged mark, such as "2 of 5 acknowledged".
   screen reader. "not yet" shows only on a post that expects marks, and a 👀
   or ❓ name shows there too. The line wraps on a narrow screen. A new mark
   loads the line and the count again.
+- An open row of Decisions or of Lessons and incidents shows the same line
+  above its detail when the decision or the lesson has marks.
 - A field that holds a number, a list or an object where the page expects
   text shows as that text. A message or a row that still cannot be shown
   says so with its id, and the rest of the page stays.

@@ -5,7 +5,7 @@ import type { ReactNode } from "react";
 import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
 import { keys } from "../../api/queries";
 import type { SectionName, SectionRow } from "../../api/types";
-import { renderWith } from "../../ui/testing";
+import { renderWith, snapshot } from "../../ui/testing";
 import { SectionPage } from "./SectionPage";
 
 // jsdom has no layout: give the scroller a 600 px view and each row 56 px.
@@ -96,6 +96,27 @@ describe("SectionPage", () => {
     expect(drawn.length).toBeLessThan(60);
   });
 
+  test("an open decision and an open lesson show their marks line; a row with no marks shows none", () => {
+    const marks = { marks: { beta: "ack" }, owed: ["alpha"], expects: true };
+    const marksText = () => Array.from(document.querySelectorAll("[data-marks]")).map((el) => el.textContent);
+    const decisions = renderWith(<SectionPage section="decisions" q="" />, [
+      snapshot(),
+      section("decisions", page([{ id: "own-1", summary: "Use one queue", marks }, { id: "own-2", summary: "Plain" }])),
+    ]);
+    fireEvent.click(screen.getByRole("button", { name: /Plain/ }));
+    expect(marksText()).toEqual([]);
+    fireEvent.click(screen.getByRole("button", { name: /Use one queue/ }));
+    expect(marksText()).toEqual(["\u2705 Beta not yet: Alpha"]);
+    decisions.unmount();
+    renderWith(<SectionPage section="lessons" q="" />, [
+      snapshot(),
+      section("lessons", page([{ id: "lesson-solo", summary: "A hook stole focus", t: "2026-11-11T09:00:00Z", marks }])),
+      section("incidents", page([])),
+    ]);
+    fireEvent.click(screen.getByRole("button", { name: /A hook stole focus/ }));
+    expect(marksText()).toEqual(["\u2705 Beta not yet: Alpha"]);
+  });
+
   test("a row opens in place with its detail; opening another closes it", () => {
     renderWith(<SectionPage section="claims" q="" />, [section("locks", page(LOCKS, { open: 2 }))]);
     const [first, second] = screen.getAllByRole("button", { name: /docs\/[ab]\.md/ });
@@ -139,7 +160,9 @@ describe("SectionPage", () => {
 
   test("a failed load says so and offers to try again", async () => {
     let calls = 0;
-    renderFetching(<SectionPage section="claims" q="" />, () => (calls++ === 0 ? json(500, { error: "boom" }) : json(200, page(LOCKS).pages[0])));
+    renderFetching(<SectionPage section="claims" q="" />, (url) =>
+      !url.startsWith("/api/section/") ? json(500, { error: "boom" }) : calls++ === 0 ? json(500, { error: "boom" }) : json(200, page(LOCKS).pages[0]),
+    );
     expect(await screen.findByText(/did not load/)).toBeTruthy();
     fireEvent.click(screen.getByRole("button", { name: "Try again" }));
     expect(await screen.findByText(/docs\/a\.md/)).toBeTruthy();

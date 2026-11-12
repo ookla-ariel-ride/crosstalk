@@ -158,7 +158,7 @@ class HandshakeTests(unittest.TestCase):
         names = [t["name"] for t in tools]
         self.assertEqual(names, ["inbox", "read_messages", "land_queue", "post_message", "reply", "consult",
                                  "ask_owner", "withdraw_question", "claim_file", "release_file", "adopt_agreement", "check_in",
-                                 "record_progress"])
+                                 "record_progress", "ack"])
         for t in tools:
             self.assertEqual(t["inputSchema"]["type"], "object")
             self.assertTrue(t["description"])
@@ -303,6 +303,50 @@ class IdentityTests(unittest.TestCase):
                 self.assertTrue(res["isError"])
                 self.assertIn("belongs to 'beta'", res["content"][0]["text"])
             self.assertEqual(repo.log_lines("alpha"), [])
+
+
+class AckTests(unittest.TestCase):
+    """The ack tool: the marks of `relay.py ack`, written as the session's own id."""
+
+    def setUp(self):
+        self.r = TempRepo()
+        self.r.__enter__()
+        self.repo = Repo(self.r)
+        self.r.write_log("beta", [line(1, "beta", id_="beta-l1", data={
+            "from": "beta", "kind": "lesson", "summary": "a rule", "must_read": True})])
+        self.r.write_log("alpha", [line(1, "alpha", id_="alpha-m1", data={
+            "from": "alpha", "kind": "sync", "summary": "mine"})])
+
+    def tearDown(self):
+        self.r.__exit__(None, None, None)
+
+    def test_each_word_is_written_as_the_session(self):
+        with Mcp(self.repo, "alpha") as m:
+            self.assertEqual([x["id"] for x in ok(m.call("inbox"))["to_read"]], ["beta-l1"])
+            for word in ("seen", "unclear", "applies", "none", "ack"):
+                out = ok(m.call("ack", {"item": "beta-l1", "mark": word}))
+                self.assertEqual((out["id"], out["mark"]), ("alpha--beta-l1", word))
+                row = self.repo.read()["acks"]["alpha--beta-l1"]
+                self.assertEqual((row["from"], row["item"], row["mark"]), ("alpha", "beta-l1", word))
+                self.assertEqual(row.get("none") is True, word == "none", word)
+            self.assertEqual(ok(m.call("inbox"))["to_read"], [])
+        self.assertEqual([ln["from"] for ln in self.repo.log_lines("alpha")][1:], ["alpha"] * 5)
+        self.assertEqual(self.repo.relay("check").returncode, 0)
+
+    def test_a_bad_word_an_own_post_and_another_sender_are_refused(self):
+        with Mcp(self.repo, "alpha") as m:
+            res = m.call("ack", {"item": "beta-l1", "mark": "liked"})
+            self.assertTrue(res["isError"])
+            self.assertIn("must be one of", res["content"][0]["text"])
+            res = m.call("ack", {"item": "alpha-m1", "mark": "ack"})
+            self.assertTrue(res["isError"])
+            self.assertIn("is your own post", res["content"][0]["text"])
+            res = m.call("ack", {"item": "beta-l1", "mark": "ack", "from": "gamma"})
+            self.assertTrue(res["isError"])
+            self.assertIn("always writes as", res["content"][0]["text"])
+            res = m.call("ack", {"item": "nope", "mark": "ack"})
+            self.assertTrue(res["isError"])
+        self.assertEqual(len(self.repo.log_lines("alpha")), 1)
 
 
 class QuarantineTests(unittest.TestCase):

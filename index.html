@@ -882,29 +882,22 @@ td.num, td.t { font: 12px var(--mono); font-variant-numeric: tabular-nums; white
   // [word, emoji, label] of each mark (marks.MARKS, EMOJI, LABEL), in the order the marks line shows them.
   var MARK_SHOWN = [["ack", "\u2705", "acknowledged"], ["applies", "\ud83d\udd27", "applies"], ["none", "\u2796", "no change"],
     ["seen", "\ud83d\udc40", "seen"], ["unclear", "\u2753", "not clear"]];
-  var MARK_EMOJI = {}; MARK_SHOWN.forEach(function (w) { MARK_EMOJI[w[0]] = w[1]; });
-  // requests.acks_by_item: an ack counts as a reply from its writer when its id is from + "--" + item,
-  // the writer is approved and its id holds no "--", and the item is a request in the log.
-  // Item id -> acked ids by name, for the Help tab and the timeline. Cached until a snapshot changes.
+  // requests.acks_by_item: who closed a request with the mark `none`. The page applies no rule of its own: it reads
+  // the `marks` key that the server puts on each marked message (marks.page_views, from marks.marks_by_item), which
+  // already drops a writer's own row, a row of a participant that is not approved, and a row whose id does not
+  // match, and folds a `lesson-<id>` row into its message, where the later mark wins.
+  // Item id -> acked ids by name, for the Help tab. Cached until the messages change.
   var ackCache = null;
-  // marks.mark_of: `mark` when it is a known word, else "none" for a row with `none: true`, else null.
-  function markOf(a) {
-    if (typeof a.mark === "string" && MARK_EMOJI[a.mark]) return a.mark;
-    return a.none === true ? "none" : null;
-  }
   function acksByItem() {
-    if (ackCache && ackCache.acks === data.acks && ackCache.messages === data.messages && ackCache.participants === data.participants) return ackCache.map;
-    var byId = Object.create(null); data.messages.forEach(function (m) { byId[m._id] = m; });
+    if (ackCache && ackCache.messages === data.messages && ackCache.participants === data.participants) return ackCache.map;
     var acks = Object.create(null);
-    data.acks.forEach(function (a) {
-      var from = a.from, item = a.item, m = typeof item === "string" ? byId[item] : null;
-      if (markOf(a) !== "none" || typeof from !== "string" || from.indexOf("--") !== -1 || a._id !== from + "--" + item) return;
-      if (isQuarantined(from) || !m || m.kind !== "request") return;
-      var list = acks[item] = acks[item] || [];
-      if (list.indexOf(from) === -1) list.push(from);
+    data.messages.forEach(function (m) {
+      var v = m.marks, words = v && typeof v === "object" && !Array.isArray(v) ? v.marks : null;
+      if (m.kind !== "request" || !words || typeof words !== "object" || Array.isArray(words)) return;
+      var ids = Object.keys(words).filter(function (pid) { return pid && words[pid] === "none"; });
+      if (ids.length) acks[m._id] = ids.sort(byName);
     });
-    Object.keys(acks).forEach(function (k) { acks[k].sort(byName); });
-    ackCache = { acks: data.acks, messages: data.messages, participants: data.participants, map: acks };
+    ackCache = { messages: data.messages, participants: data.participants, map: acks };
     return acks;
   }
   function openRequests() {
@@ -2378,7 +2371,7 @@ td.num, td.t { font: 12px var(--mono); font-variant-numeric: tabular-nums; white
   }
   function renderLessons(view) {
     simpleTable(view, data.lessons.slice().sort(byT).reverse(), [
-      ["What happened", function (r) { var d = el("div"); d.appendChild(el("div", "summary", r.summary || r.title || "")); add(d, bodyEl(r.body || r.detail || "", r.summary || r.title)); return d; }],
+      ["What happened", function (r) { var d = el("div"); d.appendChild(el("div", "summary", r.summary || r.title || "")); add(d, bodyEl(r.body || r.detail || "", r.summary || r.title)); add(d, marksLineEl(r)); return d; }],
       ["What prevents it now", function (r) { var d = el("div"); d.appendChild(el("p", "body", r.fix || "")); add(d, refsEl(r.refs, r.project || r.from)); return d; }],
       ["From", function (r) { return who(r.project || r.from); }],
       ["When", function (r) { return timeEl(r.t, true); }, "t"]
@@ -2388,7 +2381,7 @@ td.num, td.t { font: 12px var(--mono); font-variant-numeric: tabular-nums; white
     // Older rows give the day as `date` instead of `t`.
     function when(r) { return r.t || r.date; }
     simpleTable(view, data.decisions.slice().sort(function (a, b) { return (ts(when(b)) || 0) - (ts(when(a)) || 0); }), [
-      ["Decision", textBlock],
+      ["Decision", function (r) { var d = textBlock(r); add(d, marksLineEl(r)); return d; }],
       ["By", function (r) { return r.by ? who(r.by) : null; }],
       ["For", function (r) { return el("span", null, r.project === "all" || r.project === "both" ? "All projects" : r.project ? person(r.project).name : ""); }],
       ["Where said", function (r) { return el("span", null, r.source || ""); }],

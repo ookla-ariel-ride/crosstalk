@@ -98,7 +98,8 @@ also get their own card in the timeline.
 ### Marks on a card
 
 A card whose post has marks (`relay.py ack`), or that expects them, shows
-one line under its body:
+one line under its body. A row of the Decisions or Lessons tab shows the
+same line under its text:
 
     ✅ Alpha, Beta   🔧 Delta   ➖ Gamma   not yet: Epsilon
 
@@ -115,7 +116,8 @@ server puts on each marked message, decision and lesson in `/api/snapshot`
 and in an exported page: `{"marks": {name: word}, "owed": [names],
 "expects": true or false}`. Marks come only from `acks` rows: the server
 drops a `marks` field that a writer put on a post in the log. A lesson row `lesson-<id>` carries the marks of
-its message.
+its message. The Help tab reads the same key: a `none` mark on a request counts as a reply from its writer,
+so the tab and `relay.py inbox` agree.
 
 ## Posting as the owner
 

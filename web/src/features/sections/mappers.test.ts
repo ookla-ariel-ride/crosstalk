@@ -69,6 +69,14 @@ describe("section mappers", () => {
     });
   });
 
+  test("a decision and a lesson carry the marks of their row; other sections do not", () => {
+    const marks = { marks: { beta: "ack" }, owed: ["alpha"], expects: true };
+    expect(decisionRow({ id: "own-1", marks }, NOW).marks).toEqual(marks);
+    expect(lessonRow({ id: "lesson-solo", marks }, NOW).marks).toEqual(marks);
+    expect(decisionRow({ id: "own-2" }, NOW).marks).toBeUndefined();
+    expect(incidentRow({ id: "beta-1", marks }, NOW).marks).toBeUndefined();
+  });
+
   test("incident", () => {
     const doc: Doc = { id: "beta-0003", summary: "Build host down", project: "beta", start: "2026-11-11T09:30:00Z", end: null };
     expect(row(incidentRow(doc, NOW))).toEqual({
