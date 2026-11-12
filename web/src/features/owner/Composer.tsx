@@ -17,11 +17,16 @@ export interface ComposerProps {
   draft: string;
   /** Show the summary field. */
   summary?: boolean;
+  /** Resolves when sent; resolves to false when it sent nothing on purpose (the box stays, with no error). */
   send: (summary: string, text: string, id: string) => Promise<unknown>;
   onClose: () => void;
+  /** The message id of the first send when the draft has none; a new one by default. */
+  newId?: () => string;
+  /** Shut the box while another send is on its way: it keeps its text and sends nothing. */
+  disabled?: boolean;
 }
 
-export function Composer({ label, draft, summary = false, send, onClose }: ComposerProps) {
+export function Composer({ label, draft, summary = false, send, onClose, newId = newOwnId, disabled = false }: ComposerProps) {
   const [kept] = useState(() => drafts.get(draft));
   const [subject, setSubject] = useState(kept?.subject ?? "");
   const [text, setText] = useState(kept?.text ?? "");
@@ -29,13 +34,19 @@ export function Composer({ label, draft, summary = false, send, onClose }: Compo
   const sending = useSend();
   const ids = useId();
   const empty = !subject.trim() && !text.trim();
+  const shut = disabled || sending.busy;
 
   async function submit(e?: FormEvent) {
     e?.preventDefault();
+    if (shut) return;
     if (empty) return sending.fail("Write something first.");
-    id.current ??= newOwnId();
+    id.current ??= newId();
     keepDraft(draft, { subject, text, id: id.current });
-    if (await sending.run(() => send(subject, text, id.current as string))) close();
+    let held = false;
+    const sent = await sending.run(async () => {
+      held = (await send(subject, text, id.current as string)) === false;
+    });
+    if (sent && !held) close();
   }
 
   function close() {
@@ -65,16 +76,16 @@ export function Composer({ label, draft, summary = false, send, onClose }: Compo
       {summary ? (
         <>
           <label htmlFor={ids + "s"}>Summary</label>
-          <input id={ids + "s"} value={subject} onChange={(e) => edit({ subject: e.target.value })} disabled={sending.busy} />
+          <input id={ids + "s"} value={subject} onChange={(e) => edit({ subject: e.target.value })} disabled={shut} />
         </>
       ) : null}
       <label htmlFor={ids + "t"}>{label}</label>
-      <textarea id={ids + "t"} rows={4} autoFocus value={text} onChange={(e) => edit({ text: e.target.value })} disabled={sending.busy} />
+      <textarea id={ids + "t"} rows={4} autoFocus value={text} onChange={(e) => edit({ text: e.target.value })} disabled={shut} />
       <span className={styles.inline}>
-        <button type="submit" className={styles.primary} disabled={sending.busy}>
+        <button type="submit" className={styles.primary} disabled={shut}>
           Send
         </button>
-        <button type="button" className={styles.button} onClick={close} disabled={sending.busy}>
+        <button type="button" className={styles.button} onClick={close} disabled={shut}>
           Cancel
         </button>
         <Failure error={sending.error} />

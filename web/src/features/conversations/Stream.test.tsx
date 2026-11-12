@@ -228,6 +228,22 @@ describe("Stream", () => {
     expect(within(root).getByText("alpha, model not stated")).toBeTruthy();
   });
 
+  test("a multiline answer keeps its first line after another reply; a body that repeats the summary shows it once", () => {
+    const answered = [
+      MESSAGES[0] as Message,
+      message("own-0002", "2026-11-11T09:10:00Z", { from: "owner", summary: "Keep the log", body: "We revisit it in a month." }),
+      message("beta-0003", "2026-11-11T09:20:00Z", { from: "beta", summary: "Agreed", body: "Agreed\n\nI keep the log as it is." }),
+    ];
+    const data = base(OWNER, EMPTY_STATE, [Q1]).map(([k, v]): [QueryKey, unknown] =>
+      k[0] === "thread" ? [k, { root: "alpha-0001", messages: answered }] : [k, v],
+    );
+    renderWith(<Stream sort="needs" open={["alpha-0001"]} onOpenChange={() => {}} />, data);
+    const answer = screen.getByText("Keep the log").closest("article") as HTMLElement;
+    expect(within(answer).getByText("We revisit it in a month.")).toBeTruthy();
+    const reply = screen.getByText("I keep the log as it is.").closest("article") as HTMLElement;
+    expect(within(reply).getAllByText("Agreed")).toHaveLength(1);
+  });
+
   test("renderActions shows under each message and at the end of the thread", () => {
     renderWith(
       <Stream sort="needs" open={["alpha-0001"]} onOpenChange={() => {}} renderActions={(t, m) => <span>{"act " + (m ? m.id : "end:" + t.root)}</span>} />,
@@ -480,6 +496,61 @@ describe("NeedsYou", () => {
     expect(screen.getByText("done alpha-w0001")).toBeTruthy();
   });
 
+  test("a waiting row whose body repeats its summary shows that line once", () => {
+    const rows = [{ id: "alpha-w0002", summary: "Renew the cert", body: "Renew the cert\n\nIt ends on Monday.", project: "alpha", since: "2026-11-11T08:00:00Z", done: null }];
+    renderWith(<NeedsYou />, [...base(OWNER, EMPTY_STATE, [Q1]), [keys.section("waiting", ""), { pages: [{ rows, next: null, open: 1, total: 1 }], pageParams: [""] }]]);
+    fireEvent.click(screen.getByRole("button", { name: /Renew the cert/ }));
+    expect(screen.getAllByText("It ends on Monday.")).toHaveLength(2);
+    expect(screen.getAllByText("Renew the cert")).toHaveLength(1);
+  });
+
+  test("the 51st open waiting row is one click away", async () => {
+    const wait = (n: number) => ({ id: "alpha-w" + String(n).padStart(4, "0"), summary: "Task " + n, project: "alpha", since: "2026-11-11T08:00:00Z", done: null });
+    const first = Array.from({ length: 50 }, (_, i) => wait(i + 1));
+    // renderWith stubs fetch; the stub of this test comes after it.
+    renderWith(<NeedsYou />, [...base(OWNER, EMPTY_STATE, [Q1]), [keys.section("waiting", ""), { pages: [{ rows: first, next: "50", open: 51, total: 51 }], pageParams: [""] }]]);
+    const asked: string[] = [];
+    vi.stubGlobal("fetch", async (url: string) => {
+      asked.push(url);
+      if (url.startsWith("/api/section/waiting") && url.includes("cursor=50")) {
+        return new Response(JSON.stringify({ rows: [wait(51)], next: null, open: 51, total: 51 }), { status: 200, headers: { "Content-Type": "application/json" } });
+      }
+      return new Promise<Response>(() => {});
+    });
+    expect(screen.queryByRole("button", { name: /Task 51/ })).toBeNull();
+    fireEvent.click(screen.getByRole("button", { name: "Show 1 more waiting row" }));
+    expect(await screen.findByRole("button", { name: /Task 51/ })).toBeTruthy();
+    expect(asked.filter((u) => u.startsWith("/api/section/waiting"))).toHaveLength(1);
+    expect(screen.queryByRole("button", { name: /more waiting/ })).toBeNull();
+  });
+
+  test("a row that a shifted page repeats shows once, and the button stays while the server has a next page", () => {
+    const wait = (n: number) => ({ id: "alpha-w" + String(n).padStart(4, "0"), summary: "Task " + n, project: "alpha", since: "2026-11-11T08:00:00Z", done: null });
+    const pages = [
+      { rows: Array.from({ length: 50 }, (_, i) => wait(i + 1)), next: "50", open: 52, total: 52 },
+      { rows: [wait(50)], next: "51", open: 52, total: 52 },
+    ];
+    renderWith(<NeedsYou />, [...base(OWNER, EMPTY_STATE, [Q1]), [keys.section("waiting", ""), { pages, pageParams: ["", "50"] }]]);
+    expect(screen.getAllByRole("button", { name: /Task 50(?!\d)/ })).toHaveLength(1);
+    expect(screen.getByRole("button", { name: /more waiting/ })).toBeTruthy();
+  });
+
+  test("a failed load of more waiting rows says so and can be tried again", async () => {
+    const wait = (n: number) => ({ id: "alpha-w" + String(n).padStart(4, "0"), summary: "Task " + n, project: "alpha", since: "2026-11-11T08:00:00Z", done: null });
+    renderWith(<NeedsYou />, [...base(OWNER, EMPTY_STATE, [Q1]), [keys.section("waiting", ""), { pages: [{ rows: [wait(1)], next: "1", open: 2, total: 2 }], pageParams: [""] }]]);
+    let calls = 0;
+    vi.stubGlobal("fetch", async (url: string) => {
+      if (!url.startsWith("/api/section/waiting")) return new Promise<Response>(() => {});
+      calls++;
+      const body = calls === 1 ? { error: "cannot read the log" } : { rows: [wait(2)], next: null, open: 2, total: 2 };
+      return new Response(JSON.stringify(body), { status: calls === 1 ? 500 : 200, headers: { "Content-Type": "application/json" } });
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Show 1 more waiting row" }));
+    expect((await screen.findByRole("alert")).textContent).toContain("did not load");
+    fireEvent.click(screen.getByRole("button", { name: "Show 1 more waiting row" }));
+    expect(await screen.findByRole("button", { name: /Task 2/ })).toBeTruthy();
+  });
+
   test("shows only the threads that need the owner, in the needs order", () => {
     renderWith(
       <NeedsYou />,
@@ -490,3 +561,47 @@ describe("NeedsYou", () => {
     expect(screen.queryByRole("link", { name: "Hot" })).toBeNull();
   });
 });
+
+describe("rows with fields of the wrong type", () => {
+  // What a log line can hold: any field of any JSON type.
+  const BAD_THREAD = { root: "alpha-0001", title: 7, preview: null, projects: "alpha", count: "3", last_t: "2026-11-11T09:30:00Z", last_id: "beta-0003", needs_owner: 1, unanswered: false, routine: false, hot: 0, kind: 5 };
+  const BAD_MESSAGES = [
+    { id: "alpha-0001", depth: 0, quote: null, t: "2026-11-11T09:00:00Z", from: null, kind: 5, summary: 42, body: { plan: "keep" } },
+    { id: "beta-0002", depth: 1, quote: null, t: 1731315000, from: "beta", to: "alpha", summary: "Fine", body: ["one", 2], replyTo: ["alpha-0001"] },
+    { id: "beta-0003", depth: 2, quote: 9, t: "2026-11-11T09:30:00Z", from: "beta", summary: null, body: null },
+  ];
+
+  test("the stream and the open thread render them through the client", async () => {
+    const answers: Record<string, unknown> = {
+      "/api/threads?sort=needs": { threads: [BAD_THREAD], next: null, server_time: "2026-11-11T10:00:00Z" },
+      "/api/thread/alpha-0001": { root: "alpha-0001", messages: BAD_MESSAGES },
+      "/api/me": OWNER,
+      "/api/read-state": EMPTY_STATE,
+    };
+    vi.stubGlobal("fetch", (url: string) =>
+      url in answers ? Promise.resolve(new Response(JSON.stringify(answers[url]), { status: 200, headers: { "Content-Type": "application/json" } })) : new Promise(() => {}),
+    );
+    const qc = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+    render(
+      <QueryClientProvider client={qc}>
+        <Stream sort="needs" open={["alpha-0001"]} onOpenChange={() => {}} />
+      </QueryClientProvider>,
+    );
+    expect(await screen.findByText("42")).toBeTruthy();
+    expect(screen.getByRole("button", { name: /alpha.*7/ })).toBeTruthy();
+    expect(screen.getByText('{"plan":"keep"}')).toBeTruthy();
+    expect(screen.getByText('["one",2]')).toBeTruthy();
+  });
+
+  test("a message that still fails to render shows its id; the rest of the thread stays", () => {
+    const broken = { ...MESSAGES[1], id: "beta-0002", body: { not: "text" } } as unknown as Message;
+    const data = base(OWNER, EMPTY_STATE, [Q1]).map(([k, v]): [QueryKey, unknown] =>
+      k[0] === "thread" ? [k, { root: "alpha-0001", messages: [MESSAGES[0], broken, MESSAGES[3]] }] : [k, v],
+    );
+    vi.spyOn(console, "error").mockImplementation(() => {});
+    renderWith(<Stream sort="needs" open={["alpha-0001"]} onOpenChange={() => {}} />, data);
+    expect(screen.getByText(/beta-0002 could not be shown/)).toBeTruthy();
+    expect(screen.getByText("Newest reply")).toBeTruthy();
+  });
+});
+

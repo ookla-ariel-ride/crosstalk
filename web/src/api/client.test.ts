@@ -84,4 +84,16 @@ describe("client", () => {
       ["/api/onboard", "POST", '{"id":"beta","name":"Beta","kind":"project"}'],
     ]);
   });
+
+  test("rows of the thread, the threads and the sections come out with the types the views read", async () => {
+    const message = { id: 5, depth: "1", quote: 9, t: 1731315000, from: null, to: "beta", kind: 5, summary: 42, body: { plan: "keep" }, replyTo: ["alpha-0001"], options: "a", recommend: "1" };
+    const detail = await answer(200, JSON.stringify({ root: "alpha-0001", messages: [message, null] })).api.getThread("alpha-0001");
+    expect(detail.messages).toEqual([
+      { id: "5", depth: 1, quote: "9", t: "1731315000", to: ["beta"], kind: "5", summary: "42", body: '{"plan":"keep"}', replyTo: '["alpha-0001"]' },
+    ]);
+    const page = await answer(200, JSON.stringify({ threads: [{ root: "alpha-0001", title: 7, preview: null, projects: "alpha", count: "3", needs_owner: 1 }], next: null, server_time: "x" })).api.getThreads("needs");
+    expect(page.threads[0]).toMatchObject({ root: "alpha-0001", title: "7", preview: "", projects: ["alpha"], count: 0, needs_owner: false, kind: "" });
+    const rows = await answer(200, JSON.stringify({ rows: [{ id: "own-9", summary: 7, to: "beta", from: null, done: null }], next: null, open: 1, total: 1 })).api.getSection("waiting");
+    expect(rows.rows[0]).toEqual({ id: "own-9", summary: "7", to: ["beta"], done: null });
+  });
 });

@@ -5,10 +5,12 @@ import { type ReactNode, useContext, useEffect, useMemo, useRef, useState } from
 import { ApiError } from "../../api/client";
 import { useRoster, useThread } from "../../api/queries";
 import type { Message, ReadMark, Thread } from "../../api/types";
+import { afterSummary } from "../../logic/afterSummary";
 import { ago } from "../../logic/ago";
 import { speaker } from "../../logic/speaker";
 import { splitRead } from "../../logic/splitRead";
 import { Body } from "../../ui/Body";
+import { Guard } from "../../ui/Guard";
 import { isLater, markOf, useReading } from "./reading";
 import { WatchContext } from "./seen";
 import styles from "./Stream.module.css";
@@ -41,6 +43,10 @@ function newest(messages: Message[]): ReadMark | undefined {
 
 function MessageView({ message, roster, now, children }: { message: Message; roster: Parameters<typeof speaker>[1]; now: Date; children?: ReactNode }) {
   const t = message.t ?? "";
+  // The summary, then the body without a first line that repeats it: an answer
+  // keeps its first line (the summary) above its explanation (the body).
+  const summary = (message.summary ?? "").trim();
+  const rest = afterSummary(message.body ?? "", summary);
   const quote = message.depth === 2 && message.quote ? message.quote.split("\n")[0] : "";
   return (
     <article className={styles.message} data-depth={message.depth}>
@@ -51,7 +57,12 @@ function MessageView({ message, roster, now, children }: { message: Message; ros
           {ago(t, now)}
         </time>
       </div>
-      <Body text={message.body || message.summary || ""} />
+      {summary ? (
+        <div className={styles.summary}>
+          <Body text={summary} />
+        </div>
+      ) : null}
+      {rest ? <Body text={rest} /> : null}
       {children}
     </article>
   );
@@ -127,9 +138,11 @@ export function ThreadOpen({ thread, now, renderActions }: ThreadOpenProps) {
 
   const { earlier, fresh } = parts;
   const view = (m: Message) => (
-    <MessageView key={m.id} message={m} roster={roster} now={now}>
-      {renderActions?.(thread, m)}
-    </MessageView>
+    <Guard key={m.id} what={"Message " + m.id} data={m}>
+      <MessageView message={m} roster={roster} now={now}>
+        {renderActions?.(thread, m)}
+      </MessageView>
+    </Guard>
   );
   // The reader's own posts are never new to the reader.
   const current = markOf(reading.state, thread.root);

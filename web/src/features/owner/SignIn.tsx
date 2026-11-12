@@ -4,7 +4,7 @@
 // and on failure. No query key, storage or log line holds it.
 import { useQueryClient } from "@tanstack/react-query";
 import { type FormEvent, useState } from "react";
-import { keys } from "../../api/queries";
+import { invalidate, keys } from "../../api/queries";
 import { signIn } from "./actions";
 import styles from "./owner.module.css";
 import { Failure, useSend } from "./shared";
@@ -23,7 +23,7 @@ export function SignIn() {
     setValue("");
     // The role and everything that depends on it (read state, unread counts) come again.
     // useMe() refetches even where no component shows it now.
-    if (ok) await Promise.all([qc.invalidateQueries({ queryKey: keys.me, refetchType: "all" }), qc.invalidateQueries()]);
+    if (ok) await Promise.all([invalidate(qc, { queryKey: keys.me, refetchType: "all" }), invalidate(qc)]);
   }
 
   const label = token ? "Owner token" : "PIN";

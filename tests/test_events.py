@@ -1,8 +1,10 @@
 import http.client
 import json
+import socket
 import threading
 import time
 import unittest
+from unittest import mock
 from urllib.parse import urlsplit
 
 from helpers import RunningServer, TempRepo, line
@@ -115,7 +117,7 @@ class EventsRouteTests(unittest.TestCase):
         try:
             self.assertEqual(stream.resp.status, 200)
             self.assertEqual(stream.resp.getheader("Content-Type"), "text/event-stream")
-            stream.read_until(": open")
+            stream.read_until("event: ready")
             append(self.repo.root, "alpha", line(2, "alpha", data={"kind": "reply", "summary": "secret body"}))
             seen = stream.read_until("event: rows")
             data = stream.resp.fp.readline().decode("utf-8")
@@ -126,6 +128,69 @@ class EventsRouteTests(unittest.TestCase):
         self.assertEqual(json.loads(data[len("data: "):]),
                          {"rows": [{"from": "alpha", "seq": 2, "collection": "messages", "id": "alpha-0002"}]})
         self.assertNotIn("secret body", data)
+
+    def test_a_lone_surrogate_in_an_id_still_sends_the_rows_event(self):
+        stream = Stream(self.srv.url)
+        try:
+            stream.read_until("event: ready")
+            append(self.repo.root, "alpha", line(2, "alpha", id_="alpha-\ud800", data={"kind": "reply"}))
+            stream.read_until("event: rows")
+            data = stream.resp.fp.readline().decode("utf-8")
+        finally:
+            stream.close()
+        self.assertEqual(json.loads(data[len("data: "):])["rows"][0]["id"], "alpha-\ud800")
+
+    def test_ready_comes_after_the_mark_and_a_row_after_the_mark_follows_it(self):
+        # The client refetches on `ready`; a row written before the mark is in
+        # that refetch, and a row written after it must come as an event.
+        real_mark = events.mark
+
+        def mark_then_write(root):
+            out = real_mark(root)
+            append(self.repo.root, "alpha", line(2, "alpha", data={"kind": "reply", "summary": "late"}))
+            return out
+
+        with mock.patch.object(events, "mark", mark_then_write):
+            stream = Stream(self.srv.url)
+            try:
+                before = stream.read_until("event: ready")
+                seen = stream.read_until("event: rows")
+                data = stream.resp.fp.readline().decode("utf-8")
+            finally:
+                stream.close()
+        self.assertNotIn("event: rows", before)
+        self.assertIn("alpha-0002", data)
+        self.assertNotIn("event: ready", seen)
+
+    def test_no_byte_reaches_the_client_before_the_mark(self):
+        # The browser's own open event fires on the headers, so the headers
+        # must wait for the mark too.
+        release = threading.Event()
+        real_mark = events.mark
+
+        def slow_mark(root):
+            release.wait(LIMIT)
+            return real_mark(root)
+
+        parts = urlsplit(self.srv.url)
+        with mock.patch.object(events, "mark", slow_mark):
+            sock = socket.create_connection((parts.hostname, parts.port), timeout=0.5)
+            try:
+                sock.sendall(b"GET /api/events HTTP/1.1\r\nHost: x\r\n\r\n")
+                with self.assertRaises(socket.timeout):
+                    sock.recv(1)
+                release.set()
+                sock.settimeout(LIMIT)
+                got = b""
+                while b"event: ready" not in got:
+                    chunk = sock.recv(4096)
+                    if not chunk:
+                        break
+                    got += chunk
+            finally:
+                sock.close()
+        self.assertTrue(got.startswith(b"HTTP/1."), got[:40])
+        self.assertIn(b"event: ready", got)
 
     def test_events_route_sends_ping(self):
         self.srv.state.events_ping_sec = 0.2
@@ -138,7 +203,7 @@ class EventsRouteTests(unittest.TestCase):
     def test_other_requests_work_while_stream_is_open(self):
         stream = Stream(self.srv.url)
         try:
-            stream.read_until(": open")
+            stream.read_until("event: ready")
             status, body = request(self.srv.url + "/api/messages")
             self.assertEqual(status, 200)
             self.assertIn("alpha-0001", body["docs"])
@@ -148,7 +213,7 @@ class EventsRouteTests(unittest.TestCase):
     def test_server_stops_with_a_stream_open(self):
         stream = Stream(self.srv.url)
         try:
-            stream.read_until(": open")
+            stream.read_until("event: ready")
             done = threading.Event()
 
             def stop():
