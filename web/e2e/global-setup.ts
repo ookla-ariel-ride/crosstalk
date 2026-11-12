@@ -138,5 +138,7 @@ export default async function globalSetup() {
   });
   process.env.CROSSTALK_E2E_URL = `http://127.0.0.1:${port}`;
   process.env.CROSSTALK_E2E_PIN = pin;
+  // The data root, for a test that sets the read state and puts it back.
+  process.env.CROSSTALK_E2E_ROOT = root;
   return stop;
 }

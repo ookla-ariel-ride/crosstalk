@@ -110,7 +110,7 @@ export interface Reading {
    * mark: the threads shown whose newest message is dated after `t`.
    */
   markAll(t: string, marks?: Record<string, ReadMark>): void;
-  /** How many times markAll ran in this tab. */
+  /** How many times markAll ran in this tab; for the owner, once the server kept its writes. */
   markAllRuns: number;
   /** Mute or unmute a thread: the stream hides a muted one until it needs the owner. False when the write failed. */
   mute(root: string, muted: boolean): Promise<boolean>;
@@ -159,15 +159,26 @@ export function useReading(): Reading {
       if (!ready) return;
       const all = state.all_before === null || t > state.all_before;
       const later = Object.entries(marks).filter(([root, mark]) => isLater(mark, markOf(state, root)));
+      const done = () => {
+        markAllCount += 1;
+        for (const fn of listeners) fn();
+      };
       if (owner) {
-        if (all) void send(`\n${t}`, { all_before: t });
-        for (const [root, mark] of later) void send(`${root}\n${mark.t}\n${mark.id}`, { thread: root, t: mark.t, id: mark.id });
-      } else if (all || later.length) {
+        const writes = [
+          ...(all ? [send(`\n${t}`, { all_before: t })] : []),
+          ...later.map(([root, mark]) => send(`${root}\n${mark.t}\n${mark.id}`, { thread: root, t: mark.t, id: mark.id })),
+        ];
+        // The open threads drop "New since" only once the server kept every write.
+        void Promise.all(writes).then((oks) => {
+          if (oks.every(Boolean)) done();
+        });
+        return;
+      }
+      if (all || later.length) {
         // One write, so the marks and the time do not overwrite each other.
         saveLocal({ ...state, all_before: all ? t : state.all_before, threads: { ...state.threads, ...Object.fromEntries(later) } });
       }
-      markAllCount += 1;
-      for (const fn of listeners) fn();
+      done();
     },
     mute(root, muted) {
       if (!ready || state.muted.includes(root) === muted) return Promise.resolve(true);

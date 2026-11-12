@@ -232,6 +232,26 @@ describe("Stream", () => {
     expect(screen.queryByRole("button", { name: /earlier message/ })).toBeNull();
   });
 
+  test("a failed mark all read write leaves the line new since", async () => {
+    const state = { ...EMPTY_STATE, threads: { "alpha-0001": { t: "2026-11-11T09:10:00Z", id: "beta-0002" } } };
+    renderWith(<Stream sort="needs" open={["alpha-0001"]} onOpenChange={() => {}} />, base(OWNER, state, [Q1]));
+    vi.stubGlobal("fetch", async (_url: string, init: RequestInit = {}) =>
+      init.method === "PUT" ? new Response(JSON.stringify({ error: "down" }), { status: 500 }) : new Promise<Response>(() => {}),
+    );
+    await act(async () => fireEvent.click(screen.getByRole("button", { name: "Mark all read" })));
+    expect(screen.getByText("New since " + hhmm("2026-11-11T09:10:00Z"))).toBeTruthy();
+  });
+
+  test("a row that arrives after mark all read stays new", async () => {
+    const { qc } = renderWith(<Stream sort="needs" open={[]} onOpenChange={() => {}} />, base(VIEWER, null, [Q1]));
+    await act(async () => fireEvent.click(screen.getByRole("button", { name: "Mark all read" })));
+    expect(screen.queryAllByText("new")).toHaveLength(0);
+    const later = thread("beta-0011", { title: "Came after the click", last_t: "2026-11-11T10:02:00Z", last_id: "beta-0011" });
+    const reply = { ...Q1, last_t: "2026-11-11T10:03:00Z", last_id: "beta-0012" };
+    await act(async () => qc.setQueryData(keys.threads("needs"), { pages: [{ threads: [later, reply], next: null, server_time: "2026-11-11T10:04:00Z" }], pageParams: [""] }));
+    await waitFor(() => expect(screen.getAllByText("new")).toHaveLength(2));
+  });
+
   test("mark all read keeps the messages in view mounted, with their actions", async () => {
     const mounts: string[] = [];
     function Probe({ id }: { id: string }) {

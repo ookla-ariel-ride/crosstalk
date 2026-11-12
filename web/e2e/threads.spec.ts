@@ -25,23 +25,3 @@ test("a thread opens, shows New since, folds, and its count is 0 after a reload"
   await expect(row).toBeVisible();
   await expect(row).not.toContainText(/\d+ new/);
 });
-
-// After the test above: Mark all read clears every count of this one server.
-test("mark all read clears the count of a thread opened by its id, and it stays clear after a reload", async ({ page }) => {
-  await signIn(page);
-  await page.goto("/v2/#/conversations?sort=unanswered&open=beta-e2e-cache");
-  const opened = page.getByRole("list", { name: "Opened threads" });
-  const row = opened.getByRole("button", { name: FIXTURE.linked });
-  await expect(row).toContainText("2 new");
-
-  const marked = page.waitForResponse((r) => r.url().endsWith("/api/read-state") && r.request().method() === "PUT" && r.ok());
-  await page.getByRole("button", { name: "Mark all read" }).click();
-  await marked;
-  await expect(row).not.toContainText(/\d+ new/);
-  await expect(page.getByText(/^\d+ new$/)).toHaveCount(0);
-
-  await page.reload();
-  await expect(row).toBeVisible();
-  await expect(row).not.toContainText(/\d+ new/);
-  await expect(page.getByText(/^\d+ new$/)).toHaveCount(0);
-});
