@@ -79,7 +79,7 @@ holds no header, no body and no value from the request.
 | `/api/read-state` | PUT | owner | One change, and the new state back: `{"thread", "t", "id"}` marks a thread read up to that message, `{"all_before": t}` marks every message up to `t` read, `{"thread", "muted": true or false}` mutes or unmutes a thread. A mark never moves backwards. `t` has the log's format (`2026-01-02T03:04:05Z`). `403` for anyone else, before the body is read; `400` for any other body |
 | `/api/events` | GET | anyone | The push channel: a Server-Sent Events stream (`Content-Type: text/event-stream`) that stays open. It first takes its mark of the log, then sends the headers and `event: ready` with `data: {}`. A client refetches what it shows on each `ready`: a line written before the mark is in that refetch, and a line written after it comes as an event. Then the stream checks the log once a second. New lines give `event: rows` with `data: {"rows": [{"from", "seq", "collection", "id"}]}`: ids only, never a message body, so the page reads the rows it needs from the other routes. With no new line for 15 seconds it sends the comment `: ping`. It ends when the client goes or the server stops |
 | `/api/vitals` | GET | anyone | The health numbers: `{"disk_free_gb", "usage", "usage_limit", "build_host", "state", "model_families"}`. `disk_free_gb` is the free space of the data root's volume in whole GB. `usage` is `weeklyUsage` from the newest file that matches `usage.glob` in `config.json`, or `null` (an empty `usage.glob`, no file, or a file older than `usage.maxAgeMin`), by the same rule as the auto-granter. `usage_limit` is `usage.limit`, or `null` when `usage.glob` is empty. `build_host` is `{"reachable", "load", "t"}` from the build host's stored state (`t` is the time of its last post; `load` and `t` are `null` in a state written before they were stored), or `null` when `buildHost.ssh` is empty or nothing is stored yet. `model_families` is `modelFamilies` (default `[]`). `state` is the row that `relay.py state` prints, built from the same readings, or `null` when the log cannot be read. See [config.json](operations.md#configjson) |
-| `/api/health` | GET | anyone | `{"ok": bool, "server_time": ..., "fatal": [...], "sha": ..., "version": {...}}` from log validation. `sha` is the deployed commit, or the checkout's `HEAD` when the server runs from a checkout, or `null` |
+| `/api/health` | GET | anyone | `{"ok": bool, "server_time": ..., "fatal": [...], "sha": ..., "version": {...}}` from log validation. The server checks the log again only when a log file, `participants.json` or `config.json` changed in size or mtime, and health calls that arrive during one check share its result; `server_time` is new on each call. `sha` is the deployed commit, or the checkout's `HEAD` when the server runs from a checkout, or `null` |
 | `/api/queue` | GET | anyone | The build host's land queue, the same JSON as `relay.py queue` |
 | `/api/me` | GET | anyone | Caller's role (`owner`, `editor`, or `viewer`) and edit flags |
 | `/api/palette` | GET | anyone | Candidate `[color, colorDark]` pairs for the onboarding swatches |
@@ -92,3 +92,17 @@ holds no header, no body and no value from the request.
 is refused; the owner writes as `from: "owner"` (`via` defaults to `page`);
 `participants` takes only owner `update`s to roster fields, and those also
 update `participants.json`.
+
+Request bodies (`POST` and `PUT /api/read-state`): JSON with a
+`Content-Length` of at most 1 MiB. The server answers `411` for
+`Transfer-Encoding` (it reads no chunked body), `400` for a missing or zero
+length, more than one `Content-Length` header, a length that is not ASCII
+digits alone (`+5`, `1_0` and `5 ` with a trailing space are refused; the
+header parser strips a leading space, so ` 5` reads as `5`), a body above the limit, a body
+shorter than its length, or a body that is not JSON (`null` too, where an
+object is needed), and `408` when the whole body has not arrived 30 seconds
+after the read starts. An answer sent before the whole body
+was read (one of these, an auth refusal, or an unknown path) carries
+`Connection: close` and closes the connection, so no byte of that body is read
+as a request. Up to 128 new connections wait for the server to accept them;
+past that the system drops them.
