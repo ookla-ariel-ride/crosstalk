@@ -2,13 +2,14 @@
 import fcntl
 import json
 import os
+import re
 import time
 from datetime import datetime, timezone
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Dict, List, Optional, Tuple
 
-from .participants import ID_RE, Roster
+from .participants import HARNESS_MAX, ID_RE, Roster, harness_problem
 
 LEGACY_PREFIXES = ("m-", "vc-", "own-", "a-", "d-", "w-", "l-", "p-", "i-", "lesson-")
 COLLECTIONS = ("messages", "agreements", "waiting", "locks", "lessons",
@@ -22,6 +23,12 @@ KINDS = ("check-in", "checkin", "sync", "reply", "request", "review", "agreement
 # Who wrote a message, what it is, and what it answers: the fields the request and
 # question rules read. Only its writer (or the owner) may change them.
 MESSAGE_IDENTITY = ("from", "kind", "replyTo")
+# Who spoke: a message may name the harness (the roster's harness rule) and the model that wrote it.
+SPEAKER_FIELDS = ("harness", "model")
+MODEL_MAX = 64
+MODEL_BAD_RE = re.compile(r"[\x00-\x1f\x7f]")
+# A question may carry choices for the owner and the index (from 0) of the recommended one.
+OPTIONS_MIN, OPTIONS_MAX, OPTION_LEN_MAX = 2, 6, 200
 SKEW_MIN = 2
 
 
@@ -118,12 +125,71 @@ def _validate(raw: str, owner: str, expected: int, _prior: List[Line],
     if d["collection"] == "messages" and d["data"].get("kind") == "owner" \
             and owner != "owner" and d.get("via") != "import":
         return "only 'owner' may post kind 'owner'"
+    if d["collection"] == "messages":
+        for name in SPEAKER_FIELDS:
+            if name in d["data"]:
+                msg = speaker_problem(name, d["data"][name])
+                if msg:
+                    return msg
+        msg = options_problem(d["data"])
+        if msg:
+            return msg
     if roster is not None:
         msg = _trust_problem(d, owner, roster)
         if msg:
             return msg
     return Line(seq=seq, t=d["t"], from_=d["from"], op=d["op"], collection=d["collection"],
                 id=d["id"], data=d["data"], via=via)
+
+
+def speaker_problem(name: str, value) -> Optional[str]:
+    """The reason a message's `harness` or `model` value is invalid, or None when it is acceptable."""
+    if name == "harness":
+        if value is None or harness_problem("", value):
+            return ("message harness %r is not a lowercase id like claude-code of at most %d chars"
+                    % (value, HARNESS_MAX))
+        return None
+    if not isinstance(value, str) or not 1 <= len(value) <= MODEL_MAX or MODEL_BAD_RE.search(value):
+        return "message model %r must be 1 to %d chars with no control character" % (value, MODEL_MAX)
+    return None
+
+
+def options_problem(data: dict) -> Optional[str]:
+    """The reason a message's `options` or `recommend` is invalid, or None when it is acceptable.
+
+    Only a question carries them: 2 to 6 distinct one-line options of 1 to 200 chars
+    (after trimming), and `recommend` an index into them from 0.
+    """
+    if "options" not in data and "recommend" not in data:
+        return None
+    if data.get("kind") != "question":
+        return "options and recommend belong only on a message of kind 'question'"
+    if "options" not in data:
+        return "recommend needs options"
+    options = data["options"]
+    if not isinstance(options, list) or not OPTIONS_MIN <= len(options) <= OPTIONS_MAX:
+        return "options must be a list of %d to %d strings" % (OPTIONS_MIN, OPTIONS_MAX)
+    seen = set()
+    for o in options:
+        if not isinstance(o, str) or not 1 <= len(o.strip()) <= OPTION_LEN_MAX \
+                or "\n" in o or "\r" in o:
+            return "each of the options must be 1 to %d chars on one line: %r" % (OPTION_LEN_MAX, o)
+        if o.strip() in seen:
+            return "options must differ: %r is there twice" % o.strip()
+        seen.add(o.strip())
+    if "recommend" in data:
+        rec = data["recommend"]
+        if isinstance(rec, bool) or not isinstance(rec, int) or not 0 <= rec < len(options):
+            return "recommend %r must be an index into options, from 0 to %d" % (rec, len(options) - 1)
+    return None
+
+
+def check_speaker(speaker: Optional[Dict[str, str]]) -> None:
+    """Raise ValueError when a post's speaker fields are invalid: for posters that write other rows first."""
+    for name, value in (speaker or {}).items():
+        msg = speaker_problem(name, value)
+        if msg:
+            raise ValueError(msg)
 
 
 def _owns_id(doc_id: str, owner: str) -> bool:
@@ -214,6 +280,9 @@ def message_problems(collection: str, op: str, data: dict, roster: Roster,
         warnings.append("unknown kind %r (known: %s)" % (kind, ", ".join(KINDS)))
     if kind == "owner" and data.get("from") not in (None, "owner"):
         errors.append("only 'owner' may post kind 'owner'")
+    msg = options_problem(data)
+    if msg:
+        errors.append(msg)
     if "to" in data:
         to = data["to"]
         if not isinstance(to, list) or not all(isinstance(x, str) for x in to):

@@ -1,0 +1,164 @@
+/* The sidebar sits on paper. Amber text needs surface under it (4.58 to 1;
+   on paper it is 4.0 to 1), so an amber value is a surface chip with a word. */
+
+.brand {
+  display: grid;
+  grid-template-columns: 40px 1fr;
+  gap: 10px;
+  align-items: start;
+  padding: 0 8px;
+}
+
+.mark {
+  width: 40px;
+  height: 40px;
+  border-radius: var(--radius-card);
+}
+
+.name {
+  margin: 0;
+  font-family: var(--font-heading);
+  font-weight: 700;
+  font-size: var(--size-xl);
+  line-height: 1.1;
+}
+
+.tagline {
+  margin: 3px 0 0;
+  color: var(--muted);
+  font-size: var(--size-xs);
+  line-height: 1.3;
+}
+
+.nav {
+  display: flex;
+  flex-direction: column;
+  gap: 18px;
+}
+
+.block {
+  display: flex;
+  flex-direction: column;
+}
+
+.groupHead {
+  margin: 0;
+  padding: 0 8px 4px;
+  color: var(--muted);
+  font-family: var(--font-text);
+  font-weight: 400;
+  font-size: var(--size-xs);
+}
+
+.entries,
+.projects {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.entry {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 8px;
+  border-radius: var(--radius-control);
+  color: inherit;
+  text-decoration: none;
+}
+
+.entry:hover,
+.entry[aria-current="page"] {
+  background: var(--surface);
+}
+
+.entry[aria-current="page"] {
+  font-weight: 600;
+  box-shadow: inset 3px 0 0 var(--signal);
+}
+
+.count {
+  color: var(--muted);
+  font-size: var(--size-xs);
+}
+
+/* What needs the owner: on-accent text on the amber token (4.58 and 8.15 to 1). */
+.needsCount {
+  padding: 0 7px;
+  border-radius: var(--radius-card);
+  background: var(--amber);
+  color: var(--on-accent);
+  font-weight: 600;
+  font-size: var(--size-xs);
+}
+
+.project {
+  display: grid;
+  grid-template-columns: 22px minmax(0, 1fr) auto;
+  align-items: center;
+  padding: 4px 8px;
+  font-size: var(--size-s);
+}
+
+.projectBar {
+  width: 14px;
+  height: 3px;
+  background: var(--c);
+}
+
+@media (prefers-color-scheme: dark) {
+  :global(:root:not([data-theme="light"])) .projectBar {
+    background: var(--c-dark);
+  }
+}
+
+:global(:root[data-theme="dark"]) .projectBar {
+  background: var(--c-dark);
+}
+
+.projectName {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.muted {
+  color: var(--muted);
+  font-size: var(--size-xs);
+}
+
+.health {
+  margin: auto 0 0;
+  padding: 12px 8px 0;
+  border-top: 1px solid var(--rule);
+  font-size: var(--size-s);
+}
+
+.healthLine {
+  display: flex;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 2px 0;
+}
+
+.healthLine dt {
+  color: var(--muted);
+}
+
+.healthLine dd {
+  margin: 0;
+  font-weight: 600;
+  text-align: right;
+}
+
+.healthLine dd.muted {
+  font-weight: 400;
+}
+
+.warn {
+  padding: 0 6px;
+  border-radius: var(--radius-control);
+  background: var(--surface);
+  color: var(--amber);
+}

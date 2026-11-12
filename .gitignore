@@ -3,6 +3,7 @@ log/
 participants.json
 config.json
 import/
+read-state.json
 
 # Secrets
 tokens.json
@@ -49,3 +50,9 @@ HERMES.md
 .gemini/
 .agents/
 .mcp.json
+
+# The v2 page: npm packages (web/dist/ is committed)
+web/node_modules/
+# Playwright output of the browser tests
+web/test-results/
+web/playwright-report/

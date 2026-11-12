@@ -1,0 +1,24 @@
+.bars {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  width: 30px;
+  padding-top: 6px;
+}
+
+/* A bar is a 3 px line in the project's colour. Bars.tsx sets --c and --c-dark. */
+.bar {
+  display: block;
+  height: 3px;
+  background: var(--c);
+}
+
+@media (prefers-color-scheme: dark) {
+  :global(:root:not([data-theme="light"])) .bar {
+    background: var(--c-dark);
+  }
+}
+
+:global(:root[data-theme="dark"]) .bar {
+  background: var(--c-dark);
+}

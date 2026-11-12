@@ -149,13 +149,23 @@ def schedule_view(docs: Dict, now: datetime) -> dict:
 
 
 # The jobs every project runs. index.html repeats the names for its Missing jobs line; docs/standard-jobs.md explains them.
-def relay_command() -> str:
-    """How a session runs this checkout's relay.py; the home folder is written as ~."""
-    path = str(Path(__file__).resolve().parents[1] / "relay.py")
+def relay_command(root=None, code_root=None) -> str:
+    """How a session runs relay.py: `<code_root>/scripts/relay.py`, plus `--data-root <root>`
+    when the data is in another folder. code_root defaults to root, and both to this
+    checkout. The home folder in the script path is written as ~."""
+    if code_root is not None:
+        code = Path(code_root)
+    else:
+        code = Path(root) if root is not None else Path(__file__).resolve().parents[2]
+    path = str(code / "scripts" / "relay.py")
     home = str(Path.home())
     if path.startswith(home + os.sep) and shlex.quote(path) == path:
-        return "python3 ~" + path[len(home):]
-    return "python3 " + shlex.quote(path)
+        command = "python3 ~" + path[len(home):]
+    else:
+        command = "python3 " + shlex.quote(path)
+    if root is not None and Path(root) != code:
+        command += " --data-root " + shlex.quote(str(root))
+    return command
 
 
 def _usage_prompt(usage: dict) -> str:
@@ -192,9 +202,11 @@ STANDARD_JOBS = (
 )
 
 
-def standard_jobs(pid: str, peers: Sequence[str] = (), cfg: Optional[dict] = None) -> list:
+def standard_jobs(pid: str, peers: Sequence[str] = (), cfg: Optional[dict] = None,
+                  root=None, code_root=None) -> list:
     """The standard jobs for one project. `peers` is every project: each gets its own even share of each window.
-    `cfg` is the install's settings (config.py); the usage-guard prompt takes its limits from them."""
+    `cfg` is the install's settings (config.py); the usage-guard prompt takes its limits from them.
+    root and code_root: the data and the code folder, for the commands (relay_command)."""
     cfg = cfg or config.DEFAULTS
     peers = sorted(set(peers) | {pid})
     i, n = peers.index(pid), len(peers)
@@ -203,7 +215,7 @@ def standard_jobs(pid: str, peers: Sequence[str] = (), cfg: Optional[dict] = Non
     docs_h, docs_m = divmod(9 * 60 + 5 + i * 60 // n, 60)
     mon_h, mon_m = divmod(10 * 60 + 5 + i * 60 // n, 60)
     fill = {"a": a, "a30": a + 30, "b": b, "b30": b + 30, "docs_h": docs_h, "docs_m": docs_m, "mon_h": mon_h,
-            "mon_m": mon_m, "retro_m": 25 + i * 30 // n, "relay": relay_command(), "pid": pid,
+            "mon_m": mon_m, "retro_m": 25 + i * 30 // n, "relay": relay_command(root, code_root), "pid": pid,
             "usage": _usage_prompt(cfg["usage"])}
     out = []
     for name, cron, about, prompt in STANDARD_JOBS:
@@ -213,9 +225,10 @@ def standard_jobs(pid: str, peers: Sequence[str] = (), cfg: Optional[dict] = Non
 
 
 def standard_text(pid: str, harness: Optional[str], reported=(), peers: Sequence[str] = (),
-                  cfg: Optional[dict] = None) -> str:
-    """The exact setup for one project and harness, leaving out the jobs it already reports."""
-    jobs = [j for j in standard_jobs(pid, peers, cfg) if j["name"] not in reported]
+                  cfg: Optional[dict] = None, root=None, code_root=None) -> str:
+    """The exact setup for one project and harness, leaving out the jobs it already reports.
+    root and code_root: as in relay_command."""
+    jobs = [j for j in standard_jobs(pid, peers, cfg, root, code_root) if j["name"] not in reported]
     if not jobs:
         return "%s reports all %d standard jobs." % (pid, len(STANDARD_JOBS))
     lines = ["# Standard jobs for %s: %d to set up. See docs/standard-jobs.md." % (pid, len(jobs))]
@@ -228,7 +241,7 @@ def standard_text(pid: str, harness: Optional[str], reported=(), peers: Sequence
         else:
             lines.append("# Use CronCreate. cron: %s\n# prompt: %s" % (j["cron"], j["prompt"]))
         lines.append("%s schedule set --from %s --name %s --cron %s --about %s" % (
-            relay_command(), pid, j["name"], shlex.quote(j["cron"]), shlex.quote(j["about"])))
+            relay_command(root, code_root), pid, j["name"], shlex.quote(j["cron"]), shlex.quote(j["about"])))
     return "\n".join(lines)
 
 

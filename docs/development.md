@@ -35,6 +35,11 @@ Part of the [Crosstalk docs](../README.md#documentation).
 | `scripts/crosstalk/replay.py` | `(t, from, seq)` replay and filling in missing `from`, `t`, and `project` |
 | `scripts/crosstalk/landqueue.py` | The build host's land queue, derived from land messages (`relay.py queue`) |
 | `scripts/crosstalk/requests.py` | Recipient and group routing and the inbox |
+| `scripts/crosstalk/threads.py` | Threads built from the messages, their four sort orders, and paged reads (`/api/threads`) |
+| `scripts/crosstalk/readstate.py` | The owner's read state in `read-state.json`: read marks, muted threads, the mark-all time, and unread counts (`/api/read-state`) |
+| `scripts/crosstalk/events.py` | The ids of the log lines added since a mark: what the push channel sends (`/api/events`) |
+| `scripts/crosstalk/sections.py` | The rows of one section of the v2 page, open rows first, and what open means for each (`/api/section/<name>`) |
+| `scripts/crosstalk/vitals.py` | The health numbers: free disk, weekly usage, the build host's last state (`/api/vitals`) |
 | `scripts/crosstalk/posters.py` | `claim`, `release`, `land-sync`, `incident`, and the shared timestamp helper |
 | `scripts/crosstalk/consults.py` | `reply`, `consult`, `adopt` |
 | `scripts/crosstalk/participants.py` | Roster loading and validation |
@@ -44,10 +49,57 @@ Part of the [Crosstalk docs](../README.md#documentation).
 | `scripts/crosstalk/service.py` | The self-describing `service` block, and `version`: the commit the install runs |
 | `scripts/crosstalk/exporter.py` | `export-page` |
 | `scripts/crosstalk/deploy.py` | `deploy`: copies one commit into the deployment folder, with the pre-check, the manifest and the rollback |
-| `scripts/crosstalk/files.py` | The atomic file writer the other modules use |
-| `scripts/install-service.sh`, `scripts/launchd/` | LaunchAgent installer and plist templates |
+| `scripts/crosstalk/files.py` | The atomic file writer the other modules use, and `utf8_json`: JSON text that encodes as UTF-8, with `\u` escapes when a string holds a lone surrogate |
+| `scripts/install-service.sh`, `scripts/launchd/` | LaunchAgent installer (`--data-root <dir>` for a data folder) and plist templates |
 | `scripts/housekeeper.sh` | The 30-minute check, and the push when `crosstalk.autopush` is on |
-| `tests/` | Python tests (`test_*.py`), page scenarios (`tests/page/`), and live-server end-to-end tests (`tests/server/`) |
+| `tests/` | Python tests (`test_*.py`), page scenarios (`tests/page/`), live-server end-to-end tests (`tests/server/`), and the one-folder kits, hooks and standard jobs that `test_data_root_texts.py` compares against, and the launchd jobs, service commands and ask template that `test_service_data_root.py` compares against (`tests/baseline/`) |
+| `web/` | The v2 page: React and TypeScript source in `web/src/`, built by Vite (see [The v2 page](#the-v2-page)) |
+| `web/src/ui/tokens.css`, `web/src/ui/fonts.css` | The design tokens (colours, light and dark; type sizes; radii; widths) and the two fonts, Archivo and Atkinson Hyperlegible Next, taken from npm |
+| `web/src/api/types.ts` | The shapes the server sends, field for field: threads, messages, sections, vitals, the caller's role, the read state, health, the land queue, the roster entries of the snapshot, and the rows of the push channel |
+| `web/src/api/client.ts` | One function for each route the page reads, with relative URLs and same-origin credentials; a failed call is an `ApiError` with the status (0 when the server was not reached) |
+| `web/src/api/normalize.ts` | Where the rows of `/api/thread`, `/api/threads` and `/api/section` enter the page: a field that the views read as text becomes text (a number or a boolean as its text, an object or a list as its JSON, null dropped), and `to` becomes a list. Many agents write the log, so any field can hold any JSON type. It also checks the ids of a `rows` event (`rowRefs`) |
+| `web/src/api/events.ts` | The push channel (`/api/events`): the server's `ready` event, not the browser's open event, makes it ready; when it fails, a read of `/api/health` every 15 seconds (a poll does not start while the last one and its refetches run) and a new try of the stream every 30 seconds; with no `ready` 10 seconds after the stream opens, the same poll while the stream stays open, until a `ready` or `rows` event comes. A poll ends after 10 seconds, and a switch back to push ends it. The ids of a `rows` event pass through `normalize.ts`, which leaves out an element that is not an object |
+| `web/src/api/queries.ts` | The React Query hooks, the retry rule (never a 401 or 403), and the live updates: a `rows` event invalidates what its collections change, and each poll, and each `ready` event (the first one too), refetch the thread list, the open threads, the open section and the land queue (the threads and sections that no view shows refetch when a view opens). Every invalidation goes through `invalidate`: a first load still in flight then is read once more after it ends with data, since its answer can come from before the change; a first load that fails gets no second read; `useQueue` reads `/api/queue`, and `useRoster` reads the roster and each participant's newest check-in from `/api/snapshot` once a minute |
+| `web/src/api/fit.test.ts` | A type check that the `api` types pass to the functions of `logic/` with no cast |
+| `web/src/api/fakes.ts` | A fake `EventSource` and a clock driven by hand, for the tests of `events.ts` and `queries.ts` |
+| `web/src/logic/` | The page's rules as pure functions, each with a Vitest file beside it: `family.ts` (model family), `speaker.ts` (who spoke), `foldRoutine.ts` (routine runs), `splitRead.ts` (read and new messages), `parseBody.ts` (message text as data, never markup), `choices.ts` (answer choices), `afterSummary.ts` (a body without a first line that repeats the summary), `ago.ts` (age), `route.ts` (hash routes), and `types.ts` (the fields they read) |
+| `web/src/App.tsx` | Reads the hash route, starts the live updates once, and puts the page of the route in the shell: People, Conversations and Needs you with the owner's controls in each open thread (one `OwnerScope` for the page), "Start a thread" at the top of Conversations, and the sections |
+| `web/src/App.test.tsx` | The tests of the join: the owner's controls in an open thread and none for a viewer, drafts that outlive their row, mute and unmute, "Start a thread" for the owner only |
+| `web/src/ui/Shell.tsx` | The frame: sidebar, main part and right column; under 900 px a menu button opens the sidebar (Escape closes it) and the right column sits above the main part; `useHashRoute` |
+| `web/src/ui/Sidebar.tsx` | The mark, the name and the tagline; the 12 entries in their groups with counts of open or new items; the projects with the age of each last check-in; the four health lines |
+| `web/src/ui/RightColumn.tsx` | Needs you (threads with `needs_owner`) and the land queue |
+| `web/src/ui/Row.tsx`, `web/src/ui/RowList.tsx` | The one row shape (colour bars, title, one line, note; one button or link) and the one list, which draws only the rows in view and keeps the focused row drawn; a `short` list (the right column) draws every row |
+| `web/src/ui/Bars.tsx` | One 3 px bar for each project in its roster colour, at most 5, with the names as text |
+| `web/src/ui/Body.tsx` | A message body as React elements from `parseBody`, or blocks already built (a section row's detail): links open in a new tab, an id links to its thread |
+| `web/src/ui/useNow.ts` | The time now, renewed each minute, for ages such as "6 min" |
+| `web/src/ui/Guard.tsx` | An error boundary: a part that fails to render (a message, a thread row, a section row, the page of a route) says so with its id, and the rest of the page stays; a change of the part's data (`data`, as a refetch brings it) shows the part again |
+| `web/src/ui/*.module.css` | The CSS module of each component; colours, type sizes and radii come from `tokens.css` |
+| `web/src/ui/*.test.tsx`, `web/src/ui/testing.tsx` | The component tests (jsdom and Testing Library) and what they share: a query client filled by hand and no network |
+| `web/scripts/check-budget.mjs` | Fails the build when the first-load script is over 120 KB after gzip |
+| `web/scripts/build-hash.mjs` | Writes `web/dist/.build-hash`, the hash of the source that `tests/test_web_dist.py` checks |
+| `web/dist/` | The built page, committed, so an install serves `/v2/` with no Node |
+| `web/src/features/owner/actions.ts` | One function for each owner action: sign in, start a thread, reply, answer, mark done, record a decision, hold an agreement, approve and add a participant; each sends the body the page at `/` sends, through `append`, `login` and `onboard` of `api/client.ts` |
+| `web/src/features/owner/SignIn.tsx` | The owner sign-in: the PIN or the owner token in a password field, sent only in the body of `/api/login` and cleared after the request |
+| `web/src/features/owner/Composer.tsx`, `web/src/features/owner/NewThread.tsx` | The writing box (Ctrl+Enter or Cmd+Enter sends, Escape closes an empty box, a failed send keeps the draft, which lives in `drafts.ts`) and the start of a new thread with its kind and recipients |
+| `web/src/features/owner/AnswerButtons.tsx`, `web/src/features/owner/OwnerActions.tsx` | A button for each choice of an open question and "Write an answer", with one lock and one message id for both ways to answer (the id is kept in `drafts.ts`, and the box stays shut while a choice is on its way); the owner's controls of a thread or a message (`ownerActions`: reply, answer, approve the sender, record, mark done), and the mark done and hold buttons |
+| `web/src/features/owner/People.tsx` | The People page: the roster with harness, model family and last seen; sign-in for a viewer; approval and the Add form for the owner, whose kit and token show once |
+| `web/src/features/owner/shared.tsx`, `web/src/features/owner/index.ts`, `web/src/features/owner/owner.module.css` | One send at a time, the error next to a control ("Sign in again" on 401 or 403), the owner rows of the snapshot, and `OwnerScope`, which reads the roster and those rows once for every owner control on the page; the exports of the folder; its CSS module |
+| `web/src/features/owner/drafts.ts` | The composer drafts in memory for this tab, keyed by their target (a reply to a message, the end of a thread, an answer, a new thread with its kind and recipients), so a row that unmounts keeps its draft; a sent or cancelled draft is gone, except that an answer keeps a mark with the time it was sent until the thread shows it, or until a thread loaded 60 seconds later still shows the question open. `answerIds` holds the message id of the answer to each question, apart from the draft text, so a remount or a Cancel keeps it; it goes when the thread shows the question closed, or with the 60 second rule, which takes a new id |
+| `web/src/features/owner/*.test.ts*` | The body of each action against a copy of the request of the page at `/`, and the component tests |
+| `web/src/features/conversations/Stream.tsx` | The Conversations and Needs you pages: one row for each thread from `/api/threads` in the server's sort order, opened in place, the next page loaded near the end of the list; the open threads and the sort order live in the route (20 open at most) and in this tab's `sessionStorage`; "Fold all" and "Mark all read" (with the server time of the loaded pages); an open id that no loaded thread has as its root shows above the list as the thread that holds it; Needs you lists the open waiting rows first, 50 at a time, with "Show N more waiting rows" while open ones are left |
+| `web/src/features/conversations/ThreadOpen.tsx` | An open thread: the read messages behind "Show N earlier messages", the line "New since HH:MM", the new messages with who spoke, the age, the summary above the body and a quote of the parent at depth 2; "Mark read", and the mark when the last new message was in view for a second; "Mute thread" and "Unmute thread", with an alert when the server did not save it; a `renderActions` slot for the owner's actions |
+| `web/src/features/conversations/RoutineLine.tsx`, `SortBar.tsx` | One line for a run of routine posts or for the muted threads, which shows them in place; the four sort orders as links |
+| `web/src/features/conversations/reading.ts`, `seen.ts` | The read state: the owner's from `/api/read-state` (the answer with the higher `rev` wins), a viewer's from `localStorage`, at most one write for each mark or mute; the watch that calls back after one second in view while the tab is visible |
+| `web/src/features/conversations/*.test.ts*`, `Stream.module.css` | The tests of the stream and the watch, and the CSS module of the feature |
+| `web/src/features/sections/SectionPage.tsx` | The route `section`: every section on the shared list, with the server's open and total counts, a search box that puts `q` in the route after a 300 ms pause, one row open in place, the next page near the end of the list or with Load more, and a plain line for a failed load, a 403 or an unknown section; "Lessons and incidents" merges two collections by time; the land queue reads `/api/queue`; an open agreement row shows the owner "Hold" or "Release hold" |
+| `web/src/features/sections/merge.ts` | Merges the loaded pages of two collections by time, open rows first, each row once, and names the collection whose next page it needs |
+| `web/src/features/sections/fields.ts` | The row a mapper returns, and readers of doc fields that never throw |
+| `web/src/features/sections/agreements.ts`, `decisions.ts`, `lessons.ts`, `incidents.ts`, `locks.ts`, `progress.ts`, `reviews.ts`, `schedules.ts`, `adoption.ts`, `queue.ts` | One mapper for each section: a doc to a row (projects, title, text, note, open, detail), with the fields the present page's tab shows |
+| `web/src/features/sections/*.test.ts*`, `SectionPage.module.css` | The tests of the mappers, the merge and the page, and the page's CSS module |
+| `web/playwright.config.ts` | The browser tests: Chromium at 1440 by 900 px, one worker, the tests in `web/e2e/`; Vitest skips that folder (`test.exclude` in `web/vite.config.ts`) |
+| `web/e2e/global-setup.ts` | Makes a data root in a temp folder with `relay.py` commands (`alpha`, `beta`, `relay-bot`, two questions, a thread the owner read in part, a permanent PIN), starts `relay.py serve` on a free port, and stops it and removes the folder after the tests |
+| `web/e2e/fixtures.ts` | The base URL of that server, the owner sign-in, and a check in every test: no console error, no page error, no request to another host |
+| `web/e2e/first-screen.spec.ts`, `answer.spec.ts`, `threads.spec.ts` | The first screen at 900 px high, an answer that closes a question, and a thread that opens, shows "New since", folds and has no new count after a reload |
 
 Git-ignored app data, which each install makes for itself: `participants.json`
 (roster, page URL; the first command writes it with the owner alone), `log/`
@@ -61,7 +113,7 @@ the tests both read it.
 
 Git-ignored, and secret where noted: `tokens.json` (token hashes), `kits/`
 (raw tokens), `owner-pin.json` (PIN hash), `.env*`, `*.pem`, `*.key`, `*.p12`,
-every agent tool's folder (`.claude/`, `.codex/`, `.hermes/`, `.remember/`,
+`web/node_modules/`, `web/test-results/` and `web/playwright-report/` (Playwright output), every agent tool's folder (`.claude/`, `.codex/`, `.hermes/`, `.remember/`,
 `.playwright-mcp/` and others), `*.log`, `build/`, `tests/page/out/`.
 
 ### Secret scanning
@@ -118,6 +170,42 @@ Server scenarios (`tests/server/scenarios.js`, plus
 `tests/page/build.sh` leaves a copy of the page in `tests/page/out/`. Delete
 it before grepping the tree for retired strings.
 
+### The v2 page
+The source of the page at `/v2/` lives in `web/`. It needs Node and npm; the
+server and the install do not, because the built files in `web/dist/` are in
+the repo.
+
+```
+cd web
+npm ci
+npm test
+npm run typecheck
+npm run build
+```
+`npm run build` runs `vite build`, then `scripts/check-budget.mjs` (prints the
+`budget:` line and fails above 122,880 bytes of first-load script after
+gzip), then `scripts/build-hash.mjs`. The budget counts the chunks in Vite's
+`web/dist/.vite/manifest.json`: the entry, what it imports, and every chunk
+behind a dynamic import unless `NOT_AT_FIRST_PAINT` in the script names it.
+The server does not read the manifest. Commit `web/dist/` with the source
+change: `tests/test_web_dist.py` fails when one of `web/package.json`,
+`web/package-lock.json`, `web/index.html`, `web/vite.config.ts` and
+`web/tsconfig.json`, or a file under `web/src/` or `web/public/`, changed
+after the last build. Two builds of the same source give the same files.
+
+`npm run dev` starts Vite's dev server and sends `/api` to a relay server on
+port 8585.
+
+The browser tests run against `web/dist/` and a real server, so build first:
+
+```
+npx playwright install chromium
+npm run build
+npx playwright test
+```
+
+The Python tests never start them. See [Browser tests](page-v2.md#browser-tests).
+
 ### Data clean-up done at read time
 
 - `replay.py` fills a message's missing `from` and `t` from the log line that
@@ -157,41 +245,41 @@ per line (project ids, host names, user names).
 
 ## Gotchas
 
-- **"Offline" when opened from disk:** The page needs the server. Run
+- "Offline" when opened from disk: The page needs the server. Run
   `python3 scripts/relay.py serve`, or make a standalone copy with
   `relay.py export-page`.
-- **No edit controls or Reply buttons:** Check the top right. If it says
+- No edit controls or Reply buttons: Check the top right. If it says
   `Viewing as a viewer (read only)`, sign in (see [Signing in](operations.md#signing-in)).
-- **Python changes not taking effect:** `index.html` and the logs are re-read
+- Python changes not taking effect: `index.html` and the logs are re-read
   when they change, but changes to `scripts/crosstalk/*.py` need a server
   restart. When the server runs from a deployment, an edit in the checkout
   changes nothing until you run `relay.py deploy`.
-- **No live badge for a project with a session open:** That session started
+- No live badge for a project with a session open: That session started
   before the hooks were installed. Start a new one, then check
   `relay.py live status`.
-- **Progress board unchanged after a check-in:** The board uses `progress` rows
+- Progress board unchanged after a check-in: The board uses `progress` rows
   with a numeric `pct`. A check-in message without progress rows doesn't move
   it.
-- **Roster dot still red after a message:** Only `kind: "check-in"` (or
+- Roster dot still red after a message: Only `kind: "check-in"` (or
   `checkin`) counts, not `reply`, `request`, or `sync`.
-- **The page and `participants.json` disagree about a participant:** An owner
+- The page and `participants.json` disagree about a participant: An owner
   `update` to `participants` in the log beats `participants.json` on the page.
   An edit made from the page (or `/api/append`) writes both; one written with
   `relay.py append` writes only the log. So after a command-line roster change,
   make the same change in `participants.json`.
-- **Two live registrations for one project:** Check
+- Two live registrations for one project: Check
   `relay.py live status`. If one belongs to a second session you have open, it
   gets every note too, and both may act on it. Close one.
-- **A commit or push refused by gitleaks:** Remove the secret from the file,
+- A commit or push refused by gitleaks: Remove the secret from the file,
   and rotate it if it was ever real. Don't bypass the hook with `--no-verify`.
-- **`m-NNNN` ids:** Old `m-NNNN` message ids share one counter across all
+- `m-NNNN` ids: Old `m-NNNN` message ids share one counter across all
   participants. Use `<id>-<timestamp>` ids (`reply` and `consult` make them
   for you), or read the highest `m-NNNN` first.
-- **Server down, its log full of `Operation not permitted`:** launchd is
+- Server down, its log full of `Operation not permitted`: launchd is
   running the server from a folder macOS protects (`~/Documents`, `~/Desktop`
   or `~/Downloads`), perhaps through a link. Move the repo out, then run
   `scripts/install-service.sh` from its new place. See
   [Running the server](operations.md#running-the-server).
-- **Links to the wrong repo:** A bare `#42` or commit hash links to the repo
+- Links to the wrong repo: A bare `#42` or commit hash links to the repo
   of whoever wrote the row. Prefix cross-repo refs: `beta#42`,
   `alpha@51e7709`.

@@ -4,11 +4,19 @@ The server is the page host and the database:
 
   GET  /                -> index.html, as it sits in the checkout
   GET  /api/snapshot    -> every collection replayed, plus server_time and commit
+  GET  /api/threads     -> the threads in one sort order, a page at a time (threads.py)
+  GET  /api/thread/<id> -> the thread that holds a message: its messages, with depth and quote, and its list row
+  GET  /api/read-state  -> the owner's read state (readstate.py); the owner only
+  PUT  /api/read-state  -> a thread's read mark, the mark-all time, or a mute; the owner only
+  GET  /api/events      -> a Server-Sent Events stream of the ids of new log rows (events.py)
+  GET  /api/vitals      -> the health numbers: disk, usage, build host (vitals.py)
+  GET  /api/section/<name> -> one section of the v2 page, open rows first, a page at a time (sections.py)
   GET  /api/<collection>-> one collection replayed
   GET  /api/queue       -> the land queue of the build host (landqueue.py)
   GET  /api/me          -> the role of the caller (owner, editor, viewer)
   POST /api/login       -> the startup PIN or the owner token, then a session cookie
   POST /api/append      -> one line appended, with the same checks `relay.py append` runs
+  GET  /v2/<path>       -> the built v2 page from <code root>/web/dist/; GET and HEAD only
 
 Reads are replays of `log/` (the source of truth), cached on each log
 file's size and mtime, so a session that appends straight to a file is
@@ -21,6 +29,7 @@ Python 3.9, standard library only.
 """
 import hmac
 import json
+import mimetypes
 import os
 import secrets
 import signal
@@ -30,18 +39,19 @@ import sys
 import tempfile
 import threading
 import time
+import traceback
 from http.cookies import CookieError, SimpleCookie
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from typing import Dict, List, Optional, Tuple
-from urllib.parse import urlsplit
+from urllib.parse import parse_qs, unquote, urlsplit
 
-from .files import atomic_write_text
+from .files import atomic_write_text, utf8_json
 from .logs import COLLECTIONS, append_line, check_all, check_all
 from .onboard import PALETTE, _locked_onboard, onboard
 from .participants import ensure_roster, load_roster
 from .landqueue import land_queue
-from .replay import enrich_messages, load_all_lines, replay
+from .replay import enrich_messages, first_set_map, last_line_map, load_all_lines, replay
 from .deploy import read_manifest
 from .service import service_block, version
 from . import config as config_mod
@@ -51,6 +61,12 @@ from .notify import Notifier
 from . import urgent as urgent_mod
 from . import reviews as reviews_mod
 from . import autogrant as autogrant_mod
+from . import threads as threads_mod
+from . import readstate
+from . import events as events_mod
+from . import vitals as vitals_mod
+from . import buildhost as buildhost_mod
+from . import sections as sections_mod
 
 # The collections the page reads. "participants" is the owner's roster.
 KNOWN_COLLECTIONS = tuple(COLLECTIONS) + ("participants",)
@@ -73,6 +89,20 @@ LOGIN_WINDOW = 10 * 60.0
 LOGIN_MAX_FAILURES = 5
 # The fields of a roster entry the owner may write. A stale `wake` key (from the
 # removed agent-wake feature) is not one, so the API rejects it.
+# The push channel (/api/events) looks at the log this often, and with no new
+# row sends a comment line this often, so a proxy or the browser keeps it open.
+EVENTS_CHECK_SEC = 1.0
+EVENTS_PING_SEC = 15.0
+# The v2 page: built files under <code root>/web/dist/. Vite names each file
+# under assets/ by its content, so a browser may keep it for a year.
+V2_DIST = ("web", "dist")
+V2_IMMUTABLE = "public, max-age=31536000, immutable"
+V2_NOT_BUILT = "The v2 page is not built: run `npm run build` in web/."
+# Text types that mimetypes names outside text/*; each gets charset=utf-8.
+TEXT_TYPES = ("application/javascript", "application/json", "application/xml",
+              "application/manifest+json", "image/svg+xml")
+# Font types that an older mimetypes table may not know.
+EXTRA_TYPES = {".woff2": "font/woff2", ".woff": "font/woff"}
 ROSTER_FIELDS = ("name", "kind", "color", "colorDark", "checkInMin", "trust", "repo", "parent", "harness", "aliases", "itemNames")
 
 
@@ -191,6 +221,11 @@ class ReplayCache:
         self._docs = None
         self._entries = None
         self._roster = None
+        self._created = {}  # type: Dict[str, str]
+        self._changed = {}  # type: Dict[Tuple[str, str], str]
+        self._thread_key = None
+        self._thread_index = None
+        self.thread_builds = 0
 
     def roster(self):
         """The Roster of the current snapshot, with the install's config (participants.py)."""
@@ -235,7 +270,31 @@ class ReplayCache:
             self._docs = docs
             self._entries = entries
             self._roster = roster
+            # A message's created time: its first `set` line's `data.t` when that is a
+            # time, else that line's `t`. An edit moves the replayed `t`, not this.
+            self._created = {did: ln.data["t"] if readstate.is_time(ln.data.get("t")) else ln.t
+                             for (coll, did), ln in first_set_map(lines).items() if coll == "messages"}
+            # Each doc's last change: the time of the last line that touched it.
+            self._changed = {key: ln.t for key, ln in last_line_map(lines).items()}
             return docs, entries
+
+    def changed(self, key: Tuple[str, str]) -> Optional[str]:
+        """The time of the last line that touched (collection, id) in the current snapshot."""
+        return self._changed.get(key)
+
+    def threads(self) -> "threads_mod.ThreadIndex":
+        """The threads of the current snapshot, built once for each cache key."""
+        self.snapshot()
+        with self._lock:
+            if self._thread_key != self._key or self._thread_index is None:
+                messages = {did: doc for (coll, did), doc in self._docs.items() if coll == "messages"}
+                waiting = {did for (coll, did), doc in self._docs.items()
+                           if coll == "waiting" and isinstance(doc, dict) and not doc.get("done")}
+                self._thread_index = threads_mod.ThreadIndex(messages, self._roster, created=self._created,
+                                                             waiting=waiting)
+                self._thread_key = self._key
+                self.thread_builds += 1
+            return self._thread_index
 
 
 def roster_problem(raw, directory) -> Optional[str]:
@@ -361,10 +420,16 @@ class Sessions:
 
 
 class ServerState:
-    """What the handlers share: the served root, the replay cache, the tokens."""
+    """What the handlers share: the served root, the replay cache, the tokens.
 
-    def __init__(self, root, tokens=None, sessions=None):
+    `root` holds the data (log/, participants.json, tokens.json and the rest);
+    `code_root` holds the code (index.html, the icons, the git checkout). It
+    defaults to `root`, the layout of an install that keeps both in one folder.
+    """
+
+    def __init__(self, root, tokens=None, sessions=None, code_root=None):
         self.root = Path(root)
+        self.code_root = Path(code_root) if code_root is not None else self.root
         self.tokens = TokenStore(self.root, tokens)
         self.cache = ReplayCache(self.root)
         self.sessions = Sessions(sessions)
@@ -374,6 +439,11 @@ class ServerState:
         self.login_failures = []  # type: List[float]
         self.login_lock = threading.Lock()
         self.notifier = None  # type: Optional[Notifier]
+        self.events_check_sec = EVENTS_CHECK_SEC
+        self.events_ping_sec = EVENTS_PING_SEC
+        # Set when the server stops, so an open event stream ends.
+        self.stopping = threading.Event()
+        self.buildhost_state = buildhost_mod.state_path_from_env()
 
     def make_pin(self) -> str:
         """The one-time startup PIN: six digits, good for ten minutes."""
@@ -398,6 +468,11 @@ class ServerState:
             self.login_failures.append(time.time())
 
 
+def _name(value) -> bool:
+    """A non-empty string: a thread root or a message id."""
+    return isinstance(value, str) and bool(value)
+
+
 class CrosstalkHandler(BaseHTTPRequestHandler):
     """The JSON API. Every response is JSON, except the page itself."""
 
@@ -415,7 +490,13 @@ class CrosstalkHandler(BaseHTTPRequestHandler):
             super().handle()
         except (BrokenPipeError, ConnectionResetError, socket.timeout):
             pass
-        except Exception:
+        except Exception as e:
+            # The method, the path without its query, and where it failed: no
+            # header, no body and no value from the request.
+            frame = traceback.extract_tb(e.__traceback__)[-1]
+            sys.stderr.write("internal error on %s %s: %s at %s:%d\n" % (
+                getattr(self, "command", "?"), urlsplit(getattr(self, "path", "")).path,
+                type(e).__name__, os.path.basename(frame.filename), frame.lineno))
             try:
                 self._json(500, {"error": "internal error"})
             except Exception:
@@ -450,7 +531,7 @@ class CrosstalkHandler(BaseHTTPRequestHandler):
             self.wfile.write(body)
 
     def _json(self, status: int, payload, headers=None) -> None:
-        body = json.dumps(payload, ensure_ascii=False).encode("utf-8")
+        body = utf8_json(payload).encode("utf-8")
         self._send(status, body, JSON_TYPE, headers)
 
     def _error(self, status: int, message: str) -> None:
@@ -470,10 +551,24 @@ class CrosstalkHandler(BaseHTTPRequestHandler):
             self._palette()
         elif path == "/api/queue":
             self._queue()
+        elif path == "/api/threads":
+            self._threads()
+        elif path.startswith("/api/thread/"):
+            self._thread(unquote(path[len("/api/thread/"):]))
+        elif path == "/api/read-state":
+            self._read_state_get()
+        elif path == "/api/events":
+            self._events()
+        elif path == "/api/vitals":
+            self._vitals()
+        elif path.startswith("/api/section/"):
+            self._section(unquote(path[len("/api/section/"):]))
         elif path.startswith("/api/"):
             self._collection(path[len("/api/"):])
         elif path == "/":
             self._index()
+        elif path == "/v2" or path.startswith("/v2/"):
+            self._v2(path)
         elif path == "/favicon.svg":
             self._static_asset("favicon.svg", SVG_TYPE)
         elif path == "/favicon.ico":
@@ -503,7 +598,7 @@ class CrosstalkHandler(BaseHTTPRequestHandler):
                   for pid, entry in entries.items()}
         notifier = self.state.notifier
         live = notifier.status() if notifier is not None else {}
-        info = repo_build_info(self.state.root)
+        info = repo_build_info(self.state.code_root)
         loaded = self.state.cache.roster()
         cfg = config_mod.of(loaded)
         self._json(200, {"server_time": now_iso(),
@@ -518,7 +613,7 @@ class CrosstalkHandler(BaseHTTPRequestHandler):
                          "roster": roster,
                          "live": live,
                          "collections": collections,
-                         "service": service_block(self.state.root)})
+                         "service": service_block(self.state.code_root, data_root=self.state.root)})
 
     def _health(self):
         """The log's health: ok when nothing fatal, plus the fatal lines named.
@@ -527,7 +622,8 @@ class CrosstalkHandler(BaseHTTPRequestHandler):
         Offline reason, and the server_time is the freshness clock.
         """
         root = self.state.root
-        ver = version(root)  # which commit runs: `relay.py deploy --restart` waits for its own
+        # which commit runs: `relay.py deploy --restart` waits for its own
+        ver = version(self.state.code_root)
         try:
             roster = load_roster(root / "participants.json")
         except (OSError, ValueError) as e:
@@ -548,6 +644,140 @@ class CrosstalkHandler(BaseHTTPRequestHandler):
         self._json(200, land_queue(docs, projects=entries, now=time.time(),
                                    coordinator=config_mod.coordinator(self.state.cache.roster())))
 
+    def _threads(self):
+        """One page of threads: ?sort=needs|new|hot|unanswered (default new), &cursor=, &limit=."""
+        query = parse_qs(urlsplit(self.path).query)
+        order = query.get("sort", ["new"])[-1] or "new"
+        if order not in threads_mod.ORDERS:
+            self._error(400, "unknown sort %r: use one of %s" % (order, ", ".join(threads_mod.ORDERS)))
+            return
+        raw_limit = query.get("limit", [""])[-1]
+        try:
+            limit = int(raw_limit) if raw_limit else None
+        except ValueError:
+            self._error(400, "the limit must be a whole number")
+            return
+        try:
+            index = self.state.cache.threads()
+        except (OSError, ValueError) as e:
+            self._error(500, "cannot read the log: %s" % e)
+            return
+        now = now_iso()
+        try:
+            items, nxt = index.page(order, now, query.get("cursor", [""])[-1], limit)
+        except ValueError as e:
+            self._error(400, str(e))
+            return
+        if self._role() == "owner":
+            items = self._with_unread(index, items)
+        self._json(200, {"threads": items, "next": nxt, "server_time": now})
+
+    def _section(self, name: str):
+        """One page of a section: ?cursor=&limit= as for /api/threads, &q= to search."""
+        if name not in sections_mod.SECTIONS:
+            self._error(404, "no such section: %s" % name)
+            return
+        query = parse_qs(urlsplit(self.path).query)
+        raw_limit = query.get("limit", [""])[-1]
+        try:
+            limit = int(raw_limit) if raw_limit else None
+        except ValueError:
+            self._error(400, "the limit must be a whole number")
+            return
+        cache = self.state.cache
+        try:
+            docs, _entries = cache.snapshot()
+            roster = cache.roster()
+        except (OSError, ValueError) as e:
+            self._error(500, "cannot read the log: %s" % e)
+            return
+        found, open_count = sections_mod.rows(name, docs, roster, changed=cache.changed,
+                                              q=query.get("q", [""])[-1])
+        try:
+            items, nxt = threads_mod.page(found, query.get("cursor", [""])[-1], limit)
+        except ValueError as e:
+            self._error(400, str(e))
+            return
+        self._json(200, {"rows": items, "next": nxt, "open": open_count, "total": len(found)})
+
+    def _with_unread(self, index, items: List[dict]) -> List[dict]:
+        """Copies of the threads with the owner's `unread` count (readstate.py)."""
+        state = readstate.load(self.state.root)
+        out = []
+        for item in items:
+            messages = []
+            for did in index.members.get(item["root"], []):
+                messages.append({"id": did, "from": index.messages[did].get("from"), "t": index.when[did]})
+            out.append(dict(item, unread=readstate.unread(item, messages, state)))
+        return out
+
+    def _thread(self, did: str):
+        """The thread that holds message `did` (its root or any reply), with its list row."""
+        try:
+            index = self.state.cache.threads()
+        except (OSError, ValueError) as e:
+            self._error(500, "cannot read the log: %s" % e)
+            return
+        root = index.root_of.get(did)
+        messages = index.thread(root) if root is not None else None
+        if messages is None:
+            self._error(404, "no thread holds the message %r" % did)
+            return
+        row = index.row(root, now_iso())
+        if self._role() == "owner":
+            row = self._with_unread(index, [row])[0]
+        self._json(200, {"root": root, "messages": messages, "thread": row})
+
+    def _events(self):
+        """The push channel: Server-Sent Events, open until the client goes or the server stops.
+
+        The start mark comes first, then the headers, then `event: ready`: the
+        client refetches what it shows on each ready event, so a line written
+        before the mark is in that refetch and a line written after it comes as
+        an event. The browser's own open event fires on the headers, which is
+        why they wait for the mark too. Then each check that finds new log
+        lines sends `event: rows` with `data: {"rows": [...]}` (ids only,
+        events.py), and a quiet stream sends `: ping` every events_ping_sec.
+        A write error ends it.
+        """
+        state = self.state
+        self.close_connection = True
+        # The stamp before the mark: a line written between the two shows as a
+        # changed stamp on the next check, and since() then finds it.
+        seen = events_mod.stamp(state.root)
+        mark = events_mod.mark(state.root)
+        self.send_response(200)
+        self.send_header("Content-Type", "text/event-stream")
+        self.send_header("Cache-Control", "no-cache")
+        self.send_header("Connection", "close")
+        self.end_headers()
+        if self.command == "HEAD":
+            return
+        try:
+            self.wfile.write(b"event: ready\ndata: {}\n\n")
+            last = time.monotonic()
+            while not state.stopping.wait(state.events_check_sec):
+                now_stamp = events_mod.stamp(state.root)
+                if now_stamp != seen:
+                    seen = now_stamp
+                    rows, mark = events_mod.since(state.root, mark)
+                    if rows:
+                        body = utf8_json({"rows": rows})
+                        self.wfile.write(("event: rows\ndata: %s\n\n" % body).encode("utf-8"))
+                        last = time.monotonic()
+                        continue
+                if time.monotonic() - last >= state.events_ping_sec:
+                    self.wfile.write(b": ping\n\n")
+                    last = time.monotonic()
+        except OSError:
+            return  # the client went away
+
+    def _vitals(self):
+        cfg = config_mod.load(self.state.root)
+        out = vitals_mod.read(self.state.root, cfg, buildhost_state=self.state.buildhost_state)
+        out["model_families"] = cfg["modelFamilies"]
+        self._json(200, out)
+
     def _collection(self, name: str):
         if name not in KNOWN_COLLECTIONS:
             self._error(404, "no such collection: %s" % name)
@@ -564,7 +794,7 @@ class CrosstalkHandler(BaseHTTPRequestHandler):
         self._json(200, {"docs": out})
 
     def _index(self):
-        path = self.state.root / "index.html"
+        path = self.state.code_root / "index.html"
         try:
             body = path.read_bytes()
         except OSError:
@@ -572,8 +802,60 @@ class CrosstalkHandler(BaseHTTPRequestHandler):
             return
         self._send(200, body, HTML_TYPE, [("Cache-Control", "no-cache")])
 
+    def _v2(self, path: str):
+        """A file of the built v2 page; a route with no file extension gets index.html."""
+        if path == "/v2":
+            query = urlsplit(self.path).query
+            self._send(301, b"", "text/plain; charset=utf-8",
+                       [("Location", "/v2/" + ("?" + query if query else ""))])
+            return
+        dist = self.state.code_root.joinpath(*V2_DIST)
+        if not dist.is_dir():
+            self._error(404, V2_NOT_BUILT)
+            return
+        # Decode once; a NUL or a backslash is never part of a built file's name.
+        rel = unquote(path[len("/v2/"):])
+        # A part that starts with a dot (.build-hash, .vite/) is a build file, not part of the page.
+        if "\x00" in rel or "\\" in rel or any(part.startswith(".") for part in rel.split("/")):
+            self._error(404, "no such file")
+            return
+        try:
+            base = dist.resolve()
+            target = (base / rel).resolve()  # symlinks followed, so the check sees where they go
+        except (OSError, RuntimeError, ValueError):
+            self._error(404, "no such file")
+            return
+        if target != base and base not in target.parents:
+            self._error(404, "no such file")
+            return
+        if not target.is_file():
+            if os.path.splitext(rel.rstrip("/").rsplit("/", 1)[-1])[1]:
+                self._error(404, "no such file")
+                return
+            target = base / "index.html"
+        try:
+            body = target.read_bytes()
+        except OSError:
+            self._error(404, "no such file")
+            return
+        ctype = mimetypes.guess_type(target.name)[0] or EXTRA_TYPES.get(target.suffix.lower()) \
+            or "application/octet-stream"
+        if ctype.startswith("text/") or ctype in TEXT_TYPES:
+            ctype += "; charset=utf-8"
+        cache = V2_IMMUTABLE if (base / "assets") in target.parents else "no-cache"
+        self._send(200, body, ctype, [("Cache-Control", cache), ("X-Content-Type-Options", "nosniff")])
+
+    def _v2_method(self) -> bool:
+        """True once a method other than GET or HEAD on /v2 got 405."""
+        path = urlsplit(self.path).path
+        if path != "/v2" and not path.startswith("/v2/"):
+            return False
+        self.close_connection = True  # the body, if any, is never read
+        self._json(405, {"error": "the v2 page answers GET and HEAD only"}, headers=[("Allow", "GET, HEAD")])
+        return True
+
     def _static_asset(self, filename: str, content_type: str):
-        for root in (self.state.root, Path(__file__).resolve().parent.parent.parent):
+        for root in (self.state.code_root, Path(__file__).resolve().parent.parent.parent):
             path = root / filename
             if path.is_file():
                 try:
@@ -585,7 +867,19 @@ class CrosstalkHandler(BaseHTTPRequestHandler):
 
     # -- writes ------------------------------------------------------------
 
+    def do_PUT(self):
+        if self._v2_method():
+            return
+        path = urlsplit(self.path).path
+        if path == "/api/read-state":
+            self._read_state_put()
+        else:
+            # Every other path answers PUT as it did before this route: 501.
+            self.send_error(501, "Unsupported method (%r)" % self.command)
+
     def do_POST(self):
+        if self._v2_method():
+            return
         path = urlsplit(self.path).path
         if path == "/api/append":
             self._append()
@@ -728,7 +1022,7 @@ class CrosstalkHandler(BaseHTTPRequestHandler):
                              check_in_min=body.get("checkInMin"),
                              parent=body.get("parent"),
                              color=body.get("color"), color_dark=body.get("colorDark"),
-                             harness=body.get("harness"))
+                             harness=body.get("harness"), code_root=self.state.code_root)
         except ValueError as e:
             self._error(400, str(e))
             return
@@ -738,6 +1032,47 @@ class CrosstalkHandler(BaseHTTPRequestHandler):
             self._error(500, "cannot read the kit: %s" % e)
             return
         self._json(200, {"token": result["token"], "kit": kit})
+
+    # -- the owner's read state ----------------------------------------------
+
+    def _read_state_get(self):
+        if self._role() != "owner":
+            self._error(403, "only the owner has a read state")
+            return
+        self._json(200, readstate.load(self.state.root))
+
+    def _read_state_put(self):
+        """One of {"thread", "t", "id"}, {"all_before": t} or {"thread", "muted": bool}."""
+        if self._role() != "owner":
+            self._error(403, "only the owner has a read state")
+            return
+        body = self._read_json()
+        if body is None:
+            return
+        keys = set(body) if isinstance(body, dict) else None
+        root = self.state.root
+        try:
+            if keys == {"thread", "t", "id"}:
+                if not (_name(body["thread"]) and readstate.is_time(body["t"]) and _name(body["id"])):
+                    raise ValueError("thread and id must be ids and t a time like 2026-01-02T03:04:05Z")
+                state = readstate.mark(root, body["thread"], body["t"], body["id"])
+            elif keys == {"all_before"}:
+                if not readstate.is_time(body["all_before"]):
+                    raise ValueError("all_before must be a time like 2026-01-02T03:04:05Z")
+                state = readstate.mark_all(root, body["all_before"])
+            elif keys == {"thread", "muted"}:
+                if not (_name(body["thread"]) and isinstance(body["muted"], bool)):
+                    raise ValueError("thread must be an id and muted true or false")
+                state = readstate.set_muted(root, body["thread"], body["muted"])
+            else:
+                raise ValueError('expected {"thread", "t", "id"}, {"all_before"} or {"thread", "muted"}')
+        except ValueError as e:
+            self._error(400, str(e))
+            return
+        except OSError as e:
+            self._error(500, "cannot write the read state: %s" % e)
+            return
+        self._json(200, state)
 
     def _me(self):
         role = self._role()
@@ -911,8 +1246,9 @@ class RunningServer:
     def __init__(self, root, port: int = 0, host: str = "127.0.0.1", tokens=None,
                  no_pin: bool = False, sessions=None, notify: bool = False,
                  notify_state=None, notify_poll_sec: float = 5.0, urgent_state=None,
-                 reviews_state=None, autogrant: bool = False):
+                 reviews_state=None, autogrant: bool = False, code_root=None):
         self.root = Path(root)
+        self.code_root = code_root
         self.autogrant = autogrant
         self._granter = None  # type: Optional[autogrant_mod.Granter]
         self.urgent_state = urgent_state
@@ -936,7 +1272,8 @@ class RunningServer:
             return self
         httpd = ThreadingHTTPServer((self.host, self.port), CrosstalkHandler)
         httpd.daemon_threads = True
-        httpd.state = ServerState(self.root, self.tokens, sessions=self.sessions)  # type: ignore[attr-defined]
+        httpd.state = ServerState(self.root, self.tokens, sessions=self.sessions,
+                                   code_root=self.code_root)  # type: ignore[attr-defined]
         if not self.no_pin:
             httpd.state.make_pin()  # type: ignore[attr-defined]
         self._httpd = httpd
@@ -952,7 +1289,7 @@ class RunningServer:
                        if self.reviews_state is not None else None)
             state.notifier = Notifier(self.root, state.cache.snapshot, self.notify_state,
                                       poll_sec=self.notify_poll_sec, fallback=fallback,
-                                      reviews=scanner)
+                                      reviews=scanner, code_root=self.code_root)
             self._notifier = state.notifier
             self._notifier.start()
             # The granter posts as the coordinator, so only the server that owns the
@@ -974,6 +1311,7 @@ class RunningServer:
         httpd, self._httpd = self._httpd, None
         thread, self._thread = self._thread, None
         if httpd is not None:
+            httpd.state.stopping.set()  # type: ignore[attr-defined]
             httpd.shutdown()
             httpd.server_close()
         if thread is not None:
@@ -1025,7 +1363,8 @@ DEFAULT_NOTIFY_STATE = Path.home() / ".crosstalk-notify-state.json"
 
 
 def serve(root, host: str = "127.0.0.1", port: int = 8484, no_pin: bool = False,
-          tokens=None, sessions=None, notify: bool = True, autogrant: bool = True) -> None:
+          tokens=None, sessions=None, notify: bool = True, autogrant: bool = True,
+          code_root=None) -> None:
     """Run the server in the foreground and print the one-time startup PIN.
 
     The PIN is how the owner logs in on the page; it is good for one login
@@ -1051,6 +1390,9 @@ def serve(root, host: str = "127.0.0.1", port: int = 8484, no_pin: bool = False,
     coordinator in the roster it does nothing. The file
     ~/.crosstalk-autogrant-off pauses it.
 
+    `root` is the data root; `code_root` (default: `root`) is the folder the
+    page, the icons and the version come from (`relay.py --data-root`).
+
     SIGTERM (how launchd stops the service) shuts down like Ctrl-C: the
     notifier stops cleanly, then the process exits with status 143
     (128 + SIGTERM).
@@ -1063,7 +1405,7 @@ def serve(root, host: str = "127.0.0.1", port: int = 8484, no_pin: bool = False,
                            notify_state=notify_state,
                            urgent_state=urgent_mod.state_path_from_env(),
                            reviews_state=reviews_mod.state_path_from_env(),
-                           autogrant=notify and autogrant)
+                           autogrant=notify and autogrant, code_root=code_root)
 
     class Terminated(Exception):
         pass

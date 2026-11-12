@@ -2037,11 +2037,18 @@ td.num, td.t { font: 12px var(--mono); font-variant-numeric: tabular-nums; white
   // posts a `withdrawn` row replying to it; whichever came first closes it. The same rule as
   // requests.owner_questions in relay.py. Quarantined askers are left out. Oldest first; cached per snapshot.
   var ASK_SUMMARY = "Owner: post every question you have for me with relay.py ask, one question per row";
-  var ASK_BODY = "Post each question you have for me as its own row:\n\n" +
-    "python3 <crosstalk>/scripts/relay.py ask --from <your-id> --summary \"<the question>\" --body \"<context, the options, your recommendation>\"\n\n" +
-    "The summary is the question itself. The body gives the context, the options and your recommendation. " +
-    "If a question becomes moot, withdraw it: relay.py withdraw --from <your-id> --question <question-id>. " +
-    "My answers come back in relay.py inbox <your-id> as owner messages. Reply to this request once you have posted yours, or to say you have none.";
+  // The ask template names relay.py of the code folder. When the server runs with a data root, its ask command
+  // carries `--data-root <data>`, and so does this text: a placeholder, since the snapshot never names the folder.
+  var askService = null;
+  function askBody(service) {
+    var ask = (service && service.commands && service.commands.ask) || "";
+    var relay = "python3 <crosstalk>/scripts/relay.py" + (ask.indexOf("relay.py --data-root <data> ") >= 0 ? " --data-root <data>" : "");
+    return "Post each question you have for me as its own row:\n\n" +
+      relay + " ask --from <your-id> --summary \"<the question>\" --body \"<context, the options, your recommendation>\"\n\n" +
+      "The summary is the question itself. The body gives the context, the options and your recommendation. " +
+      "If a question becomes moot, withdraw it: relay.py withdraw --from <your-id> --question <question-id>. " +
+      "My answers come back in relay.py inbox <your-id> as owner messages. Reply to this request once you have posted yours, or to say you have none.";
+  }
   var oqFor = null, oqPeople = null, oqCache = null;
   function byTId(a, b) { return byT(a, b) || (a._id < b._id ? -1 : a._id > b._id ? 1 : 0); }
   function ownerQuestions() {
@@ -2091,7 +2098,7 @@ td.num, td.t { font: 12px var(--mono); font-variant-numeric: tabular-nums; white
         var now = new Date().toISOString();
         if (!qState.askId) qState.askId = newOwnId(now);
         qState.asking = true; qState.askStatus = "Posting…"; renderView(true);
-        db.collection("messages").doc(qState.askId).set({ t: now, from: "owner", kind: "request", summary: ASK_SUMMARY, body: ASK_BODY }).then(function () {
+        db.collection("messages").doc(qState.askId).set({ t: now, from: "owner", kind: "request", summary: ASK_SUMMARY, body: askBody(askService) }).then(function () {
           qState.asking = false; qState.askConfirm = false; qState.askId = null; qState.askStatus = "Asked. Their questions show here as they arrive.";
           renderAll();
         }).catch(function (err) {
@@ -2972,6 +2979,7 @@ td.num, td.t { font: 12px var(--mono); font-variant-numeric: tabular-nums; white
         .then(function (r) { if (!r.ok) throw new Error("snapshot " + r.status); return r.json(); })
         .then(function (snap) {
           lastSnap = mergeRoster(snap);
+          askService = snap.service || null;
           var liveJson = JSON.stringify(snap.live || {});
           if (liveJson !== lastLiveJson) { lastLiveJson = liveJson; setLiveSessions(snap.live || {}); }
           lastServerTime = snap.server_time;

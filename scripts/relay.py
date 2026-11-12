@@ -9,8 +9,9 @@ from datetime import datetime, timezone, timedelta
 from pathlib import Path
 from typing import Dict
 
-ROOT = Path(__file__).resolve().parent.parent
-sys.path.insert(0, str(ROOT / "scripts"))
+CODE_ROOT = Path(__file__).resolve().parent.parent  # the code: scripts/, index.html, the git checkout
+ROOT = CODE_ROOT  # the data: log/, participants.json, tokens.json, kits/; main() sets it
+sys.path.insert(0, str(CODE_ROOT / "scripts"))
 
 from crosstalk.consults import (  # noqa: E402
     adopt_agreement, post_consult, post_question, post_reply, question_warning, withdraw_question)
@@ -32,9 +33,10 @@ from crosstalk.ownerpin import clear_pin, set_pin  # noqa: E402
 from crosstalk.participants import load_roster  # noqa: E402
 from crosstalk.posters import claim_file, land_sync, post_incident, release_file  # noqa: E402
 from crosstalk.replay import enrich_messages, load_all_lines, replay  # noqa: E402
+from crosstalk.requests import speaker_fields  # noqa: E402
 from crosstalk.reports import inbox_report, load_docs, questions_report  # noqa: E402
 from crosstalk.serve import serve  # noqa: E402
-from crosstalk.service import service_block  # noqa: E402
+from crosstalk.service import service_block, service_for  # noqa: E402
 from crosstalk.stalls import find_stalls  # noqa: E402
 from crosstalk.tokens import TOKEN_FILE, Tokens, load_tokens  # noqa: E402
 
@@ -82,6 +84,9 @@ def cmd_append(args):
     if not isinstance(data, dict):
         err("bad data: expected a JSON object")
         return 1
+    if args.collection == "messages" and args.op == "set":
+        for name, value in speaker_fields(args).items():
+            data.setdefault(name, value)
     roster = load_roster(ROOT / "participants.json")
     for w in message_problems(args.collection, args.op, data, roster)[1]:
         err("warning: " + w)
@@ -131,7 +136,7 @@ def cmd_read(args):
         for t, c, i, d in sorted(rows, key=lambda r: r[:3]):
             print(_brief_line(c, i, d, t))
         return 0
-    print(json.dumps({"collections": collections, "service": service_block(ROOT)},
+    print(json.dumps({"collections": collections, "service": service_block(CODE_ROOT, data_root=ROOT)},
                      ensure_ascii=False, sort_keys=True, indent=2))
     return 0
 
@@ -148,7 +153,7 @@ def cmd_inbox(args):
             err("%s:%d: %s" % (p.file, p.line, p.message))
         return 1
     out = inbox_report(docs, args.pid, roster, include_answered=args.all,
-                       now_iso=getattr(args, "now", None))
+                       now_iso=getattr(args, "now", None), service=service_for(CODE_ROOT, ROOT))
     if args.brief:
         for key, label in (("owner_messages", "owner"), ("requests", "request"),
                            ("thread_replies", "reply")):
@@ -174,7 +179,7 @@ def cmd_stalls(args):
 
 def cmd_export_page(args):
     try:
-        info = export_page(ROOT, Path(args.file))
+        info = export_page(ROOT, Path(args.file), code_root=CODE_ROOT)
     except (RuntimeError, OSError, ValueError) as e:
         err(str(e))
         return 1
@@ -183,13 +188,13 @@ def cmd_export_page(args):
 
 
 def cmd_deploy(args):
-    return deploy_mod.run(ROOT, args)
+    return deploy_mod.run(CODE_ROOT, args)
 
 
 def cmd_serve(args):
     """Run the page host and API server in the foreground until killed."""
     serve(ROOT, host=args.host, port=args.port, no_pin=args.no_pin, notify=not args.no_notify,
-          autogrant=not args.no_autogrant)
+          autogrant=not args.no_autogrant, code_root=CODE_ROOT)
     return 0
 
 
@@ -209,9 +214,9 @@ def cmd_live(args):
         return 0
     if args.live_cmd == "hooks":
         if args.harness == "hermes":
-            print(hermes_mod.setup_text(ROOT, args.pid), end="")
+            print(hermes_mod.setup_text(ROOT, args.pid, code_root=CODE_ROOT), end="")
         else:
-            print(live_mod.hooks_json(ROOT, args.pid))
+            print(live_mod.hooks_json(ROOT, args.pid, code_root=CODE_ROOT))
         return 0
     regs, problems = live_mod.load_registrations(ROOT)
     for r in regs:
@@ -325,7 +330,7 @@ def cmd_token(args):
         return 1
     if args.kit:
         try:
-            result = regenerate_kit(ROOT, args.pid)
+            result = regenerate_kit(ROOT, args.pid, code_root=CODE_ROOT)
         except ValueError as e:
             err(str(e))
             return 1
@@ -350,7 +355,8 @@ def cmd_onboard(args):
     try:
         result = onboard(ROOT, args.pid, args.name, args.kind, repo=args.repo,
                          check_in_min=args.check_in_min, parent=args.parent,
-                         color=args.color, color_dark=args.color_dark, harness=args.harness)
+                         color=args.color, color_dark=args.color_dark, harness=args.harness,
+                         code_root=CODE_ROOT)
     except ValueError as e:
         err(str(e))
         return 1
@@ -362,7 +368,7 @@ def cmd_onboard(args):
 def cmd_kit(args):
     """Regenerate kits/<pid>.md with a fresh key; prints the kit path and the token once."""
     try:
-        result = regenerate_kit(ROOT, args.pid)
+        result = regenerate_kit(ROOT, args.pid, code_root=CODE_ROOT)
     except ValueError as e:
         err(str(e))
         return 1
@@ -396,7 +402,8 @@ def cmd_land_sync(args):
     try:
         res = land_sync(ROOT, args.from_, args.commit, args.summary,
                         files=args.files, adopter=args.adopter,
-                        agreement_id=args.agreement_id, body=args.body)
+                        agreement_id=args.agreement_id, body=args.body,
+                        speaker=speaker_fields(args))
     except ValueError as e:
         err(str(e))
         return 1
@@ -438,6 +445,7 @@ def cmd_reply(args):
             body=args.body,
             refs=_flatten(args.refs),
             msg_id=args.id,
+            speaker=speaker_fields(args),
         )
     except ValueError as e:
         err(str(e))
@@ -456,6 +464,7 @@ def cmd_consult(args):
             refs=_flatten(args.refs),
             to=_flatten(args.to),
             msg_id=args.id,
+            speaker=speaker_fields(args),
         )
     except ValueError as e:
         err(str(e))
@@ -466,6 +475,16 @@ def cmd_consult(args):
 
 def cmd_ask(args):
     """Post a question for the owner; prints the new message id."""
+    recommend = None
+    if args.recommend is not None:
+        n = len(args.options or [])
+        if not n:
+            err("--recommend needs --option")
+            return 1
+        if not 1 <= args.recommend <= n:
+            err("--recommend must be 1 to %d (1 is the first --option)" % n)
+            return 1
+        recommend = args.recommend - 1
     try:
         ln = post_question(
             ROOT,
@@ -474,6 +493,9 @@ def cmd_ask(args):
             body=args.body,
             refs=_flatten(args.refs),
             msg_id=args.id,
+            speaker=speaker_fields(args),
+            options=args.options,
+            recommend=recommend,
         )
     except ValueError as e:
         err(str(e))
@@ -565,7 +587,7 @@ def cmd_schedule(args):
         have = [] if args.all else [j["name"] for p in view["participants"] if p["id"] == args.from_ for j in p["jobs"] if j["status"] != "stale"]
         peers = [pid for pid, p in roster.participants.items() if p.kind == "project" and p.trust == "approved"]
         print(schedules_mod.standard_text(args.from_, roster.participants[args.from_].harness, have, peers,
-                                            cfg=config_mod.of(roster)))
+                                            cfg=config_mod.of(roster), root=ROOT, code_root=CODE_ROOT))
         return 0
     try:
         if args.schedule_cmd == "set":
@@ -587,7 +609,7 @@ def cmd_withdraw(args):
     """Withdraw one of your own open questions; prints the new message id."""
     try:
         ln = withdraw_question(ROOT, args.from_, args.question, summary=args.summary,
-                               msg_id=args.id)
+                               msg_id=args.id, speaker=speaker_fields(args))
     except ValueError as e:
         err(str(e))
         return 1
@@ -603,6 +625,7 @@ def cmd_adopt(args):
             args.agreement,
             args.commit,
             summary=args.summary,
+            speaker=speaker_fields(args),
         )
     except ValueError as e:
         err(str(e))
@@ -611,12 +634,27 @@ def cmd_adopt(args):
     return 0
 
 
+def _speaker_flags(parser):
+    """--harness and --model: who wrote the post.
+
+    CROSSTALK_HARNESS and CROSSTALK_MODEL fill them when left out.
+    """
+    parser.add_argument("--harness", help="the harness that writes this post, a lowercase id like codex; "
+                                          "default: $CROSSTALK_HARNESS")
+    parser.add_argument("--model", help="the model that writes this post, 1 to 64 chars; "
+                                        "default: $CROSSTALK_MODEL")
+
+
 def build_parser():
     ap = argparse.ArgumentParser(prog="relay.py", description=__doc__)
+    ap.add_argument("--data-root", metavar="PATH",
+                    help="the folder that holds the data (log/, participants.json, tokens.json); "
+                         "default: $CROSSTALK_DATA, else the folder of this checkout")
     sub = ap.add_subparsers(dest="cmd", required=True)
     sub.add_parser("check", help="validate every log").set_defaults(fn=cmd_check)
 
     a = sub.add_parser("append", help="append one line to a log; prints the new seq")
+    _speaker_flags(a)
     a.add_argument("--from", dest="from_", required=True)
     a.add_argument("--op", required=True, choices=["set", "update"])
     a.add_argument("--collection", required=True)
@@ -700,6 +738,7 @@ def build_parser():
     rl.set_defaults(fn=cmd_release)
 
     ls = sub.add_parser("land-sync", help="announce a landed shared commit, update agreement, and release locks")
+    _speaker_flags(ls)
     ls.add_argument("--from", dest="from_", required=True)
     ls.add_argument("--commit", required=True)
     ls.add_argument("--summary", required=True)
@@ -721,6 +760,7 @@ def build_parser():
     inc.set_defaults(fn=cmd_incident)
 
     rp = sub.add_parser("reply", help="reply to a message; prints the new message id")
+    _speaker_flags(rp)
     rp.add_argument("--from", dest="from_", required=True)
     rp.add_argument("--to-id", dest="to_id", required=True)
     rp.add_argument("--summary", required=True)
@@ -730,6 +770,7 @@ def build_parser():
     rp.set_defaults(fn=cmd_reply)
 
     cs = sub.add_parser("consult", help="post a peer consultation request; prints the new message id")
+    _speaker_flags(cs)
     cs.add_argument("--from", dest="from_", required=True)
     cs.add_argument("--summary", required=True)
     cs.add_argument("--body")
@@ -739,11 +780,16 @@ def build_parser():
     cs.set_defaults(fn=cmd_consult)
 
     ak = sub.add_parser("ask", help="post a question for the owner; prints the new message id")
+    _speaker_flags(ak)
     ak.add_argument("--from", dest="from_", required=True)
     ak.add_argument("--summary", required=True, help="the question itself, one line")
     ak.add_argument("--body", help="context, the options, and your recommendation")
     ak.add_argument("--ref", "--refs", dest="refs", action="append", nargs="+")
     ak.add_argument("--id")
+    ak.add_argument("--option", dest="options", action="append",
+                    help="one choice for the owner; give 2 to 6, in order")
+    ak.add_argument("--recommend", type=int,
+                    help="the choice you recommend, by number: 1 is the first --option")
     ak.set_defaults(fn=cmd_ask)
 
     qs = sub.add_parser("questions", help="print the open questions for the owner (JSON)")
@@ -794,6 +840,7 @@ def build_parser():
     ad.set_defaults(fn=cmd_adoption)
 
     wd = sub.add_parser("withdraw", help="withdraw one of your own open questions; prints the new message id")
+    _speaker_flags(wd)
     wd.add_argument("--from", dest="from_", required=True)
     wd.add_argument("--question", required=True, metavar="ID", help="the question's message id")
     wd.add_argument("--summary", help="optional one-line reason")
@@ -801,6 +848,7 @@ def build_parser():
     wd.set_defaults(fn=cmd_withdraw)
 
     ad = sub.add_parser("adopt", help="record adoption of an agreement and post a sync message")
+    _speaker_flags(ad)
     ad.add_argument("--from", dest="from_", required=True)
     ad.add_argument("--agreement", "--agreement-id", dest="agreement", required=True)
     ad.add_argument("--commit", required=True)
@@ -888,7 +936,7 @@ def cmd_urgent(argv) -> int:
                 sys.stderr = saved
         stdin_text = sys.stdin.read()
         out = urgent_mod.hook_output(ROOT, args.as_, args.hook, stdin_text,
-                                     urgent_mod.state_path_from_env())
+                                     urgent_mod.state_path_from_env(), code_root=CODE_ROOT)
         if out:
             sys.stdout.write(out + "\n")
             sys.stdout.flush()
@@ -897,8 +945,26 @@ def cmd_urgent(argv) -> int:
     return 0
 
 
+def split_data_root(argv):
+    """A leading `--data-root PATH` (or `--data-root=PATH`): (PATH or None, the rest)."""
+    if argv[:1] == ["--data-root"] and len(argv) > 1:
+        return argv[1], argv[2:]
+    if argv[:1] and argv[0].startswith("--data-root="):
+        return argv[0][len("--data-root="):], argv[1:]
+    return None, argv
+
+
 def main(argv=None):
+    global ROOT
     argv = sys.argv[1:] if argv is None else list(argv)
+    flag, argv = split_data_root(argv)
+    chosen = flag or os.environ.get("CROSSTALK_DATA")
+    ROOT = Path(chosen).expanduser().resolve() if chosen else CODE_ROOT
+    if not ROOT.is_dir():
+        if argv[:1] == ["urgent"]:  # the hook never fails and never writes to stderr
+            return 0
+        err("relay.py: the data root %s is not a folder" % ROOT)
+        return 2
     if argv[:1] == ["urgent"]:
         return cmd_urgent(argv[1:])
     args = build_parser().parse_args(argv)

@@ -1,0 +1,131 @@
+.page {
+  display: flex;
+  flex: 1 1 auto;
+  flex-direction: column;
+  min-height: 0;
+}
+
+.top {
+  display: grid;
+  gap: 10px;
+  justify-items: start;
+  padding: 12px 18px;
+  border-bottom: 1px solid var(--rule);
+}
+
+.heading {
+  margin: 0;
+  font-family: var(--font-heading);
+  font-weight: 700;
+  font-size: var(--size-l);
+}
+
+.actions,
+.inline {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  align-items: center;
+}
+
+.actions {
+  margin-top: 8px;
+}
+
+.button,
+.primary {
+  padding: 4px 10px;
+  border: 1px solid var(--rule);
+  border-radius: var(--radius-control);
+  background: var(--surface);
+  color: var(--ink);
+  font: inherit;
+  font-size: var(--size-s);
+  cursor: pointer;
+}
+
+.primary {
+  border-color: var(--signal);
+  background: var(--signal);
+  color: var(--on-accent);
+}
+
+.button:disabled,
+.primary:disabled {
+  cursor: default;
+  opacity: 0.6;
+}
+
+.tag {
+  margin-left: 6px;
+  padding: 0 6px;
+  border-radius: var(--radius-control);
+  background: var(--paper);
+  font-size: var(--size-xs);
+  font-weight: 600;
+}
+
+.composer,
+.form {
+  display: grid;
+  gap: 6px;
+  width: 100%;
+  margin-top: 8px;
+  font-size: var(--size-s);
+}
+
+.form label {
+  display: grid;
+  gap: 2px;
+}
+
+.composer input,
+.composer textarea,
+.form input,
+.form select,
+.form textarea {
+  width: 100%;
+  padding: 6px 8px;
+  border: 1px solid var(--rule);
+  border-radius: var(--radius-control);
+  background: var(--surface);
+  color: var(--ink);
+  font: inherit;
+}
+
+.to {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 12px;
+  margin: 0;
+  padding: 6px 8px;
+  border: 1px solid var(--rule);
+  border-radius: var(--radius-control);
+}
+
+.to label {
+  display: flex;
+  gap: 4px;
+  align-items: center;
+}
+
+.error {
+  color: var(--ink);
+  font-size: var(--size-s);
+}
+
+.error::before {
+  content: "Error: ";
+  font-weight: 600;
+}
+
+.state {
+  margin: 0;
+  color: var(--muted);
+  font-size: var(--size-s);
+}
+
+.link {
+  color: var(--signal);
+  font-size: var(--size-s);
+}

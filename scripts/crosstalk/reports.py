@@ -41,9 +41,10 @@ def load_docs(root: Path, roster: Roster) -> Tuple[Optional[Dict], List[Problem]
 
 
 def inbox_report(docs: Dict, pid: str, roster: Roster, include_answered: bool = False,
-                 now_iso: Optional[str] = None) -> dict:
+                 now_iso: Optional[str] = None, service: Optional[dict] = None) -> dict:
     """What `relay.py inbox <pid>` prints: requests, owner messages, replies on pid's
-    threads, agreements, stale locks, and for the owner the open questions for it."""
+    threads, agreements, stale locks, and for the owner the open questions for it.
+    `service` defaults to SERVICE (service.service_for gives one with a data root)."""
     requests = (
         all_requests_for(docs, pid, roster=roster)
         if include_answered
@@ -79,7 +80,7 @@ def inbox_report(docs: Dict, pid: str, roster: Roster, include_answered: bool = 
         ],
         "agreements_to_adopt": agreements_to_adopt_for(docs, pid, roster=roster),
         "stale_locks": stale_locks_for(docs, pid, now_iso=now_iso),
-        "service": SERVICE,
+        "service": SERVICE if service is None else service,
     }
     if pid == "owner":
         out["owner_questions"] = [

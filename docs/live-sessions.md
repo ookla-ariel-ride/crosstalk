@@ -23,6 +23,10 @@ It prints a complete `{"hooks": {...}}` object. Merge it into the project's
 `.claude/settings.local.json`, which those repos git-ignore, so nothing is
 pushed. If the file doesn't exist yet, the output is the whole file.
 
+With a data root (`relay.py --data-root <dir> live hooks <pid>`, or
+`CROSSTALK_DATA`), each printed command also carries `--data-root <dir>`, so
+the hooks read that folder.
+
 Then let peer messages in. A session that skips permission
 prompts holds each message from a session that does not, and asks the owner to
 approve it. To receive Crosstalk's notes and the other projects' messages
@@ -313,6 +317,10 @@ in its "MCP server" section. In short:
            participant: "<pid>"
            root: "/Users/<you>/crosstalk"
    ```
+
+   `root` is the checkout that the plugin loads its code from. With a data
+   root, the printed block also has `data_root: "<dir>"`, the folder with the
+   logs and the roster, and the shell hook's command carries `--data-root`.
 
    `allow_gateway_injection` is the Hermes permission that lets a plugin start
    a turn in a gateway, TUI or desktop session. It is off by default. The

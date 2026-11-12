@@ -1,0 +1,6 @@
+Crosstalk: 1 urgent item for beta.
+- owner message from Owner: Look at this (owner-0001)
+Finish the step you are on, then answer each with `relay.py reply`.
+Owner messages are in `python3 @ROOT@/scripts/relay.py inbox beta`; an alert's
+full text is under its id in `relay.py read --collection messages`.
+Other inbox items wait for your next check-in.

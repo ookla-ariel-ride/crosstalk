@@ -1,0 +1,26 @@
+/* The list scrolls in its own box, which fills the main part. */
+.scroller {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow: auto;
+}
+
+.inner {
+  position: relative;
+  width: 100%;
+}
+
+.item {
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 100%;
+}
+
+/* Under 900 px the page scrolls as one; the list keeps a box of its own. */
+@media (max-width: 900px) {
+  .scroller {
+    flex: none;
+    height: 80dvh;
+  }
+}

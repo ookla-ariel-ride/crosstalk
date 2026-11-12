@@ -1,0 +1,109 @@
+/* Three columns on a wide screen, each one scrolls on its own. */
+.shell {
+  display: grid;
+  grid-template-columns: var(--width-sidebar) minmax(0, 1fr) var(--width-right);
+  grid-template-areas: "side main right";
+  height: 100dvh;
+}
+
+.top {
+  display: none;
+}
+
+.sidebar {
+  grid-area: side;
+  display: flex;
+  flex-direction: column;
+  gap: 18px;
+  padding: 16px 12px;
+  border-right: 1px solid var(--rule);
+  overflow: auto;
+}
+
+/* The main part: at most the stream width, with its page as a column that a
+   RowList can fill. */
+.main {
+  grid-area: main;
+  display: flex;
+  flex-direction: column;
+  width: 100%;
+  max-width: var(--width-stream);
+  min-height: 0;
+  margin: 0 auto;
+  overflow: auto;
+}
+
+.right {
+  grid-area: right;
+  padding: 16px;
+  border-left: 1px solid var(--rule);
+  overflow: auto;
+}
+
+@media (max-width: 900px) {
+  .shell {
+    grid-template-columns: minmax(0, 1fr);
+    grid-template-areas: "top" "side" "right" "main";
+    height: auto;
+  }
+
+  .top {
+    grid-area: top;
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 10px 16px;
+    border-bottom: 1px solid var(--rule);
+  }
+
+  .mark {
+    width: 32px;
+    height: 32px;
+    border-radius: var(--radius-control);
+  }
+
+  .name {
+    margin-right: auto;
+    font-family: var(--font-heading);
+    font-weight: 700;
+    font-size: var(--size-l);
+  }
+
+  .menuButton {
+    padding: 6px 14px;
+    border: 1px solid var(--rule);
+    border-radius: var(--radius-control);
+    background: var(--surface);
+    color: var(--ink);
+    font: inherit;
+    font-weight: 600;
+    cursor: pointer;
+  }
+
+  /* Behind the menu button; the top bar shows the mark and the name. */
+  .sidebar {
+    display: none;
+    border-right: 0;
+    border-bottom: 1px solid var(--rule);
+    overflow: visible;
+  }
+
+  .sidebar[data-open] {
+    display: flex;
+  }
+
+  .sidebar > :first-child {
+    display: none;
+  }
+
+  .main {
+    max-width: none;
+    overflow: visible;
+  }
+
+  .right {
+    border-left: 0;
+    border-bottom: 1px solid var(--rule);
+    overflow: visible;
+  }
+}

@@ -6,6 +6,7 @@ import shutil
 import subprocess
 import sys
 import tempfile
+import time
 import unittest
 from pathlib import Path
 
@@ -139,6 +140,14 @@ class PollTests(unittest.TestCase):
         self.assertTrue(all(i.startswith("relay-bot-buildhost-") for i in ids))
         self.assertEqual(json.loads(self.state.read_text())["posted"], ids[-1])
         self.assertEqual(os.stat(str(self.state)).st_mode & 0o777, 0o600)
+
+    def test_state_keeps_the_load_of_the_last_post(self):
+        self.poll(ok(13.2))
+        state = json.loads(self.state.read_text())
+        self.assertEqual(state["load"], 13.2)  # /api/vitals reads it
+        self.assertEqual(state["t"], time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime(self.now[0])))
+        self.poll(DOWN)
+        self.assertNotIn("load", json.loads(self.state.read_text()))
 
     def test_dry_run_writes_nothing(self):
         plan = self.poll(DOWN, dry_run=True)

@@ -926,6 +926,22 @@ class OnboardTests(unittest.TestCase):
             self.assertIn("kit", body)
             self.assertTrue((r.root / "kits" / "smoke-agent.md").exists())
 
+    def test_a_kit_from_the_page_names_the_code_root_and_the_data_root(self):
+        # The server runs its code from one folder and keeps its data in another:
+        # the kit must point at the code's relay.py and docs, and carry --data-root.
+        code = Path(tempfile.mkdtemp(prefix="crosstalk-code-")).resolve()
+        self.addCleanup(shutil.rmtree, str(code), True)
+        with TempRepo() as r:
+            r.write_roster()
+            with self.server(r, code_root=code) as srv:
+                status, body = self.onboard(srv, self.payload(), token=self.OWNER_TOKEN)
+            self.assertEqual(status, 200)
+            kit = body["kit"]
+            self.assertIn(str(code / "scripts" / "relay.py"), kit)
+            self.assertIn(str(code / "PROTOCOL.md"), kit)
+            self.assertIn("--data-root", kit)
+            self.assertNotIn(str(r.root.resolve() / "scripts" / "relay.py"), kit)
+
     def test_invalid_input_is_400(self):
         with TempRepo() as r:
             r.write_roster()
@@ -1288,6 +1304,150 @@ class ServeSignalTests(unittest.TestCase):
         self.proc.stderr.close()
         self.proc.stdout.close()
         self.assertEqual(self.proc.returncode, 128 + signal.SIGTERM, stderr)
+
+
+def raw_get(url, path, method="GET"):
+    """(status, body bytes, headers) for a path sent as it is, with no client-side normalising."""
+    import http.client
+    from urllib.parse import urlsplit
+    parts = urlsplit(url)
+    conn = http.client.HTTPConnection(parts.hostname, parts.port, timeout=10)
+    try:
+        conn.request(method, path)
+        resp = conn.getresponse()
+        return resp.status, resp.read(), {k.lower(): v for k, v in resp.getheaders()}
+    finally:
+        conn.close()
+
+
+INDEX_HTML = b"<!doctype html><title>v2</title>"
+ASSET_JS = b"console.log('v2');"
+SECRET = b"SECRET-DO-NOT-SERVE"
+
+
+class V2StaticTests(unittest.TestCase):
+    """GET /v2/ serves the built page from <code root>/web/dist/."""
+
+    def setUp(self):
+        self.data = TempRepo().__enter__()
+        self.data.write_roster()
+        self.code = Path(tempfile.mkdtemp(prefix="crosstalk-code-"))
+        self.dist = self.code / "web" / "dist"
+        (self.dist / "assets").mkdir(parents=True)
+        (self.dist / "index.html").write_bytes(INDEX_HTML)
+        (self.dist / "assets" / "x.js").write_bytes(ASSET_JS)
+        (self.dist / "robots.txt").write_bytes(b"User-agent: *\n")
+        # What a traversal would reach: the data files, in the code root and next to web/dist/.
+        for folder in (self.code, self.code / "web", self.data.root):
+            for name in ("tokens.json", "config.json"):
+                (folder / name).write_bytes(SECRET)
+
+    def tearDown(self):
+        shutil.rmtree(str(self.code), ignore_errors=True)
+        self.data.__exit__(None, None, None)
+
+    def server(self):
+        return RunningServer(self.data.root, code_root=self.code, no_pin=True)
+
+    def test_v2_index_is_served(self):
+        with self.server() as srv:
+            status, body, headers = raw_get(srv.url, "/v2/")
+        self.assertEqual(status, 200)
+        self.assertEqual(body, INDEX_HTML)
+        self.assertEqual(headers["content-type"], "text/html; charset=utf-8")
+        self.assertEqual(headers["cache-control"], "no-cache")
+        self.assertEqual(headers["x-content-type-options"], "nosniff")
+
+    def test_v2_without_a_slash_redirects(self):
+        with self.server() as srv:
+            status, _body, headers = raw_get(srv.url, "/v2")
+        self.assertEqual(status, 301)
+        self.assertEqual(headers["location"], "/v2/")
+
+    def test_v2_unknown_route_returns_index(self):
+        with self.server() as srv:
+            for path in ("/v2/threads", "/v2/section/locks", "/v2/assets/"):
+                status, body, headers = raw_get(srv.url, path)
+                self.assertEqual((status, body), (200, INDEX_HTML), path)
+                self.assertEqual(headers["cache-control"], "no-cache", path)
+
+    def test_v2_missing_file_with_an_extension_is_404(self):
+        with self.server() as srv:
+            for path in ("/v2/assets/gone.js", "/v2/gone.css", "/v2/favicon.ico"):
+                status, body, _headers = raw_get(srv.url, path)
+                self.assertEqual(status, 404, path)
+                self.assertNotEqual(body, INDEX_HTML, path)
+
+    def test_v2_asset_is_immutable_and_others_are_no_cache(self):
+        with self.server() as srv:
+            status, body, headers = raw_get(srv.url, "/v2/assets/x.js")
+            self.assertEqual((status, body), (200, ASSET_JS))
+            self.assertEqual(headers["cache-control"], "public, max-age=31536000, immutable")
+            self.assertIn("javascript", headers["content-type"])
+            self.assertTrue(headers["content-type"].endswith("; charset=utf-8"))
+            self.assertEqual(headers["x-content-type-options"], "nosniff")
+            status, _body, headers = raw_get(srv.url, "/v2/index.html")
+            self.assertEqual((status, headers["cache-control"]), (200, "no-cache"))
+            status, _body, headers = raw_get(srv.url, "/v2/robots.txt")
+            self.assertEqual((status, headers["cache-control"]), (200, "no-cache"))
+            self.assertEqual(headers["content-type"], "text/plain; charset=utf-8")
+
+    def test_v2_static_rejects_traversal(self):
+        paths = ("/v2/../tokens.json", "/v2/%2e%2e/tokens.json", "/v2/assets/../../config.json",
+                 "/v2/%2E%2E/%2E%2E/tokens.json", "/v2/assets/..%2F..%2F..%2Ftokens.json",
+                 "/v2/..", "/v2/../..", "/v2/" + str(self.code / "tokens.json"),
+                 "/v2/%2e%2e%5c%2e%2e%5ctokens.json", "/v2/assets\\..\\..\\tokens.json",
+                 "/v2/index.html%00.js", "/v2/%00")
+        with self.server() as srv:
+            for path in paths:
+                status, body, _headers = raw_get(srv.url, path)
+                self.assertEqual(status, 404, path)
+                self.assertNotIn(SECRET, body, path)
+
+    def test_v2_dot_files_are_404(self):
+        (self.dist / ".build-hash").write_bytes(b"hash")
+        (self.dist / ".vite").mkdir()
+        (self.dist / ".vite" / "manifest.json").write_bytes(b"{}")
+        with self.server() as srv:
+            for path in ("/v2/.build-hash", "/v2/.vite/manifest.json", "/v2/%2Evite/manifest.json", "/v2/.vite/"):
+                status, body, _headers = raw_get(srv.url, path)
+                self.assertEqual(status, 404, path)
+                self.assertNotEqual(body, INDEX_HTML, path)
+
+    def test_v2_symlink_out_of_dist_is_404(self):
+        (self.dist / "assets" / "leak.json").symlink_to(self.code / "tokens.json")
+        (self.dist / "outside").symlink_to(self.code, target_is_directory=True)
+        with self.server() as srv:
+            for path in ("/v2/assets/leak.json", "/v2/outside/tokens.json", "/v2/outside"):
+                status, body, _headers = raw_get(srv.url, path)
+                self.assertEqual(status, 404, path)
+                self.assertNotIn(SECRET, body, path)
+
+    def test_v2_head_and_other_methods(self):
+        with self.server() as srv:
+            status, body, headers = raw_get(srv.url, "/v2/assets/x.js", method="HEAD")
+            self.assertEqual((status, body), (200, b""))
+            self.assertEqual(headers["content-length"], str(len(ASSET_JS)))
+            for method in ("POST", "PUT"):
+                status, _body, headers = raw_get(srv.url, "/v2/", method=method)
+                self.assertEqual(status, 405, method)
+                self.assertEqual(headers["allow"], "GET, HEAD")
+
+    def test_v2_missing_dist_is_404_with_a_message(self):
+        shutil.rmtree(str(self.dist))
+        with self.server() as srv:
+            status, body, _headers = raw_get(srv.url, "/v2/")
+        self.assertEqual(status, 404)
+        message = json.loads(body.decode("utf-8"))["error"]
+        self.assertIn("not built", message)
+        self.assertIn("npm run build", message)
+        self.assertIn("web/", message)
+
+    def test_old_page_is_unchanged(self):
+        (self.code / "index.html").write_bytes(b"old page")
+        with self.server() as srv:
+            status, body, _headers = raw_get(srv.url, "/")
+        self.assertEqual((status, body), (200, b"old page"))
 
 
 if __name__ == "__main__":

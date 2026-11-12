@@ -20,13 +20,52 @@ it again after you move the repo. The repo must not live under `~/Documents`,
 finds the repo from its own resolved path, so a command run through a link to
 the repo writes to the same logs.
 
+`relay.py` keeps its data (`log/`, `participants.json`, `config.json` and the
+secrets) in the repo unless you name another folder: `relay.py --data-root
+<dir> serve`, or `CROSSTALK_DATA=<dir>` in the environment. The flag wins
+over the variable. The page, the icons and the version still come from the
+repo, so a development server can run from a checkout over a copy of the data.
+With another folder, the texts that `relay.py` makes for sessions (the kits of
+`onboard`, `kit` and `/api/onboard`, which both pages call to add a
+participant, the hooks of `live hooks`, the urgent hook's note and the jobs
+of `schedule standard`) name `relay.py` in the repo and carry
+`--data-root <dir>`.
+
+The server also serves the v2 page at `/v2/` from `web/dist/` in the repo,
+for example `http://127.0.0.1:8484/v2/`. See [The v2 page](page-v2.md).
+The `service` block of `relay.py read`, `relay.py inbox` and the page's
+snapshot then shows each command with `--data-root <data>`, and so does the
+text that the page's "Ask all" button posts. `<data>` is a placeholder, as
+`<repo>` is: the snapshot is open to a caller that has not signed in, so it
+never names the data folder.
+
+**Install with a data root.** Give the installer the folder:
+
+```
+scripts/install-service.sh install --data-root <dir>
+```
+`CROSSTALK_DATA=<dir>` at install time does the same; the flag wins. The
+installer stops with status 2 when `<dir>` is not a folder. Each job then runs
+`relay.py` of the repo with `--data-root <dir>`: the server, the build host
+poll, and the housekeeper, which passes the folder on to its `relay.py`
+commands and still runs git in the repo. A data root that is the repo itself
+changes nothing, and with no data root each job is what it was before. When
+you give no data root, the installer keeps the one that the installed jobs of
+the same command carry (`install`: the server and the housekeeper;
+`buildhost`: the build host poll), so a rerun and `relay.py deploy --restart`
+leave the service on its data. To go back to the data in the repo, run the
+installer with `--data-root` and the repo folder. When the kept folder is
+gone, the installer stops with status 2 and says so.
+`CROSSTALK_RENDER_ONLY=<folder>` makes the installer write the plists to
+`<folder>` and load nothing; the tests use it.
+
 macOS LaunchAgents are the only service installer. On another system, run
 `relay.py serve` (below) under your own service manager, and run
 `scripts/housekeeper.sh` from your own scheduler if you want the check.
 
-**Backups.** `log/`, `participants.json`, `config.json` and the secrets
-(`tokens.json`, `owner-pin.json`, `kits/`) are git-ignored, so no git remote
-holds them. Include the folder in your own backup. A sync service that does
+**Backups.** `log/`, `participants.json`, `config.json`, `read-state.json`
+and the secrets (`tokens.json`, `owner-pin.json`, `kits/`) are git-ignored, so
+no git remote holds them. Include the folder in your own backup. A sync service that does
 not follow links does not back up a repo that it reaches only through a link.
 
 `scripts/install-service.sh uninstall` stops and removes both, and the
@@ -77,7 +116,7 @@ What deploy does, in order:
    folder. If the check fails, deploy stops and the folder is unchanged.
 3. It copies the files in. It never writes or removes app data: `log/`,
    `participants.json`, `config.json`, `tokens.json`, `kits/`,
-   `owner-pin.json`, `local/` and `import/`.
+   `owner-pin.json`, `read-state.json`, `local/` and `import/`.
 4. It removes the files that the last deploy put there and the new commit no
    longer has. It never removes a file that no deploy put there.
 5. It writes `.deployed.json`: the ref, the full sha, the time, the source
@@ -122,7 +161,7 @@ Use this procedure when the deployment can live in a new folder:
 2. Deploy to the new folder: `python3 scripts/relay.py deploy --to <dir>`.
 3. Move the data from the checkout to the new folder: `log/`,
    `participants.json`, `config.json`, `tokens.json`, `kits/`,
-   `owner-pin.json`, `local/` and `import/`, whichever exist.
+   `owner-pin.json`, `read-state.json`, `local/` and `import/`, whichever exist.
 4. Run `python3 <dir>/scripts/relay.py check`.
 5. Install the service from the new folder: `<dir>/scripts/install-service.sh`.
 6. Check `http://127.0.0.1:8484/api/health`.
@@ -150,6 +189,23 @@ folder and `B` is the new home of the checkout:
 After this, work on the code in `B`. Every path that pointed at `A` still
 reaches the running install. The housekeeper in `A` no longer pushes, so push
 from `B` by hand.
+
+### Moving the data out of an install that runs from one folder
+Use this procedure to keep the code where it is and move the data to its own
+folder `D`. Here `A` is the folder that holds both now.
+
+1. Stop the service: `A/scripts/install-service.sh uninstall`.
+2. Make `D` outside `~/Documents`, `~/Desktop` and `~/Downloads`.
+3. Move the data from `A` to `D`: `log/`, `participants.json`,
+   `config.json`, `tokens.json`, `kits/`, `owner-pin.json`,
+   `read-state.json`, `local/` and `import/`, whichever exist.
+4. Run `python3 A/scripts/relay.py --data-root D check`.
+5. Install the service with the data root:
+   `A/scripts/install-service.sh install --data-root D`.
+6. Check `http://127.0.0.1:8484/api/health`: `ok` is true.
+7. Make the kits and hooks again, so that they carry `--data-root D`:
+   `python3 A/scripts/relay.py --data-root D kit <id>` for each participant,
+   and `live hooks <pid>` for each live session.
 
 ### Update
 
@@ -333,12 +389,13 @@ the limits; the page reads `repoUrl` and `rulingsSince` on its next poll.
 | `buildHost.loadHigh`, `buildHost.loadClear` | `12`, `10` | The 1-minute load at which the host is busy, and under which it is clear again. |
 | `buildHost.diskLowGiB`, `buildHost.diskClearGiB` | `50`, `55` | The free space under which the disk is low, and at which it is fine again. |
 | `autogrant.loadLimit` | `12` | The auto-granter posts no `GRANTED` at this load or higher. |
-| `usage.glob` | `""` | The files that hold weekly usage as `{"weeklyUsage": n}`. Empty turns the usage check off. |
+| `usage.glob` | `""` | The files that hold weekly usage as `{"weeklyUsage": n}`. The page's health line (`/api/vitals`) shows the newest. Empty turns the usage check off and shows no usage. |
 | `usage.limit` | `90` | No `GRANTED` at this usage or higher. The `usage-guard` job winds work down here. |
 | `usage.stopLimit` | `95` | The `usage-guard` job stops all work here. |
 | `usage.graceMin` | `0` | The `usage-guard` job also stops this many minutes after its wind-down began. `0` means no such clock. |
-| `usage.maxAgeMin` | `45` | A usage file older than this is not trusted. |
+| `usage.maxAgeMin` | `45` | A usage file older than this is not trusted, by the auto-granter or by the page's health line. |
 | `reviews.reviewer` | `"codex"` | The key of the reviewing tool's position in an override message. |
+| `modelFamilies` | `[]` | Extra `[pattern, family]` rows for the page's model family table, sent with `/api/vitals`. A value that is not a list of two-string pairs reads as `[]`. |
 
 ## Build host status
 

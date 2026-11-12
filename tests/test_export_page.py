@@ -58,6 +58,14 @@ class ExporterTests(unittest.TestCase):
         self.assertNotIn("data.json", html)
         self.assertEqual(info["documents"], 1)
 
+    def test_export_writes_a_lone_surrogate_as_an_escape(self):
+        r = self.r
+        r.write_log("rev", [line(1, "rev", data={"kind": "reply", "summary": "bad \ud800 x"})])
+        out = r.root / "page.html"
+        export_page(r.root, out)
+        html = out.read_text(encoding="utf-8")
+        self.assertEqual(snapshot_in(html)["collections"]["messages"]["rev-0001"]["summary"], "bad \ud800 x")
+
     def test_snapshot_document_count_equals_the_replay(self):
         r = self.r
         r.write_log("rev", [line(1, "rev"),

@@ -44,6 +44,7 @@ from .logs import KINDS, append_line, message_problems
 from .participants import ID_RE, load_roster
 from .posters import claim_file, release_file, slugify_path
 from .reports import MESSAGES_LIMIT_MAX, inbox_report, load_docs, recent_messages, trust_of
+from .requests import speaker_fields
 
 SERVER_NAME = "crosstalk"
 SERVER_VERSION = "1.0.0"
@@ -258,6 +259,7 @@ class McpServer:
                          ("important", "important"), ("positions", "positions")):
             if args.get(src) not in (None, [], ""):
                 data[dst] = args[src]
+        data.update(speaker_fields())  # who spoke: CROSSTALK_HARNESS and CROSSTALK_MODEL
         return data
 
     def _append_message(self, data):
@@ -287,7 +289,7 @@ class McpServer:
     def _reply(self, args):
         try:
             ln = post_reply(self.root, self.pid, args["to_id"], args["summary"],
-                            body=args.get("body"), refs=args.get("refs"))
+                            body=args.get("body"), refs=args.get("refs"), speaker=speaker_fields())
         except ValueError as e:
             raise ToolError(str(e))
         return {"id": ln.id, "seq": ln.seq, "t": ln.t, "replyTo": args["to_id"]}
@@ -295,15 +297,22 @@ class McpServer:
     def _consult(self, args):
         try:
             ln = post_consult(self.root, self.pid, args["summary"], body=args.get("body"),
-                              refs=args.get("refs"), to=args.get("to"))
+                              refs=args.get("refs"), to=args.get("to"), speaker=speaker_fields())
         except ValueError as e:
             raise ToolError(str(e))
         return {"id": ln.id, "seq": ln.seq, "t": ln.t, "to": ln.data.get("to")}
 
     def _ask_owner(self, args):
+        recommend = args.get("recommend")
+        if recommend is not None:
+            # 1-based here, like relay.py ask --recommend; stored from 0.
+            if isinstance(recommend, bool) or not isinstance(recommend, int) or recommend < 1:
+                raise ToolError("recommend must be a number from 1 (1 is the first option)")
+            recommend -= 1
         try:
             ln = post_question(self.root, self.pid, args["summary"], body=args.get("body"),
-                               refs=args.get("refs"))
+                               refs=args.get("refs"), speaker=speaker_fields(),
+                               options=args.get("options"), recommend=recommend)
         except ValueError as e:
             raise ToolError(str(e))
         out = {"id": ln.id, "seq": ln.seq, "t": ln.t}
@@ -315,7 +324,7 @@ class McpServer:
     def _withdraw_question(self, args):
         try:
             ln = withdraw_question(self.root, self.pid, args["question_id"],
-                                   summary=args.get("summary"))
+                                   summary=args.get("summary"), speaker=speaker_fields())
         except ValueError as e:
             raise ToolError(str(e))
         return {"id": ln.id, "seq": ln.seq, "t": ln.t, "replyTo": args["question_id"]}
@@ -341,7 +350,7 @@ class McpServer:
     def _adopt(self, args):
         try:
             return adopt_agreement(self.root, self.pid, args["agreement_id"], args["commit"],
-                                   summary=args.get("summary"))
+                                   summary=args.get("summary"), speaker=speaker_fields())
         except ValueError as e:
             raise ToolError(str(e))
 
@@ -460,8 +469,16 @@ class McpServer:
                  "Ask the owner something only the owner can decide. One question per call: "
                  "the summary is the question itself; the body gives the context, the options "
                  "and your recommendation. The owner answers on the page, one question at a "
-                 "time, and the answer comes back in your inbox as an owner message.",
-                 _schema({"summary": summary, "body": body, "refs": refs}, ["summary"]),
+                 "time, and the answer comes back in your inbox as an owner message. Give "
+                 "'options' to show the owner answer buttons, and 'recommend' to mark one.",
+                 _schema({"summary": summary, "body": body, "refs": refs,
+                          "options": dict(_STR_LIST, minItems=2, maxItems=6,
+                                          description="2 to 6 distinct choices, each 1 to 200 "
+                                                      "chars on one line, in order."),
+                          "recommend": {"type": "integer", "minimum": 1,
+                                        "description": "The choice you recommend, by number: "
+                                                       "1 is the first option. Needs options."}},
+                         ["summary"]),
                  self._ask_owner),
             Tool("withdraw_question", "Withdraw a question for the owner",
                  "Withdraw one of your own open questions for the owner once it is moot, so "
