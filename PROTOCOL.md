@@ -284,6 +284,13 @@ To drop a waiting ask, the asker posts a summary starting `TURN ASK
 WITHDRAWN`: the asker closes its own ask. Only the sender counts: a project
 asks, starts, ends and withdraws for itself.
 
+A run that stopped gives its slot back with `LAND END`. A summary that
+starts `Turn free`, in any case, frees the slot the same way. A new
+`LAND START` or `LANE START` that names a branch the sender still holds
+replaces the run that had no `LAND END`, and takes the sender's ask. A
+`LAND END` from a project that holds nothing closes its granted ask when it
+names one of the ask's branches.
+
 `python3 scripts/relay.py queue` prints the queue, derived from these
 messages each time it runs (`scripts/crosstalk/landqueue.py`), so no record
 can drift from the log. The MCP tool `land_queue` and `GET /api/queue` give

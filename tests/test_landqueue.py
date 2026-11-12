@@ -287,6 +287,41 @@ class GrantAndLaneTests(unittest.TestCase):
         q = queue((1, "alpha", "TURN ASK alpha maple-1110, tool-fix-1110-min, readme-1110: all approved"))
         self.assertEqual(q["waiting"][0]["branches"], ["maple-1110", "tool-fix-1110-min", "readme-1110"])
 
+    def test_turn_free_frees_the_holder(self):
+        self.assertEqual(land_word("Turn free: v-1108 stopped"), "LAND END")
+        self.assertEqual(land_word("TURN FREE gamma"), "LAND END")
+        self.assertIsNone(land_word("turn freely"))
+        for end in ("Turn free: v-1108 stopped", "TURN FREE gamma"):
+            q = queue((1, "gamma", "LAND START gamma v-1108"), (2, "gamma", end))
+            self.assertEqual((q["holders"], q["notes"]), ([], []))
+
+    RESTART = [(1, "gamma", "LAND START gamma v-1108"),
+               (2, "gamma", "TURN ASK gamma v-1108"),
+               (3, "relay-bot", "GRANTED gamma v-1108", {"kind": "reply", "replyTo": "gamma-02-1"}),
+               (4, "gamma", "LAND START gamma v-1108")]
+
+    def test_a_new_land_start_for_the_same_branch_replaces_a_stopped_turn(self):
+        t4 = calendar.timegm((2026, 11, 8, 10, 4, 0))
+        q = land_queue(docs_of(*self.RESTART), projects=PROJECTS, coordinator="relay-bot",
+                       now=t4 + 40 * 60)
+        self.assertEqual([(h["id"], h["since"]) for h in q["holders"]],
+                         [("gamma-04-3", "2026-11-08T10:04:00Z")])
+        self.assertEqual(q["waiting"], [])
+        self.assertEqual(q["notes"], ["gamma-04-3: LAND START from gamma replaces gamma-01-0, "
+                                      "which had no LAND END"])
+
+    def test_land_end_after_a_restart_leaves_no_holder_and_no_ask(self):
+        q = queue(*self.RESTART, (5, "gamma", "LAND END gamma v-1108: landed"))
+        self.assertEqual((q["holders"], q["waiting"], q["slots_free"]), ([], [], 2))
+
+    def test_a_granted_ask_closes_when_its_branch_lands_without_a_start(self):
+        q = queue((1, "gamma", "TURN ASK gamma v-1108"),
+                  (2, "relay-bot", "GRANTED gamma v-1108", {"kind": "reply", "replyTo": "gamma-01-0"}),
+                  (3, "gamma", "land --queue v-1108: landed; main is now abc1234; turn released",
+                   {"kind": "reply", "replyTo": "beta-02-9"}))
+        self.assertEqual((q["holders"], q["waiting"]), ([], []))
+        self.assertEqual(q["notes"], ["gamma-03-2: LAND END from gamma closes granted ask gamma-01-0"])
+
     def test_coordinator_land_words_still_claim_nothing(self):
         q = queue((1, "relay-bot", "LAND START relay-bot z-1110"),
                   (2, "relay-bot", "GRANTED nobody", {"kind": "reply", "replyTo": "missing"}))
