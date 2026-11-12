@@ -47,6 +47,15 @@ All commands are `python3 scripts/relay.py <command>`. Every command has
 
 Every `GET` route also answers `HEAD`. Reads need no sign-in.
 
+The log check covers the line, not the types inside its `data`, so a row can
+hold any JSON value in any field. The thread routes read a `kind`, `from`,
+`replyTo` or `t` that holds no text as a missing field
+(`threads.readable`), and every read route answers with the other rows. When
+a route still fails, the server answers `500` with
+`{"error": "internal error"}` and writes one line to stderr: the method, the
+path without its query, the exception type and the file and line. The line
+holds no header, no body and no value from the request.
+
 | Endpoint | Method | Access | Description |
 |---|---|---|---|
 | `/` | GET | anyone | `index.html` from the folder the server runs in (`Cache-Control: no-cache`) |

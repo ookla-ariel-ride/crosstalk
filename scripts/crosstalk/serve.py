@@ -39,6 +39,7 @@ import sys
 import tempfile
 import threading
 import time
+import traceback
 from http.cookies import CookieError, SimpleCookie
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
@@ -489,7 +490,13 @@ class CrosstalkHandler(BaseHTTPRequestHandler):
             super().handle()
         except (BrokenPipeError, ConnectionResetError, socket.timeout):
             pass
-        except Exception:
+        except Exception as e:
+            # The method, the path without its query, and where it failed: no
+            # header, no body and no value from the request.
+            frame = traceback.extract_tb(e.__traceback__)[-1]
+            sys.stderr.write("internal error on %s %s: %s at %s:%d\n" % (
+                getattr(self, "command", "?"), urlsplit(getattr(self, "path", "")).path,
+                type(e).__name__, os.path.basename(frame.filename), frame.lineno))
             try:
                 self._json(500, {"error": "internal error"})
             except Exception:
