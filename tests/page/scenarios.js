@@ -893,9 +893,13 @@
     var ackedText = acked ? acked.textContent : "", waitingText = waiting ? waiting.textContent : "";
     await addDoc("acks", "beta--hreq-ack", { from: "beta", item: "hreq-ack", none: true, t: ago(1) });
     var dropped = !helpHas("Ack me?");
+    // A request that names nobody: an ack clears no name, so it stays open.
+    await addDoc("messages", "hreq-ack0", { t: ago(1), from: "codex", kind: "request", summary: "Ack nobody?", to: [] });
+    await addDoc("acks", "gamma--hreq-ack0", { from: "gamma", item: "hreq-ack0", none: true, t: ago(1) });
+    var noneKept = helpHas("Ack nobody?");
     await go("timeline");
-    var ok = ackedText === "acked, no action: Gamma" && waitingText === "waiting on Beta" && dropped;
-    return res("helpAckedNoAction", ok, "acked=" + JSON.stringify(ackedText) + " waiting=" + JSON.stringify(waitingText) + " dropped=" + dropped);
+    var ok = ackedText === "acked, no action: Gamma" && waitingText === "waiting on Beta" && dropped && noneKept;
+    return res("helpAckedNoAction", ok, "acked=" + JSON.stringify(ackedText) + " waiting=" + JSON.stringify(waitingText) + " dropped=" + dropped + " noneKept=" + noneKept);
   });
 
   // The Help tab follows relay.py inbox (requests.open_requests): who counts as having answered.
@@ -1777,8 +1781,10 @@
   S.push(async function filterUnansweredTurnAsk() {
     await go("timeline");
     await addDoc("messages", "fx-turn", { t: ago(3), from: "gamma", kind: "request", to: ["beta"], needs_answer: false, summary: "TURN ASK gamma fx-0101", body: "Ready. No answer needed." });
+    // A withdrawal informs (landqueue.is_withdrawal): the usual rules apply, so this one needs no answer.
+    await addDoc("messages", "fx-turn-wd", { t: ago(3), from: "gamma", kind: "request", to: ["beta"], summary: "TURN ASK WITHDRAWN gamma fx-0101", body: "Dropped. No answer needed." });
     await press("f-open");
-    var ok = shows("fx-turn");
+    var ok = shows("fx-turn") && !shows("fx-turn-wd");
     await press("f-open");
     return res("filterUnansweredTurnAsk", ok, "open=" + ok);
   });

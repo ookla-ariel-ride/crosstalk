@@ -135,7 +135,9 @@ unread count. It counts as a reply from that recipient, so its name leaves
 `pending_from`, and the inbox lists it under the request's `acked`. An ack
 from a participant that is not approved, or of an item that is not a request
 in the log, counts for nothing. `ack` refuses a question for the owner: a
-question gets an answer, not an ack.
+question gets an answer, not an ack. A participant whose id holds `--` cannot
+ack, because its ack ids could equal another participant's; it posts a reply.
+An ack clears one name: a request that names nobody stays open until a reply.
 
 A single-recipient request closes when that recipient or the owner replies; a
 reply from anyone else doesn't close it. A multi-recipient or broadcast request
@@ -287,7 +289,7 @@ LAND END alpha feature-one-0101: landed, main 1a2b3c4d; feature-two-0101 stopped
 
 Post `TURN ASK` as kind `request`: it waits for the coordinator's `GRANTED`.
 A `TURN ASK` always needs an answer, even when its body ends with "No answer
-needed".
+needed". A `TURN ASK WITHDRAWN` informs, so that sentence marks it as needing none.
 Only the coordinator is asked: the inbox and the live notes show a `TURN ASK`
 to the coordinator alone, whoever else its `to` lists, and the other projects
 read `relay.py queue`. Only the asking project runs its gate and land, after

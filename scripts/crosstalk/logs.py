@@ -148,7 +148,10 @@ def _validate(raw: str, owner: str, expected: int, _prior: List[Line],
 
 def ack_problem(op: str, doc_id: str, owner: str, data: dict) -> Optional[str]:
     """The reason an `acks` line is invalid, or None. Any approved writer may `update` any id,
-    so the id rule holds for every op: a reader trusts that `<writer>--` names the writer."""
+    so the id rule holds for every op: a reader trusts that `<writer>--` names the writer.
+    A writer whose id holds `--` cannot ack: its ids could equal another writer's."""
+    if "--" in owner:
+        return "participant %r holds '--', so it cannot ack; post a reply instead" % owner
     if not doc_id.startswith(owner + "--"):
         return "an ack id must start with %r" % (owner + "--")
     if "from" in data and data["from"] != owner:

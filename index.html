@@ -863,9 +863,14 @@ td.num, td.t { font: 12px var(--mono); font-variant-numeric: tabular-nums; white
   }
   // requests.needs_answer: false for `needs_answer: false`, or a body that ends with "No answer needed"
   // (white space and one last full stop removed). Such a request waits for nobody.
-  // A TURN ASK (requests.is_turn_ask) always needs an answer: it waits for a GRANTED.
+  // A TURN ASK (requests.is_turn_ask) always needs an answer: it waits for a GRANTED. A TURN ASK
+  // WITHDRAWN (landqueue.is_withdrawal) informs, so the rules below apply to it.
   function needsAnswer(m) {
-    if (m.kind === "request" && typeof m.summary === "string" && /^\s*TURN ASK\b/.test(m.summary)) return true;
+    if (m.kind === "request" && typeof m.summary === "string" && /^\s*TURN ASK\b/.test(m.summary)) {
+      var rest = m.summary.trim().slice(8).trim();
+      var withdrawn = rest.slice(0, 9).toLowerCase() === "withdrawn" && ["", " ", ":", ",", "."].indexOf(rest.slice(9, 10)) !== -1;
+      if (!withdrawn) return true;
+    }
     if (m.needs_answer === false) return false;
     if (typeof m.body !== "string") return true;
     var s = m.body.trim();
@@ -879,11 +884,11 @@ td.num, td.t { font: 12px var(--mono); font-variant-numeric: tabular-nums; white
       if (m.replyTo && byId[m.replyTo]) (replies[m.replyTo] = replies[m.replyTo] || []).push(m);
     });
     // requests.acks_by_item: an ack counts as a reply from its writer when its id is from + "--" + item,
-    // the writer is approved, and the item is a request in the log.
+    // the writer is approved and its id holds no "--", and the item is a request in the log.
     var acks = Object.create(null);
     data.acks.forEach(function (a) {
       var from = a.from, item = a.item, m = typeof item === "string" ? byId[item] : null;
-      if (a.none !== true || typeof from !== "string" || a._id !== from + "--" + item) return;
+      if (a.none !== true || typeof from !== "string" || from.indexOf("--") !== -1 || a._id !== from + "--" + item) return;
       if (isQuarantined(from) || !m || m.kind !== "request") return;
       var list = acks[item] = acks[item] || [];
       if (list.indexOf(from) === -1) list.push(from);
@@ -910,7 +915,8 @@ td.num, td.t { font: 12px var(--mono); font-variant-numeric: tabular-nums; white
         if (!pending.length) return;
       } else if (toList.length === 1) {
         if (repliedBy[toList[0]] || repliedBy.owner) return;
-      } else if (Object.keys(repliedBy).length) {
+      } else if (mReplies.some(function (r) { return !isQuarantined(r.from); })) {
+        // Nobody is named, so an ack clears no name: only a reply closes it.
         return;
       }
       out.push({ request: m, replies: mReplies, pending: pending, acked: acked });

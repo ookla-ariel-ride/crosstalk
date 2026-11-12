@@ -12,6 +12,7 @@ import time
 from typing import Dict, Iterable, List, Optional, Set, Tuple
 
 from . import config
+from .landqueue import is_withdrawal
 
 _MENTION_RE = re.compile(r"(?:^|[\s(\[,:;])@([A-Za-z0-9_.-]+)")
 _BROADCAST_HANDLES = ("everyone", "all", "channel", "here")
@@ -302,8 +303,8 @@ NO_ANSWER = "No answer needed"
 def needs_answer(doc: dict) -> bool:
     """False when the row has `needs_answer: false`, or its body (white space and one last
     full stop removed) ends with NO_ANSWER; true otherwise. A TURN ASK always needs an
-    answer: it waits for a GRANTED."""
-    if is_turn_ask(doc):
+    answer: it waits for a GRANTED. A TURN ASK WITHDRAWN informs, so the rules above apply."""
+    if is_turn_ask(doc) and not is_withdrawal(doc.get("summary")):
         return True
     if doc.get("needs_answer") is False:
         return False
@@ -336,15 +337,17 @@ ACK_SEP = "--"
 def acks_by_item(docs: Dict, roster=None) -> Dict[str, Set[str]]:
     """Item id to the ids of the participants that acked it with `none: true`.
 
-    A row counts when its id is from + ACK_SEP + item, `from` is approved, and
-    `item` is a `kind: "request"` message in docs. Any other row counts for nothing.
+    A row counts when its id is from + ACK_SEP + item, `from` is approved and holds
+    no ACK_SEP, and `item` is a `kind: "request"` message in docs. Any other row
+    counts for nothing.
     """
     out = {}  # type: Dict[str, Set[str]]
     for (coll, did), doc in docs.items():
         if coll != "acks" or not isinstance(doc, dict) or doc.get("none") is not True:
             continue
         frm, item = doc.get("from"), doc.get("item")
-        if not isinstance(frm, str) or not isinstance(item, str) or did != frm + ACK_SEP + item:
+        if not isinstance(frm, str) or ACK_SEP in frm or not isinstance(item, str) \
+                or did != frm + ACK_SEP + item:
             continue
         if not _is_approved(frm, roster):
             continue
@@ -403,7 +406,8 @@ def _requests(docs: Dict, pid=None, open_only: bool = True,
                 elif len(recipients) == 1:
                     if any(r.get("from") in (recipients[0], "owner") for r in trusted_replies):
                         continue
-                elif trusted_replies:
+                # Nobody is named, so an ack clears no name: only a reply closes it.
+                elif any(_is_approved(r.get("from"), roster) for r in doc_replies):
                     continue
             else:
                 if doc.get("from") == pid and pid not in recipients:

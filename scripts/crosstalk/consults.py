@@ -261,6 +261,8 @@ def ack_item(root: Path, pid: str, item_id: str, roster: Optional[Roster] = None
     root = Path(root)
     roster = _ensure_roster(root, roster)
     _require_pid(pid, roster)
+    if ACK_SEP in pid:
+        raise ValueError("participant %r holds '--', so it cannot ack; post a reply instead" % (pid,))
     lines = load_all_lines(root, roster)
     docs = enrich_messages(replay(lines), lines)
     item = docs.get(("messages", item_id))

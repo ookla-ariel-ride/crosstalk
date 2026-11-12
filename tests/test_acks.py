@@ -10,6 +10,7 @@ from pathlib import Path
 from helpers import SPEC_ROSTER, TempRepo, line
 
 from crosstalk import notify
+from crosstalk.logs import read_log
 from crosstalk.participants import load_roster
 from crosstalk.replay import enrich_messages, load_all_lines, replay
 from crosstalk.requests import acks_by_item, open_requests
@@ -22,6 +23,11 @@ ROSTER["participants"] += [
      "checkInMin": 30, "trust": "approved"},
     {"id": "delta", "name": "Delta", "kind": "project", "color": "#5d4037", "colorDark": "#a1887f",
      "checkInMin": 30, "trust": "quarantined"},
+    # Two ids whose acks would share the id alpha--b--x: alpha's ack of b--x and alpha--b's ack of x.
+    {"id": "b", "name": "B", "kind": "project", "color": "#8a5a00", "colorDark": "#d9b25c",
+     "checkInMin": 30, "trust": "approved"},
+    {"id": "alpha--b", "name": "Alpha B", "kind": "project", "color": "#c77700", "colorDark": "#f0a73a",
+     "checkInMin": 30, "trust": "approved"},
 ]
 
 
@@ -151,6 +157,60 @@ class AckTests(unittest.TestCase):
         self.assertEqual(self.log_lines(), before)
         self.ok("append", "--from", "alpha", "--op", "set", "--collection", "acks",
                 "--id", "alpha--x", "--data", json.dumps(data))
+        # An update may not forge `from` on another participant's ack, nor on its own.
+        before = self.log_lines()
+        for frm, d in (("gamma", {"from": "gamma"}), ("alpha", {"from": "beta"})):
+            p = self.run_cli("append", "--from", frm, "--op", "update", "--collection", "acks",
+                             "--id", "alpha--x", "--data", json.dumps(d))
+            self.assertEqual(p.returncode, 1, (frm, d))
+        self.assertEqual(self.log_lines(), before)
+
+    def test_ack_does_not_close_a_request_with_no_recipients(self):
+        # `to: []` names nobody: a reply closes it, an ack does not (an ack clears one name, no other).
+        self.r.write_log("beta", [msg(1, "beta", "beta-r0", kind="request", summary="none", to=[])])
+        self.r.write_log("gamma", [ack_row(1, "gamma", "beta-r0")])
+        docs, roster = self.docs()
+        self.assertEqual(acks_by_item(docs, roster=roster), {"beta-r0": {"gamma"}})
+        self.assertIn("beta-r0", [d for d, _doc, _r in open_requests(docs, roster=roster)])
+
+    def test_withdrawal_can_need_no_answer(self):
+        from crosstalk.requests import needs_answer
+        ask = {"kind": "request", "summary": "TURN ASK WITHDRAWN alpha feature-0101", "body": "Done. No answer needed."}
+        self.assertIs(needs_answer(ask), False)
+        self.assertIs(needs_answer(dict(ask, body="Done.")), True)
+        self.assertIs(needs_answer(dict(ask, summary="TURN ASK alpha feature-0101")), True)
+
+    def test_an_id_with_a_double_dash_cannot_ack(self):
+        self.r.write_log("b", [msg(1, "b", "b--x", kind="request", summary="help", to=["alpha", "alpha--b"])])
+        self.r.write_log("alpha--b", [msg(1, "alpha--b", "alpha--b-r1", kind="request", summary="x", to=["alpha"])])
+        before = self.log_lines()
+        p = self.run_cli("ack", "--from", "alpha--b", "b--x", "--none")
+        self.assertEqual(p.returncode, 1)
+        self.assertIn("holds '--', so it cannot ack; post a reply instead", p.stderr)
+        p = self.run_cli("append", "--from", "alpha--b", "--op", "set", "--collection", "acks",
+                         "--id", "alpha--b--x", "--data",
+                         json.dumps({"from": "alpha--b", "item": "x", "none": True}))
+        self.assertEqual(p.returncode, 1)
+        self.assertEqual(self.log_lines(), before)
+        self.assertEqual(self.ok("ack", "--from", "alpha", "b--x", "--none").strip(), "alpha--b--x")
+        docs, roster = self.docs()
+        self.assertEqual(acks_by_item(docs, roster=roster), {"b--x": {"alpha"}})
+        # A row from such a writer that reached the docs some other way counts for nothing.
+        docs[("acks", "alpha--b--alpha--b-r1")] = {"from": "alpha--b", "item": "alpha--b-r1", "none": True}
+        self.assertEqual(acks_by_item(docs, roster=roster), {"b--x": {"alpha"}})
+
+    def test_a_bad_acks_row_stops_its_log(self):
+        # Pinned as it is today: read_log keeps the lines before the bad row and stops with a fatal problem.
+        path = self.r.write_log("gamma", [
+            msg(1, "gamma", "gamma-m1", kind="sync", summary="before"),
+            line(2, "gamma", collection="acks", id_="gamma-beta-r1",
+                 data={"from": "gamma", "item": "beta-r1", "none": True}),
+            msg(3, "gamma", "gamma-m3", kind="sync", summary="after"),
+        ])
+        lines, problems = read_log(path, load_roster(self.r.root / "participants.json"))
+        self.assertEqual([ln.id for ln in lines], ["gamma-m1"])
+        self.assertEqual([(p.line, p.fatal) for p in problems], [(2, True)])
+        self.assertIn("an ack id must start with 'gamma--'", problems[0].message)
 
     def test_ack_is_no_message(self):
         before = self.ok("read", "--collection", "messages")
