@@ -71,8 +71,15 @@ def wind_down(docs: Dict, roster, setters: Optional[tuple] = None) -> dict:
     if best is None:
         return {"step": 0, "started": None, "by": None, "reason": None}
     doc = best[2]
-    return {"step": doc["step"], "started": doc.get("started"), "by": best[1],
-            "reason": doc.get("reason")}
+    return {"step": doc["step"], "started": _text(doc, "started"), "by": best[1],
+            "reason": _text(doc, "reason")}
+
+
+def _text(doc: dict, name: str) -> Optional[str]:
+    """A text field, or None when it holds no text (as threads.readable reads a row):
+    the log check leaves the types inside a row's data free."""
+    value = doc.get(name)
+    return value if isinstance(value, str) else None
 
 
 def set_wind_down(root: Path, pid: str, step: int, reason: Optional[str] = None,

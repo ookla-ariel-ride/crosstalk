@@ -218,6 +218,10 @@ The Python tests never start them. See [Browser tests](page-v2.md#browser-tests)
   the page shows.
 - The page also reads agreements and lessons that use `title` and `detail`
   in place of `summary` and `body`.
+- The wind-down record (`state.wind_down`) reads a `started` or `reason` that
+  holds no text as null, so the state row of `/api/vitals` and `relay.py
+  state` never shows a list or a number there. `tests/test_wrong_types.py`
+  checks the `acks` and `state` rows too.
 
 ## Instruction files: AGENTS.md and CLAUDE.md
 
