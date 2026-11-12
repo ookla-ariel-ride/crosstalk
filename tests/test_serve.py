@@ -539,7 +539,7 @@ class AppendBodyTests(unittest.TestCase):
         # Only the start of the body is sent: the server answers and closes without
         # reading it. A server that did read it would wait, then answer 408.
         old = CrosstalkHandler.timeout
-        CrosstalkHandler.timeout = 1.0
+        CrosstalkHandler.timeout = 2.0
         self.addCleanup(setattr, CrosstalkHandler, "timeout", old)
         raw = self.padded(MAX_BODY + 1)
         head = ("POST /api/append HTTP/1.1\r\nHost: x\r\nAuthorization: Bearer %s\r\n"
@@ -557,8 +557,8 @@ class AppendBodyTests(unittest.TestCase):
         self.assertNotIn("pad", json.loads(self.log.read_text(encoding="utf-8")))
 
     def test_an_empty_or_bad_length_is_refused(self):
-        for length, error in (("0", "the body is empty"), ("-3", "the body is empty"),
-                              ("abc", "bad Content-Length")):
+        for length, error in (("0", "the body is empty"), ("-3", "bad Content-Length: send one, of ASCII digits only"),
+                              ("abc", "bad Content-Length: send one, of ASCII digits only")):
             status, body = self.post(b"", length=length)
             self.assert_refused(status, body, error)
 
@@ -621,8 +621,13 @@ class EarlyAnswerTests(unittest.TestCase):
                                                       "owner": token_hash(self.OWNER)}).start_server()
         self.addCleanup(self.srv.close)
 
-    def exchange(self, raw, half_close=False, wait=3.0):
-        """(status codes answered, whether the server closed, raw bytes) for raw request bytes."""
+    def exchange(self, raw, half_close=False, wait=10.0, until=None):
+        """(status codes answered, whether the server closed, raw bytes) for raw request bytes.
+
+        With `until`, stop once that many answers came and the connection then
+        stayed open for one second; else read until the server closes or
+        `wait` runs out.
+        """
         s = socket.create_connection(("127.0.0.1", self.srv.port), timeout=wait)
         out, closed = b"", False
         try:
@@ -630,6 +635,8 @@ class EarlyAnswerTests(unittest.TestCase):
             if half_close:
                 s.shutdown(socket.SHUT_WR)
             while True:
+                if until is not None and len(re.findall(rb"HTTP/1\.1 \d{3} ", out)) >= until:
+                    s.settimeout(1.0)
                 chunk = s.recv(65536)
                 if not chunk:
                     closed = True
@@ -707,23 +714,85 @@ class EarlyAnswerTests(unittest.TestCase):
         self.assert_answered_once_and_closed(
             self.request("POST", "/api/append", [self.length(100)], b'{"a": 1}'), 400, half_close=True)
 
-    def test_a_body_that_never_comes_gets_408_and_a_closed_connection(self):
+    def short_timeout(self, seconds=2.0):
         old = CrosstalkHandler.timeout
-        CrosstalkHandler.timeout = 0.5
+        CrosstalkHandler.timeout = seconds
         self.addCleanup(setattr, CrosstalkHandler, "timeout", old)
+
+    def test_a_body_that_never_comes_gets_408_and_a_closed_connection(self):
+        self.short_timeout()
         self.assert_answered_once_and_closed(
             self.request("POST", "/api/append", [self.length(100)], b'{"a": 1}'), 408)
+
+    def test_a_trickled_body_meets_one_deadline_for_the_whole_read(self):
+        # One byte every 0.25 s keeps each recv under the 2 s timeout; the read as a
+        # whole must still stop at about 2 s, not when the trickle ends (15 s).
+        self.short_timeout()
+        s = socket.create_connection(("127.0.0.1", self.srv.port), timeout=25)
+        self.addCleanup(s.close)
+        s.sendall(self.request("POST", "/api/append", [self.length(100)]))
+        stop = threading.Event()
+
+        def trickle():
+            for _ in range(60):
+                if stop.wait(0.25):
+                    return
+                try:
+                    s.sendall(b" ")
+                except OSError:
+                    return
+        t = threading.Thread(target=trickle)
+        start = time.time()
+        t.start()
+        out = b""
+        try:
+            while True:
+                chunk = s.recv(65536)
+                if not chunk:
+                    break
+                out += chunk
+        except (ConnectionResetError, socket.timeout):
+            pass
+        elapsed = time.time() - start
+        stop.set()
+        t.join()
+        self.assertEqual([int(c) for c in re.findall(rb"HTTP/1\.1 (\d{3}) ", out)], [408], out[:300])
+        self.assertIn(b"\r\nconnection: close\r\n", out.lower())
+        self.assertLess(elapsed, 8.0)
+
+    def test_a_length_that_is_not_plain_ascii_digits_is_refused(self):
+        body = b"[1,2]" + SMUGGLED
+        for name, method, path, headers, status in (
+                ("plus", "POST", "/api/append", [("Content-Length", "+5")], 400),
+                ("underscore", "POST", "/api/append", [("Content-Length", "1_0")], 400),
+                ("trailing space", "POST", "/api/append", [("Content-Length", "5 ")], 400),
+                ("fullwidth digit", "POST", "/api/append", [("Content-Length", "\uff15")], 400),
+                ("two equal", "POST", "/api/append", [self.length(5), self.length(5)], 400),
+                ("two unequal", "POST", "/api/append", [self.length(5), self.length(500)], 400),
+                ("plus on a GET", "GET", "/api/me", [("Content-Length", "+5")], 200),
+                ("two on a GET", "GET", "/api/me", [self.length(0), self.length(5)], 200)):
+            with self.subTest(name):
+                raw = ("%s %s HTTP/1.1\r\nHost: x\r\n" % (method, path)).encode("latin-1")
+                raw += b"".join(("%s: %s\r\n" % h).encode("utf-8") for h in headers)
+                self.assert_answered_once_and_closed(raw + b"\r\n" + body, status)
+
+    def test_a_leading_space_in_the_length_is_plain_whitespace(self):
+        # The header parser drops the space after the colon, so " 5" is the length 5:
+        # five bytes are read and the next request is a request of its own.
+        raw = self.request("POST", "/api/append", [("Content-Length", " 5")], b"[1,2]") + SMUGGLED
+        codes, closed, out = self.exchange(raw, until=2)
+        self.assertEqual((codes, closed), ([400, 200], False), out[:400])
 
     def test_a_read_body_keeps_the_connection_alive(self):
         body = json.dumps({"from": "rev", "op": "set", "collection": "messages", "id": "rev-0001",
                            "data": {"from": "rev", "kind": "reply", "summary": "hi"}}).encode("utf-8")
         raw = self.request("POST", "/api/append", [("Authorization", "Bearer " + self.TOKEN),
                                                    self.length(len(body))], body) + SMUGGLED
-        codes, closed, out = self.exchange(raw, wait=1.0)
+        codes, closed, out = self.exchange(raw, until=2)
         self.assertEqual(codes, [201, 200], out[:400])
         self.assertFalse(closed)
         self.assertNotIn(b"connection: close", out.lower())
-        codes, closed, _out = self.exchange(SMUGGLED + SMUGGLED, wait=1.0)
+        codes, closed, _out = self.exchange(SMUGGLED + SMUGGLED, until=2)
         self.assertEqual((codes, closed), ([200, 200], False))
 
     def test_an_early_answer_after_a_read_body_still_closes(self):
@@ -1370,7 +1439,7 @@ class RobustnessTests(unittest.TestCase):
             r.write_roster()
             with RunningServer(r.root) as srv:
                 old = CrosstalkHandler.timeout
-                CrosstalkHandler.timeout = 0.5
+                CrosstalkHandler.timeout = 1.0
                 try:
                     s = socket.create_connection(("127.0.0.1", srv.port), timeout=5)
                     s.sendall(b"GET /api/snapshot HTTP/1.1\r\nHost: x\r\n")
@@ -1383,7 +1452,7 @@ class RobustnessTests(unittest.TestCase):
                     elapsed = time.time() - start
                     s.close()
                     self.assertEqual(data, b"")
-                    self.assertLess(elapsed, 3)
+                    self.assertLess(elapsed, 4)
                 finally:
                     CrosstalkHandler.timeout = old
 

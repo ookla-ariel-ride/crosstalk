@@ -95,10 +95,13 @@ update `participants.json`.
 
 Request bodies (`POST` and `PUT /api/read-state`): JSON with a
 `Content-Length` of at most 1 MiB. The server answers `411` for
-`Transfer-Encoding` (it reads no chunked body), `400` for a missing, bad or
-zero length, a body above the limit, a body shorter than its length, or a body
-that is not JSON (`null` too, where an object is needed), and `408` when the
-body does not arrive within 30 seconds. An answer sent before the whole body
+`Transfer-Encoding` (it reads no chunked body), `400` for a missing or zero
+length, more than one `Content-Length` header, a length that is not ASCII
+digits alone (`+5`, `1_0` and `5 ` with a trailing space are refused; the
+header parser strips a leading space, so ` 5` reads as `5`), a body above the limit, a body
+shorter than its length, or a body that is not JSON (`null` too, where an
+object is needed), and `408` when the whole body has not arrived 30 seconds
+after the read starts. An answer sent before the whole body
 was read (one of these, an auth refusal, or an unknown path) carries
 `Connection: close` and closes the connection, so no byte of that body is read
 as a request.

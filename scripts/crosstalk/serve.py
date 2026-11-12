@@ -32,6 +32,7 @@ import hmac
 import json
 import mimetypes
 import os
+import re
 import secrets
 import signal
 import socket
@@ -479,6 +480,19 @@ def _name(value) -> bool:
 
 
 _NO_BODY = object()  # what _read_json returns once it has answered an error
+_LENGTH_RE = re.compile(r"[0-9]+", re.ASCII)
+
+
+def _content_length(headers):
+    """The declared body length: None with no Content-Length header, -1 for more
+    than one header or a value that is not ASCII digits alone (`int()` would
+    also take "+5", "1_0" and other scripts' digits)."""
+    values = headers.get_all("Content-Length") or []
+    if not values:
+        return None
+    if len(values) > 1 or not _LENGTH_RE.fullmatch(values[0]):
+        return -1
+    return int(values[0])
 
 
 class CrosstalkHandler(BaseHTTPRequestHandler):
@@ -548,7 +562,7 @@ class CrosstalkHandler(BaseHTTPRequestHandler):
             return False
         if self.command in ("POST", "PUT", "PATCH"):
             return False
-        return headers.get("Content-Length") in (None, "0")
+        return _content_length(headers) in (None, 0)
 
     def _send(self, status: int, body: bytes, content_type: str, headers=None) -> None:
         self.send_response(status)
@@ -994,6 +1008,34 @@ class CrosstalkHandler(BaseHTTPRequestHandler):
             return
         self._json(200, {"ok": True, "id": ack_id, "written": True})
 
+    def _read_body(self, length: int):
+        """Up to `length` bytes (fewer when the client closes), or None when the
+        whole read takes longer than the handler's timeout. The socket timeout
+        alone limits each recv, so a byte every few seconds would hold the
+        thread without end."""
+        deadline = None if self.timeout is None else time.monotonic() + self.timeout
+        parts, got = [], 0
+        try:
+            while got < length:
+                if deadline is not None:
+                    left = deadline - time.monotonic()
+                    if left <= 0:
+                        return None
+                    self.connection.settimeout(left)
+                chunk = self.rfile.read1(min(length - got, 65536))
+                if not chunk:
+                    break
+                parts.append(chunk)
+                got += len(chunk)
+        except socket.timeout:
+            return None
+        finally:
+            try:
+                self.connection.settimeout(self.timeout)
+            except OSError:
+                pass
+        return b"".join(parts)
+
     def _read_json(self):
         """The parsed body (any JSON value, `null` too), or _NO_BODY once an error
         has been answered. An error before the whole body is read closes the
@@ -1001,20 +1043,18 @@ class CrosstalkHandler(BaseHTTPRequestHandler):
         if self.headers.get("Transfer-Encoding") is not None:
             self._error(411, "send the body with a Content-Length; Transfer-Encoding is not supported")
             return _NO_BODY
-        try:
-            length = int(self.headers.get("Content-Length") or 0)
-        except ValueError:
-            self._error(400, "bad Content-Length")
+        length = _content_length(self.headers)
+        if length == -1:
+            self._error(400, "bad Content-Length: send one, of ASCII digits only")
             return _NO_BODY
-        if length <= 0:
+        if not length:
             self._error(400, "the body is empty")
             return _NO_BODY
         if length > MAX_BODY:
             self._error(400, "the body is too big")
             return _NO_BODY
-        try:
-            raw = self.rfile.read(length)
-        except socket.timeout:
+        raw = self._read_body(length)
+        if raw is None:
             self._error(408, "the body did not arrive in time")
             return _NO_BODY
         if len(raw) < length:
