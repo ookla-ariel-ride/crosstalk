@@ -139,15 +139,41 @@ class ForgedMarksTests(unittest.TestCase):
         self.check(snapshot_in(out.read_text(encoding="utf-8"))["collections"])
 
 
+MARK_SHOWN_FORM = (
+    "index.html must hold MARK_SHOWN as one statement `var MARK_SHOWN = [[...], ...];` whose "
+    "array is JSON (double quotes, no trailing comma, no comments). Put it back in that form, "
+    "or change mark_shown() in tests/test_marks_page.py to read the new form. ")
+
+
+def mark_shown(text):
+    """The MARK_SHOWN array of the page text, or an AssertionError that says what to do."""
+    import json
+    import re
+    m = re.search(r"var MARK_SHOWN = (\[.*?\]\]);", text, re.S)
+    if m is None:
+        raise AssertionError(MARK_SHOWN_FORM + "No such statement found.")
+    try:
+        shown = json.loads(m.group(1))
+    except ValueError as e:
+        raise AssertionError(MARK_SHOWN_FORM + "The array is not JSON: %s." % e)
+    if not (isinstance(shown, list) and all(isinstance(w, list) and len(w) == 3 for w in shown)):
+        raise AssertionError(MARK_SHOWN_FORM + "Each entry must be [word, emoji, label].")
+    return shown
+
+
 class PageWordsTests(unittest.TestCase):
+    def test_a_changed_form_of_mark_shown_fails_with_what_to_do(self):
+        for text in ('const MARK_SHOWN = [["ack", "x", "y"]];',
+                     "var MARK_SHOWN = [['ack', 'x', 'y']];",
+                     'var MARK_SHOWN = [["ack", "x", "y"],\n  ];',
+                     'var MARK_SHOWN = [["ack", "x"]];'):
+            with self.assertRaisesRegex(AssertionError, "change mark_shown\\(\\) in tests/test_marks_page.py"):
+                mark_shown(text)
+
     def test_the_page_shows_the_emoji_and_words_of_marks_py(self):
         """index.html holds MARK_SHOWN: [word, emoji, label] in the order the line shows them."""
-        import json
-        import re
         from crosstalk import marks
-        m = re.search(r"var MARK_SHOWN = (\[.*?\]\]);", (REPO / "index.html").read_text(encoding="utf-8"), re.S)
-        self.assertIsNotNone(m, "no MARK_SHOWN in index.html")
-        shown = json.loads(m.group(1))
+        shown = mark_shown((REPO / "index.html").read_text(encoding="utf-8"))
         self.assertEqual([w for w, _e, _l in shown], ["ack", "applies", "none", "seen", "unclear"])
         self.assertEqual(sorted(w for w, _e, _l in shown), sorted(marks.MARKS))
         for word, emoji, label in shown:
