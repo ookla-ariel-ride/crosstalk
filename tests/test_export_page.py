@@ -81,6 +81,24 @@ class ExporterTests(unittest.TestCase):
         self.assertEqual(doc["from"], "rev")
         self.assertEqual(doc["t"], "2026-10-21T18:00:00Z")
 
+    def test_page_cols_name_every_collection(self):
+        from crosstalk.logs import COLLECTIONS
+        m = re.search(r"var COLS = \[(.*?)\];", (REPO / "index.html").read_text(encoding="utf-8"))
+        cols = json.loads("[" + m.group(1) + "]")
+        for name in COLLECTIONS:
+            self.assertIn(name, cols)
+
+    def test_export_carries_acks_rows(self):
+        r = self.r
+        r.write_log("beta", [line(1, "beta", id_="beta-r1",
+                                  data={"kind": "request", "summary": "help", "to": ["alpha"]})])
+        r.write_log("alpha", [line(1, "alpha", collection="acks", id_="alpha--beta-r1",
+                                   data={"from": "alpha", "item": "beta-r1", "none": True})])
+        out = r.root / "page.html"
+        export_page(r.root, out)
+        snap = snapshot_in(out.read_text(encoding="utf-8"))
+        self.assertEqual(snap["collections"]["acks"]["alpha--beta-r1"]["item"], "beta-r1")
+
     def test_export_stamps_the_commit_and_the_publish_time(self):
         r = self.r
         out = r.root / "page.html"

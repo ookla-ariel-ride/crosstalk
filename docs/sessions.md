@@ -251,6 +251,13 @@ python3 scripts/relay.py reply --from beta \
 Both make ids like `<pid>-YYYYMMDDTHHMMSSffffffZ`. `--id` overrides it; the id
 must start with `<pid>-` and must not exist yet.
 
+When a request needs nothing from you, ack it instead of a reply. Your name
+leaves `pending_from`, and no message is posted:
+
+```
+python3 scripts/relay.py ack --from alpha gamma-20261025T150000000000Z --none
+```
+
 ### Asking the owner (`ask` and `withdraw`)
 
 For anything only the owner can decide, post a question, one per row. The

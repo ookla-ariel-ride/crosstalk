@@ -13,7 +13,7 @@ from .participants import HARNESS_MAX, ID_RE, Roster, harness_problem
 
 LEGACY_PREFIXES = ("m-", "vc-", "own-", "a-", "d-", "w-", "l-", "p-", "i-", "lesson-")
 COLLECTIONS = ("messages", "agreements", "waiting", "locks", "lessons",
-               "decisions", "progress", "incidents", "schedules", "adoptions")
+               "decisions", "progress", "incidents", "schedules", "adoptions", "acks")
 RUN_RESULTS = ("ok", "failed", "skipped")
 RUNS_KEPT = 10
 OWNER_COLLECTIONS = COLLECTIONS + ("participants",)
@@ -125,6 +125,10 @@ def _validate(raw: str, owner: str, expected: int, _prior: List[Line],
     if d["collection"] == "messages" and d["data"].get("kind") == "owner" \
             and owner != "owner" and d.get("via") != "import":
         return "only 'owner' may post kind 'owner'"
+    if d["collection"] == "acks":
+        msg = ack_problem(d["op"], d["id"], owner, d["data"])
+        if msg:
+            return msg
     if d["collection"] == "messages":
         for name in SPEAKER_FIELDS:
             if name in d["data"]:
@@ -140,6 +144,25 @@ def _validate(raw: str, owner: str, expected: int, _prior: List[Line],
             return msg
     return Line(seq=seq, t=d["t"], from_=d["from"], op=d["op"], collection=d["collection"],
                 id=d["id"], data=d["data"], via=via)
+
+
+def ack_problem(op: str, doc_id: str, owner: str, data: dict) -> Optional[str]:
+    """The reason an `acks` line is invalid, or None. Any approved writer may `update` any id,
+    so the id rule holds for every op: a reader trusts that `<writer>--` names the writer.
+    A writer whose id holds `--` cannot ack: its ids could equal another writer's."""
+    if "--" in owner:
+        return "participant %r holds '--', so it cannot ack; post a reply instead" % owner
+    if not doc_id.startswith(owner + "--"):
+        return "an ack id must start with %r" % (owner + "--")
+    if "from" in data and data["from"] != owner:
+        return "ack from %r is not its writer %r" % (data["from"], owner)
+    if op == "set":
+        item = data.get("item")
+        if "from" not in data or not isinstance(item, str) or not item:
+            return "an ack set needs from and a string item"
+        if doc_id != owner + "--" + item:
+            return "ack id %r must be %r" % (doc_id, owner + "--" + item)
+    return None
 
 
 def speaker_problem(name: str, value) -> Optional[str]:

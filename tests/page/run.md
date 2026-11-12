@@ -155,6 +155,8 @@ history and clears the stored last-visit time, so those replies never count as n
   combines with Has replies.
 - `filterUnansweredNoAnswer`: Unanswered leaves out a request with `needs_answer: false` or a body that ends
   with "No answer needed"; the sentence in the middle of a body does not count.
+- `filterUnansweredTurnAsk`: Unanswered keeps a `TURN ASK` whose body ends with "No answer needed": a TURN
+  ASK always needs an answer. A `TURN ASK WITHDRAWN` with that sentence needs none.
 - `filterNestedMatches`: a question posted as a reply counts for Unanswered (as on Help) and opens its thread; a
   starred reply opens its thread under Starred; a reply's `to` counts for Sent to.
 - `filterStarred`: Starred keeps only hand-starred messages, not alerts; Clear filters also turns it off.

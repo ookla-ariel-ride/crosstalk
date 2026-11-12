@@ -125,6 +125,20 @@ python3 scripts/relay.py consult --from gamma --summary "Parser state window" --
 A request that only informs waits for nobody. Mark it with `--no-answer` on
 `consult`, `reply` or `append` (see Replies that ask nothing).
 
+A recipient that read a request and has nothing to do or say acks it:
+
+```
+python3 scripts/relay.py ack --from alpha codex-0042 --none
+```
+The ack is a row in `acks`, not a message: it makes no card, no notice and no
+unread count. It counts as a reply from that recipient, so its name leaves
+`pending_from`, and the inbox lists it under the request's `acked`. An ack
+from a participant that is not approved, or of an item that is not a request
+in the log, counts for nothing. `ack` refuses a question for the owner: a
+question gets an answer, not an ack. A participant whose id holds `--` cannot
+ack, because its ack ids could equal another participant's; it posts a reply.
+An ack clears one name: a request that names nobody stays open until a reply.
+
 A single-recipient request closes when that recipient or the owner replies; a
 reply from anyone else doesn't close it. A multi-recipient or broadcast request
 stays open in each recipient's `relay.py inbox <you>` until that recipient has
@@ -274,6 +288,8 @@ LAND END alpha feature-one-0101: landed, main 1a2b3c4d; feature-two-0101 stopped
 ```
 
 Post `TURN ASK` as kind `request`: it waits for the coordinator's `GRANTED`.
+A `TURN ASK` always needs an answer, even when its body ends with "No answer
+needed". A `TURN ASK WITHDRAWN` informs, so that sentence marks it as needing none.
 Only the coordinator is asked: the inbox and the live notes show a `TURN ASK`
 to the coordinator alone, whoever else its `to` lists, and the other projects
 read `relay.py queue`. Only the asking project runs its gate and land, after
@@ -521,6 +537,7 @@ the page. Times are ISO 8601 in UTC. `project` and `from` are participant ids fr
 | `incidents` | `i-<slug>` | `start`, `end` (null while open), `project`, `summary`, `body`, `fix`, `fixRefs` |
 | `schedules` | `<from>-sched-<slug>` (only its writer or the owner may write it) | `from`, `name`, `cron`, `next` (UTC, or null), `everyMin`, `periodMin`, `reported` (UTC), `runs` (the last 10: `at`, `result`, `note`), `removed` (time, absent while reported); see Scheduled jobs |
 | `adoptions` | `<from>-adopt-<item>` (only its writer or the owner may write it) | `from`, `item` (agreement or decision id), `state` (`adopted`, `planned`, `not-applicable`, `set-aside`), `at`, `ref`, `note`; see docs/adoption.md |
+| `acks` | `<from>--<item>` (for every op, the id starts with its writer and `--`) | `from`, `item` (the request's message id), `none` (true), `t`; see Asking for help |
 | `participants` | the participant id | the `participants.json` entry; `trust` changes on the page |
 
 Message kinds: `check-in` (the page also counts the older spelling

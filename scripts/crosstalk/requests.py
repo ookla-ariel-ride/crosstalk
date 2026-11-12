@@ -9,9 +9,10 @@ from datetime import datetime, timezone
 import os
 import re
 import time
-from typing import Dict, List, Optional, Tuple
+from typing import Dict, Iterable, List, Optional, Set, Tuple
 
 from . import config
+from .landqueue import is_withdrawal
 
 _MENTION_RE = re.compile(r"(?:^|[\s(\[,:;])@([A-Za-z0-9_.-]+)")
 _BROADCAST_HANDLES = ("everyone", "all", "channel", "here")
@@ -301,7 +302,10 @@ NO_ANSWER = "No answer needed"
 
 def needs_answer(doc: dict) -> bool:
     """False when the row has `needs_answer: false`, or its body (white space and one last
-    full stop removed) ends with NO_ANSWER; true otherwise."""
+    full stop removed) ends with NO_ANSWER; true otherwise. A TURN ASK always needs an
+    answer: it waits for a GRANTED. A TURN ASK WITHDRAWN informs, so the rules above apply."""
+    if is_turn_ask(doc) and not is_withdrawal(doc.get("summary")):
+        return True
     if doc.get("needs_answer") is False:
         return False
     body = doc.get("body")
@@ -326,16 +330,46 @@ def no_answer(data: dict) -> dict:
     return data
 
 
-def pending_recipients(doc: dict, replies: List[dict], roster=None) -> List[str]:
+# An ack row's id is its writer, ACK_SEP, then the item it acks (logs.ack_problem).
+ACK_SEP = "--"
+
+
+def acks_by_item(docs: Dict, roster=None) -> Dict[str, Set[str]]:
+    """Item id to the ids of the participants that acked it with `none: true`.
+
+    A row counts when its id is from + ACK_SEP + item, `from` is approved and holds
+    no ACK_SEP, and `item` is a `kind: "request"` message in docs. Any other row
+    counts for nothing.
+    """
+    out = {}  # type: Dict[str, Set[str]]
+    for (coll, did), doc in docs.items():
+        if coll != "acks" or not isinstance(doc, dict) or doc.get("none") is not True:
+            continue
+        frm, item = doc.get("from"), doc.get("item")
+        if not isinstance(frm, str) or ACK_SEP in frm or not isinstance(item, str) \
+                or did != frm + ACK_SEP + item:
+            continue
+        if not _is_approved(frm, roster):
+            continue
+        target = docs.get(("messages", item))
+        if not isinstance(target, dict) or target.get("kind") != "request":
+            continue
+        out.setdefault(item, set()).add(frm)
+    return out
+
+
+def pending_recipients(doc: dict, replies: List[dict], roster=None,
+                       acked: Iterable[str] = ()) -> List[str]:
     """Recipient pids in `to` (preserving order, deduplicated) that have not replied.
 
-    A request that needs no answer (needs_answer) waits for nobody.
+    An id in `acked` (acks_by_item) counts as a reply from it. A request that
+    needs no answer (needs_answer) waits for nobody.
     """
     if not needs_answer(doc):
         return []
     replied = {
         r.get("from")
-        for r in replies
+        for r in list(replies) + [{"from": a} for a in acked]
         if isinstance(r.get("from"), str) and _is_approved(r.get("from"), roster)
     }
     return [
@@ -348,11 +382,14 @@ def _requests(docs: Dict, pid=None, open_only: bool = True,
               roster=None) -> List[Tuple[str, dict, List[dict]]]:
     messages = _messages(docs)
     replies = _replies_by_request(messages)
+    acks = acks_by_item(docs, roster=roster)
     out = []
     for did, doc in messages.items():
         if doc.get("kind") != "request":
             continue
         doc_replies = replies.get(did, [])
+        # An ack counts as a reply from its writer in the checks below, not in the output.
+        answers = doc_replies + [{"from": a} for a in sorted(acks.get(did, ()))]
         recipients = _recipients(doc, roster=roster)
         if pid is not None and not _addressed(doc, pid, roster=roster):
             continue
@@ -360,16 +397,17 @@ def _requests(docs: Dict, pid=None, open_only: bool = True,
             if not needs_answer(doc):
                 continue
             trusted_replies = [
-                r for r in doc_replies if _is_approved(r.get("from"), roster)
+                r for r in answers if _is_approved(r.get("from"), roster)
             ]
             if pid is None:
                 if len(recipients) >= 2:
-                    if not pending_recipients(doc, doc_replies, roster=roster):
+                    if not pending_recipients(doc, answers, roster=roster):
                         continue
                 elif len(recipients) == 1:
                     if any(r.get("from") in (recipients[0], "owner") for r in trusted_replies):
                         continue
-                elif trusted_replies:
+                # Nobody is named, so an ack clears no name: only a reply closes it.
+                elif any(_is_approved(r.get("from"), roster) for r in doc_replies):
                     continue
             else:
                 if doc.get("from") == pid and pid not in recipients:
@@ -378,12 +416,12 @@ def _requests(docs: Dict, pid=None, open_only: bool = True,
                     if any(
                         r.get("from") == pid
                         or (_is_approved(r.get("from"), roster) and r.get("from") in (recipients[0], "owner"))
-                        for r in doc_replies
+                        for r in answers
                     ):
                         continue
                 elif any(
                     r.get("from") == pid and _is_approved(r.get("from"), roster)
-                    for r in doc_replies
+                    for r in answers
                 ):
                     continue
         out.append((did, doc, doc_replies))

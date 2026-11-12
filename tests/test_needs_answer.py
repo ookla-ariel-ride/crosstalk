@@ -45,6 +45,12 @@ class HelperTests(unittest.TestCase):
         self.assertIs(needs_answer({"body": 'He wrote "No answer needed" but I ask: why?'}), True)
         self.assertIs(needs_answer({}), True)
 
+    def test_turn_ask_always_needs_an_answer(self):
+        ask = {"kind": "request", "summary": "TURN ASK alpha feature-0101", "needs_answer": False,
+               "body": "Ready. No answer needed."}
+        self.assertIs(needs_answer(ask), True)
+        self.assertIs(needs_answer(dict(ask, kind="sync")), False)
+
 
 class NeedsAnswerTests(unittest.TestCase):
     def setUp(self):

@@ -175,6 +175,7 @@ a.who-link { text-decoration: none; }
 .pill.alert, .pill.held, .pill.disagreement { background: var(--warn); color: var(--panel); }
 .pill.owner { background: var(--own); color: var(--panel); }
 .pill.pending-to { background: var(--warn); color: var(--panel); text-transform: none; }
+.pill.acked { text-transform: none; }
 #digest { margin-bottom: 12px; border-left: 4px solid var(--own); }
 #digest #digest-dismiss { margin-left: auto; }
 #composer #reply-banner { margin: 0; }
@@ -363,7 +364,7 @@ td.num, td.t { font: 12px var(--mono); font-variant-numeric: tabular-nums; white
   // `relay.py export-page` replaces these placeholders in the exported copy; the repo file keeps them.
   var BUILD = { commit: "__COMMIT__", published: "__PUBLISHED__" };
   // Names, colors, repos and kinds come from the `participants` collection (doc id = participant id).
-  var COLS = ["messages", "agreements", "waiting", "locks", "lessons", "decisions", "progress", "incidents", "schedules", "adoptions", "participants"];
+  var COLS = ["messages", "agreements", "waiting", "locks", "lessons", "decisions", "progress", "incidents", "schedules", "adoptions", "acks", "participants"];
   var TABS = [
     ["timeline", "Timeline", "messages"], ["agreements", "Agreements", "agreements"], ["waiting", "Waiting on you", "waiting"],
     ["questions", "Questions", null], ["locks", "File claims", "locks"], ["lessons", "Lessons", "lessons"], ["decisions", "Decisions", "decisions"],
@@ -862,7 +863,14 @@ td.num, td.t { font: 12px var(--mono); font-variant-numeric: tabular-nums; white
   }
   // requests.needs_answer: false for `needs_answer: false`, or a body that ends with "No answer needed"
   // (white space and one last full stop removed). Such a request waits for nobody.
+  // A TURN ASK (requests.is_turn_ask) always needs an answer: it waits for a GRANTED. A TURN ASK
+  // WITHDRAWN (landqueue.is_withdrawal) informs, so the rules below apply to it.
   function needsAnswer(m) {
+    if (m.kind === "request" && typeof m.summary === "string" && /^\s*TURN ASK\b/.test(m.summary)) {
+      var rest = m.summary.trim().slice(8).trim();
+      var withdrawn = rest.slice(0, 9).toLowerCase() === "withdrawn" && ["", " ", ":", ",", "."].indexOf(rest.slice(9, 10)) !== -1;
+      if (!withdrawn) return true;
+    }
     if (m.needs_answer === false) return false;
     if (typeof m.body !== "string") return true;
     var s = m.body.trim();
@@ -875,6 +883,16 @@ td.num, td.t { font: 12px var(--mono); font-variant-numeric: tabular-nums; white
     data.messages.forEach(function (m) {
       if (m.replyTo && byId[m.replyTo]) (replies[m.replyTo] = replies[m.replyTo] || []).push(m);
     });
+    // requests.acks_by_item: an ack counts as a reply from its writer when its id is from + "--" + item,
+    // the writer is approved and its id holds no "--", and the item is a request in the log.
+    var acks = Object.create(null);
+    data.acks.forEach(function (a) {
+      var from = a.from, item = a.item, m = typeof item === "string" ? byId[item] : null;
+      if (a.none !== true || typeof from !== "string" || from.indexOf("--") !== -1 || a._id !== from + "--" + item) return;
+      if (isQuarantined(from) || !m || m.kind !== "request") return;
+      var list = acks[item] = acks[item] || [];
+      if (list.indexOf(from) === -1) list.push(from);
+    });
     var out = [];
     data.messages.forEach(function (m) {
       if (m.kind !== "request" || !needsAnswer(m)) return;
@@ -882,6 +900,8 @@ td.num, td.t { font: 12px var(--mono); font-variant-numeric: tabular-nums; white
       var mReplies = (replies[m._id] || []).slice().sort(byT);
       var repliedBy = Object.create(null);
       mReplies.forEach(function (r) { if (!isQuarantined(r.from)) repliedBy[String(r.from || "")] = true; });
+      var acked = (acks[m._id] || []).slice().sort(byName);
+      acked.forEach(function (pid) { repliedBy[pid] = true; });
       var toList = toListOf(m);
       if (m.to == null) {
         toList = extractMentionsFromText((m.summary || "") + "\n" + (m.body || "")).ids;
@@ -895,10 +915,11 @@ td.num, td.t { font: 12px var(--mono); font-variant-numeric: tabular-nums; white
         if (!pending.length) return;
       } else if (toList.length === 1) {
         if (repliedBy[toList[0]] || repliedBy.owner) return;
-      } else if (Object.keys(repliedBy).length) {
+      } else if (mReplies.some(function (r) { return !isQuarantined(r.from); })) {
+        // Nobody is named, so an ack clears no name: only a reply closes it.
         return;
       }
-      out.push({ request: m, replies: mReplies, pending: pending });
+      out.push({ request: m, replies: mReplies, pending: pending, acked: acked });
     });
     out.sort(function (a, b) { return byT(b.request, a.request); });
     return out;
@@ -1795,7 +1816,7 @@ td.num, td.t { font: 12px var(--mono); font-variant-numeric: tabular-nums; white
   // A Help card is one open request: the requester's tag (dimmed when quarantined), the
   // to-chips ("to X · Y" or "everyone"), the summary/body, then each reply inline with its
   // sender tag and summary. All row data goes through textContent, never innerHTML.
-  function helpCard(m, replies, pending) {
+  function helpCard(m, replies, pending, acked) {
     var from = String(m.from == null ? "" : m.from);
     var card = el("div", "card");
     card.dataset.from = from;
@@ -1806,8 +1827,12 @@ td.num, td.t { font: 12px var(--mono); font-variant-numeric: tabular-nums; white
     var to = toListOf(m);
     if (!to.length) to = extractMentionsFromText((m.summary || "") + "\n" + (m.body || "")).ids;
     meta.appendChild(el("span", "to", to.length ? "to " + to.map(displayName).join(" \u00b7 ") : "everyone"));
-    if (pending && pending.length > 0 && replies && replies.length > 0) {
+    var answered = (replies && replies.length > 0) || (acked && acked.length > 0);
+    if (pending && pending.length > 0 && answered) {
       meta.appendChild(el("span", "pill pending-to", "waiting on " + pending.map(displayName).join(" \u00b7 ")));
+    }
+    if (acked && acked.length > 0) {
+      meta.appendChild(el("span", "pill acked", "acked, no action: " + acked.map(displayName).join(" \u00b7 ")));
     }
     if (quarantined) meta.appendChild(quarantinePill());
     if (canWrite) meta.appendChild(replyBtnEl(m));
@@ -1841,7 +1866,7 @@ td.num, td.t { font: 12px var(--mono); font-variant-numeric: tabular-nums; white
       return;
     }
     var cards = el("div", "cards");
-    reqs.forEach(function (r) { cards.appendChild(helpCard(r.request, r.replies, r.pending)); });
+    reqs.forEach(function (r) { cards.appendChild(helpCard(r.request, r.replies, r.pending, r.acked)); });
     view.appendChild(cards);
   }
 

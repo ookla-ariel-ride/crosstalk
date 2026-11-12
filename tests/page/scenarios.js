@@ -881,6 +881,27 @@
     return res("helpPerRecipient", ok, "initial=" + initialListed + " still=" + stillListed + " waiting=" + JSON.stringify(waitingText) + " hasReply=" + hasReply + " dropped=" + droppedAfterAll);
   });
 
+  // An ack row (requests.acks_by_item) counts as a reply from its writer: the card shows the name as
+  // "acked, no action" and still waits on the other. A row whose id is not from + "--" + item counts for nothing.
+  S.push(async function helpAckedNoAction() {
+    await go("help");
+    await addDoc("messages", "hreq-ack", { t: ago(1), from: "codex", kind: "request", summary: "Ack me?", to: ["beta", "gamma"] });
+    await addDoc("acks", "gamma--hreq-ack", { from: "gamma", item: "hreq-ack", none: true, t: ago(1) });
+    await addDoc("acks", "beta--other", { from: "beta", item: "hreq-ack", none: true, t: ago(1) });
+    var c = helpCards().filter(function (x) { return x.textContent.indexOf("Ack me?") !== -1; })[0];
+    var acked = c && c.querySelector(".pill.acked"), waiting = c && c.querySelector(".pill.pending-to");
+    var ackedText = acked ? acked.textContent : "", waitingText = waiting ? waiting.textContent : "";
+    await addDoc("acks", "beta--hreq-ack", { from: "beta", item: "hreq-ack", none: true, t: ago(1) });
+    var dropped = !helpHas("Ack me?");
+    // A request that names nobody: an ack clears no name, so it stays open.
+    await addDoc("messages", "hreq-ack0", { t: ago(1), from: "codex", kind: "request", summary: "Ack nobody?", to: [] });
+    await addDoc("acks", "gamma--hreq-ack0", { from: "gamma", item: "hreq-ack0", none: true, t: ago(1) });
+    var noneKept = helpHas("Ack nobody?");
+    await go("timeline");
+    var ok = ackedText === "acked, no action: Gamma" && waitingText === "waiting on Beta" && dropped && noneKept;
+    return res("helpAckedNoAction", ok, "acked=" + JSON.stringify(ackedText) + " waiting=" + JSON.stringify(waitingText) + " dropped=" + dropped + " noneKept=" + noneKept);
+  });
+
   // The Help tab follows relay.py inbox (requests.open_requests): who counts as having answered.
   function helpWaiting(summary) {
     var c = helpCards().filter(function (x) { return x.textContent.indexOf(summary) !== -1; })[0];
@@ -1754,6 +1775,18 @@
     await press("f-open");
     var back = shows("fx-field") && shows("fx-sentence");
     return res("filterUnansweredNoAnswer", ok && back, "open=" + ok + " back=" + back);
+  });
+
+  // A TURN ASK always needs an answer (requests.needs_answer): Unanswered keeps it, whatever its body ends with.
+  S.push(async function filterUnansweredTurnAsk() {
+    await go("timeline");
+    await addDoc("messages", "fx-turn", { t: ago(3), from: "gamma", kind: "request", to: ["beta"], needs_answer: false, summary: "TURN ASK gamma fx-0101", body: "Ready. No answer needed." });
+    // A withdrawal informs (landqueue.is_withdrawal): the usual rules apply, so this one needs no answer.
+    await addDoc("messages", "fx-turn-wd", { t: ago(3), from: "gamma", kind: "request", to: ["beta"], summary: "TURN ASK WITHDRAWN gamma fx-0101", body: "Dropped. No answer needed." });
+    await press("f-open");
+    var ok = shows("fx-turn") && !shows("fx-turn-wd");
+    await press("f-open");
+    return res("filterUnansweredTurnAsk", ok, "open=" + ok);
   });
 
   // A question posted as a reply counts for Unanswered, as it does on the Help tab, and opens its thread to it.

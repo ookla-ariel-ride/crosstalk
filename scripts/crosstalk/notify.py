@@ -30,7 +30,7 @@ from typing import Callable, Dict, List, Optional, Tuple
 from . import live
 from .files import atomic_write_text
 from .participants import Roster, load_roster
-from .requests import (inbox_for, land_reports_for, peer_alerts_for, pending_recipients,
+from .requests import (acks_by_item, inbox_for, land_reports_for, peer_alerts_for, pending_recipients,
                        thread_replies_for, unanswered_owner_messages)
 
 MAX_ITEM_LINES = 10  # the session reads the full inbox; the message only previews it
@@ -71,8 +71,9 @@ def actionable_items(docs: Dict, pid: str, roster: Roster, urgent: bool = False)
         for did, _doc, _replies in peer_alerts_for(docs, pid, roster):
             ids.add(did)
     else:
+        acks = acks_by_item(docs, roster=roster)
         for did, doc, replies in inbox_for(docs, pid, roster):
-            if pid in pending_recipients(doc, replies, roster):
+            if pid in pending_recipients(doc, replies, roster, acked=acks.get(did, ())):
                 ids.add(did)
         for did, _doc, _root in thread_replies_for(docs, pid, roster):
             ids.add(did)
