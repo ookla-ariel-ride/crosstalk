@@ -215,6 +215,18 @@ count on the row, and that at 360 px wide the line wraps and the page does not
 scroll sideways. Another checks that a sign-in writes the sessions file
 inside the temp folder and leaves the one in your home as it was: it compares
 that file's size and time, and never opens it.
+
+The owner's other actions each have a test: mute a thread, reply, start a
+thread, record a decision, mark a waiting row done, hold and release an
+agreement, and approve a participant. Each test acts on the page, then reads
+the server's state through the API or the roster file. A walk opens all 15
+routes (Needs you, the four sorts of Conversations, the nine sections and
+People) and checks the heading, a fixture row and that no request fails. A
+reader who is not signed in sees no owner control, gets no owner counts from
+`/api/threads`, and gets 401 or 403 for each write. At 390 px wide, the main
+views do not scroll sideways, the Menu button opens the navigation, and a
+thread opens. These specs add their own rows to the log, with ids that no
+other spec reads, and put back the read state and the roster they change.
 Each test also fails on an error in the console or a request to another
 host.
 

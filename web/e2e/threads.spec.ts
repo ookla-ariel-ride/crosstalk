@@ -14,7 +14,9 @@ test("a thread opens, shows New since, folds, and its count is 0 after a reload"
   await expect(page.getByText(/^New since \d\d:\d\d$/)).toBeVisible();
   await expect(page.getByRole("button", { name: "Show 1 earlier message" })).toBeVisible();
   await expect(page.getByText("The branch is merged.")).toBeVisible();
-  // The last new message in view for a second marks the thread read.
+  // The last new message in view for a second marks the thread read. Other
+  // specs add threads above this one, so its end can sit below the fold.
+  await page.getByText("The branch is merged.").scrollIntoViewIfNeeded();
   await marked;
 
   await row.click();
