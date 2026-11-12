@@ -253,6 +253,24 @@ describe("Stream", () => {
     expect(screen.getByText("act end:alpha-0001")).toBeTruthy();
   });
 
+  test("a request the owner acked shows Owner: no action needed", () => {
+    const acked = [message("alpha-0001", "2026-11-11T09:00:00Z", { depth: 0, kind: "request", acked_by: ["owner"] }), MESSAGES[1]!];
+    renderWith(<Stream sort="needs" open={["alpha-0001"]} onOpenChange={() => {}} />, [
+      ...base(OWNER, EMPTY_STATE, [Q1]).filter(([key]) => key !== DETAIL[0]),
+      [keys.thread("alpha-0001"), { root: "alpha-0001", messages: acked }],
+    ]);
+    expect(screen.getAllByText("Owner: no action needed")).toHaveLength(1);
+  });
+
+  test("an ack by another participant does not show the owner line", () => {
+    const acked = [message("alpha-0001", "2026-11-11T09:00:00Z", { depth: 0, kind: "request", acked_by: ["beta"] })];
+    renderWith(<Stream sort="needs" open={["alpha-0001"]} onOpenChange={() => {}} />, [
+      ...base(OWNER, EMPTY_STATE, [Q1]).filter(([key]) => key !== DETAIL[0]),
+      [keys.thread("alpha-0001"), { root: "alpha-0001", messages: acked }],
+    ]);
+    expect(screen.queryByText("Owner: no action needed")).toBeNull();
+  });
+
   test("a routine item shows as one line with its counts; a click shows its threads", () => {
     renderWith(
       <Stream sort="new" open={[]} onOpenChange={() => {}} />,
@@ -564,11 +582,11 @@ describe("NeedsYou", () => {
 
 describe("rows with fields of the wrong type", () => {
   // What a log line can hold: any field of any JSON type.
-  const BAD_THREAD = { root: "alpha-0001", title: 7, preview: null, projects: "alpha", count: "3", last_t: "2026-11-11T09:30:00Z", last_id: "beta-0003", needs_owner: 1, unanswered: false, routine: false, hot: 0, kind: 5 };
+  const BAD_THREAD = { root: "alpha-0001", title: 7, preview: null, projects: "alpha", count: "3", last_t: "2026-11-11T09:30:00Z", last_id: "beta-0003", needs_owner: 1, unanswered: false, routine: false, hot: 0, kind: 5, owner_requests: 5 };
   const BAD_MESSAGES = [
     { id: "alpha-0001", depth: 0, quote: null, t: "2026-11-11T09:00:00Z", from: null, kind: 5, summary: 42, body: { plan: "keep" } },
     { id: "beta-0002", depth: 1, quote: null, t: 1731315000, from: "beta", to: "alpha", summary: "Fine", body: ["one", 2], replyTo: ["alpha-0001"] },
-    { id: "beta-0003", depth: 2, quote: 9, t: "2026-11-11T09:30:00Z", from: "beta", summary: null, body: null },
+    { id: "beta-0003", depth: 2, quote: 9, t: "2026-11-11T09:30:00Z", from: "beta", kind: "request", summary: null, body: null, acked_by: "owner" },
   ];
 
   test("the stream and the open thread render them through the client", async () => {
@@ -603,5 +621,16 @@ describe("rows with fields of the wrong type", () => {
     expect(screen.getByText(/beta-0002 could not be shown/)).toBeTruthy();
     expect(screen.getByText("Newest reply")).toBeTruthy();
   });
-});
 
+  test("rowActions shows beside a folded thread row, outside its button, and not while it is open", () => {
+    renderWith(
+      <NeedsYou rowActions={(t) => <button type="button">{"row " + t.root}</button>} />,
+      [...base(OWNER, EMPTY_STATE, [{ ...Q1, needs_owner: true }]), [keys.section("waiting", ""), { pages: [{ rows: [], next: null, open: 0, total: 0 }], pageParams: [""] }]],
+    );
+    const action = screen.getByRole("button", { name: "row alpha-0001" });
+    const row = screen.getByRole("button", { name: /Does the rebuild go on\?/ });
+    expect(row.contains(action)).toBe(false);
+    fireEvent.click(row);
+    expect(screen.queryByRole("button", { name: "row alpha-0001" })).toBeNull();
+  });
+});

@@ -63,6 +63,7 @@ function MessageView({ message, roster, now, children }: { message: Message; ros
         </div>
       ) : null}
       {rest ? <Body text={rest} /> : null}
+      {message.kind === "request" && message.acked_by?.includes("owner") ? <p className={styles.acked}>Owner: no action needed</p> : null}
       {children}
     </article>
   );

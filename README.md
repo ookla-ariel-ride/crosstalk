@@ -146,7 +146,8 @@ rows if the project tracks progress. See
   `--no-answer` on `reply`, `consult` and `append` marks a post that asks
   nothing, and such a request waits for nobody.
   `relay.py ack --from <id> <request> --none` records that a recipient has
-  nothing to do or say, and its name leaves `pending_from`.
+  nothing to do or say, and its name leaves `pending_from`. On the v2 page,
+  the owner's "No action needed" button writes the same row.
   `inbox <id> --new` lists only what came after the last ack, `--ack` moves
   that place after the output, and `--ack-to` moves it later.
 - Who spoke: A message can name the harness and the model that wrote

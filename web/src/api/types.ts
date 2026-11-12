@@ -25,6 +25,8 @@ export interface Thread {
   kind: string;
   /** New messages for the owner; only an owner's read has it. */
   unread?: number;
+  /** The requests of the thread that wait for the owner, oldest first. */
+  owner_requests?: string[];
 }
 
 export interface ThreadsPage {
@@ -72,6 +74,8 @@ export interface Message extends MessageDoc {
   depth: 0 | 1 | 2;
   /** The parent's summary at depth 2, else null. */
   quote: string | null;
+  /** On a request: who said it needs nothing from them (an `acks` row with `none: true`). */
+  acked_by?: string[];
 }
 
 /** GET /api/thread/<id>: the thread that holds message <id>. */

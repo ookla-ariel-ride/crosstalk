@@ -51,6 +51,7 @@ function message(raw: unknown): Message | null {
   put(out, "important", typeof raw.important === "boolean" ? raw.important : undefined);
   put(out, "positions", isObject(raw.positions) ? raw.positions : undefined);
   put(out, "resolution", isObject(raw.resolution) ? raw.resolution : undefined);
+  put(out, "acked_by", Array.isArray(raw.acked_by) ? texts(raw.acked_by) : undefined);
   const depth = Number(raw.depth);
   out.depth = depth === 1 || depth === 2 ? depth : 0;
   out.quote = text(raw.quote) ?? null;
@@ -82,6 +83,7 @@ function thread(raw: Raw): Thread {
     kind: text(raw.kind) ?? "",
   };
   if (typeof raw.unread === "number") out.unread = raw.unread;
+  if (Array.isArray(raw.owner_requests)) out.owner_requests = texts(raw.owner_requests);
   return out;
 }
 
