@@ -295,8 +295,44 @@ def _is_approved_project(pid: str, roster) -> bool:
     return False
 
 
+# A message that asks nothing ends with this sentence (PROTOCOL.md), or carries `needs_answer: false`.
+NO_ANSWER = "No answer needed"
+
+
+def needs_answer(doc: dict) -> bool:
+    """False when the row has `needs_answer: false`, or its body (white space and one last
+    full stop removed) ends with NO_ANSWER; true otherwise."""
+    if doc.get("needs_answer") is False:
+        return False
+    body = doc.get("body")
+    if isinstance(body, str):
+        text = body.strip()
+        if text.endswith("."):
+            text = text[:-1].rstrip()
+        if text.endswith(NO_ANSWER):
+            return False
+    return True
+
+
+def no_answer(data: dict) -> dict:
+    """Mark a new message as asking nothing: the field, and the sentence when the body lacks it."""
+    body = data.get("body")
+    if needs_answer({"body": body}):
+        if isinstance(body, str) and body.strip():
+            data["body"] = body.rstrip() + "\n\n" + NO_ANSWER + "."
+        else:
+            data["body"] = NO_ANSWER + "."
+    data["needs_answer"] = False
+    return data
+
+
 def pending_recipients(doc: dict, replies: List[dict], roster=None) -> List[str]:
-    """Recipient pids in `to` (preserving order, deduplicated) that have not replied."""
+    """Recipient pids in `to` (preserving order, deduplicated) that have not replied.
+
+    A request that needs no answer (needs_answer) waits for nobody.
+    """
+    if not needs_answer(doc):
+        return []
     replied = {
         r.get("from")
         for r in replies
@@ -321,6 +357,8 @@ def _requests(docs: Dict, pid=None, open_only: bool = True,
         if pid is not None and not _addressed(doc, pid, roster=roster):
             continue
         if open_only:
+            if not needs_answer(doc):
+                continue
             trusted_replies = [
                 r for r in doc_replies if _is_approved(r.get("from"), roster)
             ]
@@ -358,7 +396,8 @@ def open_requests(docs: Dict, roster=None) -> List[Tuple[str, dict, List[dict]]]
 
     Returns a list of (id, doc, [reply docs]) for every messages doc with
     kind == "request" that no messages doc's replyTo points at, newest first
-    by the enriched t (the same rule the page uses).
+    by the enriched t (the same rule the page uses). A request that needs no
+    answer (needs_answer) is never open.
     """
     return _requests(docs, roster=roster)
 

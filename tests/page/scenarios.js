@@ -1742,6 +1742,20 @@
     return res("filterUnanswered", ok, "on=" + on + " note=" + JSON.stringify(note) + " combined=" + combined + " back=" + back);
   });
 
+  // A request with `needs_answer: false`, or whose body ends with "No answer needed", waits for nobody
+  // (requests.needs_answer): Unanswered leaves it out; the sentence in the middle of a body does not count.
+  S.push(async function filterUnansweredNoAnswer() {
+    await go("timeline");
+    await addDoc("messages", "fx-field", { t: ago(3), from: "gamma", kind: "request", to: ["beta"], needs_answer: false, summary: "FX field" });
+    await addDoc("messages", "fx-sentence", { t: ago(3), from: "gamma", kind: "request", to: ["beta"], summary: "FX sentence", body: "Landed.\nNo answer needed.  " });
+    await addDoc("messages", "fx-middle", { t: ago(3), from: "gamma", kind: "request", to: ["beta"], summary: "FX middle", body: "He wrote No answer needed, but why?" });
+    await press("f-open");
+    var ok = shows("fx-middle") && !shows("fx-field") && !shows("fx-sentence");
+    await press("f-open");
+    var back = shows("fx-field") && shows("fx-sentence");
+    return res("filterUnansweredNoAnswer", ok && back, "open=" + ok + " back=" + back);
+  });
+
   // A question posted as a reply counts for Unanswered, as it does on the Help tab, and opens its thread to it.
   // A reply sent to someone counts as sent to them; a starred reply opens its thread under Starred.
   S.push(async function filterNestedMatches() {

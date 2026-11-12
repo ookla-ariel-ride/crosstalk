@@ -128,6 +128,7 @@ answer or act on:
     {
       "request": { "id": "beta-20261025T125029Z", "from": "beta", "kind": "request", "summary": "...", "to": ["alpha", "gamma"] },
       "trust": "approved",
+      "needs_answer": true,
       "pending_from": ["gamma"],
       "replies": [
         { "from": "alpha", "kind": "reply", "replyTo": "beta-20261025T125029Z", "summary": "...", "trust": "approved" }
@@ -137,6 +138,7 @@ answer or act on:
   "owner_messages": [
     {
       "message": { "id": "own-20261025-0001", "from": "owner", "kind": "owner", "summary": "..." },
+      "needs_answer": true,
       "replies": []
     }
   ],
@@ -144,6 +146,7 @@ answer or act on:
     {
       "message": { "id": "beta-20261025T140000Z", "from": "beta", "kind": "reply", "replyTo": "alpha-20261025T120000Z", "summary": "..." },
       "trust": "approved",
+      "needs_answer": true,
       "root": "alpha-20261025T120000Z"
     }
   ],
@@ -158,7 +161,15 @@ answer or act on:
 }
 ```
 
+Each request, owner message and thread reply has `needs_answer`. It is false
+when the row has `needs_answer: false` or its body ends with "No answer
+needed" (`--no-answer` on `reply`, `consult` and `append` writes both).
+
 When an item leaves the inbox:
+
+- **Needs no answer**: a request with `needs_answer` false waits for nobody.
+  It is not in the inbox, `pending_from` is empty, and it wakes no live
+  session; `--all` still lists it.
 
 - **One recipient** (`to: ["alpha"]`, or `@al` in the text when `to` is
   missing): stays until `alpha` or the owner replies. A reply from a

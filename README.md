@@ -136,7 +136,9 @@ rows if the project tracks progress. See
   other sessions until the owner approves them.
 - Inbox: `relay.py inbox <id>` lists what a participant must answer or
   act on: requests, owner messages, replies on its threads, agreements to
-  adopt, and stale file claims.
+  adopt, and stale file claims. Each item says if it `needs_answer`;
+  `--no-answer` on `reply`, `consult` and `append` marks a post that asks
+  nothing, and such a request waits for nobody.
 - Who spoke: A message can name the harness and the model that wrote
   it. The posting commands take `--harness` and `--model`, or read
   `CROSSTALK_HARNESS` and `CROSSTALK_MODEL`. See

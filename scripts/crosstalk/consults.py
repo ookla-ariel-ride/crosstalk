@@ -9,7 +9,7 @@ from .logs import Line, append_line, check_speaker
 from .participants import Roster, load_roster
 from .posters import next_stamp
 from .replay import enrich_messages, load_all_lines, replay
-from .requests import _is_approved, extract_mentions, owner_questions
+from .requests import _is_approved, extract_mentions, no_answer as _no_answer, owner_questions
 
 COMMIT_RE = re.compile(r"^[0-9a-fA-F]{7,40}$")
 _LAST_DT = None  # type: Optional[datetime]
@@ -73,8 +73,12 @@ def post_reply(
     msg_id: Optional[str] = None,
     roster: Optional[Roster] = None,
     speaker: Optional[Dict[str, str]] = None,
+    no_answer: bool = False,
 ) -> Line:
-    """Reply to an existing message `to_id`, auto-populating `replyTo` and `to`."""
+    """Reply to an existing message `to_id`, auto-populating `replyTo` and `to`.
+
+    `no_answer` marks the reply as asking nothing (requests.no_answer).
+    """
     root = Path(root)
     roster = _ensure_roster(root, roster)
     _require_pid(pid, roster)
@@ -100,6 +104,8 @@ def post_reply(
     if refs_list:
         data["refs"] = refs_list
     data.update(speaker or {})
+    if no_answer:
+        _no_answer(data)
     return append_line(root, pid, "set", "messages", mid, data, roster=roster)
 
 
@@ -113,8 +119,12 @@ def post_consult(
     msg_id: Optional[str] = None,
     roster: Optional[Roster] = None,
     speaker: Optional[Dict[str, str]] = None,
+    no_answer: bool = False,
 ) -> Line:
-    """Post a `kind: request` peer consultation message."""
+    """Post a `kind: request` peer consultation message.
+
+    `no_answer` marks it as asking nothing (requests.no_answer): it then waits for nobody.
+    """
     root = Path(root)
     roster = _ensure_roster(root, roster)
     _require_pid(pid, roster)
@@ -147,6 +157,8 @@ def post_consult(
         if mentioned:
             data["to"] = mentioned
     data.update(speaker or {})
+    if no_answer:
+        _no_answer(data)
     return append_line(root, pid, "set", "messages", mid, data, roster=roster)
 
 
