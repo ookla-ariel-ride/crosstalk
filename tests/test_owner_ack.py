@@ -1,5 +1,8 @@
 """POST /api/ack: the owner's "No action needed" on a request that names the owner."""
+import json
 import unittest
+import urllib.error
+import urllib.request
 
 from helpers import RunningServer, TempRepo, line
 from test_serve import request, request_with_headers
@@ -21,8 +24,12 @@ class OwnerAckTests(unittest.TestCase):
             msg(1, "alpha", "alpha-r1", kind="request", summary="Look at this", to=["owner"]),
             msg(2, "alpha", "alpha-q1", kind="question", summary="Which one?", to=["owner"]),
             msg(3, "alpha", "alpha-s1", kind="sync", summary="status"),
+            msg(4, "alpha", "alpha-r2", kind="request", summary="For beta", to=["beta"]),
+            msg(5, "alpha", "alpha-r3", kind="request", summary="For everyone"),
+            msg(6, "alpha", "alpha-r4", kind="request", summary="Answered", to=["owner"]),
         ])
-        self.srv = RunningServer(self.r.root, tokens={"rev": token_hash("rev-token")})
+        self.r.write_log("owner", [msg(1, "owner", "own-1", kind="owner", summary="Done", replyTo="alpha-r4")])
+        self.srv = RunningServer(self.r.root, tokens={"rev": token_hash("rev-token"), "owner": token_hash("owner-token")})
         self.srv.__enter__()
         _status, _body, headers = request_with_headers(self.srv.url + "/api/login", "POST", {"pin": self.srv.pin})
         self.cookie = headers.get("Set-Cookie", "").split(";")[0]
@@ -37,6 +44,15 @@ class OwnerAckTests(unittest.TestCase):
     def acks(self):
         path = self.r.root / "log" / "owner.jsonl"
         return [ln for ln in read_log(path)[0] if ln.collection == "acks"] if path.exists() else []
+
+    def raw(self, data):
+        req = urllib.request.Request(self.srv.url + "/api/ack", data=data, method="POST",
+                                     headers={"Cookie": self.cookie, "Content-Type": "application/json"})
+        try:
+            with urllib.request.urlopen(req, timeout=10) as resp:
+                return resp.status, json.loads(resp.read().decode("utf-8"))
+        except urllib.error.HTTPError as e:
+            return e.code, json.loads(e.read().decode("utf-8"))
 
     def needs(self):
         status, body = request(self.srv.url + "/api/threads?sort=needs")
@@ -104,6 +120,34 @@ class OwnerAckTests(unittest.TestCase):
             self.assertEqual(status, 400, (body, answer))
             self.assertIn("error", answer)
         self.assertEqual(self.acks(), [])
+
+    def test_a_request_that_does_not_wait_for_the_owner_is_refused(self):
+        # To another participant, a broadcast, and one the owner replied to.
+        for item in ("alpha-r2", "alpha-r3", "alpha-r4"):
+            status, body = self.ack({"item": item})
+            self.assertEqual(status, 400, (item, body))
+            self.assertIn("does not wait for the owner", body["error"])
+        self.assertEqual(self.acks(), [])
+
+    def test_a_body_that_is_not_json_or_empty_is_400(self):
+        for data in (b"{not json", b""):
+            status, body = self.raw(data)
+            self.assertEqual(status, 400, (data, body))
+            self.assertIn("error", body)
+        self.assertEqual(self.acks(), [])
+
+    def test_the_owner_token_may_ack(self):
+        status, body = self.ack({"item": "alpha-r1"}, headers={"Authorization": "Bearer owner-token"})
+        self.assertEqual(status, 200, body)
+        self.assertEqual(len(self.acks()), 1)
+
+    def test_the_row_has_the_shape_of_the_command_row(self):
+        self.ack({"item": "alpha-r1"})
+        row = self.acks()[0]
+        self.assertEqual(row.from_, "owner")
+        self.assertEqual(set(row.data), {"from", "item", "none", "t"})
+        self.assertEqual((row.data["from"], row.data["item"], row.data["none"]), ("owner", "alpha-r1", True))
+        self.assertRegex(row.data["t"], r"^\d{4}-\d\d-\d\dT\d\d:\d\d:\d\dZ$")
 
 
 if __name__ == "__main__":

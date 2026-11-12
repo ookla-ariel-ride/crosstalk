@@ -690,6 +690,14 @@ describe("no action needed", () => {
     expect(screen.queryByRole("button", { name: "No action needed" })).toBeNull();
   });
 
+  test("a Needs you row with several requests for the owner shows their count and acks each", async () => {
+    renderWith(<>{noActionRow({ ...ASKS, owner_requests: ["alpha-0005", "alpha-0006", "alpha-0007"] })}</>, [[keys.me, OWNER]]);
+    const calls = serve({ "/api/ack": [200, { ok: true }] });
+    fireEvent.click(screen.getByRole("button", { name: "No action needed (3)" }));
+    await screen.findByRole("button", { name: "No action" });
+    expect(posts(calls, "/api/ack").map((c) => c.body)).toEqual([{ item: "alpha-0005" }, { item: "alpha-0006" }, { item: "alpha-0007" }]);
+  });
+
   test("the Needs you row of a request offers it to the owner alone", async () => {
     const view = renderWith(<>{noActionRow(ASKS)}</>, [[keys.me, OWNER]]);
     const calls = serve({ "/api/ack": [200, { ok: true }] });

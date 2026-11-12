@@ -942,6 +942,19 @@ class CrosstalkHandler(BaseHTTPRequestHandler):
         if isinstance(row, dict) and row.get("none") is True and row.get("item") == item:
             self._json(200, {"ok": True, "id": ack_id, "written": False})
             return
+        # Only a request that waits for the owner now (the thread's owner_requests,
+        # by requests.pending_recipients). ack_item refuses the other kinds itself.
+        doc = docs.get(("messages", item))
+        if isinstance(doc, dict) and doc.get("kind") == "request":
+            try:
+                index = self.state.cache.threads()
+            except (OSError, ValueError) as e:
+                self._error(500, "cannot read the log: %s" % e)
+                return
+            listed = index.row(index.root_of.get(item, item), now_iso())
+            if listed is None or item not in listed["owner_requests"]:
+                self._error(400, "request %r does not wait for the owner" % (item,))
+                return
         try:
             ack_item(self.state.root, "owner", item, roster=self.state.cache.roster())
         except ValueError as e:

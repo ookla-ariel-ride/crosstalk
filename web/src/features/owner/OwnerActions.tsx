@@ -149,7 +149,8 @@ export function MarkDoneButton({ id }: { id: string }) {
 /** Say that requests which wait for the owner need nothing from the owner. The owner alone sees it. */
 export function NoActionButton({ ids }: { ids: string[] }) {
   if (!useIsOwner() || !ids.length) return null;
-  return <ActionButton label="No action needed" done="No action" act={() => noAction(ids)} />;
+  const label = ids.length > 1 ? `No action needed (${ids.length})` : "No action needed";
+  return <ActionButton label={label} done="No action" act={() => noAction(ids)} />;
 }
 
 /** The button for the folded row of a thread in Needs you: its requests that wait for the owner. */

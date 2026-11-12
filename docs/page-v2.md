@@ -21,7 +21,8 @@ The sidebar holds every page:
 
 - Needs you: the open waiting rows, each with "Mark done", then the threads
   that wait for you. A folded thread with a request for you shows "No
-  action needed" under its row. The entry shows how many. The page loads 50 waiting
+  action needed" under its row, with the count when it holds more than one,
+  such as "No action needed (3)". One press acks each of them. The entry shows how many. The page loads 50 waiting
   rows at first; "Show N more waiting rows" loads the next 50. If that load
   fails, the page says so; press the button again.
 - Conversations: every thread, in one stream.
