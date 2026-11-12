@@ -14,11 +14,27 @@ describe("events", () => {
     startEvents(onRows, onMode, fakeDeps(clock));
     const es = FakeEventSource.latest();
     expect(es.url).toBe("/api/events");
-    es.emit("open");
+    es.emit("ready");
     expect(onMode).toHaveBeenCalledWith("push");
     const rows = [{ from: "alpha", seq: 7, collection: "messages", id: "alpha-0007" }];
     es.emit("rows", JSON.stringify({ rows }));
     expect(onRows).toHaveBeenCalledWith(rows);
+  });
+
+  test("the server's ready event, not the browser's open event, makes the stream ready, each time", () => {
+    const onMode = vi.fn();
+    const onReady = vi.fn();
+    startEvents(vi.fn(), onMode, { ...fakeDeps(clock), onReady });
+    const es = FakeEventSource.latest();
+    es.emit("open");
+    expect(onMode).not.toHaveBeenCalled();
+    expect(onReady).not.toHaveBeenCalled();
+    es.emit("ready");
+    expect(onReady).toHaveBeenCalledTimes(1);
+    es.emit("error");
+    clock.advance(RETRY_MS);
+    FakeEventSource.latest().emit("ready");
+    expect(onReady).toHaveBeenCalledTimes(2);
   });
 
   test("a rows event whose data is not JSON calls nothing", () => {
@@ -35,7 +51,7 @@ describe("events", () => {
     const deps = { ...fakeDeps(clock), onPoll };
     startEvents(vi.fn(), onMode, deps);
     const first = FakeEventSource.latest();
-    first.emit("open");
+    first.emit("ready");
     first.emit("error");
     expect(first.closed).toBe(true);
     expect(onMode.mock.calls).toEqual([["push"], ["poll"]]);
@@ -59,7 +75,7 @@ describe("events", () => {
     clock.advance(RETRY_MS);
     await flush();
     expect(FakeEventSource.made).toHaveLength(3);
-    FakeEventSource.latest().emit("open");
+    FakeEventSource.latest().emit("ready");
     expect(onMode.mock.calls).toEqual([["push"], ["poll"], ["push"]]);
     expect(clock.pending).toBe(0);
     const polls = deps.fetchCalls.length;

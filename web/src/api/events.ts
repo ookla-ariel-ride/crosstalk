@@ -1,9 +1,12 @@
 // The push channel (GET /api/events) and its fallback.
 //
-// The stream sends `event: rows` with the ids of new log lines. When it fails,
-// the page polls GET /api/health every 15 seconds and tries the stream again
-// every 30 seconds. The stream has no replay, so a caller that goes from
-// "poll" back to "push" must refetch what it shows (queries.connectLive).
+// The server takes its mark of the log, then sends `event: ready`, then
+// `event: rows` with the ids of the lines written after the mark. The stream
+// has no replay, so the caller refetches what it shows on each ready event,
+// the first one too (queries.connectLive): a line written before the mark is
+// in that refetch. The browser's own open event fires on the headers and says
+// nothing about the mark, so it is not used. When the stream fails, the page
+// polls GET /api/health every 15 seconds and tries the stream again every 30.
 import type { RowRef } from "./types";
 
 export const POLL_MS = 15_000;
@@ -26,6 +29,8 @@ export interface EventsDeps {
    * so the caller refetches what its open views show each time.
    */
   onPoll?: () => void;
+  /** Called on each `ready` event: the caller refetches what it shows. */
+  onReady?: () => void;
 }
 
 function isRows(value: unknown): value is { rows: RowRef[] } {
@@ -74,10 +79,11 @@ export function startEvents(
   function open() {
     const es = new Source("/api/events");
     source = es;
-    es.addEventListener("open", () => {
+    es.addEventListener("ready", () => {
       if (source !== es) return;
       stopPoll();
       setMode("push");
+      deps.onReady?.();
     });
     es.addEventListener("rows", (event) => {
       if (source !== es) return;

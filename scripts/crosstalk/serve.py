@@ -724,13 +724,21 @@ class CrosstalkHandler(BaseHTTPRequestHandler):
     def _events(self):
         """The push channel: Server-Sent Events, open until the client goes or the server stops.
 
-        `: open` once the start mark is taken; then each check that finds new
-        log lines sends `event: rows` with `data: {"rows": [...]}` (ids only,
+        The start mark comes first, then the headers, then `event: ready`: the
+        client refetches what it shows on each ready event, so a line written
+        before the mark is in that refetch and a line written after it comes as
+        an event. The browser's own open event fires on the headers, which is
+        why they wait for the mark too. Then each check that finds new log
+        lines sends `event: rows` with `data: {"rows": [...]}` (ids only,
         events.py), and a quiet stream sends `: ping` every events_ping_sec.
         A write error ends it.
         """
         state = self.state
         self.close_connection = True
+        # The stamp before the mark: a line written between the two shows as a
+        # changed stamp on the next check, and since() then finds it.
+        seen = events_mod.stamp(state.root)
+        mark = events_mod.mark(state.root)
         self.send_response(200)
         self.send_header("Content-Type", "text/event-stream")
         self.send_header("Cache-Control", "no-cache")
@@ -738,12 +746,8 @@ class CrosstalkHandler(BaseHTTPRequestHandler):
         self.end_headers()
         if self.command == "HEAD":
             return
-        # The stamp before the mark: a line written between the two shows as a
-        # changed stamp on the next check, and since() then finds it.
-        seen = events_mod.stamp(state.root)
-        mark = events_mod.mark(state.root)
         try:
-            self.wfile.write(b": open\n\n")
+            self.wfile.write(b"event: ready\ndata: {}\n\n")
             last = time.monotonic()
             while not state.stopping.wait(state.events_check_sec):
                 now_stamp = events_mod.stamp(state.root)

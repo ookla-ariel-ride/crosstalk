@@ -78,11 +78,14 @@ describe("queries", () => {
     expect(invalidated()).toEqual([]);
   });
 
-  test("the stream opens again after a drop: the thread list, every thread and every section refetch", async () => {
+  test("the first ready event and each one after a drop refetch the thread list, every thread and every section", async () => {
     const clock = new FakeClock();
     const modes: string[] = [];
     const stop = connectLive(qc, (mode) => modes.push(mode), fakeDeps(clock));
-    FakeEventSource.latest().emit("open");
+    // The first ready event refetches too: a row written while the page loaded is in it.
+    FakeEventSource.latest().emit("ready");
+    expect(invalidated()).toEqual(CACHED.filter(([k]) => k[0] !== "vitals").map(([k]) => JSON.stringify(k)));
+    for (const [key, data] of CACHED) qc.setQueryData(key, data);
     expect(invalidated()).toEqual([]);
     FakeEventSource.latest().emit("error");
 
@@ -92,7 +95,7 @@ describe("queries", () => {
     expect(invalidated()).toEqual(CACHED.filter(([k]) => k[0] !== "vitals").map(([k]) => JSON.stringify(k)));
 
     clock.advance(RETRY_MS - 15_000);
-    FakeEventSource.latest().emit("open");
+    FakeEventSource.latest().emit("ready");
     expect(modes).toEqual(["push", "poll", "push"]);
     expect(invalidated()).toEqual(CACHED.filter(([k]) => k[0] !== "vitals").map(([k]) => JSON.stringify(k)));
     stop();
@@ -130,7 +133,7 @@ describe("queries", () => {
     qc.setQueryData(keys.queue, { holders: [], waiting: [] });
     const clock = new FakeClock();
     const stop = connectLive(qc, () => {}, fakeDeps(clock));
-    FakeEventSource.latest().emit("open");
+    FakeEventSource.latest().emit("ready");
     FakeEventSource.latest().emit("error");
     clock.advance(15_000);
     await flush();
