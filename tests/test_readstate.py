@@ -193,16 +193,60 @@ class RouteTests(unittest.TestCase):
             with path.open("a", encoding="utf-8") as f:
                 f.write(json.dumps(line(2, "beta", id_="beta-reply", op="update", data={"summary": "reply, edited"},
                                         t="2026-10-21T11:00:00Z")) + "\n")
-            # The edit moved the message's replayed `t`, so a count by that `t` would see it as new.
+            # The edit moves the replayed `t`; /api/thread sends the created time, the one the page marks by.
             _status, body = request(srv.url + "/api/thread/alpha-root")
             edited = [m for m in body["messages"] if m["id"] == "beta-reply"][0]
-            self.assertEqual((edited["summary"], edited["t"]), ("reply, edited", "2026-10-21T11:00:00Z"))
+            self.assertEqual((edited["summary"], edited["t"]), ("reply, edited", "2026-10-21T10:05:00Z"))
             self.assertEqual(self.unread_by_root(srv)["alpha-root"], 0)
             with path.open("a", encoding="utf-8") as f:
                 f.write(json.dumps(line(3, "beta", id_="beta-new", data={"kind": "reply", "summary": "new",
                                                                          "replyTo": "alpha-root"},
                                         t="2026-10-21T11:05:00Z")) + "\n")
             self.assertEqual(self.unread_by_root(srv)["alpha-root"], 1)
+
+    def append(self, who, row):
+        with (self.repo.root / "log" / (who + ".jsonl")).open("a", encoding="utf-8") as f:
+            f.write(json.dumps(row) + "\n")
+
+    def test_update_of_a_root_keeps_its_place_and_is_not_new(self):
+        """One created time: an update moves neither the order, last_t, the preview, nor the split."""
+        with self.server() as srv:
+            self.put(srv, {"thread": "alpha-root", "t": "2026-10-21T10:05:00Z", "id": "beta-reply"})
+            self.append("alpha", line(3, "alpha", id_="alpha-root", op="update",
+                                      data={"resolution": {"choice": "a"}}, t="2026-10-21T11:00:00Z"))
+            _status, body = request(srv.url + "/api/thread/alpha-root")
+            self.assertEqual([(m["id"], m["t"]) for m in body["messages"]],
+                             [("alpha-root", "2026-10-21T10:00:00Z"), ("beta-reply", "2026-10-21T10:05:00Z")])
+            _status, page = request(srv.url + "/api/threads?sort=new", headers=self.auth(OWNER_TOKEN))
+            self.assertEqual([t["root"] for t in page["threads"]], ["alpha-other", "alpha-root"])
+            root = page["threads"][1]
+            self.assertEqual((root["last_t"], root["last_id"], root["preview"], root["unread"]),
+                             ("2026-10-21T10:05:00Z", "beta-reply", "reply", 0))
+
+    def test_an_earlier_data_t_is_read_after_the_page_marks_it(self):
+        """The page marks the newest (t, id) that /api/thread sends; unread then counts 0."""
+        self.append("beta", line(2, "beta", id_="beta-late", t="2026-10-21T10:20:00Z",
+                                 data={"kind": "reply", "summary": "late", "replyTo": "alpha-root",
+                                       "t": "2026-10-21T10:01:00Z"}))
+        with self.server() as srv:
+            _status, body = request(srv.url + "/api/thread/alpha-root")
+            top = max((m["t"], m["id"]) for m in body["messages"])
+            self.put(srv, {"thread": "alpha-root", "t": top[0], "id": top[1]})
+            self.assertEqual(self.unread_by_root(srv)["alpha-root"], 0)
+
+    def test_thread_route_answers_for_any_message_id(self):
+        with self.server() as srv:
+            status, body = request(srv.url + "/api/thread/beta-reply", headers=self.auth(OWNER_TOKEN))
+            self.assertEqual(status, 200)
+            self.assertEqual(body["root"], "alpha-root")
+            self.assertEqual([m["id"] for m in body["messages"]], ["alpha-root", "beta-reply"])
+            self.assertEqual((body["thread"]["root"], body["thread"]["count"], body["thread"]["unread"]),
+                             ("alpha-root", 2, 2))
+            _status, viewer = request(srv.url + "/api/thread/beta-reply")
+            self.assertNotIn("unread", viewer["thread"])
+            status, body = request(srv.url + "/api/thread/nobody-0001")
+            self.assertEqual(status, 404)
+            self.assertIn("nobody-0001", body["error"])
 
 
 if __name__ == "__main__":

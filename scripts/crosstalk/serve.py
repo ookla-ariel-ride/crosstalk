@@ -5,7 +5,7 @@ The server is the page host and the database:
   GET  /                -> index.html, as it sits in the checkout
   GET  /api/snapshot    -> every collection replayed, plus server_time and commit
   GET  /api/threads     -> the threads in one sort order, a page at a time (threads.py)
-  GET  /api/thread/<root> -> the messages of one thread, with depth and quote
+  GET  /api/thread/<id> -> the thread that holds a message: its messages, with depth and quote, and its list row
   GET  /api/read-state  -> the owner's read state (readstate.py); the owner only
   PUT  /api/read-state  -> a thread's read mark, the mark-all time, or a mute; the owner only
   GET  /api/events      -> a Server-Sent Events stream of the ids of new log rows (events.py)
@@ -269,16 +269,13 @@ class ReplayCache:
             self._docs = docs
             self._entries = entries
             self._roster = roster
-            # A message's first write time: an edit moves the replayed `t`, not this.
-            self._created = {did: ln.t for (coll, did), ln in first_set_map(lines).items()
-                             if coll == "messages"}
+            # A message's created time: its first `set` line's `data.t` when that is a
+            # time, else that line's `t`. An edit moves the replayed `t`, not this.
+            self._created = {did: ln.data["t"] if readstate.is_time(ln.data.get("t")) else ln.t
+                             for (coll, did), ln in first_set_map(lines).items() if coll == "messages"}
             # Each doc's last change: the time of the last line that touched it.
             self._changed = {key: ln.t for key, ln in last_line_map(lines).items()}
             return docs, entries
-
-    def created(self, did: str) -> Optional[str]:
-        """The time of the first `set` line of message `did` in the current snapshot."""
-        return self._created.get(did)
 
     def changed(self, key: Tuple[str, str]) -> Optional[str]:
         """The time of the last line that touched (collection, id) in the current snapshot."""
@@ -290,7 +287,10 @@ class ReplayCache:
         with self._lock:
             if self._thread_key != self._key or self._thread_index is None:
                 messages = {did: doc for (coll, did), doc in self._docs.items() if coll == "messages"}
-                self._thread_index = threads_mod.ThreadIndex(messages, self._roster)
+                waiting = {did for (coll, did), doc in self._docs.items()
+                           if coll == "waiting" and isinstance(doc, dict) and not doc.get("done")}
+                self._thread_index = threads_mod.ThreadIndex(messages, self._roster, created=self._created,
+                                                             waiting=waiting)
                 self._thread_key = self._key
                 self.thread_builds += 1
             return self._thread_index
@@ -696,28 +696,30 @@ class CrosstalkHandler(BaseHTTPRequestHandler):
     def _with_unread(self, index, items: List[dict]) -> List[dict]:
         """Copies of the threads with the owner's `unread` count (readstate.py)."""
         state = readstate.load(self.state.root)
-        cache = self.state.cache
         out = []
         for item in items:
             messages = []
             for did in index.members.get(item["root"], []):
-                doc = index.messages[did]
-                messages.append({"id": did, "from": doc.get("from"),
-                                 "t": cache.created(did) or doc.get("t")})
+                messages.append({"id": did, "from": index.messages[did].get("from"), "t": index.when[did]})
             out.append(dict(item, unread=readstate.unread(item, messages, state)))
         return out
 
-    def _thread(self, root: str):
+    def _thread(self, did: str):
+        """The thread that holds message `did` (its root or any reply), with its list row."""
         try:
             index = self.state.cache.threads()
         except (OSError, ValueError) as e:
             self._error(500, "cannot read the log: %s" % e)
             return
-        messages = index.thread(root)
+        root = index.root_of.get(did)
+        messages = index.thread(root) if root is not None else None
         if messages is None:
-            self._error(404, "no thread with the root %r" % root)
+            self._error(404, "no thread holds the message %r" % did)
             return
-        self._json(200, {"root": root, "messages": messages})
+        row = index.row(root, now_iso())
+        if self._role() == "owner":
+            row = self._with_unread(index, [row])[0]
+        self._json(200, {"root": root, "messages": messages, "thread": row})
 
     def _events(self):
         """The push channel: Server-Sent Events, open until the client goes or the server stops.
@@ -802,7 +804,8 @@ class CrosstalkHandler(BaseHTTPRequestHandler):
             return
         # Decode once; a NUL or a backslash is never part of a built file's name.
         rel = unquote(path[len("/v2/"):])
-        if "\x00" in rel or "\\" in rel:
+        # A part that starts with a dot (.build-hash, .vite/) is a build file, not part of the page.
+        if "\x00" in rel or "\\" in rel or any(part.startswith(".") for part in rel.split("/")):
             self._error(404, "no such file")
             return
         try:

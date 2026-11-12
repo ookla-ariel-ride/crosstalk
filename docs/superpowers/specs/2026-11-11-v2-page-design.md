@@ -19,15 +19,16 @@ hard to find the way around.
 
 ## What the page is today
 
-Measured on a running install at 1440 by 900:
+At a width of 1440 and a height of 900 pixels, on a log of some size:
 
-- `index.html` is one file of 3,323 lines with no build step.
-- The header and six status tiles use about 470 of 900 pixels. The tile strip
+- `index.html` is one file of more than 3,000 lines with no build step.
+- The header and six status tiles use about half of the 900 pixels. The tile strip
   stays pinned during a scroll.
 - 13 tabs sit in two rows. Two tabs and two tiles show the same open questions.
 - Seven tabs are tables, three are card lists, one is a board, and one shows a
   single item. Three tabs have a heading.
-- The Agreements tab is 89,535 pixels tall and holds 6,103 elements.
+- The Agreements tab can be tens of thousands of pixels tall and hold thousands
+  of elements.
 - The page reads everything again every 5 seconds.
 - The three fonts load from Google Fonts, so the page needs the internet.
 
@@ -59,7 +60,7 @@ Measured on a running install at 1440 by 900:
 - A section with its own layout. A new section uses the shared list, or the
   design changes first.
 - A rule that makes the owner the decider of every dispute.
-- A count that grows for ever, such as "Timeline 11110". A count shows what
+- A count that grows for ever, such as a Timeline count of five digits. A count shows what
   is open or new.
 
 ## Constraints
