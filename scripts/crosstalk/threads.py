@@ -12,7 +12,7 @@ threads when a log file changes (serve.ReplayCache.threads).
 import bisect
 from datetime import datetime, timedelta, timezone
 import threading
-from typing import Dict, List, Optional, Tuple
+from typing import Dict, List, Optional, Set, Tuple
 
 from . import requests as requests_mod
 
@@ -91,8 +91,10 @@ def _routine(root_doc: dict, authors: List[str]) -> bool:
     return _summary(root_doc).lstrip().startswith(ROUTINE_PREFIXES)
 
 
-def _flags(messages: Dict[str, dict], roster, acks: Optional[Dict[str, object]] = None) -> Tuple[set, set]:
-    """(ids that need the owner, ids of open requests), by the rules of requests.py.
+def _flags(messages: Dict[str, dict], roster,
+           acks: Optional[Dict[str, object]] = None) -> Tuple[set, set, set, Dict[str, Set[str]]]:
+    """(ids that need the owner, ids of open requests, ids of the requests that
+    wait for the owner, request id -> the ids that acked it), by the rules of requests.py.
 
     `acks` (ack id -> doc) closes a recipient's part of a request as in requests.py:
     acks_by_item reads them, so a row it does not count changes nothing.
@@ -119,11 +121,12 @@ def _flags(messages: Dict[str, dict], roster, acks: Optional[Dict[str, object]] 
     acked = requests_mod.acks_by_item(asks, roster=roster)
     needs = {did for did, _doc in requests_mod.open_owner_questions(questions, roster=roster)}
     # inbox_for also lists a broadcast request; the owner needs it only when named.
-    needs.update(did for did, doc, replies in requests_mod.inbox_for(asks, "owner", roster=roster)
-                 if "owner" in requests_mod.pending_recipients(doc, replies, roster=roster,
-                                                                acked=acked.get(did, ())))
+    owner_asks = {did for did, doc, replies in requests_mod.inbox_for(asks, "owner", roster=roster)
+                  if "owner" in requests_mod.pending_recipients(doc, replies, roster=roster,
+                                                                 acked=acked.get(did, ()))}
+    needs |= owner_asks
     open_ = {did for did, _doc, _replies in requests_mod.open_requests(asks, roster=roster)}
-    return needs, open_
+    return needs, open_, owner_asks, acked
 
 
 def _hot_cutoff(now: str) -> str:
@@ -167,7 +170,7 @@ class ThreadIndex:
             self.members.setdefault(root_of[did], []).append(did)
         self._times = [when for when, _did in timed]
         self._recent = [(messages[did].get("from"), root_of[did]) for _when, did in timed]
-        needs, open_ = _flags(messages, roster, acks)
+        needs, open_, owner_asks, self._acked = _flags(messages, roster, acks)
         needs = {root_of[did] for did in needs | (set(waiting) & set(messages))}
         open_ = {root_of[did] for did in open_}
         self.by_root = {}  # type: Dict[str, dict]
@@ -188,6 +191,8 @@ class ThreadIndex:
                 "last_t": self.when[last],
                 "last_id": last,
                 "needs_owner": root in needs,
+                # The requests of the thread that wait for the owner, oldest first.
+                "owner_requests": [did for did in ids if did in owner_asks],
                 "unanswered": root in open_,
                 "routine": _routine(root_doc, authors),
                 "hot": 0,
@@ -249,7 +254,10 @@ class ThreadIndex:
             return [self.by_root[r] for r in items], nxt
 
     def thread(self, root: str) -> Optional[List[dict]]:
-        """The messages of one thread in created order with `id`, `depth`, `quote` and the created `t`, or None."""
+        """The messages of one thread in created order with `id`, `depth`, `quote` and the created `t`, or None.
+
+        A request that a participant acked with `none: true` also holds `acked_by`, their ids.
+        """
         ids = self.members.get(root)
         if ids is None:
             return None
@@ -264,6 +272,9 @@ class ThreadIndex:
             else:
                 depth, quote = 2, _summary(self.messages[parent])
             row = dict(doc, id=did, depth=depth, quote=quote)
+            if did in self._acked:
+                # Who said this request needs nothing from them (`ack --none`).
+                row["acked_by"] = sorted(self._acked[did])
             if self.when[did]:
                 row["t"] = self.when[did]
             out.append(row)

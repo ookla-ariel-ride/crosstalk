@@ -34,6 +34,9 @@ let memo: { text: string | null; state: ReadState } = { text: null, state: EMPTY
 /** A state the storage refused to keep, and the stored text it stands over; a change of that text drops it. */
 let unsaved: { over: string | null; state: ReadState } | null = null;
 const listeners = new Set<() => void>();
+/** How many times "Mark all read" ran in this tab: an open thread then drops its line "New since". */
+let markAllCount = 0;
+const markAllRuns = () => markAllCount;
 
 function storedText(): string | null {
   try {
@@ -102,7 +105,13 @@ export interface Reading {
   self: string | null;
   state: ReadState;
   markThread(root: string, mark: ReadMark): void;
-  markAll(t: string): void;
+  /**
+   * Mark every message up to `t` read, and each thread of `marks` up to its
+   * mark: the threads shown whose newest message is dated after `t`.
+   */
+  markAll(t: string, marks?: Record<string, ReadMark>): void;
+  /** How many times markAll ran in this tab; for the owner, once the server kept its writes. */
+  markAllRuns: number;
   /** Mute or unmute a thread: the stream hides a muted one until it needs the owner. False when the write failed. */
   mute(root: string, muted: boolean): Promise<boolean>;
 }
@@ -112,6 +121,7 @@ export function useReading(): Reading {
   const me = useMe().data;
   const server = useReadState().data;
   const local = useSyncExternalStore(subscribe, localState, () => EMPTY);
+  const runs = useSyncExternalStore(subscribe, markAllRuns, markAllRuns);
   const owner = me?.isOwner === true;
   const ready = me !== undefined && (!owner || server !== undefined);
   const state = owner ? (server ?? EMPTY) : local;
@@ -125,7 +135,9 @@ export function useReading(): Reading {
       .then((next) => {
         // Two writes can answer out of order: keep the newer state.
         qc.setQueryData<ReadState>(keys.readState, (cur) => newerReadState(cur, next));
+        // The list rows and the rows of the threads opened by id both carry `unread`.
         void invalidate(qc, { queryKey: ["threads"] });
+        void invalidate(qc, { queryKey: ["thread"] });
         return true;
       })
       .catch(() => false)
@@ -142,10 +154,31 @@ export function useReading(): Reading {
       if (owner) void send(`${root}\n${mark.t}\n${mark.id}`, { thread: root, t: mark.t, id: mark.id });
       else saveLocal({ ...state, threads: { ...state.threads, [root]: mark } });
     },
-    markAll(t) {
-      if (!ready || (state.all_before !== null && t <= state.all_before)) return;
-      if (owner) void send(`\n${t}`, { all_before: t });
-      else saveLocal({ ...state, all_before: t });
+    markAllRuns: runs,
+    markAll(t, marks = {}) {
+      if (!ready) return;
+      const all = state.all_before === null || t > state.all_before;
+      const later = Object.entries(marks).filter(([root, mark]) => isLater(mark, markOf(state, root)));
+      const done = () => {
+        markAllCount += 1;
+        for (const fn of listeners) fn();
+      };
+      if (owner) {
+        const writes = [
+          ...(all ? [send(`\n${t}`, { all_before: t })] : []),
+          ...later.map(([root, mark]) => send(`${root}\n${mark.t}\n${mark.id}`, { thread: root, t: mark.t, id: mark.id })),
+        ];
+        // The open threads drop "New since" only once the server kept every write.
+        void Promise.all(writes).then((oks) => {
+          if (oks.every(Boolean)) done();
+        });
+        return;
+      }
+      if (all || later.length) {
+        // One write, so the marks and the time do not overwrite each other.
+        saveLocal({ ...state, all_before: all ? t : state.all_before, threads: { ...state.threads, ...Object.fromEntries(later) } });
+      }
+      done();
     },
     mute(root, muted) {
       if (!ready || state.muted.includes(root) === muted) return Promise.resolve(true);

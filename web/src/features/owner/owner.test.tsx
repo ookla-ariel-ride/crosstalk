@@ -1,12 +1,12 @@
 // @vitest-environment jsdom
-import { act, fireEvent, screen, waitFor } from "@testing-library/react";
+import { act, cleanup, fireEvent, screen, waitFor } from "@testing-library/react";
 import { beforeEach, describe, expect, test, vi } from "vitest";
 import { keys } from "../../api/queries";
 import type { Me, Message, Snapshot, ThreadDetail } from "../../api/types";
 import type { ReactNode } from "react";
 import { renderWith as renderBare, thread } from "../../ui/testing";
 import { answerIds, drafts } from "./drafts";
-import { HoldButton, NewThread, ownerActions, OwnerScope, People, SignIn } from "./index";
+import { HoldButton, NewThread, noActionRow, ownerActions, OwnerScope, People, SignIn } from "./index";
 
 /** The page puts every owner control inside one OwnerScope. */
 const renderWith = (ui: ReactNode, data?: Parameters<typeof renderBare>[1]) => renderBare(<OwnerScope>{ui}</OwnerScope>, data);
@@ -628,5 +628,87 @@ describe("no answer control while the data loads", () => {
     ]);
     expect(screen.queryByRole("button", { name: "Keep the log" })).toBeNull();
     expect(screen.queryByRole("button", { name: "Write an answer" })).toBeNull();
+  });
+});
+
+describe("no action needed", () => {
+  const REQUEST: Message = { id: "alpha-0005", depth: 0, quote: null, from: "alpha", kind: "request", summary: "Look at the log", to: ["owner"] };
+  const ASKS = thread("alpha-0005", { kind: "request", needs_owner: true, owner_requests: ["alpha-0005"] });
+
+  function renderRequest(me: Me | undefined, message: Message = REQUEST, row = ASKS) {
+    const data: [readonly unknown[], unknown][] = [
+      [keys.roster, SNAP],
+      [keys.thread(row.root), { root: row.root, messages: [message], thread: row }],
+    ];
+    if (me) data.push([keys.me, me]);
+    return renderWith(<>{ownerActions(row, message)}</>, data);
+  }
+
+  test("the owner sees it on a request that waits for the owner; a click sends the ack and shows No action", async () => {
+    renderRequest(OWNER);
+    const calls = serve({ "/api/ack": [200, { ok: true, id: "owner--alpha-0005", written: true }] });
+    fireEvent.click(screen.getByRole("button", { name: "No action needed" }));
+    const done = await screen.findByRole("button", { name: "No action" });
+    expect((done as HTMLButtonElement).disabled).toBe(true);
+    expect(posts(calls, "/api/ack").map((c) => c.body)).toEqual([{ item: "alpha-0005" }]);
+  });
+
+  test("a failure shows as the other buttons show it, and the button comes back", async () => {
+    renderRequest(OWNER);
+    const calls = serve({ "/api/ack": [400, { error: "a question to the owner gets an answer, not an ack" }] });
+    fireEvent.click(screen.getByRole("button", { name: "No action needed" }));
+    const alert = await screen.findByRole("alert");
+    expect(alert.textContent).toContain("Not sent: a question to the owner gets an answer, not an ack. Check it and try again.");
+    fireEvent.click(screen.getByRole("button", { name: "No action needed" }));
+    await waitFor(() => expect(posts(calls, "/api/ack")).toHaveLength(2));
+  });
+
+  test("a 401 offers sign in again", async () => {
+    renderRequest(OWNER);
+    serve({ "/api/ack": [401, { error: "no valid owner session" }] });
+    fireEvent.click(screen.getByRole("button", { name: "No action needed" }));
+    expect(await screen.findByRole("link", { name: "Sign in again" })).toBeTruthy();
+  });
+
+  test("not for a viewer", () => {
+    renderRequest(VIEWER);
+    expect(screen.queryByRole("button", { name: "No action needed" })).toBeNull();
+  });
+
+  test("not on a question, and not on a request that waits for the owner no more", () => {
+    renderRequest(OWNER, QUESTION, thread("alpha-0001", { kind: "question", needs_owner: true, owner_requests: [] }));
+    expect(screen.queryByRole("button", { name: "No action needed" })).toBeNull();
+    cleanup();
+    renderRequest(OWNER, REQUEST, { ...ASKS, needs_owner: false, owner_requests: [] });
+    expect(screen.queryByRole("button", { name: "No action needed" })).toBeNull();
+  });
+
+  test("not on a waiting row: it has Mark done", () => {
+    const WAITING: Message = { id: "own-7", depth: 0, quote: null, from: "owner", kind: "owner", summary: "Renew" };
+    renderRequest(OWNER, WAITING, thread("own-7", { needs_owner: true, owner_requests: [] }));
+    expect(screen.getByRole("button", { name: "Mark done" })).toBeTruthy();
+    expect(screen.queryByRole("button", { name: "No action needed" })).toBeNull();
+  });
+
+  test("a Needs you row with several requests for the owner shows their count and acks each", async () => {
+    renderWith(<>{noActionRow({ ...ASKS, owner_requests: ["alpha-0005", "alpha-0006", "alpha-0007"] })}</>, [[keys.me, OWNER]]);
+    const calls = serve({ "/api/ack": [200, { ok: true }] });
+    fireEvent.click(screen.getByRole("button", { name: "No action needed (3)" }));
+    await screen.findByRole("button", { name: "No action" });
+    expect(posts(calls, "/api/ack").map((c) => c.body)).toEqual([{ item: "alpha-0005" }, { item: "alpha-0006" }, { item: "alpha-0007" }]);
+  });
+
+  test("the Needs you row of a request offers it to the owner alone", async () => {
+    const view = renderWith(<>{noActionRow(ASKS)}</>, [[keys.me, OWNER]]);
+    const calls = serve({ "/api/ack": [200, { ok: true }] });
+    fireEvent.click(screen.getByRole("button", { name: "No action needed" }));
+    await screen.findByRole("button", { name: "No action" });
+    expect(posts(calls, "/api/ack").map((c) => c.body)).toEqual([{ item: "alpha-0005" }]);
+    view.unmount();
+    renderWith(<>{noActionRow(ASKS)}</>, [[keys.me, VIEWER]]);
+    expect(screen.queryByRole("button", { name: "No action needed" })).toBeNull();
+    cleanup();
+    renderWith(<>{noActionRow(thread("alpha-0001", { kind: "question", needs_owner: true }))}</>, [[keys.me, OWNER]]);
+    expect(screen.queryByRole("button", { name: "No action needed" })).toBeNull();
   });
 });

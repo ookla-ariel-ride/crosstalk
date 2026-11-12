@@ -1,10 +1,11 @@
 // The stream of threads that fold (spec, "Threads"): one row for each thread,
 // opened in place; routine runs and muted threads folded into one line each.
 // The server sorts; the page never sorts a list itself.
+import { useQueryClient } from "@tanstack/react-query";
 import { memo, type ReactNode, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { ApiError } from "../../api/client";
-import { useSection, useThread, useThreads } from "../../api/queries";
-import type { SectionRow, Thread } from "../../api/types";
+import { keys, useSection, useThread, useThreads } from "../../api/queries";
+import type { ReadMark, SectionRow, Thread, ThreadDetail } from "../../api/types";
 import { afterSummary } from "../../logic/afterSummary";
 import { ago } from "../../logic/ago";
 import { foldRoutine } from "../../logic/foldRoutine";
@@ -39,9 +40,13 @@ interface ThreadRowProps {
   onToggle: (root: string) => void;
   now: Date;
   renderActions?: RenderActions;
+  rowActions?: RowActions;
 }
 
-const ThreadRow = memo(function ThreadRow({ thread, open, onToggle, now, renderActions }: ThreadRowProps) {
+/** The owner's controls under a folded thread row (Needs you). */
+export type RowActions = (thread: Thread) => ReactNode;
+
+const ThreadRow = memo(function ThreadRow({ thread, open, onToggle, now, renderActions, rowActions }: ThreadRowProps) {
   const reading = useReading();
   // The owner's count comes from the server; a viewer sees whether anything is new.
   const fresh =
@@ -60,7 +65,15 @@ const ThreadRow = memo(function ThreadRow({ thread, open, onToggle, now, renderA
     </>
   );
   return (
-    <Row projects={thread.projects} title={thread.title} text={thread.preview} note={note} open={open} onOpen={() => onToggle(thread.root)}>
+    <Row
+      projects={thread.projects}
+      title={thread.title}
+      text={thread.preview}
+      note={note}
+      open={open}
+      onOpen={() => onToggle(thread.root)}
+      actions={rowActions?.(thread)}
+    >
       {open ? <ThreadOpen thread={thread} now={now} renderActions={renderActions} /> : null}
     </Row>
   );
@@ -155,16 +168,18 @@ export interface StreamProps {
   /** The Needs you page: only the threads that need the owner, no sort bar. */
   needsOnly?: boolean;
   renderActions?: RenderActions;
+  rowActions?: RowActions;
   /** What shows above the heading, such as the owner's "Start a thread". */
   top?: ReactNode;
   /** What shows first under the heading, such as the open waiting rows; the stream is then never "empty". */
   lead?: ReactNode;
 }
 
-export function Stream({ sort, open, onOpenChange, needsOnly = false, renderActions, top, lead }: StreamProps) {
+export function Stream({ sort, open, onOpenChange, needsOnly = false, renderActions, rowActions, top, lead }: StreamProps) {
   const query = useThreads(sort);
   const reading = useReading();
   const now = useNow();
+  const qc = useQueryClient();
 
   const pages = query.data?.pages;
   const muted = reading.state.muted;
@@ -222,9 +237,16 @@ export function Stream({ sort, open, onOpenChange, needsOnly = false, renderActi
 
   const renderThread = useCallback(
     (thread: Thread) => (
-      <ThreadRow thread={thread} open={seenOpen.current.includes(thread.root)} onToggle={onToggle} now={now} renderActions={renderActions} />
+      <ThreadRow
+          thread={thread}
+          open={seenOpen.current.includes(thread.root)}
+          onToggle={onToggle}
+          now={now}
+          renderActions={renderActions}
+          rowActions={rowActions}
+        />
     ),
-    [onToggle, now, renderActions],
+    [onToggle, now, renderActions, rowActions],
   );
   const openKey = (threads: Thread[]) => threads.filter((t) => openSet.has(t.root)).map((t) => t.root).join("\n");
   const fetchNext = query.fetchNextPage;
@@ -238,7 +260,14 @@ export function Stream({ sort, open, onOpenChange, needsOnly = false, renderActi
       case "thread":
         return (
           <Guard what={"Thread " + item.thread.root} data={item.thread}>
-            <ThreadRow thread={item.thread} open={openSet.has(item.thread.root)} onToggle={onToggle} now={now} renderActions={renderActions} />
+            <ThreadRow
+              thread={item.thread}
+              open={openSet.has(item.thread.root)}
+              onToggle={onToggle}
+              now={now}
+              renderActions={renderActions}
+              rowActions={rowActions}
+            />
           </Guard>
         );
       case "routine":
@@ -262,6 +291,22 @@ export function Stream({ sort, open, onOpenChange, needsOnly = false, renderActi
 
   // The newest server time of the pages shown: "Mark all read" never reaches past what was loaded.
   const serverTime = pages?.reduce((top, p) => (p.server_time > top ? p.server_time : top), "") ?? "";
+
+  // A message dated after the server time (a writer's clock ahead) stays past
+  // all_before, so each thread shown with such a message gets its own mark at
+  // its newest message: the list row, or the open thread's row when that one
+  // is later. A message that comes after the click stays new everywhere else.
+  const markAll = () => {
+    const marks: Record<string, ReadMark> = {};
+    const add = (row: Thread | undefined) => {
+      if (!row || row.last_t <= serverTime) return;
+      const mark = { t: row.last_t, id: row.last_id };
+      if (isLater(mark, marks[row.root])) marks[row.root] = mark;
+    };
+    for (const t of loaded) add(t);
+    for (const id of [...new Set([...loaded.map((t) => t.root), ...linked])]) add(qc.getQueryData<ThreadDetail>(keys.thread(id))?.thread);
+    reading.markAll(serverTime, marks);
+  };
 
   let body;
   if (query.isError) {
@@ -308,7 +353,7 @@ export function Stream({ sort, open, onOpenChange, needsOnly = false, renderActi
           <button
             type="button"
             className={styles.action}
-            onClick={() => reading.markAll(serverTime)}
+            onClick={markAll}
             disabled={!serverTime || !reading.ready}
           >
             Mark all read
@@ -378,7 +423,15 @@ export function Conversations({
  * The Needs you page: the open waiting rows, then the stream in the needs
  * order with only the threads that need the owner.
  */
-export function NeedsYou({ renderActions, waitingActions }: { renderActions?: RenderActions; waitingActions?: (row: SectionRow) => ReactNode }) {
+export function NeedsYou({
+  renderActions,
+  rowActions,
+  waitingActions,
+}: {
+  renderActions?: RenderActions;
+  rowActions?: RowActions;
+  waitingActions?: (row: SectionRow) => ReactNode;
+}) {
   const [open, setOpen] = useState<string[]>([]);
   const now = useNow();
   const waiting = useSection("waiting");
@@ -418,5 +471,5 @@ export function NeedsYou({ renderActions, waitingActions }: { renderActions?: Re
         ) : null}
       </>
     ) : null;
-  return <Stream sort="needs" open={open} onOpenChange={setOpen} needsOnly renderActions={renderActions} lead={lead} />;
+  return <Stream sort="needs" open={open} onOpenChange={setOpen} needsOnly renderActions={renderActions} rowActions={rowActions} lead={lead} />;
 }

@@ -1,6 +1,7 @@
 // @vitest-environment jsdom
 import { QueryClient, QueryClientProvider, type QueryKey } from "@tanstack/react-query";
-import { act, fireEvent, render, screen, within } from "@testing-library/react";
+import { act, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
+import { useEffect } from "react";
 import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
 import { keys } from "../../api/queries";
 import type { Me, Message, ReadState, Thread } from "../../api/types";
@@ -198,6 +199,74 @@ describe("Stream", () => {
     expect(calls.filter((c) => c.method === "PUT").map((c) => c.body)).toEqual([{ all_before: "2026-11-11T10:00:00Z" }]);
   });
 
+  test("mark all read also marks each shown thread whose newest message is dated after the server time", async () => {
+    const ahead = thread("beta-0007", { last_t: "2026-11-11T10:05:00Z", last_id: "beta-0008", unread: 1 });
+    renderWith(<Stream sort="needs" open={[]} onOpenChange={() => {}} />, base(OWNER, EMPTY_STATE, [Q1, ahead]));
+    const calls = spyFetch();
+    await act(async () => fireEvent.click(screen.getByRole("button", { name: "Mark all read" })));
+    expect(calls.filter((c) => c.method === "PUT").map((c) => c.body)).toEqual([
+      { all_before: "2026-11-11T10:00:00Z" },
+      { thread: "beta-0007", t: "2026-11-11T10:05:00Z", id: "beta-0008" },
+    ]);
+  });
+
+  test("a viewer's mark all read keeps the time and the marks of the threads dated ahead", async () => {
+    const ahead = thread("beta-0007", { last_t: "2026-11-11T10:05:00Z", last_id: "beta-0008" });
+    renderWith(<Stream sort="needs" open={[]} onOpenChange={() => {}} />, base(VIEWER, null, [Q1, ahead]));
+    expect(screen.getAllByText("new")).toHaveLength(2);
+    await act(async () => fireEvent.click(screen.getByRole("button", { name: "Mark all read" })));
+    const stored = JSON.parse(window.localStorage.getItem(STORAGE_KEY) ?? "null");
+    expect(stored.all_before).toBe("2026-11-11T10:00:00Z");
+    expect(stored.threads).toEqual({ "beta-0007": { t: "2026-11-11T10:05:00Z", id: "beta-0008" } });
+    expect(screen.queryAllByText("new")).toHaveLength(0);
+  });
+
+  test("after mark all read the open thread shows no line new since and keeps its messages in view", async () => {
+    const state = { ...EMPTY_STATE, threads: { "alpha-0001": { t: "2026-11-11T09:10:00Z", id: "beta-0002" } } };
+    renderWith(<Stream sort="needs" open={["alpha-0001"]} onOpenChange={() => {}} />, base(OWNER, state, [Q1]));
+    expect(screen.getByText("New since " + hhmm("2026-11-11T09:10:00Z"))).toBeTruthy();
+    spyFetch({ ...state, all_before: "2026-11-11T10:00:00Z" });
+    await act(async () => fireEvent.click(screen.getByRole("button", { name: "Mark all read" })));
+    expect(screen.queryByText(/New since/)).toBeNull();
+    expect(screen.getByText("Newest reply")).toBeTruthy();
+    expect(screen.queryByRole("button", { name: /earlier message/ })).toBeNull();
+  });
+
+  test("a failed mark all read write leaves the line new since", async () => {
+    const state = { ...EMPTY_STATE, threads: { "alpha-0001": { t: "2026-11-11T09:10:00Z", id: "beta-0002" } } };
+    renderWith(<Stream sort="needs" open={["alpha-0001"]} onOpenChange={() => {}} />, base(OWNER, state, [Q1]));
+    vi.stubGlobal("fetch", async (_url: string, init: RequestInit = {}) =>
+      init.method === "PUT" ? new Response(JSON.stringify({ error: "down" }), { status: 500 }) : new Promise<Response>(() => {}),
+    );
+    await act(async () => fireEvent.click(screen.getByRole("button", { name: "Mark all read" })));
+    expect(screen.getByText("New since " + hhmm("2026-11-11T09:10:00Z"))).toBeTruthy();
+  });
+
+  test("a row that arrives after mark all read stays new", async () => {
+    const { qc } = renderWith(<Stream sort="needs" open={[]} onOpenChange={() => {}} />, base(VIEWER, null, [Q1]));
+    await act(async () => fireEvent.click(screen.getByRole("button", { name: "Mark all read" })));
+    expect(screen.queryAllByText("new")).toHaveLength(0);
+    const later = thread("beta-0011", { title: "Came after the click", last_t: "2026-11-11T10:02:00Z", last_id: "beta-0011" });
+    const reply = { ...Q1, last_t: "2026-11-11T10:03:00Z", last_id: "beta-0012" };
+    await act(async () => qc.setQueryData(keys.threads("needs"), { pages: [{ threads: [later, reply], next: null, server_time: "2026-11-11T10:04:00Z" }], pageParams: [""] }));
+    await waitFor(() => expect(screen.getAllByText("new")).toHaveLength(2));
+  });
+
+  test("mark all read keeps the messages in view mounted, with their actions", async () => {
+    const mounts: string[] = [];
+    function Probe({ id }: { id: string }) {
+      useEffect(() => void mounts.push(id), [id]);
+      return null;
+    }
+    const state = { ...EMPTY_STATE, threads: { "alpha-0001": { t: "2026-11-11T09:10:00Z", id: "beta-0002" } } };
+    const actions = (_t: Thread, m: Message | null) => (m ? <Probe id={m.id} /> : null);
+    renderWith(<Stream sort="needs" open={["alpha-0001"]} onOpenChange={() => {}} renderActions={actions} />, base(OWNER, state, [Q1]));
+    expect(mounts).toEqual(["alpha-0003", "beta-0004"]);
+    spyFetch({ ...state, all_before: "2026-11-11T10:00:00Z" });
+    await act(async () => fireEvent.click(screen.getByRole("button", { name: "Mark all read" })));
+    expect(mounts).toEqual(["alpha-0003", "beta-0004", "alpha-0001", "beta-0002"]);
+  });
+
   test("a muted thread leaves the stream until a message in it addresses the owner", () => {
     const state = { ...EMPTY_STATE, muted: ["beta-0005", "beta-0006"] };
     renderWith(
@@ -251,6 +320,24 @@ describe("Stream", () => {
     );
     expect(screen.getByText("act beta-0004")).toBeTruthy();
     expect(screen.getByText("act end:alpha-0001")).toBeTruthy();
+  });
+
+  test("a request the owner acked shows Owner: no action needed", () => {
+    const acked = [message("alpha-0001", "2026-11-11T09:00:00Z", { depth: 0, kind: "request", acked_by: ["owner"] }), MESSAGES[1]!];
+    renderWith(<Stream sort="needs" open={["alpha-0001"]} onOpenChange={() => {}} />, [
+      ...base(OWNER, EMPTY_STATE, [Q1]).filter(([key]) => key !== DETAIL[0]),
+      [keys.thread("alpha-0001"), { root: "alpha-0001", messages: acked }],
+    ]);
+    expect(screen.getAllByText("Owner: no action needed")).toHaveLength(1);
+  });
+
+  test("an ack by another participant does not show the owner line", () => {
+    const acked = [message("alpha-0001", "2026-11-11T09:00:00Z", { depth: 0, kind: "request", acked_by: ["beta"] })];
+    renderWith(<Stream sort="needs" open={["alpha-0001"]} onOpenChange={() => {}} />, [
+      ...base(OWNER, EMPTY_STATE, [Q1]).filter(([key]) => key !== DETAIL[0]),
+      [keys.thread("alpha-0001"), { root: "alpha-0001", messages: acked }],
+    ]);
+    expect(screen.queryByText("Owner: no action needed")).toBeNull();
   });
 
   test("a routine item shows as one line with its counts; a click shows its threads", () => {
@@ -402,6 +489,24 @@ describe("the mark race", () => {
 });
 
 describe("open ids", () => {
+  test("mark all read refreshes a thread that an id link opened", async () => {
+    const linked = thread("zeta-0001", { title: "A linked thread", unread: 1, last_t: "2026-11-11T09:55:00Z", last_id: "zeta-0002" });
+    const msgs = [message("zeta-0001", "2026-11-11T08:00:00Z", { depth: 0 }), message("zeta-0002", "2026-11-11T09:55:00Z", { from: "beta" })];
+    const data = base(OWNER, EMPTY_STATE, [Q1]);
+    data.push([keys.thread("zeta-0001"), { root: "zeta-0001", thread: linked, messages: msgs }]);
+    renderWith(<Stream sort="needs" open={["zeta-0001"]} onOpenChange={() => {}} />, data);
+    expect(screen.getByText("1 new")).toBeTruthy();
+    const after = { ...EMPTY_STATE, all_before: "2026-11-11T10:00:00Z" };
+    vi.stubGlobal("fetch", async (url: string, init: RequestInit = {}) => {
+      const json = (body: unknown) => new Response(JSON.stringify(body), { status: 200, headers: { "Content-Type": "application/json" } });
+      if (init.method === "PUT") return json(after);
+      if (url.startsWith("/api/thread/zeta-0001")) return json({ root: "zeta-0001", thread: { ...linked, unread: 0 }, messages: msgs });
+      return new Promise<Response>(() => {});
+    });
+    await act(async () => fireEvent.click(screen.getByRole("button", { name: "Mark all read" })));
+    await waitFor(() => expect(screen.queryByText("1 new")).toBeNull());
+  });
+
   test("two fast clicks open two threads", () => {
     const onOpenChange = vi.fn();
     renderWith(<Stream sort="needs" open={[]} onOpenChange={onOpenChange} />, base(OWNER, EMPTY_STATE, [Q1, thread("beta-0009", { title: "Second" })]));
@@ -564,11 +669,11 @@ describe("NeedsYou", () => {
 
 describe("rows with fields of the wrong type", () => {
   // What a log line can hold: any field of any JSON type.
-  const BAD_THREAD = { root: "alpha-0001", title: 7, preview: null, projects: "alpha", count: "3", last_t: "2026-11-11T09:30:00Z", last_id: "beta-0003", needs_owner: 1, unanswered: false, routine: false, hot: 0, kind: 5 };
+  const BAD_THREAD = { root: "alpha-0001", title: 7, preview: null, projects: "alpha", count: "3", last_t: "2026-11-11T09:30:00Z", last_id: "beta-0003", needs_owner: 1, unanswered: false, routine: false, hot: 0, kind: 5, owner_requests: 5 };
   const BAD_MESSAGES = [
     { id: "alpha-0001", depth: 0, quote: null, t: "2026-11-11T09:00:00Z", from: null, kind: 5, summary: 42, body: { plan: "keep" } },
     { id: "beta-0002", depth: 1, quote: null, t: 1731315000, from: "beta", to: "alpha", summary: "Fine", body: ["one", 2], replyTo: ["alpha-0001"] },
-    { id: "beta-0003", depth: 2, quote: 9, t: "2026-11-11T09:30:00Z", from: "beta", summary: null, body: null },
+    { id: "beta-0003", depth: 2, quote: 9, t: "2026-11-11T09:30:00Z", from: "beta", kind: "request", summary: null, body: null, acked_by: "owner" },
   ];
 
   test("the stream and the open thread render them through the client", async () => {
@@ -603,5 +708,16 @@ describe("rows with fields of the wrong type", () => {
     expect(screen.getByText(/beta-0002 could not be shown/)).toBeTruthy();
     expect(screen.getByText("Newest reply")).toBeTruthy();
   });
-});
 
+  test("rowActions shows beside a folded thread row, outside its button, and not while it is open", () => {
+    renderWith(
+      <NeedsYou rowActions={(t) => <button type="button">{"row " + t.root}</button>} />,
+      [...base(OWNER, EMPTY_STATE, [{ ...Q1, needs_owner: true }]), [keys.section("waiting", ""), { pages: [{ rows: [], next: null, open: 0, total: 0 }], pageParams: [""] }]],
+    );
+    const action = screen.getByRole("button", { name: "row alpha-0001" });
+    const row = screen.getByRole("button", { name: /Does the rebuild go on\?/ });
+    expect(row.contains(action)).toBe(false);
+    fireEvent.click(row);
+    expect(screen.queryByRole("button", { name: "row alpha-0001" })).toBeNull();
+  });
+});
