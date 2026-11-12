@@ -175,7 +175,9 @@ a.who-link { text-decoration: none; }
 .pill.alert, .pill.held, .pill.disagreement { background: var(--warn); color: var(--panel); }
 .pill.owner { background: var(--own); color: var(--panel); }
 .pill.pending-to { background: var(--warn); color: var(--panel); text-transform: none; }
-.pill.acked { text-transform: none; }
+/* The marks line under a card's body: groups wrap, and a long list of names wraps inside its group. */
+.marks-line { display: flex; flex-wrap: wrap; gap: 2px 16px; margin-top: 6px; font-size: 12px; color: var(--muted); }
+.marks-line > span { min-width: 0; overflow-wrap: anywhere; }
 #digest { margin-bottom: 12px; border-left: 4px solid var(--own); }
 #digest #digest-dismiss { margin-left: auto; }
 #composer #reply-banner { margin: 0; }
@@ -877,17 +879,26 @@ td.num, td.t { font: 12px var(--mono); font-variant-numeric: tabular-nums; white
     if (s.slice(-1) === ".") s = s.slice(0, -1).replace(/\s+$/, "");
     return s.slice(-16) !== "No answer needed";
   }
+  // [word, emoji, label] of each mark (marks.MARKS, EMOJI, LABEL), in the order the marks line shows them.
+  var MARK_SHOWN = [["ack", "\u2705", "acknowledged"], ["applies", "\ud83d\udd27", "applies"], ["none", "\u2796", "no change"],
+    ["seen", "\ud83d\udc40", "seen"], ["unclear", "\u2753", "not clear"]];
+  var MARK_EMOJI = {}; MARK_SHOWN.forEach(function (w) { MARK_EMOJI[w[0]] = w[1]; });
   // requests.acks_by_item: an ack counts as a reply from its writer when its id is from + "--" + item,
   // the writer is approved and its id holds no "--", and the item is a request in the log.
   // Item id -> acked ids by name, for the Help tab and the timeline. Cached until a snapshot changes.
   var ackCache = null;
+  // marks.mark_of: `mark` when it is a known word, else "none" for a row with `none: true`, else null.
+  function markOf(a) {
+    if (typeof a.mark === "string" && MARK_EMOJI[a.mark]) return a.mark;
+    return a.none === true ? "none" : null;
+  }
   function acksByItem() {
     if (ackCache && ackCache.acks === data.acks && ackCache.messages === data.messages && ackCache.participants === data.participants) return ackCache.map;
     var byId = Object.create(null); data.messages.forEach(function (m) { byId[m._id] = m; });
     var acks = Object.create(null);
     data.acks.forEach(function (a) {
       var from = a.from, item = a.item, m = typeof item === "string" ? byId[item] : null;
-      if (a.none !== true || typeof from !== "string" || from.indexOf("--") !== -1 || a._id !== from + "--" + item) return;
+      if (markOf(a) !== "none" || typeof from !== "string" || from.indexOf("--") !== -1 || a._id !== from + "--" + item) return;
       if (isQuarantined(from) || !m || m.kind !== "request") return;
       var list = acks[item] = acks[item] || [];
       if (list.indexOf(from) === -1) list.push(from);
@@ -1463,9 +1474,6 @@ td.num, td.t { font: 12px var(--mono); font-variant-numeric: tabular-nums; white
       meta.appendChild(el("span", "pill question", "question for owner"));
       var qst = questionStatus(m._id); if (qst) meta.appendChild(pill(qst));
     } else if (m.kind) meta.appendChild(pill(kindOf(m)));
-    // An ack never hides a request from the owner: the card names who acked, open or closed.
-    var acked = m.kind === "request" ? acksByItem()[m._id] : null;
-    if (acked && acked.length) meta.appendChild(el("span", "pill acked", "acked, no action: " + acked.map(displayName).join(" · ")));
     if (imp) meta.appendChild(pill("important"));
     if (quarantined) meta.appendChild(quarantinePill());
     if (canWrite && !isReply) {
@@ -1495,9 +1503,30 @@ td.num, td.t { font: 12px var(--mono); font-variant-numeric: tabular-nums; white
     if (parent) card.appendChild(el("div", "re", "↩ Replying to " + (parent.from ? displayName(parent.from) : "") + ": " + (parent.summary || "")));
     if (m.summary) card.appendChild(summaryEl(m.summary));
     add(card, bodyEl(m.body, m.summary));
+    add(card, marksLineEl(m));
     if (m.kind === "disagreement" && m.positions) add(card, positionsEl(m));
     add(card, refsEl(m.refs, m.project || m.from));
     return card;
+  }
+  // The marks line of a card: "✅ alpha, beta   ➖ gamma   not yet: delta". It reads only the `marks` key that the
+  // server puts on a marked row (marks.page_views); null when that key shows nothing. An ack never hides a request
+  // from the owner: the line names who marked it, open or closed.
+  function marksLineEl(m) {
+    var v = m.marks;
+    if (!v || typeof v !== "object" || Array.isArray(v)) return null;
+    var marks = v.marks && typeof v.marks === "object" && !Array.isArray(v.marks) ? v.marks : {};
+    var line = el("div", "marks-line");
+    MARK_SHOWN.forEach(function (w) {
+      var names = Object.keys(marks).filter(function (pid) { return marks[pid] === w[0]; }).sort(byName);
+      if (!names.length) return;
+      var g = el("span"), e = el("span", "mark", w[1]);
+      e.title = w[2]; e.setAttribute("role", "img"); e.setAttribute("aria-label", w[2]);
+      g.appendChild(e); g.appendChild(document.createTextNode(" " + names.map(displayName).join(", ")));
+      line.appendChild(g);
+    });
+    var owed = v.expects === true && Array.isArray(v.owed) ? v.owed.filter(function (pid) { return typeof pid === "string" && pid; }).sort(byName) : [];
+    if (owed.length) line.appendChild(el("span", "not-yet", "not yet: " + owed.map(displayName).join(", ")));
+    return line.childNodes.length ? line : null;
   }
   // One column per participant named in `positions`, in the row's order.
   function positionsEl(m) {
@@ -1844,14 +1873,12 @@ td.num, td.t { font: 12px var(--mono); font-variant-numeric: tabular-nums; white
     if (pending && pending.length > 0 && answered) {
       meta.appendChild(el("span", "pill pending-to", "waiting on " + pending.map(displayName).join(" \u00b7 ")));
     }
-    if (acked && acked.length > 0) {
-      meta.appendChild(el("span", "pill acked", "acked, no action: " + acked.map(displayName).join(" \u00b7 ")));
-    }
     if (quarantined) meta.appendChild(quarantinePill());
     if (canWrite) meta.appendChild(replyBtnEl(m));
     card.appendChild(meta);
     if (m.summary) card.appendChild(summaryEl(m.summary));
     add(card, bodyEl(m.body, m.summary));
+    add(card, marksLineEl(m));
     add(card, refsEl(m.refs, m.project || m.from));
     if (replies.length) {
       var box = el("div", "replies");

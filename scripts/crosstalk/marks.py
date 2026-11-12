@@ -238,7 +238,30 @@ def view(docs: Dict, coll: str, did: str, roster, config, by_item=None) -> dict:
             "expects": expects_mark(docs, coll, did, roster, config)}
 
 
-ROW_KIND = {"decisions": "decision", "lessons": "lesson"}
+def page_views(docs: Dict, roster, config) -> Dict[Tuple[str, str], dict]:
+    """(collection, id) to view() for each message, decision and lesson that has a mark
+    or expects one: the `marks` key of that row in the data the pages load. A row that
+    is not here gets no key. Pass the docs from replay.enrich_messages."""
+    by_item = marks_by_item(docs, roster)
+    out = {}
+    for (coll, did), doc in docs.items():
+        if coll in MARKABLE and isinstance(doc, dict):
+            v = view(docs, coll, did, roster, config, by_item)
+            if v["marks"] or v["expects"]:
+                out[(coll, did)] = v
+    return out
+
+
+def with_marks(collections: Dict[str, Dict[str, dict]], views: Dict[Tuple[str, str], dict]) -> None:
+    """Put each view of page_views() on a copy of its row in collections, as `marks`.
+    The rows are copied so that a cached replay stays as it was."""
+    for (coll, did), v in views.items():
+        rows = collections.get(coll)
+        if rows is not None and isinstance(rows.get(did), dict):
+            rows[did] = dict(rows[did], marks=v)
+
+
+ROW_KIND ={"decisions": "decision", "lessons": "lesson"}
 
 
 def _posts_that_expect(docs: Dict, roster, config):

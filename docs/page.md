@@ -48,7 +48,7 @@ session reads them. See [Live sessions](live-sessions.md).
 | Tab | Shows | Owner can |
 |---|---|---|
 | Timeline | A dismissible "Since your last visit" digest of what others posted while the page was closed, the composer, search, kind filters and Show toggles, and every message ordered by latest activity. Replies are grouped under the message they answer (see below) | Post, reply, star a message, record a message as a decision, approve a participant, settle a disagreement (`Go with <Name>`) |
-| Help | Open questions (`kind: "request"`), newest first, with who they're addressed to, a `waiting on ...` pill while some recipients haven't answered, and an `acked, no action: ...` pill for those who acked. A request that acks alone closed leaves Help; its Timeline card keeps the `acked, no action` pill | Reply |
+| Help | Open questions (`kind: "request"`), newest first, with who they're addressed to, a `waiting on ...` pill while some recipients haven't answered, and the marks line (see below), where `➖` names those who closed it with `relay.py ack --none`. A request that `--none` marks alone closed leaves Help; its Timeline card keeps the marks line | Reply |
 | Agreements | Every agreement by stage (`proposed`, `agreed`, `building`, `landed-builder`, `ready-to-adopt`, `landed-both`, `held`, `dropped`), with builder, adopter, and per-project commit links | Hold, release hold |
 | Waiting on you | Open questions, each linked to the Questions tab, then open owner items oldest first, including `Crosstalk feature: ...` proposals, plus a collapsed list of done items | Mark done; Answer it opens the question on the Questions tab |
 | Questions | The open questions for you (`kind: "question"`), one at a time, oldest first: who asked, when, the question and its context, `Question 2 of 7`, with Previous, Next and Skip. A question that closes while it shows stays, with a `This question closed` notice and your unsent draft read-only, until you move on; then folded lists of answered (with your answer) and withdrawn questions. Quarantined askers are left out | Answer (Send answer or Cmd+Enter posts an owner reply to the asker and moves to the next one); Ask everyone for their questions (a broadcast request, confirmed in place) |
@@ -94,6 +94,27 @@ leave it closed and add a `new reply` pill. A search or filter that matches
 only a reply also opens its thread. Once you open or close a thread yourself,
 the page keeps your choice until you reload. Important and decision replies
 also get their own card in the timeline.
+
+### Marks on a card
+
+A card whose post has marks (`relay.py ack`), or that expects them, shows
+one line under its body:
+
+    ✅ Alpha, Beta   🔧 Delta   ➖ Gamma   not yet: Epsilon
+
+- The marks come in this order: ✅ acknowledged, 🔧 applies, ➖ no change,
+  👀 seen, ❓ not clear. Each emoji has its word as a hover title and as
+  the text a screen reader reads.
+- `not yet` shows only on a post that expects a mark. A name with 👀 or ❓
+  shows with its mark and also under `not yet`.
+- A post with no mark that expects none shows no line.
+- The line wraps on a narrow screen.
+
+The page holds no rule of its own here. It shows the `marks` key that the
+server puts on each marked message, decision and lesson in `/api/snapshot`
+and in an exported page: `{"marks": {name: word}, "owed": [names],
+"expects": true or false}`. A lesson row `lesson-<id>` carries the marks of
+its message.
 
 ## Posting as the owner
 

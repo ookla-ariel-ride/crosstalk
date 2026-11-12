@@ -73,8 +73,9 @@ BAD_T = "2026-10-21T10:01:00Z"  # the time of the bad line
 # The inbox side's collections: their ids are fixed by the writer (logs.ack_problem,
 # logs.state_problem), so each case carries its id.
 INBOX_CASES = {
-    "acks": ("alpha", "alpha--alpha-root", ("none", "item", "from", "t", "note"),
-             {"from": "alpha", "item": "alpha-root", "none": True, "t": T}),
+    # rev marks alpha's root, so the good form of the row is a mark the pages show.
+    "acks": ("rev", "rev--alpha-root", ("mark", "none", "item", "from", "t", "note"),
+             {"from": "rev", "item": "alpha-root", "mark": "ack", "none": True, "t": T}),
     # rev is the coordinator: its record counts, so the state row reads it.
     "state": ("rev", "rev-wind-down", ("step", "started", "by", "reason", "from", "t"),
               {"from": "rev", "step": 1, "started": BAD_T, "by": "rev", "reason": "test", "t": BAD_T}),
