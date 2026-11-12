@@ -322,6 +322,28 @@ class GrantAndLaneTests(unittest.TestCase):
         self.assertEqual((q["holders"], q["waiting"]), ([], []))
         self.assertEqual(q["notes"], ["gamma-03-2: LAND END from gamma closes granted ask gamma-01-0"])
 
+    def test_land_end_without_start_keeps_the_ungranted_branches(self):
+        q = queue((1, "gamma", "TURN ASK gamma x-1110 y-1110"),
+                  (2, "beta", "TURN ASK beta z-1110"),
+                  (3, "relay-bot", "GRANTED gamma x-1110", {"kind": "reply", "replyTo": "gamma-01-0"}),
+                  (4, "gamma", "LAND END gamma x-1110: landed"))
+        self.assertEqual(q["holders"], [])
+        left = q["waiting"][0]
+        self.assertEqual((left["id"], left["project"], left["branches"]), ("gamma-01-0", "gamma", ["y-1110"]))
+        self.assertNotIn("granted", left)
+        self.assertNotIn("granted_branches", left)
+        self.assertEqual([w["project"] for w in q["waiting"]], ["gamma", "beta"])
+        self.assertEqual((q["next"], q["slots_free"], q["may_start"]), ("gamma", 2, True))
+        self.assertEqual(q["notes"], ["gamma-04-3: LAND END from gamma closes x-1110 of granted ask "
+                                      "gamma-01-0; y-1110 stay waiting"])
+
+    def test_land_end_without_start_of_every_branch_closes_the_ask(self):
+        q = queue((1, "gamma", "TURN ASK gamma x-1110 y-1110"),
+                  (2, "relay-bot", "GRANTED gamma x-1110", {"kind": "reply", "replyTo": "gamma-01-0"}),
+                  (3, "gamma", "LAND END gamma x-1110 y-1110: landed"))
+        self.assertEqual((q["holders"], q["waiting"], q["next"]), ([], [], None))
+        self.assertEqual(q["notes"], ["gamma-03-2: LAND END from gamma closes granted ask gamma-01-0"])
+
     def test_coordinator_land_words_still_claim_nothing(self):
         q = queue((1, "relay-bot", "LAND START relay-bot z-1110"),
                   (2, "relay-bot", "GRANTED nobody", {"kind": "reply", "replyTo": "missing"}))

@@ -17,7 +17,8 @@ project that is already waiting adds its branches to that ask and keeps its
 place. To drop a branch, withdraw the ask and ask again.
 A start that names a branch its sender still holds replaces that run, which
 stopped with no LAND END. A LAND END from a sender that holds nothing closes
-its granted ask when it names one of the ask's branches.
+its granted ask when it names one of the ask's branches, as a start would: the
+branches that neither its GRANTED nor the LAND END names stay waiting.
 
 The coordinator's GRANTED reply to an ask (summary starting GRANTED, replyTo
 the ask) marks it granted: it reserves a slot until its LAND START or LANE START,
@@ -212,11 +213,24 @@ def land_queue(docs: Dict, max_holders: int = MAX_HOLDERS,
             if held is None:
                 if word != "LAND END":
                     continue
-                # A granted ask whose branch landed (its start missed) is over too.
+                # A granted ask whose branch landed (its start missed) is over too,
+                # with the start's partition: the branches neither its GRANTED nor
+                # the LAND END names stay waiting, in the ask's place.
                 said = {tok.rstrip(".") for tok in _TOKEN_RE.findall(summary)}
                 if ask is not None and "granted" in ask and said & set(ask["branches"]):
-                    waiting.remove(ask)
-                    notes.append("%s: LAND END from %s closes granted ask %s" % (did, sender, ask["id"]))
+                    covered = ask.get("granted_branches")
+                    rest = [b for b in ask["branches"]
+                            if b not in covered and b not in said] if covered else []
+                    if rest:
+                        done = [b for b in ask["branches"] if b not in rest]
+                        ask["branches"] = rest
+                        for key in ("granted", "granted_t", "granted_branches"):
+                            ask.pop(key, None)
+                        notes.append("%s: LAND END from %s closes %s of granted ask %s; %s stay waiting"
+                                     % (did, sender, ", ".join(done), ask["id"], ", ".join(rest)))
+                    else:
+                        waiting.remove(ask)
+                        notes.append("%s: LAND END from %s closes granted ask %s" % (did, sender, ask["id"]))
                 else:
                     notes.append("%s: LAND END from %s, not holding" % (did, sender))
             else:
