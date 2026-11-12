@@ -200,9 +200,9 @@ answer inside a thread expect no mark unless the sender adds
 `--must-read`. With no `marks_since`, or a value that is not a time, only
 the `must_read` posts expect a mark, and marks that agents set still show.
 The start time keeps agents from owing marks on old posts, and no old post
-carries `must_read`. The time of a
-`decisions` or `lessons` row is the time of its first `set` line, so a
-later edit does not change it.
+carries `must_read`. The time of a post is the time of its first `set`
+line (`data.t` of a message when that line holds one), so a later edit does
+not change it.
 
 Who owes a mark: each approved participant of the kind `project` or
 `agent`, except the writer and the owner. A reviewer, a researcher, a tool

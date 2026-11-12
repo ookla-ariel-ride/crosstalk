@@ -79,6 +79,7 @@ class Docs(dict):
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
         self.first_writer = {}  # type: Dict[DocKey, str]
+        self.created = {}  # type: Dict[DocKey, str]
 
 
 def enrich_messages(docs: Dict[DocKey, dict], lines: Iterable[Line]) -> Dict[DocKey, dict]:
@@ -89,7 +90,10 @@ def enrich_messages(docs: Dict[DocKey, dict], lines: Iterable[Line]) -> Dict[Doc
     the replay is enriched with the writing line's `from` and `t` when the doc lacks
     them. Dated collections (`progress`, `lessons`, `decisions`, `agreements`) also
     receive `t` from their first `set` line (or last line) when `data.t` is omitted.
-    The copy is a Docs, whose `first_writer` names the writer of each row (marks.writer_of).
+    The copy is a Docs, whose `first_writer` names the writer of each row (marks.writer_of)
+    and whose `created` holds the time of each message: `data.t` of its first `set` line
+    when it has one, else that line's `t`. An `update` moves the replayed `t` of a
+    message with no `data.t`, not `created` (marks.post_time).
     The log itself is never touched.
     """
     docs = Docs((k, copy.deepcopy(v)) for k, v in docs.items())
@@ -100,6 +104,9 @@ def enrich_messages(docs: Dict[DocKey, dict], lines: Iterable[Line]) -> Dict[Doc
         ln = first_set.get(key) or last.get(key)
         if ln is not None:
             docs.first_writer[key] = ln.from_
+            if key[0] == "messages":
+                own = ln.data.get("t") if isinstance(ln.data, dict) else None
+                docs.created[key] = own if isinstance(own, str) else ln.t
     for (coll, did), doc in docs.items():
         if coll == "messages":
             ln = last.get((coll, did))

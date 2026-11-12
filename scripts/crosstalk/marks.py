@@ -153,11 +153,22 @@ def _since_t(config) -> Optional[float]:
     return _parse_iso(since) if since is not None else None
 
 
-def _post_time_ok(doc, config) -> bool:
+def post_time(docs: Dict, coll: str, did: str):
+    """The time of a post: for a message its created time (replay.Docs.created, the first
+    `set` line), so that an edit does not make an old post new; else the row's `t`, which
+    enrich_messages takes from the first `set` line when the row has none."""
+    created = getattr(docs, "created", {}).get((coll, did))
+    if created is not None:
+        return created
+    doc = docs.get((coll, did))
+    return doc.get("t") if isinstance(doc, dict) else None
+
+
+def _post_time_ok(docs: Dict, coll: str, did: str, config) -> bool:
     since = _since_t(config)
     if since is None:
         return False
-    t = _parse_iso(doc.get("t"))
+    t = _parse_iso(post_time(docs, coll, did))
     return t is not None and t >= since
 
 
@@ -185,9 +196,9 @@ def expects_mark(docs: Dict, coll: str, did: str, roster, config) -> bool:
         if doc.get("must_read") is True:
             return True
         lesson = docs.get(("lessons", LESSON_PREFIX + did))
-        if isinstance(lesson, dict) and _post_time_ok(lesson, config):
+        if isinstance(lesson, dict) and _post_time_ok(docs, "lessons", LESSON_PREFIX + did, config):
             return True
-        if not _post_time_ok(doc, config):
+        if not _post_time_ok(docs, coll, did, config):
             return False
         if doc.get("kind") == "lesson":
             return True
@@ -198,7 +209,7 @@ def expects_mark(docs: Dict, coll: str, did: str, roster, config) -> bool:
             return True
         return all(pid in to for pid, entry in _participants(roster).items()
                    if _kind(entry) == "project" and _is_approved(pid, roster))
-    if not _post_time_ok(doc, config):
+    if not _post_time_ok(docs, coll, did, config):
         return False
     if coll == "lessons":
         return not _folded(docs, coll, did)
@@ -320,7 +331,7 @@ def _posts_that_expect(docs: Dict, roster, config):
     out = []
     for (coll, did), doc in docs.items():
         if coll in MARKABLE and isinstance(doc, dict) and expects_mark(docs, coll, did, roster, config):
-            t = doc.get("t")
+            t = post_time(docs, coll, did)
             out.append((t if isinstance(t, str) else "", coll, did, doc))
     out.sort(key=lambda r: (_parse_iso(r[0]) or 0.0, r[0], r[1], r[2]))
     return out

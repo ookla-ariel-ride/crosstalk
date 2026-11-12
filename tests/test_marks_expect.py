@@ -139,6 +139,28 @@ class ExpectTests(unittest.TestCase):
         self.assertFalse(self.expects("messages", self.lesson_id, self.config("2026-10-21T18:00:01Z")))
         self.assertFalse(self.expects("lessons", "lesson-solo", self.config("2026-10-21T18:00:01Z")))
 
+    def test_an_update_after_marks_since_keeps_an_old_post_old(self):
+        later = "2026-10-21T19:00:00Z"
+        cfg = self.config("2026-10-21T18:30:00Z")
+        self.r.write_log("alpha", [
+            msg(1, "alpha", self.lesson_id, kind="lesson", summary="a rule"),
+            msg(2, "alpha", "alpha-c1", kind="check-in", summary="working on x"),
+            msg(3, "alpha", "alpha-c2", kind="check-in", summary="read this", must_read=True),
+            msg(4, "alpha", "alpha-n1", kind="sync", summary="a note that became a lesson"),
+            msg(5, "alpha", "alpha-l2", kind="lesson", summary="old lesson"),
+            line(6, "alpha", id_="alpha-l2", op="update", data={"summary": "old lesson, edited"}, t=later),
+            msg(7, "alpha", "alpha-l3", kind="lesson", summary="old lesson", t="2026-10-21T17:00:00Z"),
+            line(8, "alpha", id_="alpha-l3", op="update", data={"summary": "edited"}, t=later),
+        ])
+        docs = self.docs()
+        self.assertEqual(docs[("messages", "alpha-l2")]["t"], later)
+        for did in ("alpha-l2", "alpha-l3"):
+            self.assertFalse(self.expects("messages", did, cfg), did)
+        old = {"alpha-l2", "alpha-l3"}
+        self.assertFalse(old & {i["id"] for i in marks.to_read(docs, "beta", self.roster(), cfg)})
+        self.assertFalse(old & {i["id"] for i in marks.missing(docs, self.roster(), cfg)})
+        self.assertTrue(self.expects("messages", "alpha-l2", self.config()))
+
     def test_a_must_read_post_expects_whatever_marks_since_holds(self):
         later = self.config("2026-10-21T18:00:01Z")
         self.assertTrue(self.expects("messages", "alpha-c2", later))
