@@ -12,6 +12,7 @@ Part of the [Crosstalk docs](../README.md#documentation).
 | `.gitleaks.toml` | The gitleaks rules: the defaults, plus rules for Crosstalk's data files and tokens |
 | `.gitignore` | The git-ignored data, secret and tool files (see the lists below) |
 | `config.example.json` | Every key of the git-ignored `config.json` (see [Local settings](operations.md#local-settings)) |
+| `.github/workflows/ci.yml` | The GitHub Actions run of each pull request and each push to `main` (see [Continuous integration](#continuous-integration)) |
 | `.githooks/` | gitleaks `pre-commit` and `pre-push` (see [Secret scanning](#secret-scanning)); `commit-msg` strips AI co-author and "Generated with" lines |
 | `index.html` | The whole page: markup, styles, inline logo, and script, with no build step |
 | `favicon.*`, `logo.svg` | Icons (SVG, 64x64 PNG, multi-size ICO) and logo banner |
@@ -254,6 +255,29 @@ npx playwright test
 ```
 
 The Python tests never start them. See [Browser tests](page-v2.md#browser-tests).
+
+### Continuous integration
+
+`.github/workflows/ci.yml` runs on each pull request and on each push to
+`main`, on `ubuntu-24.04`. A newer push to the same branch cancels the run
+before it. The workflow can only read the repo and uses no secrets. It has
+four jobs, which run at the same time:
+
+- `python`: Python 3.9, every `tests/test_*.py` file except
+  `test_wrong_types.py`, then `sh tests/smoke/run.sh`.
+- `wrong-types`: `tests/test_wrong_types.py` alone. Its 1,899 cases take about
+  11 minutes on a laptop, so they get their own job and the `python` job
+  reports sooner.
+- `web`: Node 24 (the repo pins no Node version; 24 meets the `engines` of
+  Vite, Vitest and jsdom in `web/package-lock.json`), then `npm ci`,
+  `npm run typecheck`, `npm test` and `npm run build` with the budget check.
+  The job fails when the build changes `web/dist/`. Then it installs Chromium
+  (cached by the lockfile) and runs `npx playwright test`.
+- `gitleaks`: gitleaks 8.30.1, checked by its SHA-256, scans the commits of
+  the pull request or the push with `.gitleaks.toml`.
+
+The runner has no `.install-names`, so `test_clean_install.py` skips its name
+check there. Run it on your own clone.
 
 ### Data clean-up done at read time
 
