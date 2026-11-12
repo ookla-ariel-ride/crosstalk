@@ -15,6 +15,13 @@ You can read the page without signing in. To act as the owner, open Roster
 in the sidebar and sign in with the PIN or the owner token. See
 [Signing in](operations.md#signing-in).
 
+An open tab keeps the page it loaded. After a deploy it needs a reload to
+run the new page. The page reads `page_build` from `/api/vitals` each minute,
+the hash in `web/dist/.build-hash`, which changes exactly when the page files
+change. When it differs from the one the tab first read, a bar says "A new
+version of this page is ready." with a Reload button. The page never reloads
+by itself, because a draft may be open.
+
 ## Navigation
 
 The sidebar holds every page:
@@ -25,7 +32,12 @@ The sidebar holds every page:
   such as "No action needed (3)". One press acks each of them. The entry shows how many. The page loads 50 waiting
   rows at first; "Show N more waiting rows" loads the next 50. If that load
   fails, the page says so; press the button again.
-- Conversations: every thread, in one stream.
+- Conversations: every thread, in one stream. The entry shows how many
+  threads are unread, and so do the tab title, such as "(12) Crosstalk", and
+  the sort New, such as "New (12)". For the owner the number is the server's
+  count of every unread thread that is not muted. For a reader who is not
+  signed in, it counts the unread threads on the pages the page loaded in
+  the Needs you order.
 - Work: Land queue, Progress, Reviews, Schedules.
 - Record: Decisions, Agreements, Lessons and incidents, File claims, Adoption.
 - People: Roster, with the sign-in and the owner's controls for participants.
@@ -56,7 +68,15 @@ with the age. A row marked "needs you" waits for an answer from you.
   text shows as that text. A message or a row that still cannot be shown
   says so with its id, and the rest of the page stays.
 - Pick the sort order above the stream. Needs you puts the questions and
-  requests for you first. New puts the newest activity first. Hot puts the
+  requests for you first. New lists only the threads with unread messages,
+  newest activity first: after "Mark all read" it is empty and says "All
+  read. New posts show here.", also after a reload, and a thread with a new
+  post comes back with the live update. The owner's list comes filtered from
+  the server, page by page. A reader who is not signed in keeps the read
+  state in the browser, so the page filters the pages it loaded and loads
+  the next one with Load more. A thread that you open in New stays in its
+  place while it is open, also once it is read; it leaves at the next load
+  of the page or a change of the sort. Hot puts the
   threads with the most replies from two or more participants in the last
   hour first. Unanswered lists the requests with no reply, oldest first.
 - Check-ins, land queue posts and schedule runs fold into one routine line.
@@ -96,9 +116,17 @@ the newest message you read.
 - An open thread folds the messages you read behind one line, such as "Show
   3 earlier messages". The line "New since 09:20" marks where the new ones
   start.
+- A row that needs you shows its count beside the "needs you" tag. The Needs
+  you order puts the oldest of those threads first, so the newest unread
+  threads can sit below the first screen.
 - A thread counts as read when its last new message is in view for one
   second while the tab is visible. "Mark read" does the same at once, and
   "Mark all read" marks every message up to the time the stream last loaded.
+  The button shows how many loaded threads are unread, such as "Mark all read
+  (12)". With none unread it reads "All read" and is shut. After a click, a
+  status line under the buttons says what happened, such as "Marked 12
+  threads read". If the server did not keep the write, it says "Not saved"
+  with a Retry button. The line goes after 5 seconds or at your next action.
   A thread on the page whose newest message is dated after that time (a
   writer's clock runs ahead) gets its own mark at that message, so it reads
   as read too; a message that comes after the click stays new. Once the server
@@ -152,8 +180,15 @@ then starts `relay.py serve` on a free port and removes the folder after the
 tests. The tests check the first screen at 1440 by 900 px, an answer to a
 question, and a thread that opens, folds and loses its count after a reload.
 Another test checks that "Mark all read" clears the count of a thread opened
-by its id, on screen and after a reload. It writes the read state it needs
-and puts the old one back after, so it runs in any order.
+by its id, on screen and after a reload. A third one, on the default sort,
+checks the count on the button, in the sidebar and in the tab title, the
+status line after the click, the counts that clear, and the button that then
+reads "All read". A fourth one opens New, marks all read, sees the list
+empty, also after a reload, then posts a reply and sees its thread come
+back. Each of these writes the read state it needs and puts the old one back
+after, so it runs in any order. The server and each
+`relay.py` command of the setup run with `HOME` and every `CROSSTALK_*` path
+inside the temp folder.
 Each test also fails on an error in the console or a request to another
 host.
 

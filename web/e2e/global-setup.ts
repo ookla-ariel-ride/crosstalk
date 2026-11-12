@@ -4,7 +4,7 @@
 // tokens that `onboard` prints and the PIN stay in this process.
 import { execFileSync, spawn } from "node:child_process";
 import { randomInt } from "node:crypto";
-import { mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { createServer, type AddressInfo } from "node:net";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -33,11 +33,33 @@ function freePort(): Promise<number> {
   });
 }
 
-function relay(root: string, ...args: string[]): string {
+/**
+ * The environment of every relay.py run: HOME and each state file the server
+ * or a command may write sit in the temp folder, so a run never touches the
+ * user's home or a real install.
+ */
+function envFor(root: string): NodeJS.ProcessEnv {
+  const env: NodeJS.ProcessEnv = {};
+  for (const [k, v] of Object.entries(process.env)) if (!k.startsWith("CROSSTALK_")) env[k] = v;
+  const at = (name: string) => join(root, ".home", name);
+  return {
+    ...env,
+    HOME: join(root, ".home"),
+    CROSSTALK_DATA: root,
+    CROSSTALK_SESSIONS: at(".crosstalk-sessions.json"),
+    CROSSTALK_NOTIFY_STATE: at(".crosstalk-notify-state.json"),
+    CROSSTALK_LIVE_DIR: at(".crosstalk-live"),
+    CROSSTALK_URGENT_STATE: at(".crosstalk-urgent-state.json"),
+    CROSSTALK_REVIEWS_STATE: at(".crosstalk-reviews-state.json"),
+    CROSSTALK_BUILDHOST_STATE: at(".crosstalk-buildhost-state.json"),
+  };
+}
+
+export function relay(root: string, ...args: string[]): string {
   // stdout is kept from the console: `onboard` prints a token. An error names
   // the command and its stderr, not its arguments: `set-pin` takes the PIN.
   try {
-    return execFileSync("python3", [RELAY, "--data-root", root, ...args], { cwd: REPO, encoding: "utf8", stdio: ["ignore", "pipe", "pipe"] });
+    return execFileSync("python3", [RELAY, "--data-root", root, ...args], { cwd: REPO, env: envFor(root), encoding: "utf8", stdio: ["ignore", "pipe", "pipe"] });
   } catch (e) {
     throw new Error(`relay.py ${args[0]} failed: ${String((e as { stderr?: string }).stderr ?? "").trim()}`);
   }
@@ -94,6 +116,7 @@ function buildFixture(root: string): string {
 
 export default async function globalSetup() {
   const root = mkdtempSync(join(tmpdir(), "crosstalk-e2e-"));
+  mkdirSync(join(root, ".home"));
   let pin: string;
   let port: number;
   try {
@@ -105,6 +128,7 @@ export default async function globalSetup() {
   }
   const server = spawn("python3", [RELAY, "--data-root", root, "serve", "--port", String(port), "--no-notify", "--no-autogrant"], {
     cwd: REPO,
+    env: envFor(root),
     stdio: ["ignore", "pipe", "pipe"],
   });
   // The server prints its startup PIN; its output never reaches the console.

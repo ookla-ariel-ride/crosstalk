@@ -34,6 +34,8 @@ export interface ThreadsPage {
   /** The cursor of the next page, or null at the end. */
   next: string | null;
   server_time: string;
+  /** With `unread=1`, for the owner: how many unread threads the server holds. */
+  unread_total?: number;
 }
 
 /** A disagreement's ruling, as the present page writes it. */
@@ -127,6 +129,8 @@ export interface Vitals {
   build_host: BuildHost | null;
   /** [pattern, family] pairs. */
   model_families: [string, string][];
+  /** The hash in web/dist/.build-hash of the code the server runs; null when the page is not built. */
+  page_build?: string | null;
 }
 
 /** GET /api/me: the role of the caller. */

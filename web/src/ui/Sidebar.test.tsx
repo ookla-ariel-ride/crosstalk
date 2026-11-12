@@ -112,7 +112,7 @@ describe("Sidebar", () => {
     ]);
     const count = (name: string) => screen.getByRole("link", { name: new RegExp("^" + name) }).querySelector("[data-count]")?.textContent ?? null;
     expect(count("Needs you")).toBe("2");
-    // No route gives a total of unread threads, so Conversations shows no count.
+    // The sidebar gets no unread total here, so Conversations shows no count.
     expect(count("Conversations")).toBeNull();
     expect(count("Land queue")).toBe("2");
     expect(count("Agreements")).toBe("16 open");
@@ -120,6 +120,12 @@ describe("Sidebar", () => {
     expect(count("File claims")).toBeNull();
     expect(count("Reviews")).toBeNull();
     expect(count("Progress")).toBeNull();
+  });
+
+  test("Conversations shows the unread total it is given", () => {
+    renderWith(<Sidebar route={HOME} mode="push" unread={12} />);
+    const link = screen.getByRole("link", { name: "Conversations 12 unread" });
+    expect(link.querySelector("[data-count]")?.textContent).toBe("12");
   });
 
   test("open waiting rows count in Needs you", () => {

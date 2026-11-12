@@ -236,7 +236,7 @@ class ThreadIndex:
             return self.by_root.get(root)
 
     def page(self, order: str, now: str, cursor: Optional[str],
-             limit: Optional[int] = DEFAULT_LIMIT) -> Tuple[List[dict], Optional[str]]:
+             limit: Optional[int] = DEFAULT_LIMIT, all_rows: bool = False) -> Tuple[List[dict], Optional[str]]:
         """One page of the threads in `order` as of `now` (see page()).
 
         Each order is sorted once per replay, and `hot` again when a count
@@ -250,8 +250,15 @@ class ThreadIndex:
             if roots_ is None:
                 roots_ = [t["root"] for t in sort_threads(list(self.by_root.values()), order)]
                 self._sorted[order] = roots_
+            if all_rows:
+                return [self.by_root[r] for r in roots_], None
             items, nxt = page(roots_, cursor, limit)
             return [self.by_root[r] for r in items], nxt
+
+    def ordered(self, order: str, now: str) -> List[dict]:
+        """Every thread in `order` as of `now`, from the same sorted ids as page()."""
+        rows, _nxt = self.page(order, now, None, None, all_rows=True)
+        return rows
 
     def thread(self, root: str) -> Optional[List[dict]]:
         """The messages of one thread in created order with `id`, `depth`, `quote` and the created `t`, or None.

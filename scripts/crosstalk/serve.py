@@ -9,7 +9,7 @@ The server is the page host and the database:
   GET  /api/read-state  -> the owner's read state (readstate.py); the owner only
   PUT  /api/read-state  -> a thread's read mark, the mark-all time, or a mute; the owner only
   GET  /api/events      -> a Server-Sent Events stream of the ids of new log rows (events.py)
-  GET  /api/vitals      -> the health numbers: disk, usage, build host (vitals.py), and the state row (state.py)
+  GET  /api/vitals      -> the health numbers: disk, usage, build host (vitals.py), the state row (state.py), and page_build
   GET  /api/section/<name> -> one section of the v2 page, open rows first, a page at a time (sections.py)
   GET  /api/<collection>-> one collection replayed
   GET  /api/queue       -> the land queue of the build host (landqueue.py)
@@ -161,6 +161,19 @@ def _git_commit(root: Path) -> Optional[str]:
     if out.returncode != 0:
         return None
     return out.stdout.decode("utf-8", "replace").strip() or None
+
+
+def page_build(code_root) -> Optional[str]:
+    """The hash in web/dist/.build-hash: it changes exactly when the v2 page's files change.
+
+    An open v2 tab reads it through /api/vitals and offers a reload when it
+    differs from the one it first saw. None when the page is not built.
+    """
+    try:
+        text = Path(code_root).joinpath(*V2_DIST, ".build-hash").read_text(encoding="utf-8").strip()
+    except (OSError, ValueError):
+        return None
+    return text or None
 
 
 _build_info_cache = {}  # type: Dict[str, Tuple[Optional[tuple], float, dict]]
@@ -650,7 +663,12 @@ class CrosstalkHandler(BaseHTTPRequestHandler):
                                    coordinator=config_mod.coordinator(self.state.cache.roster())))
 
     def _threads(self):
-        """One page of threads: ?sort=needs|new|hot|unanswered (default new), &cursor=, &limit=."""
+        """One page of threads: ?sort=needs|new|hot|unanswered (default new), &cursor=, &limit=.
+
+        &unread=1 lists only the owner's unread threads, in the same order, pages
+        counted over those, with `unread_total`. A reader with no server read
+        state (not the owner) gets every thread: the page filters on its own.
+        """
         query = parse_qs(urlsplit(self.path).query)
         order = query.get("sort", ["new"])[-1] or "new"
         if order not in threads_mod.ORDERS:
@@ -662,12 +680,28 @@ class CrosstalkHandler(BaseHTTPRequestHandler):
         except ValueError:
             self._error(400, "the limit must be a whole number")
             return
+        unread_only = query.get("unread", [""])[-1]
+        if unread_only not in ("", "0", "1"):
+            self._error(400, "unread must be 1 or 0")
+            return
         try:
             index = self.state.cache.threads()
         except (OSError, ValueError) as e:
             self._error(500, "cannot read the log: %s" % e)
             return
         now = now_iso()
+        if unread_only == "1" and self._role() == "owner":
+            # A muted thread stays hidden on the page until it needs the owner: left out here too.
+            muted = set(readstate.load(self.state.root).get("muted", []))
+            fresh = [t for t in self._with_unread(index, index.ordered(order, now))
+                     if t["unread"] > 0 and (t["root"] not in muted or t["needs_owner"])]
+            try:
+                items, nxt = threads_mod.page(fresh, query.get("cursor", [""])[-1], limit)
+            except ValueError as e:
+                self._error(400, str(e))
+                return
+            self._json(200, {"threads": items, "next": nxt, "server_time": now, "unread_total": len(fresh)})
+            return
         try:
             items, nxt = index.page(order, now, query.get("cursor", [""])[-1], limit)
         except ValueError as e:
@@ -792,6 +826,7 @@ class CrosstalkHandler(BaseHTTPRequestHandler):
                                           buildhost_state=self.state.buildhost_state, now=now,
                                           readings=dict(out))
         out["model_families"] = cfg["modelFamilies"]
+        out["page_build"] = page_build(self.state.code_root)
         self._json(200, out)
 
     def _collection(self, name: str):

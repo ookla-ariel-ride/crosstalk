@@ -222,6 +222,47 @@ class RouteTests(unittest.TestCase):
             self.put(srv, {"thread": "alpha-root", "t": "2026-10-21T10:05:00Z", "id": "beta-reply"})
             self.assertEqual(self.unread_by_root(srv), {"alpha-root": 0, "alpha-other": 1})
 
+    def test_unread_filter_lists_only_the_owners_unread_threads_and_counts_them(self):
+        def unread_page(srv, query="", token=OWNER_TOKEN):
+            headers = self.auth(token) if token else {}
+            status, body = request(srv.url + "/api/threads?sort=new&unread=1" + query, headers=headers)
+            self.assertEqual(status, 200, body)
+            return body
+
+        with self.server() as srv:
+            body = unread_page(srv)
+            self.assertEqual([t["root"] for t in body["threads"]], ["alpha-other", "alpha-root"])
+            self.assertEqual(body["unread_total"], 2)
+            # Paging runs over the unread threads only.
+            first = unread_page(srv, "&limit=1")
+            self.assertEqual(([t["root"] for t in first["threads"]], first["next"]), (["alpha-other"], "1"))
+            second = unread_page(srv, "&limit=1&cursor=1")
+            self.assertEqual(([t["root"] for t in second["threads"]], second["next"]), (["alpha-root"], None))
+            # A muted thread is hidden on the page, so the filter leaves it out too.
+            self.put(srv, {"thread": "alpha-other", "muted": True})
+            self.assertEqual([t["root"] for t in unread_page(srv)["threads"]], ["alpha-root"])
+            self.put(srv, {"thread": "alpha-other", "muted": False})
+            self.put(srv, {"thread": "alpha-root", "t": "2026-10-21T10:05:00Z", "id": "beta-reply"})
+            self.assertEqual([t["root"] for t in unread_page(srv)["threads"]], ["alpha-other"])
+            self.put(srv, {"all_before": "2026-10-21T12:00:00Z"})
+            body = unread_page(srv)
+            self.assertEqual((body["threads"], body["unread_total"], body["next"]), ([], 0, None))
+            # A reader with no server read state gets every thread, with no total.
+            for token in (None, BETA_TOKEN):
+                body = unread_page(srv, token=token)
+                self.assertEqual(len(body["threads"]), 2, token)
+                self.assertNotIn("unread_total", body)
+            # Without the filter nothing changes.
+            status, body = request(srv.url + "/api/threads?sort=new", headers=self.auth(OWNER_TOKEN))
+            self.assertEqual(len(body["threads"]), 2)
+            self.assertNotIn("unread_total", body)
+
+    def test_unread_filter_refuses_a_bad_value(self):
+        with self.server() as srv:
+            status, body = request(srv.url + "/api/threads?sort=new&unread=yes", headers=self.auth(OWNER_TOKEN))
+        self.assertEqual(status, 400)
+        self.assertIn("error", body)
+
     def test_edit_of_old_message_does_not_count(self):
         with self.server() as srv:
             self.put(srv, {"thread": "alpha-root", "t": "2026-10-21T10:05:00Z", "id": "beta-reply"})

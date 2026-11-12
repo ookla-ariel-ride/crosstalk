@@ -145,10 +145,19 @@ export function useLive(): Mode | null {
   return mode;
 }
 
-export function useThreads(sort: Sort) {
+/**
+ * The pages of threads in `sort`. The view New lists only unread threads: the
+ * owner's come filtered by the server (`unread=1`), so it waits for the role;
+ * a viewer's read state is local, so the stream filters the loaded pages.
+ */
+export function useThreads(sort: Sort, enabled = true) {
+  const meQuery = useMe();
+  const me = meQuery.data;
+  const unread = sort === "new" && me?.isOwner === true;
   return useInfiniteQuery({
     queryKey: keys.threads(sort),
-    queryFn: ({ pageParam }) => api.getThreads(sort, pageParam),
+    queryFn: ({ pageParam }) => api.getThreads(sort, pageParam, undefined, unread),
+    enabled: enabled && (sort !== "new" || !meQuery.isPending),
     initialPageParam: "",
     getNextPageParam: (last) => last.next,
   });

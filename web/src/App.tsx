@@ -1,5 +1,6 @@
 import { useLive } from "./api/queries";
 import { MarkDoneButton, NewThread, noActionRow, OwnerScope, ownerActions, People } from "./features/owner";
+import { useUnreadTotal } from "./features/conversations/reading";
 import { Conversations, NeedsYou } from "./features/conversations/Stream";
 import { SectionPage } from "./features/sections/SectionPage";
 import type { Route } from "./logic/route";
@@ -32,8 +33,9 @@ export function App() {
   const route = useHashRoute();
   // The one place that starts the live updates.
   const mode = useLive();
+  const unread = useUnreadTotal();
   return (
-    <Shell route={route} mode={mode}>
+    <Shell route={route} mode={mode} unread={unread}>
       {/* A render error stays in the page of the route; another route starts clean. */}
       <Guard key={JSON.stringify(route)} what="This page">
         {page(route)}

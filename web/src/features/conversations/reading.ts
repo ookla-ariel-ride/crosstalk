@@ -4,8 +4,8 @@
 import { useQueryClient } from "@tanstack/react-query";
 import { useSyncExternalStore } from "react";
 import { api } from "../../api/client";
-import { invalidate, keys, newerReadState, useMe, useReadState } from "../../api/queries";
-import type { ReadMark, ReadState } from "../../api/types";
+import { invalidate, keys, newerReadState, useMe, useReadState, useThreads } from "../../api/queries";
+import type { ReadMark, ReadState, Thread } from "../../api/types";
 
 export const STORAGE_KEY = "crosstalk.read-state";
 
@@ -88,6 +88,45 @@ export function markOf(state: ReadState, root: string): ReadMark | undefined {
   return own && isLater(own, all) ? own : all;
 }
 
+/**
+ * Whether `thread` holds a message new to the reader. The owner's row carries
+ * the server's `unread`; a read state that already covers the newest message
+ * (a mark-all time the server kept before the list loads again) makes it read.
+ * A row with no count (a viewer's) counts by the marks once the state is ready.
+ */
+export function isUnread(thread: Thread, state: ReadState, ready: boolean): boolean {
+  if (thread.unread !== undefined ? thread.unread <= 0 : !ready) return false;
+  return isLater({ t: thread.last_t, id: thread.last_id }, markOf(state, thread.root));
+}
+
+/**
+ * The unread threads of `list`, each root once, as the stream shows them: a
+ * muted thread is hidden, and so left out, unless it needs the owner.
+ */
+export function unreadThreads(list: Thread[], state: ReadState, ready: boolean): Thread[] {
+  const seen = new Set<string>();
+  const muted = new Set(state.muted);
+  return list.filter((t) => {
+    if (seen.has(t.root) || (muted.has(t.root) && !t.needs_owner) || !isUnread(t, state, ready)) return false;
+    seen.add(t.root);
+    return true;
+  });
+}
+
+/**
+ * How many threads are unread. For the owner, the server's count of the view
+ * New (every unread thread); until it loads, and for a viewer, whose state is
+ * local, the unread threads on the loaded pages of the needs order.
+ */
+export function useUnreadTotal(): number {
+  const { state, ready, self } = useReading();
+  const owner = self === OWNER_ID;
+  const pages = useThreads("needs").data?.pages;
+  const server = useThreads("new", owner).data?.pages[0]?.unread_total;
+  if (owner && server !== undefined) return server;
+  return unreadThreads(pages?.flatMap((p) => p.threads) ?? [], state, ready).length;
+}
+
 /** Writes in flight, so one mark is sent once. */
 const sending = new Set<string>();
 
@@ -107,9 +146,10 @@ export interface Reading {
   markThread(root: string, mark: ReadMark): void;
   /**
    * Mark every message up to `t` read, and each thread of `marks` up to its
-   * mark: the threads shown whose newest message is dated after `t`.
+   * mark: the threads shown whose newest message is dated after `t`. False
+   * when a write of the owner's failed.
    */
-  markAll(t: string, marks?: Record<string, ReadMark>): void;
+  markAll(t: string, marks?: Record<string, ReadMark>): Promise<boolean>;
   /** How many times markAll ran in this tab; for the owner, once the server kept its writes. */
   markAllRuns: number;
   /** Mute or unmute a thread: the stream hides a muted one until it needs the owner. False when the write failed. */
@@ -156,7 +196,7 @@ export function useReading(): Reading {
     },
     markAllRuns: runs,
     markAll(t, marks = {}) {
-      if (!ready) return;
+      if (!ready) return Promise.resolve(false);
       const all = state.all_before === null || t > state.all_before;
       const later = Object.entries(marks).filter(([root, mark]) => isLater(mark, markOf(state, root)));
       const done = () => {
@@ -169,16 +209,18 @@ export function useReading(): Reading {
           ...later.map(([root, mark]) => send(`${root}\n${mark.t}\n${mark.id}`, { thread: root, t: mark.t, id: mark.id })),
         ];
         // The open threads drop "New since" only once the server kept every write.
-        void Promise.all(writes).then((oks) => {
-          if (oks.every(Boolean)) done();
+        return Promise.all(writes).then((oks) => {
+          if (!oks.every(Boolean)) return false;
+          done();
+          return true;
         });
-        return;
       }
       if (all || later.length) {
         // One write, so the marks and the time do not overwrite each other.
         saveLocal({ ...state, all_before: all ? t : state.all_before, threads: { ...state.threads, ...Object.fromEntries(later) } });
       }
       done();
+      return Promise.resolve(true);
     },
     mute(root, muted) {
       if (!ready || state.muted.includes(root) === muted) return Promise.resolve(true);
