@@ -5,7 +5,7 @@ import { keys } from "../../api/queries";
 import type { Me, Message, Snapshot, ThreadDetail } from "../../api/types";
 import type { ReactNode } from "react";
 import { renderWith as renderBare, thread } from "../../ui/testing";
-import { drafts } from "./drafts";
+import { answerIds, drafts } from "./drafts";
 import { HoldButton, NewThread, ownerActions, OwnerScope, People, SignIn } from "./index";
 
 /** The page puts every owner control inside one OwnerScope. */
@@ -78,6 +78,7 @@ function renderActions(me: Me | undefined, message: Message | null = QUESTION, d
 
 beforeEach(() => {
   drafts.clear();
+  answerIds.clear();
   localStorage.clear();
   sessionStorage.clear();
   // jsdom has no layout: give the list a 600 px view and each row 56 px.
@@ -468,6 +469,23 @@ describe("one answer for one question", () => {
     first.unmount();
     renderActions(OWNER);
     const again = serve({ "/api/append": [201, {}] });
+    fireEvent.click(screen.getByRole("button", { name: "Keep the log" }));
+    await waitFor(() => expect(posts(again, "/api/append")).toHaveLength(1));
+    expect((posts(again, "/api/append")[0]?.body as { id: string }).id).toBe((posts(failed, "/api/append")[0]?.body as { id: string }).id);
+  });
+
+  test("a failed written answer, unmount, mount again, Cancel, then a choice: both sends carry one id", async () => {
+    const first = renderActions(OWNER);
+    const failed = serve({ "/api/append": [500, { error: "cannot write the log: disk full" }] });
+    fireEvent.click(screen.getByRole("button", { name: "Write an answer" }));
+    fireEvent.change(screen.getByLabelText("Your answer"), { target: { value: "Neither" } });
+    fireEvent.click(screen.getByRole("button", { name: "Send" }));
+    await screen.findByRole("alert");
+    first.unmount();
+    renderActions(OWNER);
+    const again = serve({ "/api/append": [201, {}] });
+    // The box comes back with the kept text; Cancel drops the text, not the answer's id.
+    fireEvent.click(screen.getByRole("button", { name: "Cancel" }));
     fireEvent.click(screen.getByRole("button", { name: "Keep the log" }));
     await waitFor(() => expect(posts(again, "/api/append")).toHaveLength(1));
     expect((posts(again, "/api/append")[0]?.body as { id: string }).id).toBe((posts(failed, "/api/append")[0]?.body as { id: string }).id);

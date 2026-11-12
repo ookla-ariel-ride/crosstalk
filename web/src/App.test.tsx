@@ -7,7 +7,7 @@ import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
 import { keys } from "./api/queries";
 import type { Me, Message, ReadState, Snapshot } from "./api/types";
 import { page } from "./App";
-import { drafts } from "./features/owner/drafts";
+import { answerIds, drafts } from "./features/owner/drafts";
 import type { Route } from "./logic/route";
 import { renderWith, thread, threads } from "./ui/testing";
 
@@ -75,6 +75,7 @@ beforeEach(() => {
   sessionStorage.clear();
   window.location.hash = "";
   drafts.clear();
+  answerIds.clear();
 });
 afterEach(() => vi.restoreAllMocks());
 

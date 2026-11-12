@@ -21,6 +21,15 @@ export interface Draft {
 
 export const drafts = new Map<string, Draft>();
 
+/**
+ * The message id of the owner's answer to each question, by question id. It
+ * belongs to the question, not to the draft text: a choice and the composer
+ * share it, and Cancel, which drops the text, keeps it. It goes when the
+ * thread shows the question closed, or when a sent answer did not arrive
+ * (ANSWER_WAIT_MS), which takes a new id on purpose.
+ */
+export const answerIds = new Map<string, string>();
+
 /** How long a sent answer may take to show in the thread. */
 export const ANSWER_WAIT_MS = 60_000;
 

@@ -6,7 +6,7 @@ import type { Message } from "../../api/types";
 import { choices } from "../../logic/choices";
 import { answer, newOwnId } from "./actions";
 import { Composer } from "./Composer";
-import { drafts, keepDraft } from "./drafts";
+import { answerIds, drafts, keepDraft } from "./drafts";
 import styles from "./owner.module.css";
 import { Failure, useOwnerData, useSend } from "./shared";
 
@@ -23,16 +23,16 @@ export function AnswerButtons({ question }: { question: Message }) {
   const sending = useSend(true);
   const lock = useRef(false);
   const [writingBusy, setWritingBusy] = useState(false);
-  const id = useRef<string | null>(null);
-  // A sent answer: the composer's close then keeps no id.
+  // A sent answer: the composer's close then leaves the mark that it was sent.
   const landed = useRef(false);
   const draft = "answer:" + question.id;
-  // The id lives in the draft store too, so a row that mounts again after a
-  // failed send uses it again: a first try that did land is then rewritten.
+  // The id of this question's answer lives in drafts.answerIds, apart from the
+  // draft text, so a row that mounts again, or a Cancel, keeps it: a first try
+  // that did land is then rewritten, not answered twice.
   function answerId(): string {
-    id.current ??= drafts.get(draft)?.id ?? newOwnId();
-    keepDraft(draft, { id: id.current });
-    return id.current;
+    let id = answerIds.get(question.id);
+    if (id === undefined) answerIds.set(question.id, (id = drafts.get(draft)?.id ?? newOwnId()));
+    return id;
   }
   // A draft with text kept from an unmounted row opens the box again.
   const [writing, setWriting] = useState(() => !!(drafts.get(draft)?.text || drafts.get(draft)?.subject));
@@ -96,7 +96,6 @@ export function AnswerButtons({ question }: { question: Message }) {
             // A sent answer leaves its mark; Cancel drops the text, not the id
             // of a try that may have landed.
             if (landed.current) keepDraft(draft, { answeredAt: Date.now(), lost: false });
-            else if (id.current) keepDraft(draft, { id: id.current });
             setWriting(false);
           }}
         />

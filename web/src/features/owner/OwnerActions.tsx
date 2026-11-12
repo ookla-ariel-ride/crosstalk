@@ -12,7 +12,7 @@ import { nameOf } from "../../ui/Bars";
 import { approveParticipant, holdAgreement, markDone, recordDecision, reply, splitPost } from "./actions";
 import { AnswerButtons } from "./AnswerButtons";
 import { Composer } from "./Composer";
-import { ANSWER_WAIT_MS, drafts, keepDraft } from "./drafts";
+import { ANSWER_WAIT_MS, answerIds, drafts, keepDraft } from "./drafts";
 import styles from "./owner.module.css";
 import { ActionButton, SIGN_IN, useIsOwner, useOwnerData } from "./shared";
 
@@ -70,7 +70,9 @@ export function OwnerActions({ thread, message }: { thread: Thread; message: Mes
   // The loaded thread shows the question closed: the mark of a sent answer has done its work.
   const closedId = state === "answered" || state === "withdrawn" ? message?.id : undefined;
   useEffect(() => {
-    if (closedId !== undefined && drafts.get("answer:" + closedId)?.answeredAt !== undefined) drafts.delete("answer:" + closedId);
+    if (closedId === undefined) return;
+    answerIds.delete(closedId);
+    if (drafts.get("answer:" + closedId)?.answeredAt !== undefined) drafts.delete("answer:" + closedId);
   }, [closedId]);
   // A sent answer that the thread still does not show ANSWER_WAIT_MS later did
   // not arrive: load the thread again then, and when it still shows the
@@ -85,6 +87,7 @@ export function OwnerActions({ thread, message }: { thread: Thread; message: Mes
     if (sentAt === undefined) return;
     if (late) {
       keepDraft(answerDraft, { answeredAt: undefined, id: null, lost: true });
+      if (message) answerIds.delete(message.id);
       setTries((n) => n + 1);
       return;
     }
