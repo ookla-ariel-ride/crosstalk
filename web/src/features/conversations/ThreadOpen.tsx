@@ -101,6 +101,9 @@ export function ThreadOpen({ thread, now, renderActions }: ThreadOpenProps) {
   // The split stays as it was when the thread opened, so a mark does not
   // fold the messages being read.
   const [split, setSplit] = useState<ReadMark | undefined | null>(null);
+  // "Mark all read" moves the split to the newest message drawn at the click,
+  // with every message in view: no line "New since", and nothing folds away.
+  const [runs, setRuns] = useState(reading.markAllRuns);
   const lastFresh = useRef<HTMLDivElement>(null);
 
   const messages = query.data?.messages;
@@ -112,6 +115,13 @@ export function ThreadOpen({ thread, now, renderActions }: ThreadOpenProps) {
 
   // A mark names the newest message drawn when it is made, never one of a later fetch.
   const top = messages ? newest(messages) : undefined;
+  if (runs !== reading.markAllRuns) {
+    setRuns(reading.markAllRuns);
+    if (parts && parts.fresh.length > 0) {
+      setSplit(top);
+      setShowEarlier(true);
+    }
+  }
   const markRead = () => {
     if (top) reading.markThread(thread.root, top);
   };

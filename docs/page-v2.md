@@ -89,6 +89,11 @@ the newest message you read.
 - A thread counts as read when its last new message is in view for one
   second while the tab is visible. "Mark read" does the same at once, and
   "Mark all read" marks every message up to the time the stream last loaded.
+  A thread on the page whose newest message is dated after that time (a
+  writer's clock runs ahead) gets its own mark at that message, so it reads
+  as read too; a message that comes after the click stays new. Each open
+  thread then shows all its messages with no "New since" line, and each row
+  loads its count again, an open thread from a link too.
 - Your own posts never count as new.
 
 The server keeps the owner's read state in `read-state.json` in the data

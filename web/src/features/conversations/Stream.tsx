@@ -1,10 +1,11 @@
 // The stream of threads that fold (spec, "Threads"): one row for each thread,
 // opened in place; routine runs and muted threads folded into one line each.
 // The server sorts; the page never sorts a list itself.
+import { useQueryClient } from "@tanstack/react-query";
 import { memo, type ReactNode, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { ApiError } from "../../api/client";
-import { useSection, useThread, useThreads } from "../../api/queries";
-import type { SectionRow, Thread } from "../../api/types";
+import { keys, useSection, useThread, useThreads } from "../../api/queries";
+import type { ReadMark, SectionRow, Thread, ThreadDetail } from "../../api/types";
 import { afterSummary } from "../../logic/afterSummary";
 import { ago } from "../../logic/ago";
 import { foldRoutine } from "../../logic/foldRoutine";
@@ -165,6 +166,7 @@ export function Stream({ sort, open, onOpenChange, needsOnly = false, renderActi
   const query = useThreads(sort);
   const reading = useReading();
   const now = useNow();
+  const qc = useQueryClient();
 
   const pages = query.data?.pages;
   const muted = reading.state.muted;
@@ -263,6 +265,22 @@ export function Stream({ sort, open, onOpenChange, needsOnly = false, renderActi
   // The newest server time of the pages shown: "Mark all read" never reaches past what was loaded.
   const serverTime = pages?.reduce((top, p) => (p.server_time > top ? p.server_time : top), "") ?? "";
 
+  // A message dated after the server time (a writer's clock ahead) stays past
+  // all_before, so each thread shown with such a message gets its own mark at
+  // its newest message: the list row, or the open thread's row when that one
+  // is later. A message that comes after the click stays new everywhere else.
+  const markAll = () => {
+    const marks: Record<string, ReadMark> = {};
+    const add = (row: Thread | undefined) => {
+      if (!row || row.last_t <= serverTime) return;
+      const mark = { t: row.last_t, id: row.last_id };
+      if (isLater(mark, marks[row.root])) marks[row.root] = mark;
+    };
+    for (const t of loaded) add(t);
+    for (const id of [...new Set([...loaded.map((t) => t.root), ...linked])]) add(qc.getQueryData<ThreadDetail>(keys.thread(id))?.thread);
+    reading.markAll(serverTime, marks);
+  };
+
   let body;
   if (query.isError) {
     const denied = query.error instanceof ApiError && (query.error.status === 401 || query.error.status === 403);
@@ -308,7 +326,7 @@ export function Stream({ sort, open, onOpenChange, needsOnly = false, renderActi
           <button
             type="button"
             className={styles.action}
-            onClick={() => reading.markAll(serverTime)}
+            onClick={markAll}
             disabled={!serverTime || !reading.ready}
           >
             Mark all read
