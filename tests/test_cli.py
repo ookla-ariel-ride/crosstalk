@@ -1,4 +1,5 @@
 import json
+import os
 import shutil
 import subprocess
 import sys
@@ -136,6 +137,68 @@ class CliTests(unittest.TestCase):
             self.assertIn("warning: unknown kind 'status'", p.stderr)
             self.assertIn("behind the clock", p.stderr)
             self.assertEqual(p.stdout.strip(), "1")
+
+
+class SetPinTests(unittest.TestCase):
+    """relay.py set-pin: the owner's permanent PIN, stored hashed in a temp data root."""
+
+    def setUp(self):
+        sys.path.insert(0, str(REPO / "scripts"))
+        from crosstalk import ownerpin
+        self.ownerpin = ownerpin
+        self.r = TempRepo()
+        self.r.__enter__()
+        self.addCleanup(self.r.__exit__, None, None, None)
+        self.pin_file = self.r.root / "owner-pin.json"
+
+    def run_pin(self, *args):
+        return subprocess.run([sys.executable, str(REPO / "scripts" / "relay.py"),
+                               "--data-root", str(self.r.root), "set-pin"] + list(args),
+                              stdout=subprocess.PIPE, stderr=subprocess.PIPE,
+                              stdin=subprocess.DEVNULL, universal_newlines=True, cwd="/")
+
+    def test_the_stored_hash_matches_the_given_pin_only(self):
+        for pin, other in (("135791", "000000"), ("000000", "135791")):
+            p = self.run_pin(pin)
+            self.assertEqual(p.returncode, 0, p.stderr)
+            self.assertEqual(p.stdout.strip(), "permanent PIN saved (hashed) in owner-pin.json")
+            self.assertTrue(self.ownerpin.check_pin(self.r.root, pin), pin)
+            self.assertFalse(self.ownerpin.check_pin(self.r.root, other), pin)
+            self.assertNotIn(pin, self.pin_file.read_text(encoding="utf-8"))
+            self.assertEqual(os.stat(str(self.pin_file)).st_mode & 0o777, 0o600)
+
+    def test_no_pin_in_the_output(self):
+        p = self.run_pin("246802")
+        self.assertEqual(p.returncode, 0, p.stderr)
+        self.assertNotIn("246802", p.stdout + p.stderr)
+        p = self.run_pin("2468")
+        self.assertNotIn("2468", p.stdout + p.stderr)
+        p = self.run_pin("--clear")
+        self.assertNotIn("246802", p.stdout + p.stderr)
+
+    def test_spaces_around_the_pin_are_dropped(self):
+        p = self.run_pin(" 975319 ")
+        self.assertEqual(p.returncode, 0, p.stderr)
+        self.assertTrue(self.ownerpin.check_pin(self.r.root, "975319"))
+
+    def test_a_bad_pin_exits_1_and_keeps_the_old_one(self):
+        self.assertEqual(self.run_pin("135791").returncode, 0)
+        before = self.pin_file.read_bytes()
+        for bad in ("12", "1234567", "abcdef", ""):
+            p = self.run_pin(bad)
+            self.assertEqual(p.returncode, 1, bad)
+            self.assertEqual(p.stdout, "", bad)
+            self.assertIn("six digits", p.stderr, bad)
+            self.assertEqual(self.pin_file.read_bytes(), before, bad)
+
+    def test_clear_removes_the_pin(self):
+        self.assertEqual(self.run_pin("135791").returncode, 0)
+        p = self.run_pin("--clear")
+        self.assertEqual((p.returncode, p.stdout.strip()), (0, "removed"), p.stderr)
+        self.assertFalse(self.pin_file.exists())
+        self.assertFalse(self.ownerpin.check_pin(self.r.root, "135791"))
+        p = self.run_pin("--clear")
+        self.assertEqual((p.returncode, p.stdout.strip()), (0, "no permanent PIN was set"))
 
 
 if __name__ == "__main__":
