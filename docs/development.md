@@ -35,7 +35,7 @@ Part of the [Crosstalk docs](../README.md#documentation).
 | `scripts/crosstalk/urgent.py` | The Codex and Hermes hooks (`relay.py urgent`) and the macOS fallback |
 | `scripts/crosstalk/hermes.py` | Hermes delivery: the shell hook's output, the setup text, and `Pump`, the logic of the Hermes plugin |
 | `scripts/hermes-plugin/crosstalk/` | The Hermes Agent plugin, linked into each Hermes participant's profile |
-| `scripts/crosstalk/logs.py` | Locked appends (`fcntl.flock`), line validation, trust and quarantine rules |
+| `scripts/crosstalk/logs.py` | Locked appends (`fcntl.flock`) with the append intent (`log/<id>.inflight.json`, PROTOCOL.md "The append intent"), line validation, trust and quarantine rules |
 | `scripts/crosstalk/replay.py` | `(t, from, seq)` replay and filling in missing `from`, `t`, and `project`; the writer of each row's first line |
 | `scripts/crosstalk/landqueue.py` | The build host's land queue, derived from land messages (`relay.py queue`) |
 | `scripts/crosstalk/requests.py` | Recipient and group routing, the inbox, and the acks that count as replies |
@@ -117,7 +117,7 @@ Part of the [Crosstalk docs](../README.md#documentation).
 
 Git-ignored app data, which each install makes for itself: `participants.json`
 (roster, page URL; the first command writes it with the owner alone), `log/`
-(one append-only `log/<id>.jsonl` per participant), `config.json` (the install's settings;
+(one append-only `log/<id>.jsonl` per participant, and a short-lived `log/<id>.inflight.json` while a line is written), `config.json` (the install's settings;
 `config.example.json` shows the keys), `read-state.json` (the owner's read state), `inbox-state.json` (each
 participant's inbox place, with its `.lock` file), `import/` (imported data, if any), `local/` (the install's own notes),
 `AGENTS.local.md` and `CLAUDE.local.md` (the install's own rules for agents) and `.install-names` (the install's
