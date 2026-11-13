@@ -663,10 +663,12 @@ the same steps.
 2. Settle the last writer (below).
 3. Write `log/<id>.inflight.json` as `{"offset": N, "intended_hex": "..."}`:
    the file size before the write, and the hex of the exact line bytes with
-   their `\n`. Write it to a temp file, fsync it, rename it into place and
-   fsync `log/`.
+   their `\n`. Write it to `log/<id>.inflight.json.tmp`, fsync it, rename
+   it into place and fsync `log/`. The flock lets one writer at a time use
+   that temp name, so a temp left by a crash is overwritten, not piled up.
 4. Append the line and fsync the log.
-5. Remove the intent and fsync `log/`.
+5. Remove the intent. No fsync of `log/` is needed: an unlink lost to a
+   power cut leaves a stale intent, which the next writer removes.
 
 To settle the last writer:
 

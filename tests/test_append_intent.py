@@ -7,6 +7,7 @@ log's flock before the line and removes it after the line's fsync.
 """
 import json
 import os
+import stat
 import unittest
 from unittest import mock
 
@@ -56,22 +57,115 @@ class IntentTests(unittest.TestCase):
         self.assertFalse(self.sidecar.exists())
         self.assertEqual(read_log(self.log)[1], [])
 
+    def trace(self, run):
+        """Run `run` and return the ordered events of the append protocol.
+
+        "write" stands where the log first grows: between the last event that
+        saw the old size and the first that saw the new one.
+        """
+        events = []
+        real_fsync, real_unlink, real_replace = os.fsync, os.unlink, os.replace
+        log_ino = os.stat(str(self.log)).st_ino
+        size0 = self.log.stat().st_size
+
+        def note(name):
+            if self.log.stat().st_size != size0 and "write" not in events:
+                events.append("write")
+            events.append(name)
+
+        self.note = note  # lets a test add its own event to the trace
+
+        def fsync(fd):
+            real_fsync(fd)
+            st = os.fstat(fd)
+            note("dir fsync" if stat.S_ISDIR(st.st_mode)
+                 else "log fsync" if st.st_ino == log_ino else "intent fsync")
+
+        def replace(src, dst, *a, **k):
+            real_replace(src, dst, *a, **k)
+            if str(dst) == str(self.sidecar):
+                note("replace")
+
+        def unlink(p, *a, **k):
+            real_unlink(p, *a, **k)
+            if str(p) == str(self.sidecar):
+                note("clear")
+
+        with mock.patch.object(logs.os, "fsync", fsync), \
+                mock.patch.object(logs.os, "replace", replace), \
+                mock.patch.object(logs.os, "unlink", unlink):
+            run()
+        note("end")
+        return events[:-1]
+
     def test_the_intent_is_durable_before_the_line_is_written(self):
-        seen = []
-        real = os.fsync
+        seen = {}
+        real_replace = os.replace
 
-        def spy(fd):
-            real(fd)
-            if os.fstat(fd).st_ino == os.stat(str(self.log)).st_ino:
-                seen.append((self.log.stat().st_size,
-                             json.loads(self.sidecar.read_text()) if self.sidecar.exists() else None))
+        def replace(src, dst, *a, **k):
+            if str(dst) == str(self.sidecar):
+                seen["intent"] = json.loads(open(src, encoding="utf-8").read())
+            return real_replace(src, dst, *a, **k)
 
-        with mock.patch.object(logs.os, "fsync", spy):
-            self.append()
-        size, sidecar = seen[0]
-        self.assertEqual(size, len(self.first) + len(self.record))
-        self.assertEqual(sidecar, {"offset": len(self.first), "intended_hex": self.record.hex()})
+        with mock.patch.object(logs.os, "replace", replace):
+            events = self.trace(self.append)
+        # The last dir fsync goes: a lost unlink leaves a stale intent that the
+        # next append clears without touching a complete line.
+        self.assertEqual(events, ["intent fsync", "replace", "dir fsync", "write",
+                                  "log fsync", "clear"])
+        self.assertEqual(seen["intent"], {"offset": len(self.first),
+                                          "intended_hex": self.record.hex()})
+        self.assertEqual(self.log.read_bytes(), self.first + self.record)
         self.assertFalse(self.sidecar.exists())
+
+    def test_the_hold_check_runs_after_the_intent_just_before_the_write(self):
+        real = logs._check_hold
+
+        def check():
+            self.note("hold check")
+            real()
+
+        with mock.patch.object(logs, "_check_hold", check):
+            events = self.trace(self.append)
+        i = events.index("hold check")
+        self.assertEqual(events[i - 1:i + 2], ["dir fsync", "hold check", "write"])
+
+    def test_an_expired_hold_clears_the_intent_and_writes_nothing(self):
+        with mock.patch.object(logs, "_check_hold",
+                               side_effect=logs.StateHoldExpired("held too long")):
+            with self.assertRaises(logs.StateHoldExpired):
+                self.append()
+        self.assertEqual(self.log.read_bytes(), self.first)
+        self.assertFalse(self.sidecar.exists())
+
+    def test_a_validation_error_leaves_no_sidecar(self):
+        with self.assertRaises(ValueError) as e:
+            append_line(self.r.root, "rev", "set", "messages", "other-2", BODY, t=T)
+        self.assertIn("must start with", str(e.exception))
+        self.assertEqual(self.log.read_bytes(), self.first)
+        self.assertFalse(self.sidecar.exists())
+
+    def test_a_state_row_writes_and_clears_the_intent(self):
+        data = {"from": "rev", "step": 2, "started": None, "by": "rev", "reason": None, "t": T}
+        events = self.trace(lambda: append_line(self.r.root, "rev", "set", "state",
+                                                "rev-wind-down", data, t=T))
+        self.assertEqual(events, ["intent fsync", "replace", "dir fsync", "write",
+                                  "log fsync", "clear"])
+        self.assertEqual(read_log(self.log)[0][1].collection, "state")
+        self.assertFalse(self.sidecar.exists())
+
+    def test_a_temp_left_by_a_crash_is_reused_not_piled_up(self):
+        tmp = self.r.root / "log" / "rev.inflight.json.tmp"
+        tmp.write_text("{torn", encoding="utf-8")
+        self.assertEqual(self.append().seq, 2)
+        self.assertEqual(sorted(p.name for p in (self.r.root / "log").glob("rev.inflight*")), [])
+
+    def test_an_infinite_offset_is_refused_like_none(self):
+        content = self.first + self.record[:5]
+        self.log.write_bytes(content)
+        self.sidecar.write_text('{"offset": Infinity, "intended_hex": "%s"}' % self.record.hex(),
+                                encoding="utf-8")
+        self.refused(content)
 
     def test_a_prefix_tail_is_repaired_at_every_cut_point(self):
         for cut in range(1, len(self.record)):

@@ -569,7 +569,8 @@ def _load_intent(root: Path, pid: str) -> Optional[Tuple[int, bytes]]:
     try:
         d = json.loads(intent_path(root, pid).read_text(encoding="utf-8"))
         offset, intended = int(d["offset"]), bytes.fromhex(d["intended_hex"])
-    except (OSError, ValueError, KeyError, TypeError):
+    except (OSError, ValueError, KeyError, TypeError, OverflowError):
+        # OverflowError: an offset of Infinity, which json.loads accepts.
         return None
     if offset < 0 or not intended:
         return None
@@ -577,9 +578,13 @@ def _load_intent(root: Path, pid: str) -> Optional[Tuple[int, bytes]]:
 
 
 def _write_intent(root: Path, pid: str, offset: int, record: bytes) -> None:
-    """Make the intent durable before the line is written (the caller holds the log's flock)."""
+    """Make the intent durable before the line is written (the caller holds the log's flock).
+
+    The temp name is fixed per log: the flock lets one writer at a time use it,
+    and a temp left by a crash is overwritten by the next append, not piled up.
+    """
     path = intent_path(root, pid)
-    tmp = "%s.tmp.%d" % (path, os.getpid())
+    tmp = "%s.tmp" % path
     with open(tmp, "w", encoding="utf-8") as f:
         json.dump({"offset": offset, "intended_hex": record.hex()}, f)
         f.flush()
@@ -589,12 +594,15 @@ def _write_intent(root: Path, pid: str, offset: int, record: bytes) -> None:
 
 
 def _clear_intent(root: Path, pid: str) -> None:
-    """Remove the intent; call it only after the log's fsync."""
+    """Remove the intent; call it only after the log's fsync.
+
+    No fsync of log/ follows: an unlink lost to a power cut leaves a stale
+    intent, and the next append clears it without touching a complete line.
+    """
     try:
         os.unlink(str(intent_path(root, pid)))
     except FileNotFoundError:
-        return
-    _sync_dir(intent_path(root, pid).parent)
+        pass
 
 
 def _recover(root: Path, pid: str, path: Path, f, data: bytes) -> bytes:
@@ -692,10 +700,14 @@ def _append_line(root: Path, from_: str, op: str, collection: str, id: str, data
             result = _validate(text, from_, last + 1, [])
             if isinstance(result, str):
                 raise ValueError(result)
-            _check_hold()
             record = (text + "\n").encode("utf-8")
             f.seek(0, 2)
             _write_intent(root, from_, f.tell(), record)
+            try:
+                _check_hold()  # last, so no slow step sits between it and the write
+            except StateHoldExpired:
+                _clear_intent(root, from_)
+                raise
             f.write(record)
             f.flush()
             os.fsync(f.fileno())
