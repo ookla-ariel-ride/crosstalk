@@ -68,6 +68,16 @@ macOS LaunchAgents are the only service installer. On another system, run
 no git remote holds them. Include the folder in your own backup. A sync service that does
 not follow links does not back up a repo that it reaches only through a link.
 
+**A part line at the end of a log.** A writer that dies mid-append leaves a
+line with no `\n`. The next append cuts it back when `log/<id>.inflight.json`
+names it (PROTOCOL.md, "The append intent"). Otherwise the append refuses
+with "unterminated record at byte N", and `relay.py check` names the line.
+Look at the bytes after offset N in an editor. Remove them only when you
+know no line there is complete, then run `relay.py check`. A power cut can
+also leave zero bytes at the end of a log; the append refuses those the same
+way. To repair it, check that only zero bytes follow the last `\n`, then
+truncate the file to just after that `\n`.
+
 `scripts/install-service.sh uninstall` stops and removes both, and the
 [build host](#build-host-status) poll job `local.crosstalk-buildhost` with
 them. When launchd still holds the old job, the installer tries the load

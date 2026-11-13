@@ -653,6 +653,42 @@ python3 scripts/relay.py append --from codex --op set --collection messages --id
 Use `--data-file PATH` instead of `--data` for a long body. Run
 `python3 scripts/relay.py check` to validate every log.
 
+### The append intent
+A writer can die halfway through a line. The append intent lets the next
+writer repair that line without a guess. A tool that appends to a log
+without `relay.py` (a project's check-in script, for example) must follow
+the same steps.
+
+1. Take an exclusive `flock` on `log/<id>.jsonl` and hold it to the end.
+2. Settle the last writer (below).
+3. Write `log/<id>.inflight.json` as `{"offset": N, "intended_hex": "..."}`:
+   the file size before the write, and the hex of the exact line bytes with
+   their `\n`. Write it to `log/<id>.inflight.json.tmp`, fsync it, rename
+   it into place and fsync `log/`. The flock lets one writer at a time use
+   that temp name, so a temp left by a crash is overwritten, not piled up.
+4. Append the line and fsync the log.
+5. Remove the intent. No fsync of `log/` is needed: an unlink lost to a
+   power cut leaves a stale intent, which the next writer removes.
+
+To settle the last writer:
+
+- The log ends in a part line (no `\n` at the end). The intent names the
+  start of that part line as its `offset`, and the part line is a byte
+  prefix of `intended_hex`: cut the log back to `offset`, fsync it and
+  remove the intent. The append then goes on.
+- Any other part line (no intent, another offset, other bytes): refuse
+  with "unterminated record at byte N" and cut nothing. Repair the log by
+  hand.
+- The log ends in `\n` and holds the intended bytes at `offset`: the line
+  is published. Fsync the log, then remove the intent.
+- The log ends in `\n` and does not hold them (the write never started,
+  or the intent is stale): remove the intent.
+
+Only a part line is ever cut, so a published line is never removed.
+Readers do not repair. `relay.py check` reports a part line as a fatal
+problem and exits 1. The replay keeps the lines before it, also when the
+cut splits a UTF-8 character.
+
 ## Collections
 
 Anyone who can reach the server can read every collection. A participant

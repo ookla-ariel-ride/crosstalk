@@ -80,10 +80,22 @@ def read_log(path: Path, roster: Optional[Roster] = None) -> Tuple[List[Line], L
     owner = path.stem
     name = _rel(path)
     lines = []  # type: List[Line]
+    data = path.read_bytes()
+    torn = None  # type: Optional[Problem]
     try:
-        text = path.read_bytes().decode("utf-8")
+        text = data.decode("utf-8")
     except UnicodeDecodeError as e:
-        return lines, [Problem(name, 1, "not valid UTF-8: %s" % e, True)]
+        # A writer that died mid-line can cut a character in two: keep the
+        # complete lines before that part line, as for any other bad last line.
+        start = data.rfind(b"\n") + 1
+        try:
+            if data.endswith(b"\n") or e.start < start:
+                raise e
+            text = data[:start].decode("utf-8")
+        except UnicodeDecodeError:
+            return lines, [Problem(name, 1, "not valid UTF-8: %s" % e, True)]
+        torn = Problem(name, text.count("\n") + 1,
+                       "an unterminated last line that is not valid UTF-8", True)
     expected = 1
     for n, raw in enumerate(text.split("\n"), start=1):
         if raw == "" and n == len(text.split("\n")):
@@ -93,7 +105,7 @@ def read_log(path: Path, roster: Optional[Roster] = None) -> Tuple[List[Line], L
             return lines, [Problem(name, n, msg, True)]
         lines.append(msg)
         expected += 1
-    return lines, []
+    return lines, [torn] if torn else []
 
 
 def _validate(raw: str, owner: str, expected: int, _prior: List[Line],
@@ -539,6 +551,92 @@ def state_lock(root: Path, force: bool = False, hold: bool = False):
                 fcntl.flock(f.fileno(), fcntl.LOCK_UN)
 
 
+def intent_path(root: Path, pid: str) -> Path:
+    """The append intent of log/<pid>.jsonl, shared by every writer of that log."""
+    return Path(root) / "log" / (pid + ".inflight.json")
+
+
+def _sync_dir(path: Path) -> None:
+    fd = os.open(str(path), os.O_RDONLY)
+    try:
+        os.fsync(fd)
+    finally:
+        os.close(fd)
+
+
+def _load_intent(root: Path, pid: str) -> Optional[Tuple[int, bytes]]:
+    """(offset, intended bytes), or None when no readable intent exists."""
+    try:
+        d = json.loads(intent_path(root, pid).read_text(encoding="utf-8"))
+        offset, intended = int(d["offset"]), bytes.fromhex(d["intended_hex"])
+    except (OSError, ValueError, KeyError, TypeError, OverflowError):
+        # OverflowError: an offset of Infinity, which json.loads accepts.
+        return None
+    if offset < 0 or not intended:
+        return None
+    return offset, intended
+
+
+def _write_intent(root: Path, pid: str, offset: int, record: bytes) -> None:
+    """Make the intent durable before the line is written (the caller holds the log's flock).
+
+    The temp name is fixed per log: the flock lets one writer at a time use it,
+    and a temp left by a crash is overwritten by the next append, not piled up.
+    """
+    path = intent_path(root, pid)
+    tmp = "%s.tmp" % path
+    with open(tmp, "w", encoding="utf-8") as f:
+        json.dump({"offset": offset, "intended_hex": record.hex()}, f)
+        f.flush()
+        os.fsync(f.fileno())
+    os.replace(tmp, str(path))
+    _sync_dir(path.parent)
+
+
+def _clear_intent(root: Path, pid: str) -> None:
+    """Remove the intent; call it only after the log's fsync.
+
+    No fsync of log/ follows: an unlink lost to a power cut leaves a stale
+    intent, and the next append clears it without touching a complete line.
+    """
+    try:
+        os.unlink(str(intent_path(root, pid)))
+    except FileNotFoundError:
+        pass
+
+
+def _recover(root: Path, pid: str, path: Path, f, data: bytes) -> bytes:
+    """Settle a writer that died mid-append; return the log's bytes after it.
+
+    The caller holds the log's flock. A last line with no trailing newline is
+    cut back only when the intent names its exact start and its bytes are a
+    prefix of the intended line: that is the dead writer's own write and
+    nobody else's. Any other unterminated tail raises ValueError and nothing
+    is cut. With a clean end, the intent goes: after an fsync of the log when
+    its line is already there (published), at once when it is not (the write
+    never started, or the intent is stale). A complete line is never cut.
+    """
+    intent = _load_intent(root, pid)
+    if data and not data.endswith(b"\n"):
+        start = data.rfind(b"\n") + 1
+        if intent is None or intent[0] != start or not intent[1].startswith(data[start:]):
+            raise ValueError("%s has an unterminated record at byte %d with no matching append"
+                             " intent in %s; repair the log by hand"
+                             % (path, start, intent_path(root, pid).name))
+        f.truncate(start)
+        f.flush()
+        os.fsync(f.fileno())
+        _clear_intent(root, pid)
+        return data[:start]
+    if intent is not None:
+        offset, intended = intent
+        if data[offset:offset + len(intended)] == intended:
+            f.flush()
+            os.fsync(f.fileno())
+        _clear_intent(root, pid)
+    return data
+
+
 def append_line(root: Path, from_: str, op: str, collection: str, id: str, data: dict,
                 t: Optional[str] = None, via: Optional[str] = None,
                 roster: Optional[Roster] = None) -> Line:
@@ -589,8 +687,9 @@ def _append_line(root: Path, from_: str, op: str, collection: str, id: str, data
         fcntl.flock(f, fcntl.LOCK_EX)
         try:
             f.seek(0)
+            body = _recover(root, from_, path, f, f.read())
             last = 0
-            for raw in f.read().decode("utf-8").split("\n"):
+            for raw in body.decode("utf-8").split("\n"):
                 if raw.strip():
                     last = json.loads(raw)["seq"]
             d = {"seq": last + 1, "t": t, "from": from_, "op": op,
@@ -601,11 +700,18 @@ def _append_line(root: Path, from_: str, op: str, collection: str, id: str, data
             result = _validate(text, from_, last + 1, [])
             if isinstance(result, str):
                 raise ValueError(result)
-            _check_hold()
+            record = (text + "\n").encode("utf-8")
             f.seek(0, 2)
-            f.write((text + "\n").encode("utf-8"))
+            _write_intent(root, from_, f.tell(), record)
+            try:
+                _check_hold()  # last, so no slow step sits between it and the write
+            except StateHoldExpired:
+                _clear_intent(root, from_)
+                raise
+            f.write(record)
             f.flush()
             os.fsync(f.fileno())
+            _clear_intent(root, from_)
             return result
         finally:
             fcntl.flock(f, fcntl.LOCK_UN)
