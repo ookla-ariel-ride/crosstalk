@@ -126,15 +126,24 @@ class CliTests(unittest.TestCase):
             self.assertFalse((r.root / "log" / "rev.jsonl").exists())
             self.assertEqual(c.run("check").returncode, 0)
 
+    def test_append_takes_kind_status_with_no_warning(self):
+        with TempRepo() as r:
+            c = Cli(r)
+            p = c.run("append", "--from", "rev", "--op", "set", "--collection", "messages",
+                      "--id", "rev-0001", "--data",
+                      '{"from": "rev", "kind": "status", "summary": "LAND START rev feature-one-0101"}')
+            self.assertEqual(p.returncode, 0, p.stderr)
+            self.assertNotIn("unknown kind", p.stderr)
+
     def test_append_warns_unknown_kind_and_clock_skew(self):
         with TempRepo() as r:
             c = Cli(r)
             p = c.run("append", "--from", "rev", "--op", "set", "--collection", "messages",
                       "--id", "rev-0001", "--data",
-                      '{"from": "rev", "kind": "status", "summary": "hi", "t": "2026-01-01T00:00:00Z",'
+                      '{"from": "rev", "kind": "memo", "summary": "hi", "t": "2026-01-01T00:00:00Z",'
                       ' "to": ["owner"]}')
             self.assertEqual(p.returncode, 0, p.stderr)
-            self.assertIn("warning: unknown kind 'status'", p.stderr)
+            self.assertIn("warning: unknown kind 'memo'", p.stderr)
             self.assertIn("behind the clock", p.stderr)
             self.assertEqual(p.stdout.strip(), "1")
 
