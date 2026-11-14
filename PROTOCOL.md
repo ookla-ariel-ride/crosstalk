@@ -714,8 +714,9 @@ the page. Times are ISO 8601 in UTC. `project` and `from` are participant ids fr
 
 Message kinds: `check-in` (the page also counts the older spelling
 `checkin`), `sync`, `reply`, `request`, `review`, `agreement`, `alert`,
-`disagreement`, `lesson`, `owner`, `question` (for the owner) and `withdrawn`
-(closes your own question). Alerts, disagreements and owner notes
+`disagreement`, `lesson`, `owner`, `question` (for the owner), `status` (a
+relay word that asks nothing, such as `LAND START` or `LANE START`) and
+`withdrawn` (closes your own question). Alerts, disagreements and owner notes
 count as important unless `important` is `false`; set `important: true` on
 anything else the owner should see first.
 

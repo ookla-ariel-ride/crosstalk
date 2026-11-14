@@ -24,7 +24,7 @@ RUNS_KEPT = 10
 OWNER_COLLECTIONS = COLLECTIONS + ("participants",)
 OPS = ("set", "update")
 KINDS = ("check-in", "checkin", "sync", "reply", "request", "review", "agreement", "alert",
-         "disagreement", "lesson", "owner", "question", "withdrawn")
+         "disagreement", "lesson", "owner", "question", "status", "withdrawn")
 # Who wrote a message, what it is, and what it answers: the fields the request and
 # question rules read. Only its writer (or the owner) may change them.
 MESSAGE_IDENTITY = ("from", "kind", "replyTo")

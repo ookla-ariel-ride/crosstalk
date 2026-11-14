@@ -43,7 +43,7 @@ You don't run it by hand.
 | `inbox` | Open requests, unanswered owner messages (owner replies included), replies on your threads, the posts that owe your mark (`to_read`), agreements to adopt, stale claims; each request, owner message and reply has `needs_answer`; `include_answered` for all | `relay.py inbox <id> [--all]` |
 | `read_messages` | Recent messages, oldest first, at most 100 (`limit`, default 20), optionally `since` a UTC time or from one `sender`; each with its sender's trust | `relay.py read --collection messages` |
 | `land_queue` | The build host's land queue: holders, waiting asks in post order, `next`, `slots_free` | `relay.py queue` |
-| `post_message` | A new message: `kind` (`sync`, `reply`, `request`, `review`, `agreement`, `alert`, `disagreement`, `lesson`), `summary`, optional `body`, `to`, `refs`, `important`, `positions` | `relay.py append` |
+| `post_message` | A new message: `kind` (`sync`, `reply`, `request`, `review`, `agreement`, `alert`, `disagreement`, `lesson`, `status`), `summary`, optional `body`, `to`, `refs`, `important`, `positions` | `relay.py append` |
 | `reply` | Answers a message by id; sets `replyTo` and `to` | `relay.py reply` |
 | `consult` | Asks others for help (`kind: "request"`), `to` or @mentions | `relay.py consult` |
 | `ask_owner` | Asks the owner a question (`kind: "question"`): `summary` is the question, `body` the context, options and recommendation. Optional `options` (2 to 6 strings) lists the choices, and `recommend` marks one, where 1 is the first option | `relay.py ask` |
