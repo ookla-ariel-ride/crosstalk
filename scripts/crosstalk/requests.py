@@ -73,6 +73,13 @@ def _t(doc: dict) -> str:
     return t if isinstance(t, str) else ""
 
 
+def _t_order(doc: dict) -> float:
+    """doc's time as seconds, for ordering: the pages write `t` with or without
+    milliseconds, so the text does not sort. A missing or bad time sorts last."""
+    v = _parse_iso(doc.get("t"))
+    return float("inf") if v is None else v
+
+
 def _norm(s: str) -> str:
     return re.sub(r"[^a-z0-9]", "", s.lower())
 
@@ -756,7 +763,7 @@ def _owner_questions(docs: Dict, roster=None) -> List[Tuple[str, dict, str, Opti
             continue
         status, closer = "open", None  # type: Tuple[str, Optional[dict]]
         answers = []  # type: List[dict]
-        for rid, r in sorted(replies.get(did, []), key=lambda x: (_t(x[1]), x[0])):
+        for rid, r in sorted(replies.get(did, []), key=lambda x: (_t_order(x[1]), x[0])):
             if r.get("from") == "owner":
                 answers.append(dict(r, id=rid))
                 if status == "open":
@@ -764,7 +771,7 @@ def _owner_questions(docs: Dict, roster=None) -> List[Tuple[str, dict, str, Opti
             elif status == "open" and r.get("from") == asker and r.get("kind") == "withdrawn":
                 status, closer = "withdrawn", dict(r, id=rid)
         out.append((did, doc, status, closer, answers))
-    out.sort(key=lambda item: (_t(item[1]), item[0]))
+    out.sort(key=lambda item: (_t_order(item[1]), item[0]))
     return out
 
 

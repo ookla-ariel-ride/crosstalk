@@ -20,7 +20,12 @@ type Roster = Record<string, RosterEntry> | undefined;
 
 const has = (roster: Roster, id: string | undefined): id is string => !!id && !!roster && Object.hasOwn(roster, id);
 
-const byTime = (a: Message, b: Message) => String(a.t ?? "").localeCompare(String(b.t ?? "")) || a.id.localeCompare(b.id);
+// Parsed, not compared as text: the pages write `t` with or without milliseconds. A bad time sorts last (as relay.py).
+const tMs = (m: Message) => {
+  const v = Date.parse(String(m.t ?? ""));
+  return Number.isNaN(v) ? Infinity : v;
+};
+const byTime = (a: Message, b: Message) => tMs(a) - tMs(b) || (a.id < b.id ? -1 : a.id > b.id ? 1 : 0);
 
 /** "open", "answered", "answer changed" or "withdrawn" for a question to the owner; null for any other message.
  * The owner may answer again (from a second tab, say): the question stays answered, its answer changed, and

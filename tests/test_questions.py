@@ -150,6 +150,23 @@ class QuestionLogicTests(unittest.TestCase):
         self.assertNotIn("note", by_id["own-b"])
         self.assertEqual(inbox_report(docs, "owner", self.roster)["owner_questions"], [])
 
+    def test_answer_order_parses_mixed_precision_times(self):
+        # v2 writes whole seconds, the old page milliseconds: as text, "18:30:00Z" sorts after "18:30:00.500Z".
+        self.r.write_log("alpha", [q(1, "alpha", "alpha-q1", "Ship it?", "2026-10-21T18:00:00Z")])
+        self.r.write_log("owner", [
+            line(1, "owner", id_="own-1", t="2026-10-21T18:30:00Z",
+                 data={"from": "owner", "kind": "owner", "summary": "Yes", "replyTo": "alpha-q1", "to": ["alpha"]}),
+            line(2, "owner", id_="own-2", t="2026-10-21T18:30:00.500Z",
+                 data={"from": "owner", "kind": "owner", "summary": "No, wait", "replyTo": "alpha-q1",
+                       "to": ["alpha"]}),
+        ])
+        docs = self.docs()
+        item = questions_report(docs, self.roster, include_closed=True)["questions"][0]
+        self.assertEqual([a["id"] for a in item["answers"]], ["own-1", "own-2"])
+        self.assertEqual(item["answer"]["summary"], "No, wait")
+        by_id = {x["message"]["id"]: x for x in inbox_report(docs, "alpha", self.roster)["owner_messages"]}
+        self.assertEqual(by_id["own-2"]["replaces"], "own-1")
+
     def test_one_answer_is_not_changed_and_a_late_answer_after_withdrawal_stays_withdrawn(self):
         self.r.write_log("alpha", [
             q(1, "alpha", "alpha-q1", "Ship it?", "2026-10-21T18:00:00Z"),
