@@ -115,7 +115,8 @@ under the same message id, also after the row was folded and opened again.
 After a sent answer the controls stay shut, also in a row folded and opened
 again, until the thread shows the answer. So one page sends one answer for a
 question. A second tab that has not loaded the answer yet can still send
-another one. When the thread, loaded again 60 seconds after the answer, still
+another one. The question then shows "Answer changed: the newest answer is in
+force", and each answer shows "Replaced" or "In force". When the thread, loaded again 60 seconds after the answer, still
 shows the question open, the controls open again with a new message id and
 say that the answer did not reach the thread.
 

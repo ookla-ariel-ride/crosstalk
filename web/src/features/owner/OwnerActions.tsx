@@ -20,7 +20,11 @@ type Roster = Record<string, RosterEntry> | undefined;
 
 const has = (roster: Roster, id: string | undefined): id is string => !!id && !!roster && Object.hasOwn(roster, id);
 
-/** "open", "answered" or "withdrawn" for a question to the owner; null for any other message. */
+const byTime = (a: Message, b: Message) => String(a.t ?? "").localeCompare(String(b.t ?? "")) || a.id.localeCompare(b.id);
+
+/** "open", "answered", "answer changed" or "withdrawn" for a question to the owner; null for any other message.
+ * The owner may answer again (from a second tab, say): the question stays answered, its answer changed, and
+ * the newest answer is in force (requests.owner_questions in relay.py). */
 export function questionState(q: Message, messages: Message[], roster: Record<string, RosterEntry>): string | null {
   const asker = q.from;
   if (q.kind !== "question" || !asker || asker === "owner") return null;
@@ -28,8 +32,18 @@ export function questionState(q: Message, messages: Message[], roster: Record<st
   if (roster[asker]?.trust !== "approved") return null;
   const closer = messages
     .filter((m) => m.replyTo === q.id && (m.from === "owner" || (m.from === asker && m.kind === "withdrawn")))
-    .sort((a, b) => String(a.t ?? "").localeCompare(String(b.t ?? "")) || a.id.localeCompare(b.id))[0];
-  return closer ? (closer.from === "owner" ? "answered" : "withdrawn") : "open";
+    .sort(byTime)[0];
+  if (!closer) return "open";
+  if (closer.from !== "owner") return "withdrawn";
+  return messages.filter((m) => m.replyTo === q.id && m.from === "owner").length > 1 ? "answer changed" : "answered";
+}
+
+/** For an owner answer to a question whose answer changed: "Replaced", or "In force" for the newest; else null. */
+export function answerTag(a: Message, messages: Message[], roster: Record<string, RosterEntry>): string | null {
+  const q = a.from === "owner" ? messages.find((m) => m.id === a.replyTo) : undefined;
+  if (!q || questionState(q, messages, roster) !== "answer changed") return null;
+  const answers = messages.filter((m) => m.replyTo === q.id && m.from === "owner").sort(byTime);
+  return answers.at(-1)?.id === a.id ? "In force" : "Replaced";
 }
 
 /** A reply to `id`; `draft` keys its draft: the thread's end and its root message each keep their own. */
@@ -67,8 +81,9 @@ export function OwnerActions({ thread, message }: { thread: Thread; message: Mes
   // Until the thread and the roster are both in, no answer control shows: an
   // answered question, or one whose asker is not approved, must not look open.
   const state = message && detail.data && roster ? questionState(message, detail.data.messages, roster) : null;
+  const tag = message && detail.data && roster ? answerTag(message, detail.data.messages, roster) : null;
   // The loaded thread shows the question closed: the mark of a sent answer has done its work.
-  const closedId = state === "answered" || state === "withdrawn" ? message?.id : undefined;
+  const closedId = state === "answered" || state === "answer changed" || state === "withdrawn" ? message?.id : undefined;
   useEffect(() => {
     if (closedId === undefined) return;
     answerIds.delete(closedId);
@@ -115,7 +130,10 @@ export function OwnerActions({ thread, message }: { thread: Thread; message: Mes
   return (
     <div className={styles.actions}>
       {state === "open" ? <AnswerButtons key={tries} question={message} /> : null}
-      {state === "answered" || state === "withdrawn" ? <span className={styles.state}>{state === "answered" ? "Answered" : "Withdrawn"}</span> : null}
+      {state === "answered" || state === "answer changed" || state === "withdrawn" ? (
+        <span className={styles.state}>{state === "answered" ? "Answered" : state === "withdrawn" ? "Withdrawn" : "Answer changed: the newest answer is in force"}</span>
+      ) : null}
+      {tag ? <span className={styles.state}>{tag}</span> : null}
       <ReplyControl id={message.id} draft={"reply:" + message.id} from={message.from} roster={roster} />
       {from !== "owner" && has(roster, from) && roster?.[from]?.trust !== "approved" ? (
         <ActionButton

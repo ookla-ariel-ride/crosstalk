@@ -2146,6 +2146,30 @@
     return res("questionsTimelinePills", ok, "open=" + JSON.stringify(open) + " answered=" + JSON.stringify(answered) + " withdrawn=" + JSON.stringify(withdrawn) + " tile=" + tile);
   });
 
+  // A second owner answer (from another tab) keeps the question answered and marks the answer changed: the
+  // question's pill reads "answer changed", and the answered list shows both answers, oldest first, the newest in force.
+  S.push(async function questionsAnswerChanged() {
+    await clearQuestions();
+    await seedQuestions();
+    __store.messages["qq-a-own2"] = { t: ago(380), from: "owner", kind: "owner", summary: "Keep it after all", body: "", replyTo: "qq-a", to: ["gamma"] };
+    __emit("messages"); await tick();
+    await go("timeline");
+    var c = card("qq-a"), m = c && c.querySelector(".meta");
+    var pills = m ? [].slice.call(m.querySelectorAll(":scope > .pill")).map(function (p) { return p.textContent; }) : null;
+    await go("questions");
+    var d = $("q-answered"); if (d) d.open = true;
+    var qc = d && d.querySelector('.card[data-id="qq-a"]');
+    var labels = qc ? [].slice.call(qc.querySelectorAll(".qanswer > .meta > span:first-child")).map(function (x) { return x.textContent; }) : null;
+    var texts = qc ? [].slice.call(qc.querySelectorAll(".qanswer")).map(function (x) { return x.textContent; }) : [];
+    var tile = $("quesVal").textContent;
+    delete __store.messages["qq-a-own2"];
+    await clearQuestions();
+    var ok = JSON.stringify(pills) === JSON.stringify(["question for owner", "answer changed"]) &&
+      JSON.stringify(labels) === JSON.stringify(["Your earlier answer (replaced)", "Your new answer (in force)"]) &&
+      /No, drop it/.test(texts[0] || "") && /Keep it after all/.test(texts[1] || "") && tile === "3";
+    return res("questionsAnswerChanged", ok, "pills=" + JSON.stringify(pills) + " labels=" + JSON.stringify(labels) + " tile=" + tile);
+  });
+
   // Open questions count toward Waiting on you, beside the open waiting rows, and link to the Questions tab.
   S.push(async function waitingShowsQuestions() {
     await clearQuestions();

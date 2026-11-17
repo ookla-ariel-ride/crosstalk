@@ -124,6 +124,53 @@ class QuestionLogicTests(unittest.TestCase):
         alpha = inbox_report(self.docs(), "alpha", self.roster)
         self.assertEqual([x["message"]["id"] for x in alpha["owner_messages"]], ["own-1"])
 
+    def test_second_owner_answer_changes_the_answer(self):
+        # Two tabs: each sends an answer to the same question. The ids sort the other way to the times.
+        self.r.write_log("alpha", [q(1, "alpha", "alpha-q1", "Ship it?", "2026-10-21T18:00:00Z")])
+        self.r.write_log("owner", [
+            line(1, "owner", id_="own-b", t="2026-10-21T18:30:00Z",
+                 data={"from": "owner", "kind": "owner", "summary": "Yes", "replyTo": "alpha-q1", "to": ["alpha"]}),
+            line(2, "owner", id_="own-a", t="2026-10-21T18:40:00Z",
+                 data={"from": "owner", "kind": "owner", "summary": "No, wait", "replyTo": "alpha-q1",
+                       "to": ["alpha"]}),
+        ])
+        docs = self.docs()
+        states = {d: (st, c["id"]) for d, _doc, st, c in owner_questions(docs, roster=self.roster)}
+        self.assertEqual(states, {"alpha-q1": ("answered", "own-a")})
+        item = questions_report(docs, self.roster, include_closed=True)["questions"][0]
+        self.assertEqual(item["status"], "answered")
+        self.assertTrue(item["answer_changed"])
+        self.assertEqual([a["id"] for a in item["answers"]], ["own-b", "own-a"])
+        self.assertEqual(item["answer"]["summary"], "No, wait")
+        alpha = inbox_report(docs, "alpha", self.roster)
+        by_id = {x["message"]["id"]: x for x in alpha["owner_messages"]}
+        self.assertEqual(list(by_id), ["own-a", "own-b"])
+        self.assertEqual(by_id["own-a"]["replaces"], "own-b")
+        self.assertIn("answer changed", by_id["own-a"]["note"])
+        self.assertNotIn("note", by_id["own-b"])
+        self.assertEqual(inbox_report(docs, "owner", self.roster)["owner_questions"], [])
+
+    def test_one_answer_is_not_changed_and_a_late_answer_after_withdrawal_stays_withdrawn(self):
+        self.r.write_log("alpha", [
+            q(1, "alpha", "alpha-q1", "Ship it?", "2026-10-21T18:00:00Z"),
+            q(2, "alpha", "alpha-q2", "Rename it?", "2026-10-21T18:01:00Z"),
+            line(3, "alpha", id_="alpha-w1", t="2026-10-21T18:10:00Z",
+                 data={"from": "alpha", "kind": "withdrawn", "summary": "Moot", "replyTo": "alpha-q2"}),
+        ])
+        self.r.write_log("owner", [
+            line(1, "owner", id_="own-1", t="2026-10-21T18:30:00Z",
+                 data={"from": "owner", "kind": "owner", "summary": "Yes", "replyTo": "alpha-q1"}),
+            line(2, "owner", id_="own-2", t="2026-10-21T18:40:00Z",
+                 data={"from": "owner", "kind": "owner", "summary": "Keep it", "replyTo": "alpha-q2"}),
+        ])
+        docs = self.docs()
+        by_id = {x["question"]["id"]: x for x in questions_report(docs, self.roster, include_closed=True)["questions"]}
+        self.assertFalse(by_id["alpha-q1"]["answer_changed"])
+        self.assertEqual([a["id"] for a in by_id["alpha-q1"]["answers"]], ["own-1"])
+        self.assertEqual((by_id["alpha-q2"]["status"], by_id["alpha-q2"]["withdrawn"]["id"]), ("withdrawn", "alpha-w1"))
+        for x in inbox_report(docs, "alpha", self.roster)["owner_messages"]:
+            self.assertNotIn("note", x)
+
     def test_post_question_and_withdraw(self):
         ln = post_question(self.r.root, "alpha", "  Ship the parser now?  ", body="Options: a, b. I'd pick a.",
                            refs="alpha#3", roster=self.roster)

@@ -711,16 +711,43 @@ def owner_questions(docs: Dict, roster=None) -> List[Tuple[str, dict, str, Optio
     open while no owner row has `replyTo` naming it and the asker has not posted
     a `kind: "withdrawn"` row with `replyTo` naming it. Whichever came first
     closes it. Returns (id, doc, status, closer): status is "open", "answered"
-    or "withdrawn"; closer is the answering or withdrawing row (with its id), or
-    None while open.
+    or "withdrawn"; closer is the withdrawing row, or for an answered question
+    the newest owner answer (the one in force), each with its id; None while
+    open. owner_answers lists every answer of an answered question.
     """
+    return [(did, doc, status, answers[-1] if status == "answered" else closer)
+            for did, doc, status, closer, answers in _owner_questions(docs, roster)]
+
+
+def owner_answers(docs: Dict, roster=None) -> Dict[str, List[dict]]:
+    """The owner answers of each answered question, oldest first, each with its id.
+
+    The owner may answer a question again (from a second tab, say). The
+    question stays answered; the newest answer is in force and the earlier
+    ones are replaced. A question with two or more answers has its answer changed.
+    """
+    return {did: answers for did, _doc, status, _c, answers in _owner_questions(docs, roster)
+            if status == "answered"}
+
+
+def replaced_answers(docs: Dict, roster=None) -> Dict[str, str]:
+    """For each owner answer that changed an earlier one: its id -> the id of the answer it replaces."""
+    out = {}  # type: Dict[str, str]
+    for answers in owner_answers(docs, roster).values():
+        for prev, cur in zip(answers, answers[1:]):
+            out[cur["id"]] = prev["id"]
+    return out
+
+
+def _owner_questions(docs: Dict, roster=None) -> List[Tuple[str, dict, str, Optional[dict], List[dict]]]:
+    """owner_questions with the first closing row as closer, and the owner answers (oldest first) last."""
     messages = _messages(docs)
     replies = {}  # type: Dict[str, List[Tuple[str, dict]]]
     for did, doc in messages.items():
         rt = doc.get("replyTo")
         if isinstance(rt, str) and rt:
             replies.setdefault(rt, []).append((did, doc))
-    out = []  # type: List[Tuple[str, dict, str, Optional[dict]]]
+    out = []  # type: List[Tuple[str, dict, str, Optional[dict], List[dict]]]
     for did, doc in messages.items():
         if doc.get("kind") != "question":
             continue
@@ -728,14 +755,15 @@ def owner_questions(docs: Dict, roster=None) -> List[Tuple[str, dict, str, Optio
         if not isinstance(asker, str) or asker == "owner" or not _is_approved(asker, roster):
             continue
         status, closer = "open", None  # type: Tuple[str, Optional[dict]]
+        answers = []  # type: List[dict]
         for rid, r in sorted(replies.get(did, []), key=lambda x: (_t(x[1]), x[0])):
             if r.get("from") == "owner":
-                status, closer = "answered", dict(r, id=rid)
-                break
-            if r.get("from") == asker and r.get("kind") == "withdrawn":
+                answers.append(dict(r, id=rid))
+                if status == "open":
+                    status, closer = "answered", answers[-1]
+            elif status == "open" and r.get("from") == asker and r.get("kind") == "withdrawn":
                 status, closer = "withdrawn", dict(r, id=rid)
-                break
-        out.append((did, doc, status, closer))
+        out.append((did, doc, status, closer, answers))
     out.sort(key=lambda item: (_t(item[1]), item[0]))
     return out
 
