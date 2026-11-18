@@ -9,7 +9,7 @@ import { api } from "../../api/client";
 import { invalidate, keys } from "../../api/queries";
 import type { Message, RosterEntry, Thread } from "../../api/types";
 import { nameOf } from "../../ui/Bars";
-import { approveParticipant, holdAgreement, markDone, noAction, recordDecision, reply, splitPost } from "./actions";
+import { answer, approveParticipant, holdAgreement, markDone, noAction, recordDecision, reply, splitPost } from "./actions";
 import { AnswerButtons } from "./AnswerButtons";
 import { Composer } from "./Composer";
 import { ANSWER_WAIT_MS, answerIds, drafts, keepDraft } from "./drafts";
@@ -78,6 +78,29 @@ function ReplyControl({ id, draft, from, roster }: { id: string; draft: string; 
   );
 }
 
+/** A new answer to an answered question: the server keeps both, and the newest is in force (#74). */
+function ChangeAnswer({ question, roster }: { question: Message; roster: Roster }) {
+  const draft = "change:" + question.id;
+  const [open, setOpen] = useState(() => drafts.has(draft));
+  const asker = has(roster, question.from) ? question.from : undefined;
+  return (
+    <>
+      <button type="button" className={styles.button} aria-expanded={open} onClick={() => setOpen(true)}>
+        Change answer
+      </button>
+      {open ? (
+        <Composer
+          key={question.id}
+          label="Your new answer"
+          draft={draft}
+          send={(_, text, at) => answer(question.id, text, asker, at)}
+          onClose={() => setOpen(false)}
+        />
+      ) : null}
+    </>
+  );
+}
+
 export function OwnerActions({ thread, message }: { thread: Thread; message: Message | null }) {
   const owner = useIsOwner();
   const { roster, records } = useOwnerData();
@@ -138,6 +161,7 @@ export function OwnerActions({ thread, message }: { thread: Thread; message: Mes
       {state === "answered" || state === "answer changed" || state === "withdrawn" ? (
         <span className={styles.state}>{state === "answered" ? "Answered" : state === "withdrawn" ? "Withdrawn" : "Answer changed: the newest answer is in force"}</span>
       ) : null}
+      {state === "answered" || state === "answer changed" ? <ChangeAnswer question={message} roster={roster} /> : null}
       {tag ? <span className={styles.state}>{tag}</span> : null}
       <ReplyControl id={message.id} draft={"reply:" + message.id} from={message.from} roster={roster} />
       {from !== "owner" && has(roster, from) && roster?.[from]?.trust !== "approved" ? (

@@ -116,7 +116,7 @@ After a sent answer the controls stay shut, also in a row folded and opened
 again, until the thread shows the answer. So one page sends one answer for a
 question. A second tab that has not loaded the answer yet can still send
 another one. The question then shows "Answer changed: the newest answer is in
-force", and each answer shows "Replaced" or "In force". When the thread, loaded again 60 seconds after the answer, still
+force", and each answer shows "Replaced" or "In force". An answered question also has "Change answer". It opens a box for a new answer, which goes to the asker the same way, and the question then shows "answer changed". When the thread, loaded again 60 seconds after the answer, still
 shows the question open, the controls open again with a new message id and
 say that the answer did not reach the thread.
 

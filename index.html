@@ -406,7 +406,8 @@ td.num, td.t { font: 12px var(--mono); font-variant-numeric: tabular-nums; white
   // that closes keeps its card and draft until the owner moves on, so `cur` then names a closed question), answers
   // sent but not yet back from the server, and the "Ask everyone" control. In memory, so a re-render keeps it.
   var qState = { cur: null, pos: 0, answers: Object.create(null), ids: Object.create(null), sent: Object.create(null), posting: false, status: "",
-    askConfirm: false, asking: false, askId: null, askStatus: "", answeredOpen: false };
+    askConfirm: false, asking: false, askId: null, askStatus: "", answeredOpen: false,
+    changing: null, changedId: null, changeStatus: "" };
   // The Add-participant control: open, posting, status, and the last result (kit + token).
   var onboardState = { open: false, posting: false, status: "", result: null, colorPair: null };
   // The roster is a <details>: always open on wide screens, folded into "People" below 640px until opened.
@@ -2195,12 +2196,7 @@ td.num, td.t { font: 12px var(--mono); font-variant-numeric: tabular-nums; white
     row.appendChild(st);
     view.appendChild(row);
   }
-  function sendAnswer(m, idx) {
-    if (qState.posting) return;
-    var text = String(qState.answers[m._id] || "").trim();
-    if (!text) { qState.status = "Write an answer first."; renderView(true); return; }
-    var now = new Date().toISOString();
-    var id = qState.ids[m._id] || (qState.ids[m._id] = newOwnId(now));
+  function answerPayload(m, text, now) {
     var lines = text.split("\n"), first = lines[0].trim();
     var summary = first.slice(0, 160), body = first.length > 160 ? text : lines.slice(1).join("\n").trim();
     var asker = String(m.from);
@@ -2208,6 +2204,68 @@ td.num, td.t { font: 12px var(--mono); font-variant-numeric: tabular-nums; white
     // `to` names the asker, so the answer reaches its inbox. The server refuses a `to` outside the roster; without
     // one, an owner reply still goes to the author of the message it answers.
     if (HAS.call(people, asker)) payload.to = [asker];
+    return payload;
+  }
+  // A new answer to an answered question (#74): the server keeps both, and the newest is in force. Its draft and
+  // message id are keyed "change:" + the question id, apart from the open question's, so a retry rewrites one row.
+  function sendChangedAnswer(m) {
+    var key = "change:" + m._id;
+    if (qState.posting) return;
+    var text = String(qState.answers[key] || "").trim();
+    if (!text) { qState.changeStatus = "Write the new answer first."; renderView(true); return; }
+    var now = new Date().toISOString();
+    var id = qState.ids[key] || (qState.ids[key] = newOwnId(now));
+    qState.posting = true; qState.changeStatus = "Sending…"; renderView(true);
+    db.collection("messages").doc(id).set(answerPayload(m, text, now)).then(function () {
+      delete qState.answers[key]; delete qState.ids[key];
+      qState.posting = false; qState.changing = null; qState.changedId = m._id;
+      qState.changeStatus = "New answer sent to " + displayName(String(m.from)) + ".";
+      renderAll();
+    }).catch(function (err) {
+      qState.posting = false;
+      qState.changeStatus = "Not sent: " + (err && err.message ? err.message : "try again") + ". Sending again won't duplicate it.";
+      renderView(true);
+    });
+  }
+  function changeAnswerEl(m) {
+    var key = "change:" + m._id, box = el("div", "qchange");
+    if (qState.changing !== m._id) {
+      var open = el("button", "btn small", "Change answer"); open.type = "button"; open.disabled = qState.posting;
+      open.dataset.change = m._id;
+      open.addEventListener("click", function () {
+        qState.changing = m._id; qState.changedId = null; qState.changeStatus = ""; renderView(true);
+        var t = document.getElementById("q-change"); if (t) t.focus();
+      });
+      box.appendChild(open);
+      if (qState.changedId === m._id && qState.changeStatus) box.appendChild(el("span", "status-msg", qState.changeStatus));
+      return box;
+    }
+    var ta = el("textarea"); ta.id = "q-change"; ta.value = qState.answers[key] || ""; ta.disabled = qState.posting;
+    ta.placeholder = "Your new answer to " + displayName(String(m.from)) + "… It replaces the one in force (Cmd+Enter to send)";
+    ta.setAttribute("aria-label", "New answer");
+    ta.addEventListener("input", function () { qState.answers[key] = ta.value; });
+    ta.addEventListener("keydown", function (e) { if ((e.metaKey || e.ctrlKey) && e.key === "Enter") { e.preventDefault(); sendChangedAnswer(m); } });
+    box.appendChild(ta);
+    var row = el("div", "qrow");
+    var send = el("button", "btn primary", "Send new answer"); send.type = "button"; send.id = "q-change-send"; send.disabled = qState.posting;
+    send.addEventListener("click", function () { sendChangedAnswer(m); });
+    var cancel = el("button", "btn", "Cancel"); cancel.type = "button"; cancel.id = "q-change-cancel"; cancel.disabled = qState.posting;
+    cancel.addEventListener("click", function () {
+      delete qState.answers[key]; delete qState.ids[key];
+      qState.changing = null; qState.changeStatus = ""; renderView(false);
+    });
+    var st = el("span", "status-msg", qState.changeStatus); st.id = "q-change-status"; st.setAttribute("role", "status");
+    row.appendChild(send); row.appendChild(cancel); row.appendChild(st);
+    box.appendChild(row);
+    return box;
+  }
+  function sendAnswer(m, idx) {
+    if (qState.posting) return;
+    var text = String(qState.answers[m._id] || "").trim();
+    if (!text) { qState.status = "Write an answer first."; renderView(true); return; }
+    var now = new Date().toISOString();
+    var id = qState.ids[m._id] || (qState.ids[m._id] = newOwnId(now));
+    var asker = String(m.from), payload = answerPayload(m, text, now);
     qState.posting = true; qState.status = "Sending…"; renderView(true);
     db.collection("messages").doc(id).set(payload).then(function () {
       qState.sent[m._id] = true;
@@ -2328,6 +2386,7 @@ td.num, td.t { font: 12px var(--mono); font-variant-numeric: tabular-nums; white
       add(a, bodyEl(r.body, r.summary));
       c.appendChild(a);
     });
+    if (canWrite && x.status === "answered") c.appendChild(changeAnswerEl(m));
     return c;
   }
   function renderQuestions(view) {
