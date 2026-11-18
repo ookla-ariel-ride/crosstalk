@@ -342,7 +342,8 @@ message's `from`, `kind` or `replyTo`: the write paths refuse that (see the
 trust rules below), though `check` does not test older lines for it.
 
 The owner can answer a question that already has an answer, for example
-from a second tab that had not loaded the first one. The question stays
+from a second tab that had not loaded the first one, or on purpose
+with Change answer on either page. The question stays
 answered and its answer changed: the newest answer is in force. In
 `relay.py questions --all` an answered question has `answers` (every owner
 answer, oldest first), `answer_changed` (true with two or more) and `answer`

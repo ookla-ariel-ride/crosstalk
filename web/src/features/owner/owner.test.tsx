@@ -518,6 +518,21 @@ describe("one answer for one question", () => {
     await waitFor(() => expect(drafts.has("answer:alpha-0001")).toBe(false));
   });
 
+  test("Change answer on an answered question sends a second answer to the asker", async () => {
+    renderActions(OWNER, QUESTION, ANSWERED);
+    const calls = serve({ "/api/append": [201, {}] });
+    expect(screen.queryByRole("button", { name: "Keep the log" })).toBeNull();
+    fireEvent.click(screen.getByRole("button", { name: "Change answer" }));
+    fireEvent.change(screen.getByLabelText("Your new answer"), { target: { value: "Use SQLite" } });
+    fireEvent.keyDown(screen.getByLabelText("Your new answer"), { key: "Enter", ctrlKey: true });
+    await waitFor(() => expect(posts(calls, "/api/append")).toHaveLength(1));
+    expect(posts(calls, "/api/append")[0]?.body).toMatchObject({
+      collection: "messages",
+      data: { from: "owner", kind: "owner", summary: "Use SQLite", replyTo: "alpha-0001", to: ["alpha"] },
+    });
+    await waitFor(() => expect(screen.queryByLabelText("Your new answer")).toBeNull());
+  });
+
   test("Ctrl+Enter in the frame of a choice click sends nothing and shows no error", async () => {
     renderActions(OWNER);
     const calls = serve({});

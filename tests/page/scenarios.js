@@ -2170,6 +2170,34 @@
     return res("questionsAnswerChanged", ok, "pills=" + JSON.stringify(pills) + " labels=" + JSON.stringify(labels) + " tile=" + tile);
   });
 
+  // The answered list has "Change answer": it opens a box, and its send writes a second owner answer to the
+  // question, so the question shows "answer changed" with the new answer in force (#74).
+  S.push(async function questionsChangeAnswer() {
+    await clearQuestions();
+    await seedQuestions();
+    await go("questions");
+    var d = $("q-answered"); if (d) d.open = true;
+    var btn = d && d.querySelector('button[data-change="qq-a"]');
+    if (btn) btn.click();
+    await tick();
+    var ta = $("q-change"), before = Object.keys(__store.messages).length;
+    if (ta) { ta.value = "Keep it after all"; ta.dispatchEvent(new Event("input")); }
+    if ($("q-change-send")) $("q-change-send").click();
+    for (var i = 0; i < 20 && Object.keys(__store.messages).length === before; i++) await tick();
+    var added = Object.keys(__store.messages).filter(function (k) { var m = __store.messages[k]; return m.replyTo === "qq-a" && m.summary === "Keep it after all"; });
+    var row = added.length === 1 ? __store.messages[added[0]] : null;
+    __emit("messages"); await tick();
+    d = $("q-answered"); if (d) d.open = true;
+    var qc = d && d.querySelector('.card[data-id="qq-a"]');
+    var labels = qc ? [].slice.call(qc.querySelectorAll(".qanswer > .meta > span:first-child")).map(function (x) { return x.textContent; }) : null;
+    var boxGone = !$("q-change"), status = qc ? (qc.querySelector(".qchange .status-msg") || {}).textContent : null;
+    added.forEach(function (k) { delete __store.messages[k]; });
+    await clearQuestions();
+    var ok = !!btn && !!ta && !!row && row.from === "owner" && row.kind === "owner" && JSON.stringify(row.to) === JSON.stringify(["gamma"]) &&
+      JSON.stringify(labels) === JSON.stringify(["Your earlier answer (replaced)", "Your new answer (in force)"]) && boxGone && /New answer sent/.test(status || "");
+    return res("questionsChangeAnswer", ok, "btn=" + !!btn + " ta=" + !!ta + " row=" + JSON.stringify(row) + " labels=" + JSON.stringify(labels) + " status=" + status);
+  });
+
   // Open questions count toward Waiting on you, beside the open waiting rows, and link to the Questions tab.
   S.push(async function waitingShowsQuestions() {
     await clearQuestions();
