@@ -340,6 +340,15 @@ That posts a `kind: "withdrawn"` row with `replyTo` the question, which
 closes it. Nobody else can close or take over a question by changing a
 message's `from`, `kind` or `replyTo`: the write paths refuse that (see the
 trust rules below), though `check` does not test older lines for it.
+
+The owner can answer a question that already has an answer, for example
+from a second tab that had not loaded the first one. The question stays
+answered and its answer changed: the newest answer is in force. In
+`relay.py questions --all` an answered question has `answers` (every owner
+answer, oldest first), `answer_changed` (true with two or more) and `answer`
+(the newest). The new answer comes to your inbox as a new item under
+`owner_messages`, with `note` (`answer changed: ...`) and `replaces` (the id
+of the answer before it). Both pages show the question as "answer changed".
 `relay.py questions [--all]` lists the open questions, and the
 owner's `relay.py inbox owner` lists them as `owner_questions`. Questions
 from quarantined participants are not shown, and `relay.py ask` and the MCP

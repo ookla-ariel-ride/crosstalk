@@ -15,8 +15,10 @@ from .requests import (
     inbox_for,
     needs_answer,
     open_owner_questions,
+    owner_answers,
     owner_questions,
     pending_recipients,
+    replaced_answers,
     stale_locks_for,
     thread_replies_for,
     unanswered_owner_messages,
@@ -76,6 +78,7 @@ def inbox_report(docs: Dict, pid: str, roster: Roster, include_answered: bool = 
     )
     by_item = marks_mod.marks_by_item(docs, roster)
     owner_msgs = unanswered_owner_messages(docs, pid, roster=roster, by_item=by_item)
+    replaced = replaced_answers(docs, roster=roster) if owner_msgs else {}
     acks = acks_by_item(docs, roster=roster)
     out = {
         "pid": pid,
@@ -93,12 +96,7 @@ def inbox_report(docs: Dict, pid: str, roster: Roster, include_answered: bool = 
             for (did, doc, replies) in requests
         ],
         "owner_messages": [
-            {
-                "message": dict(doc, id=did),
-                "needs_answer": needs_answer(doc),
-                "replies": [dict(r, trust=trust_of(r.get("from"), roster)) for r in replies],
-            }
-            for (did, doc, replies) in owner_msgs
+            _owner_message_item(did, doc, replies, roster, replaced) for (did, doc, replies) in owner_msgs
         ],
         "thread_replies": [
             {
@@ -126,6 +124,24 @@ def inbox_report(docs: Dict, pid: str, roster: Roster, include_answered: bool = 
             for (did, doc) in open_owner_questions(docs, roster=roster)
         ]
     return out
+
+
+def _owner_message_item(did: str, doc: dict, replies: List[dict], roster: Roster,
+                        replaced: Dict[str, str]) -> dict:
+    """One owner_messages row. A new answer to a question already answered
+    carries `note: "answer changed"` and `replaces`, the id of the answer before it."""
+    item = {
+        "message": dict(doc, id=did),
+        "needs_answer": needs_answer(doc),
+        "replies": [dict(r, trust=trust_of(r.get("from"), roster)) for r in replies],
+    }
+    if did in replaced:
+        item["note"] = ANSWER_CHANGED_NOTE
+        item["replaces"] = replaced[did]
+    return item
+
+
+ANSWER_CHANGED_NOTE = "answer changed: this answer replaces your earlier answer from the owner"
 
 
 def _shown(out: dict) -> set:
@@ -204,9 +220,12 @@ def questions_report(docs: Dict, roster: Roster, include_closed: bool = False) -
     """What `relay.py questions` prints: the questions for the owner, oldest first.
 
     Open ones only, or with include_closed also the answered and withdrawn ones,
-    each with the row that closed it.
+    each with the row that closed it. An answered one carries `answers`, every
+    owner answer oldest first, and `answer_changed` when there are two or
+    more; `answer` is the newest, the one in force.
     """
     rows = []
+    answers = owner_answers(docs, roster=roster)
     for did, doc, status, closer in owner_questions(docs, roster=roster):
         if status != "open" and not include_closed:
             continue
@@ -214,6 +233,8 @@ def questions_report(docs: Dict, roster: Roster, include_closed: bool = False) -
                 "trust": trust_of(doc.get("from"), roster)}
         if status == "answered":
             item["answer"] = closer
+            item["answers"] = answers[did]
+            item["answer_changed"] = len(answers[did]) > 1
         elif status == "withdrawn":
             item["withdrawn"] = closer
         rows.append(item)

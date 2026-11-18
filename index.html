@@ -243,6 +243,8 @@ td.num, td.t { font: 12px var(--mono); font-variant-numeric: tabular-nums; white
 .pill.question { background: var(--own); color: var(--panel); }
 .pill.answered { background: var(--ok); color: var(--panel); }
 .pill.withdrawn { text-decoration: line-through; }
+.pill.answer-changed { background: var(--own); color: var(--panel); }
+.pill.replaced { text-decoration: line-through; }
 .qcard { border-left: 4px solid var(--who, var(--own)); display: grid; gap: 8px; }
 .qcard .summary { font-size: 17px; }
 .qcard .qpos { margin-left: auto; font: 500 12px var(--mono); color: var(--muted); }
@@ -1467,6 +1469,7 @@ td.num, td.t { font: 12px var(--mono); font-variant-numeric: tabular-nums; white
       meta.appendChild(el("span", "pill question", "question for owner"));
       var qst = questionStatus(m._id); if (qst) meta.appendChild(pill(qst));
     } else if (m.kind) meta.appendChild(pill(kindOf(m)));
+    var atag = m.from === "owner" && m.replyTo ? answerTag(m._id) : null; if (atag) meta.appendChild(pill(atag));
     if (imp) meta.appendChild(pill("important"));
     if (quarantined) meta.appendChild(quarantinePill());
     if (canWrite && !isReply) {
@@ -2108,6 +2111,8 @@ td.num, td.t { font: 12px var(--mono); font-variant-numeric: tabular-nums; white
   // A `question` message (relay.py ask) is for the owner. It is open until an owner row replies to it, or its asker
   // posts a `withdrawn` row replying to it; whichever came first closes it. The same rule as
   // requests.owner_questions in relay.py. Quarantined askers are left out. Oldest first; cached per snapshot.
+  // The owner can answer again (from a second tab, say): every owner reply is an answer, the newest is in force
+  // (the closer) and the question shows "answer changed". `answerTags` marks each answer row "replaced" or "answer changed".
   var ASK_SUMMARY = "Owner: post every question you have for me with relay.py ask, one question per row";
   // The ask template names relay.py of the code folder. When the server runs with a data root, its ask command
   // carries `--data-root <data>`, and so does this text: a placeholder, since the snapshot never names the folder.
@@ -2121,25 +2126,29 @@ td.num, td.t { font: 12px var(--mono); font-variant-numeric: tabular-nums; white
       "If a question becomes moot, withdraw it: relay.py withdraw --from <your-id> --question <question-id>. " +
       "My answers come back in relay.py inbox <your-id> as owner messages. Reply to this request once you have posted yours, or to say you have none.";
   }
-  var oqFor = null, oqPeople = null, oqCache = null;
+  var oqFor = null, oqPeople = null, oqCache = null, answerTags = Object.create(null);
   function byTId(a, b) { return byT(a, b) || (a._id < b._id ? -1 : a._id > b._id ? 1 : 0); }
   function ownerQuestions() {
     if (oqFor === data.messages && oqPeople === people) return oqCache;
     var replies = Object.create(null);
     data.messages.forEach(function (m) { if (m.replyTo) (replies[m.replyTo] = replies[m.replyTo] || []).push(m); });
-    var out = [];
+    var out = []; answerTags = Object.create(null);
     data.messages.forEach(function (m) {
       if (m.kind !== "question") return;
       var asker = String(m.from == null ? "" : m.from);
       if (!asker || asker === "owner" || isQuarantined(asker)) return;
-      var status = "open", closer = null, rs = (replies[m._id] || []).slice().sort(byTId);
+      var status = "open", closer = null, answers = [], rs = (replies[m._id] || []).slice().sort(byTId);
       for (var i = 0; i < rs.length; i++) {
-        if (String(rs[i].from) === "owner") { status = "answered"; closer = rs[i]; break; }
-        if (String(rs[i].from) === asker && rs[i].kind === "withdrawn") { status = "withdrawn"; closer = rs[i]; break; }
+        if (String(rs[i].from) === "owner") { answers.push(rs[i]); if (status === "open") status = "answered"; }
+        else if (status === "open" && String(rs[i].from) === asker && rs[i].kind === "withdrawn") { status = "withdrawn"; closer = rs[i]; }
+      }
+      if (status === "answered") {
+        closer = answers[answers.length - 1];
+        if (answers.length > 1) answers.forEach(function (a, j) { answerTags[a._id] = j === answers.length - 1 ? "answer-changed" : "replaced"; });
       }
       // The server's copy of an answer sent from here has arrived: the log says it is closed now.
       if (status !== "open") delete qState.sent[m._id];
-      out.push({ q: m, status: status, closer: closer });
+      out.push({ q: m, status: status, closer: closer, answers: status === "answered" ? answers : [], changed: status === "answered" && answers.length > 1 });
     });
     out.sort(function (a, b) { return byTId(a.q, b.q); });
     oqFor = data.messages; oqPeople = people; oqCache = out;
@@ -2149,8 +2158,9 @@ td.num, td.t { font: 12px var(--mono); font-variant-numeric: tabular-nums; white
   function openQuestions() { return ownerQuestions().filter(function (x) { return x.status === "open" && !qState.sent[x.q._id]; }); }
   function questionStatus(id) {
     var hit = ownerQuestions().filter(function (x) { return x.q._id === id; })[0];
-    return hit ? (hit.status === "open" && qState.sent[id] ? "answered" : hit.status) : null;
+    return hit ? (hit.status === "open" && qState.sent[id] ? "answered" : hit.changed ? "answer-changed" : hit.status) : null;
   }
+  function answerTag(id) { ownerQuestions(); return answerTags[id] || null; }
   function newOwnId(now) { return "own-" + now.replace(/[^0-9]/g, "").slice(0, 14) + "-" + Math.random().toString(36).slice(2, 6); }
   // "Ask everyone for their questions": an owner broadcast request, confirmed in place rather than with a dialog.
   function askAllEl(view) {
@@ -2305,16 +2315,19 @@ td.num, td.t { font: 12px var(--mono); font-variant-numeric: tabular-nums; white
   function closedQuestionCard(x) {
     var m = x.q, c = el("div", "card"); c.dataset.id = m._id;
     var meta = el("div", "meta"); meta.appendChild(who(m.from)); meta.appendChild(pill(x.status));
+    if (x.changed) meta.appendChild(pill("answer-changed"));
     meta.appendChild(timeEl(m.t, true));
     c.appendChild(meta);
     c.appendChild(summaryEl(m.summary || ""));
-    if (x.closer) {
+    // A changed answer shows every answer, oldest first; the last one is in force.
+    (x.status === "answered" ? x.answers : x.closer ? [x.closer] : []).forEach(function (r, j, all) {
       var a = el("div", "qanswer");
-      var am = el("div", "meta"); am.appendChild(el("span", null, x.status === "answered" ? "You answered" : "Withdrawn")); am.appendChild(timeEl(x.closer.t, true)); a.appendChild(am);
-      if (x.closer.summary) a.appendChild(summaryEl(x.closer.summary));
-      add(a, bodyEl(x.closer.body, x.closer.summary));
+      var label = x.status !== "answered" ? "Withdrawn" : all.length < 2 ? "You answered" : j < all.length - 1 ? "Your earlier answer (replaced)" : "Your new answer (in force)";
+      var am = el("div", "meta"); am.appendChild(el("span", null, label)); am.appendChild(timeEl(r.t, true)); a.appendChild(am);
+      if (r.summary) a.appendChild(summaryEl(r.summary));
+      add(a, bodyEl(r.body, r.summary));
       c.appendChild(a);
-    }
+    });
     return c;
   }
   function renderQuestions(view) {
