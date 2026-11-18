@@ -3,6 +3,7 @@
 // hold every row.
 import { useQueue, useRoster, useThreads } from "../api/queries";
 import { ago } from "../logic/ago";
+import { grantState } from "../logic/grant";
 import { href } from "../logic/route";
 import { nameOf } from "./Bars";
 import styles from "./RightColumn.module.css";
@@ -71,7 +72,7 @@ function LandQueue({ now }: { now: Date }) {
               id: w.id,
               project: w.project,
               title: (i === 0 ? "Next: " : "Then: ") + label(w.project, w.branches),
-              note: w.granted ? "granted" : ago(w.t, now),
+              note: grantState(w) ?? ago(w.t, now),
             })),
           ]}
           itemKey={(item) => item.id}

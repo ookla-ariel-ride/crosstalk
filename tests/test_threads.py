@@ -81,10 +81,11 @@ class BuildTests(unittest.TestCase):
             "s2": msg("alpha", "2026-10-21T10:00:00Z", "LAND END alpha"),
             "s3": msg("alpha", "2026-10-21T10:00:00Z", "GRANTED alpha"),
             "s4": msg("alpha", "2026-10-21T10:00:00Z", "TURN ASK alpha", kind="request"),
+            "s5": msg("alpha", "2026-10-21T10:00:00Z", "GRANT WITHDRAWN alpha"),
             "s4r": msg("alpha", "2026-10-21T10:01:00Z", "same author", reply_to="s4"),
             "n1": msg("alpha", "2026-10-21T10:00:00Z", "a real topic"),
         }, NOW))
-        for root in ("k1", "k2", "k3", "s1", "s2", "s3", "s4"):
+        for root in ("k1", "k2", "k3", "s1", "s2", "s3", "s4", "s5"):
             self.assertTrue(threads[root]["routine"], root)
         self.assertFalse(threads["n1"]["routine"])
 

@@ -30,7 +30,8 @@ export const STATUS_MS = 5000;
 const NO_ROWS = new Map<string, Thread>();
 
 /** What the last "Mark all read" did: how many threads it marked, or that the write failed. */
-type MarkStatus = { ok: true; count: number } | { ok: false } | null;
+// `count` is the unread count at the click; `at` the time of the server's count then (dataUpdatedAt).
+type MarkStatus = { ok: true; count: number; at: number } | { ok: false } | null;
 
 type Item =
   | { type: "thread"; thread: Thread }
@@ -343,7 +344,8 @@ export function Stream({ sort, open, onOpenChange, needsOnly = false, renderActi
   // owner's until the server's loads) counts the loaded threads and the
   // threads opened by id.
   const owner = reading.self === OWNER_ID;
-  const server = useUnreadCount(owner).data;
+  const serverCount = useUnreadCount(owner);
+  const server = serverCount.data;
   const loadedUnread = unreadThreads([...list, ...linkedRows.flatMap((q) => (q.data?.thread ? [q.data.thread] : []))], reading.state, reading.ready).length;
   const unread = owner && server !== undefined ? server : loadedUnread;
   const off = !serverTime || !reading.ready || marking || unread === 0;
@@ -351,6 +353,11 @@ export function Stream({ sort, open, onOpenChange, needsOnly = false, renderActi
   useEffect(() => {
     if (unread === 0 && status?.ok === false) setStatus(null);
   }, [unread, status]);
+
+  // Once the server counts again after a mark, the threads marked are the count at the click
+  // less the count now: a post that came after the page loaded stays unread (#87).
+  const recount = status?.ok === true && owner && server !== undefined && serverCount.dataUpdatedAt !== status.at;
+  const marked = status?.ok === true ? (recount ? Math.max(0, status.count - (server ?? 0)) : status.count) : 0;
 
   const markAll = () => {
     // The button stays focusable while off (aria-disabled): a click then does nothing.
@@ -370,7 +377,7 @@ export function Stream({ sort, open, onOpenChange, needsOnly = false, renderActi
     setMarking(true);
     void reading.markAll(serverTime, marks).then((ok) => {
       setMarking(false);
-      setStatus(ok ? { ok: true, count } : { ok: false });
+      setStatus(ok ? { ok: true, count, at: serverCount.dataUpdatedAt } : { ok: false });
     });
   };
 
@@ -431,7 +438,7 @@ export function Stream({ sort, open, onOpenChange, needsOnly = false, renderActi
           </button>
           {/* Always in the page, so a screen reader hears each change; it floats, so the head keeps its height. */}
           <p role="status" aria-live="polite" className={styles.status}>
-            {status?.ok === true ? `Marked ${status.count} thread${status.count === 1 ? "" : "s"} read` : null}
+            {status?.ok === true ? `Marked ${marked} thread${marked === 1 ? "" : "s"} read` : null}
             {status?.ok === false ? (
               <>
                 Not saved.{" "}

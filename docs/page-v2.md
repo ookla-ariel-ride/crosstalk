@@ -141,7 +141,9 @@ the newest message you read.
   read. For a reader who is not signed in, it counts the unread threads
   loaded on this sort. With none unread it reads "All read" and does nothing,
   but keeps the focus. After a click, a status line under the buttons says
-  what happened, such as "Marked 200 threads read". If the server did not
+  what happened, such as "Marked 200 threads read". For the owner, the number
+  comes from the server's next count, so a thread with a post that came after
+  the page loaded is not counted. If the server did not
   keep the write, it says "Not saved" with a Retry button, and the line stays
   until your next action or until nothing is left to mark; Retry puts the
   focus back on "Mark all read". A success line goes after 5 seconds or at
