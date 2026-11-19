@@ -307,15 +307,40 @@ class GrantAndLaneTests(unittest.TestCase):
                   (3, "gamma", "LAND START gamma x-1110"))
         self.assertEqual(q["waiting"], [])
 
-    def test_lane_start_with_ask_holds_and_lane_end_frees(self):
-        q = queue((1, "epsilon-kit", "TURN ASK epsilon-kit t-1110"),
-                  (2, "epsilon-kit", "LANE START t-1110: gate starts"))
+    def test_lane_start_with_a_granted_ask_holds_and_lane_end_frees(self):
+        grant = (2, "relay-bot", "GRANTED epsilon-kit t-1110", {"kind": "reply", "replyTo": "epsilon-kit-01-0"})
+        q = queue((1, "epsilon-kit", "TURN ASK epsilon-kit t-1110"), grant,
+                  (3, "epsilon-kit", "LANE START t-1110: gate starts"))
         self.assertEqual([h["word"] for h in q["holders"]], ["LANE START"])
         self.assertEqual(q["waiting"], [])
-        q = queue((1, "epsilon-kit", "TURN ASK epsilon-kit t-1110"),
-                  (2, "epsilon-kit", "LANE START t-1110: gate starts"),
-                  (3, "epsilon-kit", "LANE END t-1110: on main"))
+        q = queue((1, "epsilon-kit", "TURN ASK epsilon-kit t-1110"), grant,
+                  (3, "epsilon-kit", "LANE START t-1110: gate starts"),
+                  (4, "epsilon-kit", "LANE END t-1110: on main"))
         self.assertEqual((q["holders"], q["notes"]), ([], []))
+
+    def test_lane_posts_beside_an_ungranted_ask_leave_it_waiting(self):
+        # bewareilive-xt-laneq-20261119T1112Z fault 1: a test lane took and closed a waiting ask.
+        q = queue((1, "epsilon-kit", "TURN ASK epsilon-kit t-1110"),
+                  (2, "epsilon-kit", "LANE START t-1110: pre-ask test"),
+                  (3, "epsilon-kit", "LANE END t-1110: passed"))
+        self.assertEqual(q["holders"], [])
+        self.assertEqual([(w["id"], w["branches"]) for w in q["waiting"]], [("epsilon-kit-01-0", ["t-1110"])])
+        self.assertEqual(q["next"], "epsilon-kit")
+
+    def test_a_lane_end_does_not_end_a_land_run(self):
+        # bewareilive-xt-laneq-20261119T1112Z fault 2: a lane post of the same project dropped its land.
+        q = queue((1, "epsilon-kit", "TURN ASK epsilon-kit t-1110"),
+                  (2, "relay-bot", "GRANTED epsilon-kit t-1110", {"kind": "reply", "replyTo": "epsilon-kit-01-0"}),
+                  (3, "epsilon-kit", "LAND START t-1110"),
+                  (4, "epsilon-kit", "LANE START t-1110: each-commit test"),
+                  (5, "epsilon-kit", "LANE END t-1110: passed"))
+        self.assertEqual([(h["word"], h["id"]) for h in q["holders"]], [("LAND START", "epsilon-kit-03-2")])
+        q = queue((1, "epsilon-kit", "TURN ASK epsilon-kit t-1110"),
+                  (2, "relay-bot", "GRANTED epsilon-kit t-1110", {"kind": "reply", "replyTo": "epsilon-kit-01-0"}),
+                  (3, "epsilon-kit", "LAND START t-1110"),
+                  (4, "epsilon-kit", "LANE END t-1110: passed"),
+                  (5, "epsilon-kit", "LAND END t-1110 landed"))
+        self.assertEqual(q["holders"], [])
 
     def test_lane_without_ask_is_a_test_lane(self):
         q = queue((2, "epsilon-kit", "LANE START lane-3"), (3, "epsilon-kit", "LANE END lane-3"))

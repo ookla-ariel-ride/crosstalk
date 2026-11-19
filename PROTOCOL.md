@@ -387,8 +387,8 @@ else:
 | `TURN ASK` | The sender asks for a land turn |
 | `LAND START` | The sender starts its land and holds a slot |
 | `LAND END` | The sender's land is over; its slot is free |
-| `LANE START` | The sender starts a gate run on the build host; it holds a slot when the sender has a waiting ask, else it is a test lane |
-| `LANE END` | The sender's lane is over; a slot it held is free |
+| `LANE START` | The sender starts a gate run on the build host; it holds a slot when the sender has a waiting ask with a `GRANTED`, else it is a test lane, also while the sender holds a land run |
+| `LANE END` | The sender's lane is over; a slot it held is free. It never ends a `LAND START` run |
 
 ```
 TURN ASK alpha feature-one-0101, feature-two-0101: both approved
@@ -440,7 +440,7 @@ the same JSON:
   `holding: true` while its project also holds a slot.
 - `holders`: projects between `LAND START` and `LAND END`, with `since` and
   the branches from the summary (or from their ask when the start names
-  none). A `LAND START`, or a `LANE START` with a waiting ask, takes the
+  none). A `LAND START`, or a `LANE START` with a granted waiting ask, takes the
   sender's waiting ask out of `waiting`. One exception: branches that
   neither the ask's `GRANTED` nor the start names stay waiting in the ask's
   place, for the next grant.
