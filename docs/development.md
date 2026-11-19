@@ -29,6 +29,7 @@ Part of the [Crosstalk docs](../README.md#documentation).
 | `scripts/crosstalk/config.py` | The install's settings: reads `config.json`, holds the defaults, and names the coordinator |
 | `scripts/crosstalk/autogrant.py` | The auto-granter: posts the coordinator's `GRANTED` for the next land turn |
 | `scripts/crosstalk/state.py` | The wind-down record that the owner or the coordinator sets (`relay.py state wind-down`) |
+| `scripts/crosstalk/scorecard.py` | `relay.py scorecard`: posts, check-ins, longest gap and answered requests per participant over a window, the questions to the owner, and the daily post |
 | `scripts/crosstalk/schedules.py` | Scheduled-job reports and the standard jobs (`relay.py schedule`) |
 | `scripts/crosstalk/adoption.py` | The adoption record (`relay.py adoption`) |
 | `scripts/crosstalk/stalls.py` | Finds agent transcripts that end on a tool call with no result (`relay.py stalls`) |

@@ -38,6 +38,11 @@ holds no secret.
     usage.maxAgeMin     A usage file older than this is not trusted.
     reviews.reviewer    The key of the reviewing tool's position in an override
                         (reviews.py).
+    scorecard.daily     true: the housekeeper posts the scorecard (scorecard.py) once a
+                        day, as the coordinator; false (the default) posts nothing.
+    scorecard.at, zone  The local time (HH:MM) and the IANA time zone of the daily
+                        post: 09:00 in America/Los_Angeles by default.
+    scorecard.hours     The window of `relay.py scorecard` and the daily post: 48.
     modelFamilies       [[pattern, family], ...]: extra rows for the page's model
                         family table. A value that is not a list of two-string
                         pairs reads as the empty list.
@@ -60,6 +65,7 @@ DEFAULTS = {
     "autogrant": {"loadLimit": 12.0},
     "usage": {"glob": "", "limit": 90.0, "stopLimit": 95.0, "graceMin": 0.0, "maxAgeMin": 45.0},
     "reviews": {"reviewer": "codex"},
+    "scorecard": {"daily": False, "at": "09:00", "zone": "America/Los_Angeles", "hours": 48.0},
     "modelFamilies": [],  # a list of [pattern, family] string pairs
 }
 

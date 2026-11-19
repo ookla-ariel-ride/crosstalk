@@ -8,5 +8,6 @@
   "autogrant": {"loadLimit": 12},
   "usage": {"glob": "~/.cache/usage/usage*.json", "limit": 90, "stopLimit": 95, "graceMin": 0, "maxAgeMin": 45},
   "reviews": {"reviewer": "codex"},
+  "scorecard": {"daily": false, "at": "09:00", "zone": "America/Los_Angeles", "hours": 48},
   "modelFamilies": [["^example-model-", "example"]]
 }
