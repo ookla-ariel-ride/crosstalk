@@ -1,5 +1,6 @@
 #!/bin/sh
-# Housekeeper: check the logs and, when this install turned it on, push. It
+# Housekeeper: check the logs, post the daily scorecard when config turns it
+# on (relay.py scorecard --daily), and, when this install turned it on, push. It
 # never commits. The push is off by default; turn it on with
 #   git config crosstalk.autopush true
 # The serve process never runs git, so no two jobs fight over the working
@@ -81,6 +82,8 @@ coordinator=$(relay coordinator 2>/dev/null || true)
 if [ -n "$coordinator" ]; then
     relay schedule ran --from "$coordinator" --name housekeeper-launchd --result ok \
         >/dev/null 2>&1 || echo "housekeeper: could not report the run" >&2
+    # The daily scorecard posts only when config scorecard.daily is on, once a day.
+    relay scorecard --daily >/dev/null 2>&1 || echo "housekeeper: could not post the scorecard" >&2
 fi
 
 if [ "$autopush" = "true" ]; then

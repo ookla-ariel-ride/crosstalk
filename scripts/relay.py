@@ -25,6 +25,7 @@ from crosstalk import mcp as mcp_mod  # noqa: E402
 from crosstalk import reviews as reviews_mod  # noqa: E402
 from crosstalk import adoption as adoption_mod  # noqa: E402
 from crosstalk import schedules as schedules_mod  # noqa: E402
+from crosstalk import scorecard as scorecard_mod  # noqa: E402
 from crosstalk import state as state_mod  # noqa: E402
 from crosstalk import buildhost as buildhost_mod  # noqa: E402
 from crosstalk import config as config_mod  # noqa: E402
@@ -36,7 +37,7 @@ from crosstalk.ownerpin import clear_pin, set_pin  # noqa: E402
 from crosstalk.participants import load_roster  # noqa: E402
 from crosstalk.posters import claim_file, land_sync, post_incident, release_file  # noqa: E402
 from crosstalk.replay import enrich_messages, load_all_lines, replay  # noqa: E402
-from crosstalk.requests import no_answer, speaker_fields  # noqa: E402
+from crosstalk.requests import _parse_iso as parse_iso, no_answer, speaker_fields  # noqa: E402
 from crosstalk import inboxstate  # noqa: E402
 from crosstalk.files import utf8_json  # noqa: E402
 from crosstalk.reports import (inbox_report, load_docs, load_docs_and_lines, new_report,  # noqa: E402
@@ -830,6 +831,73 @@ def cmd_tally(args):
     return 0
 
 
+def cmd_scorecard(args):
+    """scorecard: posts, check-ins, gaps and answered requests per participant (crosstalk/scorecard.py)."""
+    roster = load_roster(ROOT / "participants.json")
+    docs, fatal = load_docs(ROOT, roster)
+    if fatal:
+        for p in fatal:
+            err("%s:%d: %s" % (p.file, p.line, p.message))
+        return 1
+    hours = args.hours if args.hours is not None else scorecard_mod.default_hours(roster)
+    if hours <= 0:
+        err("scorecard: --hours must be more than 0")
+        return 1
+    if args.daily:
+        if args.post or args.from_ or args.at:
+            err("scorecard: --daily takes no --post, --from or --at")
+            return 1
+        sender = config_mod.coordinator(roster)
+        slot = scorecard_mod.daily_slot(config_mod.of(roster), time.time())
+        if not sender or slot is None:
+            print("scorecard: no daily post due (%s)" % ("no coordinator" if not sender else "off or not yet"))
+            return 0
+        mid = scorecard_mod.daily_id(sender, slot[0])
+        if ("messages", mid) in docs:
+            print("scorecard: %s is already posted" % mid)
+            return 0
+        card = scorecard_mod.scorecard(docs, roster, slot[1], hours)
+        try:
+            ln = append_line(ROOT, sender, "set", "messages", mid, scorecard_mod.message(card, sender, roster),
+                             roster=roster)
+        except ValueError as e:
+            err(str(e))
+            return 1
+        print(ln.id)
+        return 0
+    end = time.time()
+    if args.at:
+        end = parse_iso(args.at)
+        if end is None:
+            err("scorecard: --at %r is not an ISO time" % args.at)
+            return 1
+    card = scorecard_mod.scorecard(docs, roster, end, hours)
+    if args.post:
+        if not args.from_:
+            err("scorecard: --post needs --from")
+            return 1
+        sender = args.from_
+        if sender not in roster.participants:
+            err("scorecard: unknown participant %r" % sender)
+            return 1
+        mid = "%s-scorecard-%s" % (sender, datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%S%fZ"))
+        try:
+            ln = append_line(ROOT, sender, "set", "messages", mid,
+                             dict(scorecard_mod.message(card, sender, roster), **speaker_fields(args)),
+                             roster=roster)
+        except ValueError as e:
+            err(str(e))
+            return 1
+        print(ln.id)
+        return 0
+    if args.json:
+        print(utf8_json(card, sort_keys=True, indent=2))
+    else:
+        for text in scorecard_mod.lines(card):
+            print(_text(text))
+    return 0
+
+
 def cmd_marks(args):
     """marks <item>: the marks on one post and who owes one.
     marks --missing [--older M]: each post that expects a mark and still has names that owe one."""
@@ -1191,6 +1259,20 @@ def build_parser():
     tl.add_argument("item", metavar="ITEM", help="the id of a message, a decision or a lesson")
     tl.add_argument("--brief", action="store_true", help="one line per choice, then one line of pending names")
     tl.set_defaults(fn=cmd_tally)
+
+    scd = sub.add_parser("scorecard", help="print one line per participant: posts, check-ins, longest gap, "
+                                           "requests answered; then the questions to the owner")
+    scd.add_argument("--hours", type=float, default=None,
+                     help="the window in hours (default: config scorecard.hours, 48)")
+    scd.add_argument("--at", default=None, metavar="ISO", help="the window end (default: now)")
+    scd.add_argument("--json", action="store_true", help="print the numbers as JSON")
+    scd.add_argument("--post", action="store_true", help="post the lines as a kind: status message (needs --from)")
+    scd.add_argument("--from", dest="from_", default=None, help="the participant --post posts as")
+    scd.add_argument("--daily", action="store_true",
+                     help="post today's scorecard as the coordinator when config scorecard.daily is on, the "
+                          "local time is past scorecard.at and it is not posted yet (the housekeeper runs this)")
+    _speaker_flags(scd)
+    scd.set_defaults(fn=cmd_scorecard)
 
     mr = sub.add_parser("marks", help="print the marks on one post and who owes one; "
                                       "--missing lists every post that still waits for marks")

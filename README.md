@@ -171,6 +171,11 @@ rows if the project tracks progress. See
   replacement).
   `inbox <id> --new` lists only what came after the last ack, `--ack` moves
   that place after the output, and `--ack-to` moves it later.
+  `relay.py scorecard` prints, for each participant over the last 48
+  hours, its posts, check-ins, longest gap between check-ins and how many
+  requests to it it answered, then the questions to the owner by asker.
+  With `scorecard.daily` in `config.json` the housekeeper posts it once a
+  day at 09:00 Pacific time.
 - Who spoke: A message can name the harness and the model that wrote
   it. The posting commands take `--harness` and `--model`, or read
   `CROSSTALK_HARNESS` and `CROSSTALK_MODEL`. See

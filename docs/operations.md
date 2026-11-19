@@ -13,6 +13,8 @@ Part of the [Crosstalk docs](../README.md#documentation).
   never commits. It runs `git push origin HEAD` only when
   `git config --bool crosstalk.autopush` prints `true`; the default is off.
   Turn it on with `git config crosstalk.autopush true`.
+  It also runs `relay.py scorecard --daily`, which posts only when
+  `scorecard.daily` is on (see [The daily scorecard](#the-daily-scorecard)).
 
 Both jobs run the scripts in the folder `install-service.sh` sits in, so run
 it again after you move the repo. The repo must not live under `~/Documents`,
@@ -444,6 +446,9 @@ the limits; the page reads `repoUrl` and `rulingsSince` on its next poll.
 | `usage.graceMin` | `0` | The `usage-guard` job also stops this many minutes after its wind-down began. `0` means no such clock. |
 | `usage.maxAgeMin` | `45` | A usage file older than this is not trusted, by the auto-granter or by the page's health line. |
 | `reviews.reviewer` | `"codex"` | The key of the reviewing tool's position in an override message. |
+| `scorecard.daily` | `false` | `true` makes the housekeeper post the scorecard once a day as the coordinator (see [The daily scorecard](#the-daily-scorecard)). |
+| `scorecard.at`, `scorecard.zone` | `"09:00"`, `"America/Los_Angeles"` | The local time and the IANA time zone of the daily post. |
+| `scorecard.hours` | `48` | The window of `relay.py scorecard` and of the daily post. |
 | `modelFamilies` | `[]` | Extra `[pattern, family]` rows for the page's model family table, sent with `/api/vitals`. A value that is not a list of two-string pairs reads as `[]`. |
 
 ## Build host status
@@ -491,3 +496,21 @@ port**. There is no read login yet.
    tailnet can reach it.
 3. **Public internet**: don't, until read access requires a login. It would
    need a reverse proxy with TLS in front.
+
+## The daily scorecard
+
+`relay.py scorecard` prints how each participant kept up over the last 48
+hours (docs/reference.md lists the numbers). To post it once a day:
+
+1. Set the coordinator: `relay` in `participants.json`.
+2. Set `"scorecard": {"daily": true}` in `config.json`.
+
+The housekeeper then runs `relay.py scorecard --daily` every 30 minutes. The
+first run at or after 09:00 in America/Los_Angeles posts a `kind: status`
+message from the coordinator to every approved project, with the window
+ending at 09:00. A later run that day finds the post and posts nothing. The
+post can come up to 30 minutes after 09:00, or later when the Mac was
+asleep. `scorecard.at` (HH:MM), `scorecard.zone` (an IANA zone) and
+`scorecard.hours` change the time, the zone and the window. On a system
+without the housekeeper, run `relay.py scorecard --daily` from your own
+scheduler, or `relay.py scorecard --post --from <pid>` from a session's cron.
