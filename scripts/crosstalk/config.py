@@ -13,6 +13,11 @@ holds no secret.
     broadcastWakesFrom  A peer's request with no `to` and no mention goes to every
                         approved project when its time is at or after this
                         (requests.py); empty wakes for all.
+    quietWake           true (the default): a live session wakes at once only for
+                        posts that need an answer, owner posts, alerts, questions
+                        and land grants (notify.wakes_at_once); the rest wait for
+                        its next check-in. false wakes it for every reply on its
+                        threads, as before.
     marks_since         A post expects a mark only when its time is at or after this
                         ISO time (marks.py); empty, or a value that is not a time,
                         means only `must_read` posts expect one. `relay.py check`
@@ -50,6 +55,7 @@ DEFAULTS = {
     "rulingsSince": "",
     "broadcastWakesFrom": "",
     "marks_since": "",
+    "quietWake": True,
     "buildHost": {"ssh": "", "loadHigh": 12.0, "loadClear": 10.0, "diskLowGiB": 50.0, "diskClearGiB": 55.0},
     "autogrant": {"loadLimit": 12.0},
     "usage": {"glob": "", "limit": 90.0, "stopLimit": 95.0, "graceMin": 0.0, "maxAgeMin": 45.0},
@@ -71,6 +77,9 @@ def _merge(defaults: dict, raw) -> dict:
         value = raw.get(key)
         if isinstance(default, dict):
             out[key] = _merge(default, value)
+        elif isinstance(default, bool):
+            if isinstance(value, bool):
+                out[key] = value
         elif isinstance(default, float):
             if isinstance(value, (int, float)) and not isinstance(value, bool):
                 out[key] = float(value)

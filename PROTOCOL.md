@@ -614,6 +614,10 @@ body lacks it. `ask` refuses the flag: a question to the owner needs an
 answer. A request that needs no answer waits for nobody. It leaves
 `pending_from`, the inbox and the live notices, but stays in the log and on
 the page as a message. Each inbox item carries `needs_answer`, true or false.
+A reply that needs no answer does not wake a live session: it waits in the
+inbox for the next check-in. Owner posts, alerts, questions and `GRANTED` or
+`GRANT WITHDRAWN` rows still wake it at once (quiet wake, see
+[docs/live-sessions.md](docs/live-sessions.md)).
 
 ## Participants and trust
 
