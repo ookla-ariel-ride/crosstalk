@@ -319,7 +319,7 @@ class GrantAndLaneTests(unittest.TestCase):
         self.assertEqual((q["holders"], q["notes"]), ([], []))
 
     def test_lane_posts_beside_an_ungranted_ask_leave_it_waiting(self):
-        # bewareilive-xt-laneq-20261119T1112Z fault 1: a test lane took and closed a waiting ask.
+        # A test lane took and closed a waiting ask that had no grant.
         q = queue((1, "epsilon-kit", "TURN ASK epsilon-kit t-1110"),
                   (2, "epsilon-kit", "LANE START t-1110: pre-ask test"),
                   (3, "epsilon-kit", "LANE END t-1110: passed"))
@@ -328,7 +328,7 @@ class GrantAndLaneTests(unittest.TestCase):
         self.assertEqual(q["next"], "epsilon-kit")
 
     def test_a_lane_end_does_not_end_a_land_run(self):
-        # bewareilive-xt-laneq-20261119T1112Z fault 2: a lane post of the same project dropped its land.
+        # A lane post of the same project dropped its land run.
         q = queue((1, "epsilon-kit", "TURN ASK epsilon-kit t-1110"),
                   (2, "relay-bot", "GRANTED epsilon-kit t-1110", {"kind": "reply", "replyTo": "epsilon-kit-01-0"}),
                   (3, "epsilon-kit", "LAND START t-1110"),

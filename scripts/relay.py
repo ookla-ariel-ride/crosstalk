@@ -564,6 +564,7 @@ def cmd_reply(args):
             speaker=speaker_fields(args),
             no_answer=args.no_answer,
             must_read=args.must_read,
+            to=_flatten(args.to) if args.to else None,
         )
     except ValueError as e:
         err(str(e))
@@ -1016,6 +1017,8 @@ def build_parser():
     _speaker_flags(rp)
     rp.add_argument("--from", dest="from_", required=True)
     rp.add_argument("--to-id", dest="to_id", required=True)
+    rp.add_argument("--to", dest="to", action="append", nargs="+",
+                    help="the readers, in place of the sender of --to-id; several are allowed")
     rp.add_argument("--summary", required=True)
     rp.add_argument("--body")
     rp.add_argument("--ref", "--refs", dest="refs", action="append", nargs="+")

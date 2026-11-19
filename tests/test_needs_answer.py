@@ -155,6 +155,18 @@ class NeedsAnswerTests(unittest.TestCase):
             self.assertIs(doc["needs_answer"], False)
             self.assertEqual(doc["body"], want)
 
+    def test_reply_to_names_several_readers(self):
+        self.r.write_log("beta", [msg(1, "beta", "beta-r1", kind="request", summary="help", to=["alpha"])])
+        p = self.run_cli("reply", "--from", "alpha", "--to-id", "beta-r1", "--summary", "done",
+                         "--to", "beta", "--to", "gamma")
+        self.assertEqual(p.returncode, 0, p.stderr)
+        doc = self.messages()[p.stdout.strip()]
+        self.assertEqual((doc["replyTo"], doc["to"]), ("beta-r1", ["beta", "gamma"]))
+        p = self.run_cli("reply", "--from", "alpha", "--to-id", "beta-r1", "--summary", "x", "--to", "delta")
+        self.assertIn("'delta' is not a participant", p.stderr)
+        p = self.run_cli("reply", "--from", "alpha", "--to-id", "beta-r1", "--summary", "again")
+        self.assertEqual(self.messages()[p.stdout.strip()]["to"], ["beta"])
+
     def test_consult_no_answer(self):
         p = self.run_cli("consult", "--from", "beta", "--summary", "fyi", "--to", "alpha",
                          "--body", "Landed", "--no-answer")
