@@ -27,11 +27,12 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Callable, Dict, List, Optional, Tuple
 
-from . import live
+from . import config, live
 from .files import atomic_write_text
+from .landqueue import GRANT_VOID
 from .participants import Roster, load_roster
-from .requests import (acks_by_item, inbox_for, land_reports_for, peer_alerts_for, pending_recipients,
-                       thread_replies_for, unanswered_owner_messages)
+from .requests import (acks_by_item, inbox_for, land_reports_for, needs_answer, peer_alerts_for,
+                       pending_recipients, thread_replies_for, unanswered_owner_messages)
 
 MAX_ITEM_LINES = 10  # the session reads the full inbox; the message only previews it
 
@@ -43,6 +44,35 @@ ISO = "%Y-%m-%dT%H:%M:%SZ"
 KIND_LABELS = {"owner": "owner message"}
 THREAD_REPLY_LABEL = "reply on your thread"
 LAND_REPORT_LABEL = "land report"
+
+
+# Kinds that report and ask nothing: a reply of one of these kinds never wakes.
+QUIET_KINDS = ("check-in", "checkin", "sync", "status")
+# Kinds that wake at once even when they say "No answer needed".
+LOUD_KINDS = ("alert", "question")
+# A land grant word: the granted project must start its land, so it always wakes.
+GRANT_WORDS = ("GRANTED", GRANT_VOID)
+
+
+def wakes_at_once(doc: dict) -> bool:
+    """True when a reply on pid's thread wakes pid's session at once (quiet wake).
+
+    It wakes for an owner post, a GRANTED or GRANT WITHDRAWN, an alert or a
+    question, and any other reply that needs an answer (requests.needs_answer),
+    except the routine kinds in QUIET_KINDS. A reply that needs no answer waits
+    for the session's next check-in, where `relay.py inbox` lists it.
+    """
+    if doc.get("from") == "owner":
+        return True
+    summary = doc.get("summary")
+    if isinstance(summary, str) and summary.strip().startswith(GRANT_WORDS):
+        return True
+    kind = doc.get("kind")
+    if kind in LOUD_KINDS:
+        return True
+    if kind in QUIET_KINDS:
+        return False
+    return needs_answer(doc)
 
 
 class SessionGone(Exception):
@@ -58,7 +88,10 @@ def actionable_items(docs: Dict, pid: str, roster: Roster, urgent: bool = False)
     that may interrupt a non-Claude session (urgent.py): the owner messages,
     plus alerts from peers that name pid in `to` (peer_alerts_for); requests
     and thread replies wait for the check-in. The land coordinator also gets
-    every LAND END and LANE END (land_reports_for). Items whose sender is not approved in the
+    every LAND END and LANE END (land_reports_for). With quiet wake (the config's
+    `quietWake`, on by default), a thread reply counts only when wakes_at_once
+    says so; open requests already leave out the ones that need no answer.
+    Items whose sender is not approved in the
     roster are dropped, so a quarantined participant cannot ring an agent; so
     are pid's own messages (an @Projects request, or one listing itself in
     `to`, must not wake its sender), and items whose id is not a plain
@@ -75,8 +108,10 @@ def actionable_items(docs: Dict, pid: str, roster: Roster, urgent: bool = False)
         for did, doc, replies in inbox_for(docs, pid, roster):
             if pid in pending_recipients(doc, replies, roster, acked=acks.get(did, ())):
                 ids.add(did)
-        for did, _doc, _root in thread_replies_for(docs, pid, roster):
-            ids.add(did)
+        quiet = config.of(roster).get("quietWake", True)
+        for did, doc, _root in thread_replies_for(docs, pid, roster):
+            if not quiet or wakes_at_once(doc):
+                ids.add(did)
         for did, _doc, _replies in land_reports_for(docs, pid, roster):
             ids.add(did)
     out = set()

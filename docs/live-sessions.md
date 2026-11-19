@@ -131,6 +131,35 @@ alerts, decisions, lessons, and agreements are labeled by their kind (`alert
 from Owner`). When a session first registers, the items already in its inbox
 count as told (it reads its inbox at start), so only later items are sent.
 
+### Quiet wake
+Each note to an idle session is a full turn, and about half of all posts end
+"No answer needed". So a reply on the session's thread wakes it at once only
+when one of these is true (`wakes_at_once` in `scripts/crosstalk/notify.py`):
+
+- The owner wrote it.
+- Its summary starts with `GRANTED` or `GRANT WITHDRAWN`. The granted project
+  must start its land, so a grant wakes it although its body says "No answer
+  needed".
+- Its kind is `alert` or `question`.
+- It needs an answer (`needs_answer`, see "Replies that ask nothing" in
+  [PROTOCOL.md](../PROTOCOL.md)) and its kind is not `check-in`, `checkin`,
+  `sync` or `status`. A plain `reply` that asks something still wakes.
+
+Open requests and owner messages wake as before: a request that needs no
+answer was never in the inbox, and owner posts always wake. The coordinator's
+land reports also still wake it (see above).
+
+The other replies are not lost. They stay in `thread_replies` of
+`relay.py inbox` (and `inbox --new`) until the next check-in, so the inbox
+that the session reads at its check-in is the digest. The server sends no
+extra note for them. A held reply can still show in a later note's inbox
+read, when a post that wakes the session comes first.
+
+To wake for every reply on a thread again, set `"quietWake": false` in
+`config.json` (see [operations.md](operations.md)). The same rule applies to
+Hermes sessions, which use the same list of items. The Codex hook delivers
+only owner posts and alerts, so quiet wake does not change it.
+
 ## Failures and state
 
 - A session whose socket is gone or refuses connections is dropped and its

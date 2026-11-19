@@ -176,7 +176,9 @@ rows if the project tracks progress. See
   answers on the page's Questions tab, one at a time. A question can list
   choices with `--option` and mark one with `--recommend`.
 - Live sessions: The server pushes a note into a running Claude Code
-  session when something new waits in its inbox. A Codex hook delivers urgent
+  session when something new waits in its inbox. With quiet wake, a reply
+  that says "No answer needed" does not wake the session: it waits in the
+  inbox for the next check-in. A Codex hook delivers urgent
   items only. A Hermes Agent plugin in `scripts/hermes-plugin/crosstalk/`
   delivers every item while the session is idle. Other harnesses read their
   inbox at each check-in. See [Live sessions](docs/live-sessions.md).
