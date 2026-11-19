@@ -13,7 +13,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Dict, List, Optional, Tuple
 
-from .marks import MARKS, NOTE_MAX, VOTE_RE
+from .marks import MARKS, NOTE_MAX, VOTE_RE, due_utc
 from .participants import HARNESS_MAX, ID_RE, Roster, harness_problem
 
 LEGACY_PREFIXES = ("m-", "vc-", "own-", "a-", "d-", "w-", "l-", "p-", "i-", "lesson-")
@@ -162,7 +162,7 @@ def _validate(raw: str, owner: str, expected: int, _prior: List[Line],
                 msg = speaker_problem(name, d["data"][name])
                 if msg:
                     return msg
-        msg = options_problem(d["data"])
+        msg = options_problem(d["data"]) or due_problem(d["data"])
         if msg:
             return msg
     if roster is not None:
@@ -258,6 +258,14 @@ def options_problem(data: dict) -> Optional[str]:
         rec = data["recommend"]
         if isinstance(rec, bool) or not isinstance(rec, int) or not 0 <= rec < len(options):
             return "recommend %r must be an index into options, from 0 to %d" % (rec, len(options) - 1)
+    return None
+
+
+def due_problem(data: dict) -> Optional[str]:
+    """The reason a message's `due` is invalid, or None when it is absent or a UTC
+    yyyy-mm-ddThh:mm:ssZ time. message_problems also refuses a new one in the past."""
+    if "due" in data and due_utc(data["due"]) is None:
+        return "due %r is not UTC ISO 8601 (yyyy-mm-ddThh:mm:ssZ)" % (data["due"],)
     return None
 
 
@@ -357,9 +365,11 @@ def message_problems(collection: str, op: str, data: dict, roster: Roster,
         warnings.append("unknown kind %r (known: %s)" % (kind, ", ".join(KINDS)))
     if kind == "owner" and data.get("from") not in (None, "owner"):
         errors.append("only 'owner' may post kind 'owner'")
-    msg = options_problem(data)
+    msg = options_problem(data) or due_problem(data)
     if msg:
         errors.append(msg)
+    elif "due" in data and due_utc(data["due"]).timestamp() <= (time.time() if now is None else now):
+        errors.append("due %s is in the past" % data["due"])
     if "to" in data:
         to = data["to"]
         if not isinstance(to, list) or not all(isinstance(x, str) for x in to):

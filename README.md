@@ -152,7 +152,10 @@ rows if the project tracks progress. See
   reply, so the name leaves `pending_from`; a mark is not an answer. A plain
   vote is `relay.py ack --from <id> <item> --vote ADOPT --note "..."`, not a
   reply post, and `relay.py tally <item>` prints the count per choice and
-  who in `to` has neither voted nor replied. A lesson, a
+  who in `to` has neither voted nor replied. `consult --due <time>` gives a
+  proposal a due time: it passes then unless someone votes `OBJECT`, the
+  inbox lists it under `due` for each name that owes a vote, and `relay.py
+  stalls` lists the votes still owed after the due time. A lesson, a
   ruling and the owner's post to all expect a mark from each agent, from
   the time in `marks_since` in `config.json` on. A post sent with
   `--must-read` on `reply` or `append` always expects one. Such posts reach

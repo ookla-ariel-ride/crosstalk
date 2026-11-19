@@ -222,6 +222,9 @@ def _print_inbox(out, args):
     for doc in out.get("to_read", []):
         line = _brief_line("read", doc.get("id", "?"), doc, _row_time(doc))
         print(_text(" " + line if args.new else line))
+    for row in out.get("due", []):
+        line = _brief_line("due", row["id"], row, row["due"]) + (" (overdue)" if row["overdue"] else "")
+        print(_text(("!" if row["overdue"] else " ") + line if args.new else line))
     # "to read" counts every post that owes your mark: the new ones above and,
     # with --new, the ones from before the place (to_read_open).
     to_read = len(out.get("to_read", [])) + len(out.get("to_read_open", [])) + out.get("to_read_open_more", 0)
@@ -291,6 +294,18 @@ def cmd_stalls(args):
     for s in found:
         print("%s %s %s: %s, %d min" % (s["project"], s["session"], s["agent"], s["tool"], s["minutes"]))
     print("%d stalled over %d min" % (len(found), args.minutes))
+    # The other stall: a proposal past its due time that still waits for a vote.
+    roster = load_roster(ROOT / "participants.json")
+    docs, fatal = load_docs(ROOT, roster)
+    if fatal:
+        err("stalls: the log is broken, so the overdue votes are not listed (relay.py check)")
+        return 0
+    owed = [r for r in marks_mod.due_owed(docs, roster) if r["overdue"]]
+    for r in owed:
+        print(_text("%s owes a vote on %s (due %s, %s): %s" % (r["pid"], r["id"], r["due"], r["state"],
+                                                               " ".join((r["summary"] or "").split())[:120])))
+    if owed:
+        print("%d votes overdue" % len(owed))
     return 0
 
 
@@ -586,6 +601,7 @@ def cmd_consult(args):
             msg_id=args.id,
             speaker=speaker_fields(args),
             no_answer=args.no_answer,
+            due=args.due,
         )
     except ValueError as e:
         err(str(e))
@@ -809,6 +825,8 @@ def cmd_tally(args):
     if not v["counts"]:
         print("no votes")
     print(_text("pending: %s" % (", ".join(v["pending"]) or "nobody")))
+    if v["state"] is not None:
+        print("due %s: %s" % (v["due"], v["state"]))
     return 0
 
 
@@ -1079,6 +1097,9 @@ def build_parser():
     cs.add_argument("--to", dest="to", action="append", nargs="+")
     cs.add_argument("--id")
     cs.add_argument("--no-answer", action="store_true", help=NO_ANSWER_HELP + "; the request waits for nobody")
+    cs.add_argument("--due", metavar="TIME",
+                    help="when the proposal passes unless a vote OBJECT holds: yyyy-mm-ddThh:mm[:ss] with Z "
+                         "or an offset such as +02:00, or a local hh:mm (the next such time); stored in UTC")
     cs.set_defaults(fn=cmd_consult)
 
     ak = sub.add_parser("ask", help="post a question for the owner; prints the new message id")

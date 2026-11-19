@@ -6,6 +6,8 @@ emoji exist only where text is shown.
 """
 import json
 import re
+import time
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Dict, List, Optional, Tuple
 
@@ -129,10 +131,105 @@ def _mark_rows(docs: Dict, roster=None) -> List[Tuple[Tuple[str, str], str, str,
     return [(ref, frm, word, doc) for _t, _did, ref, frm, word, doc in rows]
 
 
-def tally(docs: Dict, coll: str, did: str, roster=None) -> dict:
+# A due time (`consult --due`, a message's `due`): the log keeps it as UTC ISO 8601.
+DUE_FORMAT = "%Y-%m-%dT%H:%M:%SZ"
+# What `consult --due` accepts: an ISO time with Z or an offset (seconds optional),
+# or a local HH:MM, the next such time on the machine's clock.
+_DUE_ISO_RE = re.compile(r"\d{4}-\d{2}-\d{2}T\d{2}:\d{2}(:\d{2})?(Z|[+-]\d{2}:\d{2})")
+_DUE_HHMM_RE = re.compile(r"(\d{1,2}):(\d{2})")
+# The vote that stops a proposal from passing at its due time (lazy consensus).
+OBJECT = "OBJECT"
+
+
+def due_utc(value) -> Optional[datetime]:
+    """A message's `due` as an aware UTC datetime, or None when it is not yyyy-mm-ddThh:mm:ssZ."""
+    try:
+        return datetime.strptime(value, DUE_FORMAT).replace(tzinfo=timezone.utc)
+    except (TypeError, ValueError):
+        return None
+
+
+def parse_due(raw, now: Optional[float] = None) -> str:
+    """`consult --due` text as the `due` the log keeps (yyyy-mm-ddThh:mm:ssZ).
+
+    Takes yyyy-mm-ddThh:mm[:ss] with Z or +hh:mm/-hh:mm, or a local hh:mm: today at that
+    time on this machine's clock, or tomorrow when that time has passed. Raises
+    ValueError for any other text and for a time that is not after `now`."""
+    text = raw.strip() if isinstance(raw, str) else ""
+    now = time.time() if now is None else now
+    hhmm = _DUE_HHMM_RE.fullmatch(text)
+    if hhmm:
+        hour, minute = int(hhmm.group(1)), int(hhmm.group(2))
+        if hour > 23 or minute > 59:
+            raise ValueError("bad due %r: hh:mm runs from 00:00 to 23:59" % (raw,))
+        day = datetime.fromtimestamp(now).date()
+        when = time.mktime((day.year, day.month, day.day, hour, minute, 0, 0, 0, -1))
+        if when <= now:
+            day += timedelta(days=1)
+            when = time.mktime((day.year, day.month, day.day, hour, minute, 0, 0, 0, -1))
+        stamp = datetime.fromtimestamp(int(when), timezone.utc)
+    elif _DUE_ISO_RE.fullmatch(text):
+        try:
+            stamp = datetime.fromisoformat(text[:-1] + "+00:00" if text.endswith("Z") else text)
+        except ValueError:
+            raise ValueError("bad due %r: not a real date and time" % (raw,))
+        stamp = stamp.astimezone(timezone.utc)
+    else:
+        raise ValueError("bad due %r: give yyyy-mm-ddThh:mm[:ss] with Z or an offset such as "
+                         "+02:00, or a local hh:mm" % (raw,))
+    if stamp.timestamp() <= now:
+        raise ValueError("due %s is in the past" % stamp.strftime(DUE_FORMAT))
+    return stamp.strftime(DUE_FORMAT)
+
+
+def due_state(post: dict, votes: List[dict], now: Optional[float] = None) -> Optional[str]:
+    """Where a proposal with a `due` stands: None without a good `due`; `retracted`;
+    `open` before the due time; at or after it `objected` when a vote OBJECT cast by
+    then holds, else `passed` (lazy consensus)."""
+    due = due_utc(post.get("due")) if isinstance(post, dict) else None
+    if due is None:
+        return None
+    if is_retracted(post):
+        return "retracted"
+    if (time.time() if now is None else now) < due.timestamp():
+        return "open"
+    for v in votes:
+        cast = _parse_iso(v.get("t"))
+        if v.get("vote") == OBJECT and (cast is None or cast <= due.timestamp()):
+            return "objected"
+    return "passed"
+
+
+def due_owed(docs: Dict, roster=None, now: Optional[float] = None, pid: Optional[str] = None) -> List[dict]:
+    """The votes owed on messages with a `due`: one row {pid, id, from, summary, due,
+    overdue, state} per name in the message's `tally` pending, oldest due first. Leaves
+    out a retracted message and one that asks nothing (`needs_answer: false`). With
+    `pid`, only that name's rows."""
+    now = time.time() if now is None else now
+    rows = []
+    for (coll, did), doc in docs.items():
+        if coll != "messages" or not isinstance(doc, dict) or is_retracted(doc) \
+                or doc.get("needs_answer") is False:
+            continue
+        due = due_utc(doc.get("due"))
+        if due is None:
+            continue
+        v = tally(docs, coll, did, roster, now=now)
+        summary = doc.get("summary")
+        for name in v["pending"]:
+            if pid is None or name == pid:
+                rows.append({"pid": name, "id": did, "from": doc.get("from"),
+                             "summary": summary if isinstance(summary, str) else None,
+                             "due": doc["due"], "overdue": now >= due.timestamp(), "state": v["state"]})
+    rows.sort(key=lambda r: (r["due"], r["id"], r["pid"]))
+    return rows
+
+
+def tally(docs: Dict, coll: str, did: str, roster=None, now: Optional[float] = None) -> dict:
     """The votes on one post (`relay.py tally`): each voter whose latest mark on it is a
-    vote, with its choice, note and time; the count per choice; and `pending`, the names
-    in the post's `to` (not its writer) that hold no vote and posted no reply to it.
+    vote, with its choice, note and time; the count per choice; `pending`, the names
+    in the post's `to` (not its writer) that hold no vote and posted no reply to it;
+    and `due` and `state` (due_state), both None when the post has no due time.
 
     Pass the docs from replay.enrich_messages, as marks_by_item asks."""
     latest = {}  # type: Dict[str, dict]
@@ -163,8 +260,10 @@ def tally(docs: Dict, coll: str, did: str, roster=None) -> dict:
     for pid in _to_names(post) or []:
         if pid != writer and pid not in answered and pid not in pending and _is_approved(pid, roster):
             pending.append(pid)
+    state = due_state(post, votes, now)
     return {"id": did, "collection": coll, "summary": summary if isinstance(summary, str) else None,
-            "counts": dict(sorted(counts.items())), "votes": votes, "pending": pending}
+            "counts": dict(sorted(counts.items())), "votes": votes, "pending": pending,
+            "due": post["due"] if state is not None else None, "state": state}
 
 
 # The kinds of participant that owe a mark (participants.KINDS); the owner owes none.

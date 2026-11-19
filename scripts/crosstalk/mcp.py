@@ -299,10 +299,14 @@ class McpServer:
     def _consult(self, args):
         try:
             ln = post_consult(self.root, self.pid, args["summary"], body=args.get("body"),
-                              refs=args.get("refs"), to=args.get("to"), speaker=speaker_fields())
+                              refs=args.get("refs"), to=args.get("to"), speaker=speaker_fields(),
+                              due=args.get("due"))
         except ValueError as e:
             raise ToolError(str(e))
-        return {"id": ln.id, "seq": ln.seq, "t": ln.t, "to": ln.data.get("to")}
+        out = {"id": ln.id, "seq": ln.seq, "t": ln.t, "to": ln.data.get("to")}
+        if "due" in ln.data:
+            out["due"] = ln.data["due"]
+        return out
 
     def _ask_owner(self, args):
         recommend = args.get("recommend")
@@ -485,8 +489,13 @@ class McpServer:
             Tool("consult", "Ask other projects for help",
                  "Post a request asking other participants for help or a second opinion. Name "
                  "them in 'to', or leave 'to' out and @mention them in the text. It stays in "
-                 "their inboxes until each answers.",
-                 _schema({"summary": summary, "body": body, "refs": refs, "to": to}, ["summary"]),
+                 "their inboxes until each answers. Give 'due' to make it a proposal that "
+                 "passes at that time unless someone votes OBJECT.",
+                 _schema({"summary": summary, "body": body, "refs": refs, "to": to,
+                          "due": dict(_STR, minLength=1, maxLength=40,
+                                      description="When the proposal passes: an ISO time with Z or an "
+                                                  "offset, or a local hh:mm (the next such time).")},
+                         ["summary"]),
                  self._consult),
             Tool("ask_owner", "Ask the owner a question",
                  "Ask the owner something only the owner can decide. One question per call: "
