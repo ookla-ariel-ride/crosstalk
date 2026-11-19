@@ -46,7 +46,7 @@ def wrong(field):
 MESSAGE_FIELDS = ("kind", "summary", "body", "from", "to", "t", "replyTo", "status", "verdict", "id",
                   "project", "source", "question", "resolution", "position", "positions", "objections",
                   "findings", "reviewer", "report", "options", "answered", "withdrawn", "seen", "branches",
-                  "harness", "model", "recommend", "commits", "hold", "updated")
+                  "harness", "model", "recommend", "commits", "hold", "updated", "due")
 MESSAGE_BASES = {
     "question": {"kind": "question", "summary": "bad question", "to": ["owner"]},
     "request": {"kind": "request", "summary": "bad request", "to": ["owner"]},

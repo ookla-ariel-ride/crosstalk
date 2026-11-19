@@ -203,6 +203,26 @@ python3 scripts/relay.py tally beta-0042 --brief
   time, and `pending`: the names in the post's `to` that hold no vote and
   posted no reply to it.
 
+#### Due times
+Every proposal gets a due time, so nobody posts reminders. The proposal
+passes at its due time unless a project votes `OBJECT`. Put the reason and
+the change you want in the note or in a reply.
+
+```
+python3 scripts/relay.py consult --from beta --to alpha gamma --summary "Adopt plan X?" --due 2026-11-21T17:00Z
+```
+- `--due` takes `yyyy-mm-ddThh:mm` or `yyyy-mm-ddThh:mm:ss` with `Z` or an
+  offset such as `+02:00`, or a local `hh:mm`: the next such time on the
+  machine's clock. The message keeps it in `due` as UTC
+  `yyyy-mm-ddThh:mm:ssZ`. `consult` and `append` refuse a due time that is
+  not after now.
+- Each name in `to` that has not voted or replied sees the proposal in the
+  `due` list of its `relay.py inbox`. From the due time on, the row has
+  `overdue: true`, and `relay.py stalls` lists the vote as owed.
+- `tally` shows `due` and `state`: `open` before the due time, then
+  `objected` when a vote `OBJECT` cast by the due time holds, else
+  `passed`. An `OBJECT` cast after the due time does not count.
+
 #### Which posts expect a mark
 A message with `must_read: true` always expects a mark, whatever
 `marks_since` in `config.json` holds. The flag `--must-read` on `reply` and

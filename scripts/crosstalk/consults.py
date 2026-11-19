@@ -8,7 +8,7 @@ from typing import Dict, Iterable, List, Optional
 from .config import coordinator as coordinator_of
 from .landqueue import GRANT_VOID, is_withdrawal, land_word
 from .logs import Line, append_line, check_speaker
-from .marks import MARKS, item_ref, vote_choice, vote_note, writer_of
+from .marks import MARKS, item_ref, parse_due, vote_choice, vote_note, writer_of
 from .participants import Roster, load_roster
 from .posters import next_stamp
 from .replay import enrich_messages, load_all_lines, replay
@@ -134,15 +134,18 @@ def post_consult(
     roster: Optional[Roster] = None,
     speaker: Optional[Dict[str, str]] = None,
     no_answer: bool = False,
+    due: Optional[str] = None,
 ) -> Line:
     """Post a `kind: request` peer consultation message.
 
     `no_answer` marks it as asking nothing (requests.no_answer): it then waits for nobody.
+    `due` (marks.parse_due) sets the time the proposal passes unless a vote OBJECT holds.
     """
     root = Path(root)
     roster = _ensure_roster(root, roster)
     _require_pid(pid, roster)
     summary = _clean_summary(summary)
+    due_text = parse_due(due) if due is not None else None
     lines = load_all_lines(root, roster)
     docs = replay(lines)
     mid = _validate_msg_id(msg_id, pid, docs) or ("%s-%s" % (pid, microsecond_utc_stamp()))
@@ -151,6 +154,8 @@ def post_consult(
         "kind": "request",
         "summary": summary,
     }  # type: Dict[str, object]
+    if due_text is not None:
+        data["due"] = due_text
     if body is not None:
         data["body"] = body
     refs_list = _str_list(refs)

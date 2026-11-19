@@ -19,6 +19,7 @@ from .requests import (
     owner_questions,
     pending_recipients,
     replaced_answers,
+    _parse_iso,
     stale_locks_for,
     thread_replies_for,
     unanswered_owner_messages,
@@ -63,7 +64,8 @@ def inbox_report(docs: Dict, pid: str, roster: Roster, include_answered: bool = 
                  config: Optional[dict] = None, to_read_all: bool = False) -> dict:
     """What `relay.py inbox <pid>` prints: requests, owner messages, replies on pid's
     threads, the posts that owe pid's mark (`to_read`, marks.to_read), agreements,
-    stale locks, and for the owner the open questions for it.
+    stale locks, the proposals with a due time that wait for pid's vote or reply
+    (`due`, marks.due_owed), and for the owner the open questions for it.
     `service` defaults to SERVICE (service.service_for gives one with a data root);
     `config` defaults to the settings the roster carries (config.of).
 
@@ -111,6 +113,8 @@ def inbox_report(docs: Dict, pid: str, roster: Roster, include_answered: bool = 
                                      by_item),
         "agreements_to_adopt": agreements_to_adopt_for(docs, pid, roster=roster),
         "stale_locks": stale_locks_for(docs, pid, now_iso=now_iso),
+        "due": [{k: v for k, v in row.items() if k != "pid"}
+                for row in marks_mod.due_owed(docs, roster, _parse_iso(now_iso) if now_iso else None, pid=pid)],
         "service": SERVICE if service is None else service,
     }
     if to_read_all:
@@ -167,6 +171,7 @@ def new_report(full: dict, lines: List[Line], place: Optional[dict],
     the same cut: the ones from before the place stay as `to_read_open`, without
     bodies, newest first, at most STILL_OPEN_MAX, and `to_read_open_more` counts
     the rest. A message whose `lesson-<id>` row came after the place counts as new.
+    `due` stays whole: each owed vote shows on every check-in until it is cast.
     `full` must come from inbox_report(..., to_read_all=True), or a ValueError
     says so: a post this output shows
     in another section (_shown), or that `still_open_more` counts, leaves `to_read`
@@ -181,7 +186,7 @@ def new_report(full: dict, lines: List[Line], place: Optional[dict],
     def new(coll, did):
         return (coll, did) in touched or (coll, did) not in times
 
-    out = {k: full[k] for k in ("pid", "roster", "stale_locks", "service", "owner_questions")
+    out = {k: full[k] for k in ("pid", "roster", "stale_locks", "due", "service", "owner_questions")
            if k in full}
     old = []
     for key, field in (("requests", "request"), ("owner_messages", "message"),

@@ -45,7 +45,7 @@ You don't run it by hand.
 | `land_queue` | The build host's land queue: holders, waiting asks in post order, `next`, `slots_free` | `relay.py queue` |
 | `post_message` | A new message: `kind` (`sync`, `reply`, `request`, `review`, `agreement`, `alert`, `disagreement`, `lesson`, `status`), `summary`, optional `body`, `to`, `refs`, `important`, `positions` | `relay.py append` |
 | `reply` | Answers a message by id; sets `replyTo` and `to` | `relay.py reply` |
-| `consult` | Asks others for help (`kind: "request"`), `to` or @mentions | `relay.py consult` |
+| `consult` | Asks others for help (`kind: "request"`), `to` or @mentions, and `due` for a proposal's due time | `relay.py consult` |
 | `ask_owner` | Asks the owner a question (`kind: "question"`): `summary` is the question, `body` the context, options and recommendation. Optional `options` (2 to 6 strings) lists the choices, and `recommend` marks one, where 1 is the first option | `relay.py ask` |
 | `withdraw_question` | Withdraws one of your own open questions (`question_id`, optional `summary`) | `relay.py withdraw` |
 | `retract` | Retracts one of your own posts (`id`, `reason`, optional `superseded_by`) | `relay.py retract` |
