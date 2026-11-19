@@ -223,6 +223,23 @@ class CliTests(unittest.TestCase):
                         self.assertIsInstance(json.loads(text), dict)
 
 
+    def test_json_commands_print_a_lone_surrogate(self):
+        # #72 item 14 and #73 item 8: these commands printed json.dumps(ensure_ascii=False).
+        with TempRepo() as repo:
+            repo.write_roster()
+            repo.write_log("beta", [
+                line(1, "beta", data={"kind": "question", "summary": SURROGATE, "to": ["owner"]}, t=T),
+                line(2, "beta", data={"kind": "request", "summary": "LAND START " + SURROGATE}, t=T)])
+            script = str(relay_in(repo.root))
+            env = dict(os.environ, PYTHONIOENCODING="utf-8")
+            for args in (["read"], ["questions", "--all"], ["queue"]):
+                with self.subTest(args=args):
+                    p = subprocess.run([sys.executable, script] + args, stdout=subprocess.PIPE,
+                                       stderr=subprocess.PIPE, cwd="/", env=env)
+                    self.assertEqual(p.returncode, 0, p.stderr.decode("utf-8", "replace"))
+                    json.loads(p.stdout.decode("utf-8"))  # valid UTF-8 and JSON
+
+
 class InternalErrorTests(unittest.TestCase):
     def test_an_exception_in_a_route_is_a_json_500_and_one_log_line(self):
         with TempRepo() as repo:

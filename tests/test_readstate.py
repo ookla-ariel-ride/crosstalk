@@ -332,6 +332,22 @@ class RouteTests(unittest.TestCase):
                 self.assertEqual(status, 400, bad)
                 self.assertIn("error", reply)
 
+    def test_mark_all_with_ahead_reads_up_to_the_later_of_t_and_the_stored_all_before(self):
+        # #87: a tab that loaded at 10:16 marked all read; a tab that loaded at 10:10 then marks
+        # with ahead. beta-mix's 10:12 post is read already, so beta-mix gets its mark too.
+        self.append("beta", line(2, "beta", id_="beta-mix", t="2026-10-21T10:12:00Z",
+                                 data={"kind": "note", "summary": "mixed"}))
+        self.append("alpha", line(3, "alpha", id_="alpha-mix-late", t="2026-10-21T10:50:00Z",
+                                  data={"kind": "reply", "summary": "clock ahead", "replyTo": "beta-mix"}))
+        with mock.patch.object(serve_mod, "now_iso", return_value="2026-10-21T10:20:00Z"), self.server() as srv:
+            self.assertEqual(self.put(srv, {"all_before": "2026-10-21T10:16:00Z"})[0], 200)
+            status, state = self.put(srv, {"all_before": "2026-10-21T10:10:00Z", "ahead": True})
+            self.assertEqual(status, 200, state)
+            self.assertEqual(state["all_before"], "2026-10-21T10:16:00Z")
+            self.assertEqual(state["threads"], {
+                "alpha-other": {"t": "2026-10-21T10:30:00Z", "id": "alpha-other"},
+                "beta-mix": {"t": "2026-10-21T10:50:00Z", "id": "alpha-mix-late"}})
+
     def test_all_before_more_than_five_minutes_ahead_of_the_clock_is_refused(self):
         with mock.patch.object(serve_mod, "now_iso", return_value="2026-10-21T10:20:00Z"), self.server() as srv:
             for t in ("2026-10-21T10:25:01Z", "9999-12-31T23:59:59Z"):

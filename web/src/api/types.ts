@@ -233,6 +233,8 @@ export interface LandWaiting {
   granted_t?: string;
   granted_branches?: string[];
   grant_lapsed?: boolean;
+  /** The grant reserves nothing while the wind-down is at step 1 or 2: "wind-down step N". */
+  grant_void?: string;
 }
 
 /** GET /api/queue: the land queue of the build host (landqueue.py). */

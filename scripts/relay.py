@@ -152,8 +152,8 @@ def cmd_read(args):
         for t, c, i, d in sorted(rows, key=lambda r: r[:3]):
             print(_brief_line(c, i, d, t))
         return 0
-    print(json.dumps({"collections": collections, "service": service_block(CODE_ROOT, data_root=ROOT)},
-                     ensure_ascii=False, sort_keys=True, indent=2))
+    print(utf8_json({"collections": collections, "service": service_block(CODE_ROOT, data_root=ROOT)},
+                    sort_keys=True, indent=2))
     return 0
 
 
@@ -523,7 +523,7 @@ def cmd_land_sync(args):
     except ValueError as e:
         err(str(e))
         return 1
-    print(json.dumps(res, ensure_ascii=False, sort_keys=True, indent=2))
+    print(utf8_json(res, sort_keys=True, indent=2))
     return 0
 
 
@@ -641,7 +641,7 @@ def cmd_questions(args):
             err("%s:%d: %s" % (p.file, p.line, p.message))
         return 1
     out = questions_report(docs, roster, include_closed=args.all)
-    print(json.dumps(out, ensure_ascii=False, sort_keys=True, indent=2))
+    print(utf8_json(out, sort_keys=True, indent=2))
     return 0
 
 
@@ -659,7 +659,7 @@ def cmd_queue(args):
         if out["next"]:
             print(out["next"])
         return 0
-    print(json.dumps(out, ensure_ascii=False, sort_keys=True, indent=2))
+    print(utf8_json(out, sort_keys=True, indent=2))
     return 0
 
 
@@ -701,7 +701,7 @@ def cmd_adoption(args):
         err("unknown participant %r" % args.from_)
         return 1
     if args.adoption_cmd == "gaps":
-        print(json.dumps(adoption_mod.gaps(docs, roster, args.from_), ensure_ascii=False, indent=2))
+        print(utf8_json(adoption_mod.gaps(docs, roster, args.from_), indent=2))
         return 0
     try:
         print(len(adoption_mod.record(ROOT, args.from_, args.item, args.state, ref=args.ref, note=args.note,
@@ -722,7 +722,7 @@ def cmd_schedule(args):
                 err("%s:%d: %s" % (p.file, p.line, p.message))
             return 1
         out = schedules_mod.schedule_view(docs, datetime.now(timezone.utc))
-        print(json.dumps(out, ensure_ascii=False, sort_keys=True, indent=2))
+        print(utf8_json(out, sort_keys=True, indent=2))
         return 0
     if args.from_ not in roster.participants:
         err("unknown participant %r" % args.from_)
@@ -871,7 +871,7 @@ def cmd_adopt(args):
     except ValueError as e:
         err(str(e))
         return 1
-    print(json.dumps(res, ensure_ascii=False, sort_keys=True))
+    print(utf8_json(res, sort_keys=True))
     return 0
 
 

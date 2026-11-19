@@ -2,6 +2,7 @@
 // rows): the runs that hold the queue, then the asks that wait, in the
 // server's order. Every entry is open: it leaves the queue when it ends.
 import type { LandHolder, LandQueue, LandWaiting } from "../../api/types";
+import { grantState } from "../../logic/grant";
 import { age, list, line, projects, type RowView, stamp, str, words } from "./fields";
 
 export type QueueEntry = ({ role: "holder" } & LandHolder) | ({ role: "waiting"; place: number } & LandWaiting);
@@ -30,7 +31,7 @@ export function queueRow(entry: QueueEntry, now: Date): RowView {
       detail: [...line("Branches", branches), ...line("Started by", str(entry.id)), ...line("Answers the ask", str(entry.ask))],
     };
   }
-  const state = entry.granted ? "granted" : entry.grant_lapsed ? "grant lapsed" : "waiting";
+  const state = grantState(entry) ?? "waiting";
   return {
     projects: projects(project),
     title: (entry.place === 0 ? "Next: " : "Then: ") + words(project, branches).join(": "),

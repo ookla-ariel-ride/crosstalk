@@ -1,3 +1,4 @@
+import errno
 import json
 import os
 import re
@@ -33,6 +34,19 @@ def request(url, method="GET", body=None, headers=None):
     return status, payload
 
 
+def _open(req):
+    """urlopen, with one retry when the TCP connect times out. On macOS about one
+    loopback connect in 3,000 stalls and fails with ETIMEDOUT after about 8 s,
+    with a plain http.server too; the request never reached the server, so a
+    second try sends it once. Linux (CI) does not do this."""
+    try:
+        return urllib.request.urlopen(req, timeout=10)
+    except urllib.error.URLError as e:
+        if isinstance(e, urllib.error.HTTPError) or getattr(e.reason, "errno", None) != errno.ETIMEDOUT:
+            raise
+    return urllib.request.urlopen(req, timeout=10)
+
+
 def request_with_headers(url, method="GET", body=None, headers=None):
     """(status, decoded JSON body, response headers) for one request."""
     data = None
@@ -40,7 +54,7 @@ def request_with_headers(url, method="GET", body=None, headers=None):
         data = json.dumps(body).encode("utf-8")
     req = urllib.request.Request(url, data=data, method=method, headers=headers or {})
     try:
-        with urllib.request.urlopen(req, timeout=10) as resp:
+        with _open(req) as resp:
             raw = resp.read().decode("utf-8")
             return resp.status, (json.loads(raw) if raw else None), dict(resp.headers)
     except urllib.error.HTTPError as e:

@@ -13,6 +13,7 @@ const WORDS: Record<RoutineKind, [string, string]> = {
   "LAND START": ["land start", "land starts"],
   "LAND END": ["land end", "land ends"],
   GRANTED: ["granted", "granted"],
+  "GRANT WITHDRAWN": ["grant withdrawn", "grants withdrawn"],
   "TURN ASK": ["turn ask", "turn asks"],
   other: ["other", "others"],
 };

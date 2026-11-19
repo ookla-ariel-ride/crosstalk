@@ -772,7 +772,10 @@ describe("Mark all read feedback", () => {
     // The page does not set the count to 0: the server's next answer gives it (a post
     // that came after the load stays unread).
     expect(qc.getQueryData(keys.unreadTotal)).toBe(200);
+    await act(async () => new Promise((ok) => setTimeout(ok, 5)));
     await act(async () => qc.setQueryData(keys.unreadTotal, 3));
+    // The server's count after the mark gives the number marked: 3 threads stay unread.
+    await waitFor(() => expect(screen.getByRole("status").textContent).toBe("Marked 197 threads read"));
     expect(await screen.findByRole("button", { name: "Mark all read (3)" })).toBe(document.activeElement);
     await act(async () => qc.setQueryData(keys.unreadTotal, 0));
     expect((await screen.findByRole("button", { name: "All read" })).getAttribute("aria-disabled")).toBe("true");

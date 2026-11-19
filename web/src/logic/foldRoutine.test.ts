@@ -88,13 +88,14 @@ describe("foldRoutine", () => {
       { root: "a-3", kind: "note", title: "LAND END alpha", last_t: "2030-01-01T10:02:00Z", routine: true },
       { root: "a-4", kind: "note", title: "GRANTED alpha", last_t: "2030-01-01T10:03:00Z", routine: true },
       { root: "a-5", kind: "note", title: " TURN ASK alpha", last_t: "2030-01-01T10:04:00Z", routine: true },
+      { root: "a-7", kind: "note", title: "GRANT WITHDRAWN alpha", last_t: "2030-01-01T10:04:30Z", routine: true },
       { root: "a-6", kind: "__proto__", title: "x", last_t: "2030-01-01T10:05:00Z", routine: true },
     ];
     const [item] = foldRoutine(rows);
     expect(item).toEqual({
       kind: "routine",
       threads: rows,
-      counts: { "check-in": 1, sync: 1, "LAND END": 1, GRANTED: 1, "TURN ASK": 1, other: 1 },
+      counts: { "check-in": 1, sync: 1, "LAND END": 1, GRANTED: 1, "GRANT WITHDRAWN": 1, "TURN ASK": 1, other: 1 },
     });
   });
 

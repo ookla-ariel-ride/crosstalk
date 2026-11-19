@@ -39,6 +39,7 @@ from typing import Any, Callable, Dict, List, Optional
 from . import config
 from .consults import (ack_item, adopt_agreement, microsecond_utc_stamp, post_consult,
                        post_question, post_reply, question_warning, withdraw_question)
+from .files import utf8_json
 from .landqueue import land_queue
 from .logs import KINDS, append_line, message_problems
 from .marks import MARKS
@@ -601,8 +602,8 @@ class McpServer:
             value = tool.fn(args)
         except ToolError as e:
             return {"content": [{"type": "text", "text": str(e)}], "isError": True}
-        result = {"content": [{"type": "text", "text": json.dumps(
-            value, ensure_ascii=False, sort_keys=True, indent=2)}], "isError": False}
+        result = {"content": [{"type": "text", "text": utf8_json(
+            value, sort_keys=True, indent=2)}], "isError": False}
         if structured:
             result["structuredContent"] = value
         return result

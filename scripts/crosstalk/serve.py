@@ -1389,12 +1389,18 @@ class CrosstalkHandler(BaseHTTPRequestHandler):
         """The newest (t, id) of each thread whose newest message is dated after the
         server's clock `now` (a writer's clock runs ahead). A thread that also holds a
         message by another participant dated after `t` and its read mark but not after
-        `now` is left out: that message came after the page loaded, and stays new."""
+        `now` is left out: that message came after the page loaded, and stays new.
+        `t` is the later of the request's and the stored all_before."""
         try:
             index = self.state.cache.threads()
         except ValueError as e:
             raise OSError("cannot read the log: %s" % e)
-        marks = readstate.load(self.state.root)["threads"]
+        stored = readstate.load(self.state.root)
+        marks = stored["threads"]
+        # A post up to the stored all_before is read already, also when this request's `t`
+        # is older (a tab that loaded earlier): read from the later of the two.
+        if isinstance(stored["all_before"], str) and stored["all_before"] > t:
+            t = stored["all_before"]
         out = {}
         for root, ids in index.members.items():
             dated = sorted((index.when[did], did) for did in ids)

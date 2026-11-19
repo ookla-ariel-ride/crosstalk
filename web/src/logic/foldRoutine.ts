@@ -1,14 +1,14 @@
 import type { Thread } from "./types";
 
 /** What the routine line counts: one key for each kind of routine post. */
-export type RoutineKind = "check-in" | "sync" | "LAND START" | "LAND END" | "GRANTED" | "TURN ASK" | "other";
+export type RoutineKind = "check-in" | "sync" | "LAND START" | "LAND END" | "GRANTED" | "GRANT WITHDRAWN" | "TURN ASK" | "other";
 
 export type StreamItem =
   | { kind: "thread"; thread: Thread }
   | { kind: "routine"; threads: Thread[]; counts: Partial<Record<RoutineKind, number>> };
 
 // The prefixes and kinds of scripts/crosstalk/threads.py.
-const PREFIXES = ["LAND START", "LAND END", "GRANTED", "TURN ASK"] as const;
+const PREFIXES = ["LAND START", "LAND END", "GRANTED", "GRANT WITHDRAWN", "TURN ASK"] as const;
 const RUN_MS = 60 * 60 * 1000;
 
 function routineKind(thread: Thread): RoutineKind {
