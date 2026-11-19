@@ -28,6 +28,9 @@ KINDS = ("check-in", "checkin", "sync", "reply", "request", "review", "agreement
 # Who wrote a message, what it is, and what it answers: the fields the request and
 # question rules read. Only its writer (or the owner) may change them.
 MESSAGE_IDENTITY = ("from", "kind", "replyTo")
+# What a retraction writes (consults.retract_post). Only the writer (or the owner) may change it.
+RETRACT_FIELDS = ("retracted", "retract_reason", "retracted_t", "superseded_by")
+_GUARDED = MESSAGE_IDENTITY + RETRACT_FIELDS
 # Who spoke: a message may name the harness (the roster's harness rule) and the model that wrote it.
 SPEAKER_FIELDS = ("harness", "model")
 MODEL_MAX = 64
@@ -283,7 +286,7 @@ def _trust_problem(d: dict, owner: str, roster: Roster) -> Optional[str]:
 
 def _identity_problem(root: Path, from_: str, op: str, collection: str, doc_id: str,
                       data: dict, via: Optional[str], roster: Roster) -> Optional[str]:
-    """A new line that changes MESSAGE_IDENTITY on another participant's message.
+    """A new line that changes MESSAGE_IDENTITY or RETRACT_FIELDS on another participant's message.
 
     The writer is whoever made the `set` the replay shows, or the first line if no
     `set` exists. The owner keeps its powers and imported lines are exempt. This
@@ -294,7 +297,7 @@ def _identity_problem(root: Path, from_: str, op: str, collection: str, doc_id: 
 
     if collection != "messages" or from_ == "owner" or via == "import":
         return None
-    if op == "update" and not any(name in data for name in MESSAGE_IDENTITY):
+    if op == "update" and not any(name in data for name in _GUARDED):
         return None
     history = sorted((ln for ln in load_all_lines(root, roster)
                       if ln.collection == "messages" and ln.id == doc_id), key=order_key)
@@ -307,7 +310,7 @@ def _identity_problem(root: Path, from_: str, op: str, collection: str, doc_id: 
     doc = replay(history)[("messages", doc_id)]
     doc.setdefault("from", writer)
     changed = []  # type: List[str]
-    for name in MESSAGE_IDENTITY:
+    for name in _GUARDED:
         if op == "update" and name not in data:
             continue
         new = None if _is_delete(data.get(name)) else data.get(name)

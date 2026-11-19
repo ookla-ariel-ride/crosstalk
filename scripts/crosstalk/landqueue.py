@@ -13,7 +13,8 @@ starts with fixed words:
                                        (any waiting ask with no coordinator); a LANE END
                                        never ends a LAND START run
 
-Only the sender of a message counts: a project asks, starts, ends and
+A TURN ASK that its sender retracted before any GRANTED (relay.py retract) counts
+for nothing. Only the sender of a message counts: a project asks, starts, ends and
 withdraws for itself. Asks wait in post order; a second TURN ASK from a
 project that is already waiting adds its branches to that ask and keeps its
 place. To drop a branch, withdraw the ask and ask again.
@@ -101,7 +102,8 @@ def branches_of(summary: str, word: str, skip: Iterable[str] = ()) -> List[str]:
 def _land_messages(docs: Dict, coordinator: str = "") -> List[tuple]:
     rows = []
     for (coll, did), doc in docs.items():
-        if coll != "messages" or not isinstance(doc, dict):
+        # A retracted TURN ASK (the only land post a sender may retract) leaves the queue.
+        if coll != "messages" or not isinstance(doc, dict) or doc.get("retracted") is True:
             continue
         sender = doc.get("from")
         if not isinstance(sender, str) or not sender:

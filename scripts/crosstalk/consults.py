@@ -5,6 +5,8 @@ from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Dict, Iterable, List, Optional
 
+from .config import coordinator as coordinator_of
+from .landqueue import GRANT_VOID, is_withdrawal, land_word
 from .logs import Line, append_line, check_speaker
 from .marks import MARKS, item_ref, writer_of
 from .participants import Roster, load_roster
@@ -265,6 +267,74 @@ def withdraw_question(
     }  # type: Dict[str, object]
     data.update(speaker or {})
     return append_line(root, pid, "set", "messages", mid, data, roster=roster)
+
+
+def _granted(docs: Dict, ask_id: str, coordinator: str) -> bool:
+    """True when a GRANTED reply names ask_id: from the coordinator, or from anyone with none set."""
+    for (coll, _did), doc in docs.items():
+        if coll != "messages" or doc.get("replyTo") != ask_id:
+            continue
+        s = doc.get("summary")
+        if isinstance(s, str) and s.strip().startswith("GRANTED") \
+                and (not coordinator or doc.get("from") == coordinator):
+            return True
+    return False
+
+
+def retract_post(
+    root: Path,
+    pid: str,
+    post_id: str,
+    reason: str,
+    superseded_by: Optional[str] = None,
+    roster: Optional[Roster] = None,
+) -> Line:
+    """Retract one of pid's own messages: an `update` that sets `retracted: true`,
+    `retract_reason`, `retracted_t` and, when given, `superseded_by`.
+
+    The post stays in the log. Nobody owes it an answer or a mark after this
+    (requests.is_retracted). The owner's posts, questions for the owner (use
+    withdraw), posts that start with a land word and GRANT WITHDRAWN refuse; a TURN
+    ASK may go while no GRANTED names it, and it then leaves the land queue.
+    The update keeps the post's own time (`t`), so the post keeps its place.
+    """
+    root = Path(root)
+    roster = _ensure_roster(root, roster)
+    _require_pid(pid, roster)
+    if pid == "owner":
+        raise ValueError("the owner's posts are rulings; they cannot be retracted")
+    if not isinstance(reason, str) or "\n" in reason or "\r" in reason or not reason.strip():
+        raise ValueError("--reason must be a non-empty single-line string")
+    lines = load_all_lines(root, roster)
+    docs = enrich_messages(replay(lines), lines)
+    doc = docs.get(("messages", post_id))
+    if doc is None:
+        raise ValueError("no such message %r" % (post_id,))
+    writer = writer_of(docs, "messages", post_id)
+    if doc.get("from") != pid or writer != pid:
+        raise ValueError("only the sender (%s) may retract %r" % (doc.get("from"), post_id))
+    if doc.get("retracted") is True:
+        raise ValueError("%r is already retracted" % (post_id,))
+    if doc.get("kind") == "question":
+        raise ValueError("a question for the owner is withdrawn, not retracted: run relay.py withdraw")
+    summary = doc.get("summary")
+    word = land_word(summary)
+    if isinstance(summary, str) and summary.strip().startswith(("GRANTED", GRANT_VOID)):
+        word = "GRANTED"
+    if word is not None:
+        if word != "TURN ASK" or is_withdrawal(summary):
+            raise ValueError("%r starts with a land word; land traffic cannot be retracted" % (post_id,))
+        if _granted(docs, post_id, coordinator_of(roster)):
+            raise ValueError("TURN ASK %r has a GRANTED; post a TURN ASK WITHDRAWN instead" % (post_id,))
+    data = {"retracted": True, "retract_reason": reason.strip(),
+            "retracted_t": now_iso()}  # type: Dict[str, object]
+    if isinstance(doc.get("t"), str):
+        data["t"] = doc["t"]
+    if superseded_by is not None:
+        if superseded_by == post_id or ("messages", superseded_by) not in docs:
+            raise ValueError("--superseded-by %r names no other message" % (superseded_by,))
+        data["superseded_by"] = superseded_by
+    return append_line(root, pid, "update", "messages", post_id, data, roster=roster)
 
 
 def ack_item(root: Path, pid: str, item_id: str, mark: str = "none",

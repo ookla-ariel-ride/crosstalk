@@ -243,6 +243,8 @@ td.num, td.t { font: 12px var(--mono); font-variant-numeric: tabular-nums; white
 .pill.question { background: var(--own); color: var(--panel); }
 .pill.answered { background: var(--ok); color: var(--panel); }
 .pill.withdrawn { text-decoration: line-through; }
+.retracted .summary, .retracted > .body { text-decoration: line-through; opacity: .7; }
+.retract-note { font-size: 13px; margin: 2px 0; color: var(--muted, inherit); }
 .pill.answer-changed { background: var(--own); color: var(--panel); }
 .pill.replaced { text-decoration: line-through; }
 .qcard { border-left: 4px solid var(--who, var(--own)); display: grid; gap: 8px; }
@@ -776,6 +778,14 @@ td.num, td.t { font: 12px var(--mono); font-variant-numeric: tabular-nums; white
     var d = el("div", "summary");
     return richTextInto(d, text);
   }
+  // A post its sender retracted (relay.py retract): the card is struck through and says why,
+  // and which message replaces it. It owes no answer and no mark. Null for any other post.
+  function retractNoteEl(m) {
+    if (m.retracted !== true) return null;
+    var text = "Retracted" + (typeof m.retract_reason === "string" && m.retract_reason ? ": " + m.retract_reason : "");
+    if (typeof m.superseded_by === "string" && m.superseded_by) text += " \u00b7 superseded by " + m.superseded_by;
+    return el("div", "retract-note", text);
+  }
   // A body that repeats the summary (the page's reply box writes the text into both) shows only once.
   function bodyEl(text, summary) {
     if (!text) return null;
@@ -866,11 +876,12 @@ td.num, td.t { font: 12px var(--mono); font-variant-numeric: tabular-nums; white
     });
     return out;
   }
-  // requests.needs_answer: false for `needs_answer: false`, or a body that ends with "No answer needed"
+  // requests.needs_answer: false for a retracted post, for `needs_answer: false`, or a body that ends with "No answer needed"
   // (white space and one last full stop removed). Such a request waits for nobody.
   // A TURN ASK (requests.is_turn_ask) always needs an answer: it waits for a GRANTED. A TURN ASK
   // WITHDRAWN (landqueue.is_withdrawal) informs, so the rules below apply to it.
   function needsAnswer(m) {
+    if (m.retracted === true) return false;
     if (m.kind === "request" && typeof m.summary === "string" && /^\s*TURN ASK\b/.test(m.summary)) {
       var rest = m.summary.trim().slice(8).trim();
       var withdrawn = rest.slice(0, 9).toLowerCase() === "withdrawn" && ["", " ", ":", ",", "."].indexOf(rest.slice(9, 10)) !== -1;
@@ -1498,6 +1509,8 @@ td.num, td.t { font: 12px var(--mono); font-variant-numeric: tabular-nums; white
     }
     card.appendChild(meta);
     if (parent) card.appendChild(el("div", "re", "↩ Replying to " + (parent.from ? displayName(parent.from) : "") + ": " + (parent.summary || "")));
+    if (m.retracted === true) card.classList.add("retracted");
+    add(card, retractNoteEl(m));
     if (m.summary) card.appendChild(summaryEl(m.summary));
     add(card, bodyEl(m.body, m.summary));
     add(card, marksLineEl(m));
@@ -1878,6 +1891,8 @@ td.num, td.t { font: 12px var(--mono); font-variant-numeric: tabular-nums; white
     if (quarantined) meta.appendChild(quarantinePill());
     if (canWrite) meta.appendChild(replyBtnEl(m));
     card.appendChild(meta);
+    if (m.retracted === true) card.classList.add("retracted");
+    add(card, retractNoteEl(m));
     if (m.summary) card.appendChild(summaryEl(m.summary));
     add(card, bodyEl(m.body, m.summary));
     add(card, marksLineEl(m));

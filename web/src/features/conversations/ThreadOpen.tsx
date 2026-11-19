@@ -48,6 +48,8 @@ function MessageView({ message, roster, now, children }: { message: Message; ros
   // keeps its first line (the summary) above its explanation (the body).
   const summary = (message.summary ?? "").trim();
   const rest = afterSummary(message.body ?? "", summary);
+  // A post its sender retracted (relay.py retract) stays, struck through, with its reason.
+  const retracted = message.retracted === true;
   const quote = message.depth === 2 && message.quote ? message.quote.split("\n")[0] : "";
   return (
     <article className={styles.message} data-depth={message.depth}>
@@ -58,12 +60,20 @@ function MessageView({ message, roster, now, children }: { message: Message; ros
           {ago(t, now)}
         </time>
       </div>
-      {summary ? (
-        <div className={styles.summary}>
-          <Body text={summary} />
-        </div>
+      {retracted ? (
+        <p className={styles.retractNote}>
+          {"Retracted" + (message.retract_reason ? ": " + message.retract_reason : "")}
+          {message.superseded_by ? " \u00b7 superseded by " + message.superseded_by : ""}
+        </p>
       ) : null}
-      {rest ? <Body text={rest} /> : null}
+      <div className={retracted ? styles.retracted : undefined}>
+        {summary ? (
+          <div className={styles.summary}>
+            <Body text={summary} />
+          </div>
+        ) : null}
+        {rest ? <Body text={rest} /> : null}
+      </div>
       <MarksLine marks={message.marks} roster={roster} />
       {children}
     </article>

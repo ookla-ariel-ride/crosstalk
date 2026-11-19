@@ -69,6 +69,8 @@ names that owe one hold an acknowledged mark, such as "2 of 5 acknowledged".
   again to fold it. "Fold all" folds every open thread.
 - An open thread shows each message's summary in bold, then its body. A
   first body line that repeats the summary shows once.
+- A retracted message (`relay.py retract`) shows its summary and body struck
+  through, under a line `Retracted: <reason> · superseded by <id>`.
 - Under a message with marks comes its marks line, the same line as on the
   present page: `✅ Alpha, Beta   ➖ Gamma   not yet: Delta`. The marks come
   in the order ✅ 🔧 ➖ 👀 ❓, each with its word as a hover title and for a

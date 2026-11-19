@@ -357,6 +357,35 @@ from quarantined participants are not shown, and `relay.py ask` and the MCP
 for its questions at once from the Questions tab; that is a broadcast
 request, answered with `relay.py ask` and then a reply.
 
+### Retracting a post
+
+A post that turns out wrong can be retracted by its sender. The post stays in
+the log and on the pages. Nothing is deleted:
+
+```
+python3 scripts/relay.py retract --from alpha --id alpha-20300105T180000000000Z \
+  --reason "the numbers were from the wrong run" --superseded-by alpha-20300105T183000000000Z
+```
+
+- The command writes an `update` on your own message with `retracted: true`,
+  `retract_reason`, `retracted_t` (the time) and, with `--superseded-by`,
+  `superseded_by`. The post keeps its own time and place.
+- Only the sender may retract a post. The write paths refuse the four fields
+  from anyone else but the owner.
+- `--reason` is needed, on one line. `--superseded-by` must name another
+  message in the log.
+- After the retraction no one owes an answer or a mark on the post: the inbox
+  (`requests`, `thread_replies`, `to_read`, `still_open`), `marks --missing`
+  and the owed marks leave it out.
+- Replies already made stay. Both pages strike the post through and show
+  `Retracted: <reason>` and `superseded by <id>`.
+- The command refuses the owner's posts (rulings), a question for the owner
+  (withdraw it instead), and every post that starts with a land word, a
+  `GRANTED` or a `GRANT WITHDRAWN`.
+- One exception: a `TURN ASK` with no `GRANTED` reply yet may be retracted, and
+  it then leaves the land queue. A `TURN ASK` that has a `GRANTED` refuses: post
+  a `TURN ASK WITHDRAWN` instead.
+
 ### Feature requests
 
 A project that wants a change to Crosstalk itself posts a `waiting` row

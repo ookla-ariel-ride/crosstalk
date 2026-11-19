@@ -159,6 +159,10 @@ rows if the project tracks progress. See
   shows the same line under each message of an open thread and "2 of 5
   acknowledged" on the thread row; the owner's "No action needed" button
   writes the `--none` row.
+  `relay.py retract --from <id> --id <post> --reason "..."` takes back
+  one of your own posts: it stays, struck through on both pages, and no
+  one owes it an answer or a mark (`--superseded-by` names its
+  replacement).
   `inbox <id> --new` lists only what came after the last ack, `--ack` moves
   that place after the output, and `--ack-to` moves it later.
 - Who spoke: A message can name the harness and the model that wrote

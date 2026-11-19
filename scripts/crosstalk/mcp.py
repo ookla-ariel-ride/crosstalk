@@ -4,7 +4,7 @@
 participant, fixed at startup: no tool takes a sender, so a tool call can never
 write as anyone else. Every write goes through the same functions relay.py uses
 (`append_line`, `post_reply`, `post_consult`, `post_question`,
-`withdraw_question`, `claim_file`, `release_file`, `adopt_agreement`, `ack_item`), so validation, the trust and quarantine rules and the doc id
+`withdraw_question`, `retract_post`, `claim_file`, `release_file`, `adopt_agreement`, `ack_item`), so validation, the trust and quarantine rules and the doc id
 rules are identical. Like relay.py, it writes straight to `log/<pid>.jsonl` in
 the checkout it runs from, so it is local only (see docs/mcp.md).
 
@@ -38,7 +38,7 @@ from typing import Any, Callable, Dict, List, Optional
 
 from . import config
 from .consults import (ack_item, adopt_agreement, microsecond_utc_stamp, post_consult,
-                       post_question, post_reply, question_warning, withdraw_question)
+                       post_question, post_reply, question_warning, retract_post, withdraw_question)
 from .files import utf8_json
 from .landqueue import land_queue
 from .logs import KINDS, append_line, message_problems
@@ -331,6 +331,14 @@ class McpServer:
             raise ToolError(str(e))
         return {"id": ln.id, "seq": ln.seq, "t": ln.t, "replyTo": args["question_id"]}
 
+    def _retract(self, args):
+        try:
+            ln = retract_post(self.root, self.pid, args["id"], args["reason"],
+                              superseded_by=args.get("superseded_by"), roster=self._roster())
+        except ValueError as e:
+            raise ToolError(str(e))
+        return {"id": ln.id, "seq": ln.seq, "t": ln.t}
+
     def _ack(self, args):
         # Always self.pid: the tool takes no sender (IDENTITY_ARGS are refused).
         try:
@@ -499,6 +507,16 @@ class McpServer:
                           "summary": dict(_STR, description="Optional one-line reason.")},
                          ["question_id"]),
                  self._withdraw_question),
+            Tool("retract", "Retract one of your own posts",
+                 "Take back one of your own posts that turned out wrong. It stays in the log, "
+                 "marked retracted, and owes no answer or mark. Land words, the owner's posts "
+                 "and questions for the owner refuse; a TURN ASK may go only before its GRANTED.",
+                 _schema({"id": dict(_STR, minLength=1, description="Id of your post."),
+                          "reason": dict(_STR, minLength=1, description="Why, on one line."),
+                          "superseded_by": dict(_STR, description="Optional id of the message "
+                                                                  "that replaces it.")},
+                         ["id", "reason"]),
+                 self._retract),
             Tool("claim_file", "Claim a shared file",
                  "Tell the other sessions you are editing a shared file (git hooks, shared "
                  "rules, shared tooling). A claim is a notice, not a lock: check for other "
