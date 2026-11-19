@@ -757,9 +757,15 @@ def cmd_schedule(args):
 
 
 def cmd_ack(args):
-    """Put your mark on a post (seen, ack, applies, none, unclear); prints the row id."""
+    """Put your mark on a post (seen, ack, applies, none, unclear, or a vote); prints the row id."""
+    if args.note is not None and args.vote is None:
+        err("ack: --note goes only with --vote")
+        return 2
     try:
-        ln = ack_item(ROOT, args.from_, args.item, mark=args.mark)
+        if args.vote is not None:
+            ln = ack_item(ROOT, args.from_, args.item, mark="vote", vote=args.vote, note=args.note)
+        else:
+            ln = ack_item(ROOT, args.from_, args.item, mark=args.mark)
     except ValueError as e:
         err(str(e))
         return 1
@@ -779,6 +785,31 @@ def _mark_lines(v):
     else:
         out.append("not yet: %s" % (", ".join(v["owed"]) or "nobody"))
     return out
+
+
+def cmd_tally(args):
+    """tally <item>: the votes on one post, the count per choice, and who in `to` has not answered."""
+    roster = load_roster(ROOT / "participants.json")
+    docs, fatal = load_docs(ROOT, roster)
+    if fatal:
+        for p in fatal:
+            err("%s:%d: %s" % (p.file, p.line, p.message))
+        return 1
+    ref = marks_mod.item_ref(docs, args.item)
+    if ref is None:
+        err("tally: no message, decision or lesson %r in the log" % args.item)
+        return 1
+    v = marks_mod.tally(docs, ref[0], ref[1], roster)
+    if not args.brief:
+        print(utf8_json(v, sort_keys=True, indent=2))
+        return 0
+    for choice, n in v["counts"].items():
+        names = [x["from"] for x in v["votes"] if x["vote"] == choice]
+        print(_text("%s %d: %s" % (choice, n, ", ".join(names))))
+    if not v["counts"]:
+        print("no votes")
+    print(_text("pending: %s" % (", ".join(v["pending"]) or "nobody")))
+    return 0
 
 
 def cmd_marks(args):
@@ -1112,7 +1143,8 @@ def build_parser():
     adsub.add_parser("summary", help="print the counts per project (JSON)")
     ad.set_defaults(fn=cmd_adoption)
 
-    ac = sub.add_parser("ack", help="put your mark on a post (--seen, --ok, --applies, --none or --unclear); "
+    ac = sub.add_parser("ack", help="put your mark on a post (--seen, --ok, --applies, --none, --unclear "
+                                    "or --vote CHOICE [--note TEXT]); "
                                     "prints the row id")
     ac.add_argument("--from", dest="from_", required=True)
     ac.add_argument("item", metavar="ITEM", help="the id of a message, a decision or a lesson")
@@ -1127,7 +1159,17 @@ def build_parser():
                     help="you understood it and need no change; on a request it counts as your reply")
     mk.add_argument("--unclear", dest="mark", action="store_const", const="unclear",
                     help="you read it and do not understand it; a reply with your question follows")
+    mk.add_argument("--vote", metavar="CHOICE",
+                    help="your vote: one word such as ADOPT, OBJECT, ABSTAIN or an option number, kept in "
+                         "upper case; on a request it counts as your reply; `tally` counts it")
+    ac.add_argument("--note", help="with --vote: one line of at most %d characters" % marks_mod.NOTE_MAX)
     ac.set_defaults(fn=cmd_ack)
+
+    tl = sub.add_parser("tally", help="print the votes on one post (JSON): the count per choice, each voter, "
+                                      "and who in `to` has neither voted nor replied")
+    tl.add_argument("item", metavar="ITEM", help="the id of a message, a decision or a lesson")
+    tl.add_argument("--brief", action="store_true", help="one line per choice, then one line of pending names")
+    tl.set_defaults(fn=cmd_tally)
 
     mr = sub.add_parser("marks", help="print the marks on one post and who owes one; "
                                       "--missing lists every post that still waits for marks")

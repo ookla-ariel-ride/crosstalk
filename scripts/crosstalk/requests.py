@@ -350,7 +350,8 @@ ACK_SEP = "--"
 
 
 def acks_by_item(docs: Dict, roster=None) -> Dict[str, Set[str]]:
-    """Item id to the ids of the participants whose mark on it is `none`.
+    """Item id to the ids of the participants whose mark on it is `none` or a vote
+    (marks.ANSWERS).
 
     The marks are those of marks.marks_by_item, the one reader of the `acks` rows:
     a row counts when its id is from + ACK_SEP + item, `from` is approved and holds
@@ -359,7 +360,7 @@ def acks_by_item(docs: Dict, roster=None) -> Dict[str, Set[str]]:
     `kind: "request"` message keeps its entry here. Pass the lessons in docs too: a
     row that names a lesson the docs lack counts for nothing.
     """
-    from .marks import marks_by_item  # marks imports this module
+    from .marks import ANSWERS, marks_by_item  # marks imports this module
     out = {}  # type: Dict[str, Set[str]]
     for (coll, item), words in marks_by_item(docs, roster).items():
         if coll != "messages":
@@ -367,7 +368,7 @@ def acks_by_item(docs: Dict, roster=None) -> Dict[str, Set[str]]:
         target = docs.get(("messages", item))
         if not isinstance(target, dict) or target.get("kind") != "request":
             continue
-        who = {pid for pid, word in words.items() if word == "none"}
+        who = {pid for pid, word in words.items() if word in ANSWERS}
         if who:
             out[item] = who
     return out
@@ -544,9 +545,9 @@ def unanswered_owner_messages(docs: Dict, pid: str, roster=None,
     """Owner messages addressed to pid that pid has not answered yet, newest first.
 
     The rules of _owner_messages_for, and one more: a message leaves for pid once pid
-    holds an acknowledged mark on it (marks.ACKNOWLEDGED: `ack`, `applies`, `none`).
+    holds an acknowledged mark on it (marks.ACKNOWLEDGED: `ack`, `applies`, `none`, `vote`).
     `seen` and `unclear` do not take it out. A request is never in this list, so a
-    mark never closes one here (only `none` on a request does, in acks_by_item).
+    mark never closes one here (only `none` or a vote on a request does, in acks_by_item).
     Pass the docs from replay.enrich_messages, as marks.marks_by_item asks; pass
     by_item (marks.marks_by_item) to save that scan when the caller has it.
     """

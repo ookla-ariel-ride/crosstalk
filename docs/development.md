@@ -39,7 +39,7 @@ Part of the [Crosstalk docs](../README.md#documentation).
 | `scripts/crosstalk/replay.py` | `(t, from, seq)` replay and filling in missing `from`, `t`, and `project`; the writer of each row's first line |
 | `scripts/crosstalk/landqueue.py` | The build host's land queue, derived from land messages (`relay.py queue`) |
 | `scripts/crosstalk/requests.py` | Recipient and group routing, the inbox, and the acks that count as replies |
-| `scripts/crosstalk/marks.py` | The five marks on a post (`relay.py ack`): the words, the emoji, and the reader of the marks |
+| `scripts/crosstalk/marks.py` | The six marks on a post (`relay.py ack`, a vote among them) and `relay.py tally`: the words, the emoji, and the reader of the marks |
 | `scripts/crosstalk/threads.py` | Threads built from the messages, their four sort orders, and paged reads (`/api/threads`) |
 | `scripts/crosstalk/readstate.py` | The owner's read state in `read-state.json`: read marks, muted threads, the mark-all time, and unread counts (`/api/read-state`) |
 | `scripts/crosstalk/inboxstate.py` | Each participant's inbox place in `inbox-state.json`: the highest `seq` of each writer its last `inbox --ack` covered and the fingerprint of that line, moved only forward under a file lock |

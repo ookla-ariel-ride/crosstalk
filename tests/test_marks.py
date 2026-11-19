@@ -94,11 +94,11 @@ class MarkTests(unittest.TestCase):
         return out
 
     def test_the_words_emoji_and_labels(self):
-        self.assertEqual(marks.MARKS, ("seen", "ack", "applies", "none", "unclear"))
-        self.assertEqual(marks.ACKNOWLEDGED, ("ack", "applies", "none"))
-        self.assertEqual([marks.EMOJI[w] for w in marks.MARKS], ["👀", "✅", "🔧", "➖", "❓"])
+        self.assertEqual(marks.MARKS, ("seen", "ack", "applies", "none", "unclear", "vote"))
+        self.assertEqual(marks.ACKNOWLEDGED, ("ack", "applies", "none", "vote"))
+        self.assertEqual([marks.EMOJI[w] for w in marks.MARKS], ["👀", "✅", "🔧", "➖", "❓", "🗳️"])
         self.assertEqual([marks.LABEL[w] for w in marks.MARKS],
-                         ["seen", "acknowledged", "applies", "no change", "not clear"])
+                         ["seen", "acknowledged", "applies", "no change", "not clear", "voted"])
 
     def test_each_flag_writes_its_word(self):
         for flag, word in (("--seen", "seen"), ("--ok", "ack"), ("--applies", "applies"), ("--unclear", "unclear")):

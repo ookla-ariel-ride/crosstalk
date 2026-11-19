@@ -5,29 +5,65 @@ the field `mark` of the row `<agent>--<item>` in `acks`. The log holds the word;
 emoji exist only where text is shown.
 """
 import json
+import re
 from pathlib import Path
 from typing import Dict, List, Optional, Tuple
 
 from . import config as config_mod
 from .requests import ACK_SEP, _is_approved, _parse_iso, is_retracted
 
-MARKS = ("seen", "ack", "applies", "none", "unclear")
+MARKS = ("seen", "ack", "applies", "none", "unclear", "vote")
 # The marks that say "I read it and understood it".
-ACKNOWLEDGED = ("ack", "applies", "none")
-EMOJI = {"seen": "\U0001F440", "ack": "✅", "applies": "\U0001F527", "none": "➖", "unclear": "❓"}
-LABEL = {"seen": "seen", "ack": "acknowledged", "applies": "applies", "none": "no change", "unclear": "not clear"}
+ACKNOWLEDGED = ("ack", "applies", "none", "vote")
+# The marks that count as the marker's reply on a request (requests.acks_by_item).
+ANSWERS = ("none", "vote")
+EMOJI = {"seen": "\U0001F440", "ack": "✅", "applies": "\U0001F527", "none": "➖", "unclear": "❓",
+         "vote": "\U0001F5F3\uFE0F"}
+LABEL = {"seen": "seen", "ack": "acknowledged", "applies": "applies", "none": "no change", "unclear": "not clear",
+         "vote": "voted"}
+
+# A vote (`ack --vote`): one word of 1 to 32 letters, digits, `_` or `-`, kept in upper
+# case (ADOPT, OBJECT, ABSTAIN, 2), and an optional one-line note.
+VOTE_RE = re.compile(r"[A-Z0-9][A-Z0-9_-]{0,31}")
+NOTE_MAX = 200
 
 # The collections a mark may name, in the order an item id is looked up.
 MARKABLE = ("messages", "decisions", "lessons")
 LESSON_PREFIX = "lesson-"
 
 
+def vote_choice(raw) -> str:
+    """raw as a vote choice in upper case; ValueError when it is not one word of VOTE_RE."""
+    choice = raw.strip().upper() if isinstance(raw, str) else None
+    if not choice or not VOTE_RE.fullmatch(choice):
+        raise ValueError("bad vote %r (one word of 1 to 32 letters, digits, '_' or '-', "
+                         "such as ADOPT, OBJECT, ABSTAIN or an option number)" % (raw,))
+    return choice
+
+
+def vote_note(raw) -> str:
+    """raw as a vote note: one line of 1 to NOTE_MAX characters; ValueError otherwise."""
+    note = raw.strip() if isinstance(raw, str) else ""
+    if not note or "\n" in note or "\r" in note or len(note) > NOTE_MAX:
+        raise ValueError("a vote note is one line of 1 to %d characters" % NOTE_MAX)
+    return note
+
+
+def vote_of(row) -> Optional[str]:
+    """The choice of a vote row: its `vote` when that is a word of VOTE_RE, else None."""
+    vote = row.get("vote") if isinstance(row, dict) else None
+    return vote if isinstance(vote, str) and VOTE_RE.fullmatch(vote) else None
+
+
 def mark_of(row) -> Optional[str]:
     """The word of one `acks` row: `mark` when it is one of MARKS, else `none` for a row
-    with `none: true` (the form before marks), else None."""
+    with `none: true` (the form before marks), else None. A `vote` row counts only with
+    a good choice (vote_of)."""
     if not isinstance(row, dict):
         return None
     mark = row.get("mark")
+    if mark == "vote":
+        return mark if vote_of(row) is not None else None
     if isinstance(mark, str) and mark in MARKS:
         return mark
     return "none" if row.get("none") is True else None
@@ -67,6 +103,14 @@ def marks_by_item(docs: Dict, roster=None) -> Dict[Tuple[str, str], Dict[str, st
     the row with the later `t` wins. Pass the docs from replay.enrich_messages: a plain
     dict has no `first_writer`, so the own-post rule then misses decisions and lessons.
     """
+    out = {}  # type: Dict[Tuple[str, str], Dict[str, str]]
+    for ref, frm, word, _doc in _mark_rows(docs, roster):
+        out.setdefault(ref, {})[frm] = word
+    return out
+
+
+def _mark_rows(docs: Dict, roster=None) -> List[Tuple[Tuple[str, str], str, str, dict]]:
+    """(item_ref, from, word, row) of each `acks` row that counts (marks_by_item), oldest `t` first."""
     rows = []
     for (coll, did), doc in docs.items():
         if coll != "acks" or not isinstance(doc, dict):
@@ -80,11 +124,47 @@ def marks_by_item(docs: Dict, roster=None) -> Dict[Tuple[str, str], Dict[str, st
         if ref is None or writer_of(docs, ref[0], ref[1]) == frm:
             continue
         t = doc.get("t")
-        rows.append((t if isinstance(t, str) else "", did, ref, frm, word))
-    out = {}  # type: Dict[Tuple[str, str], Dict[str, str]]
-    for _t, _did, ref, frm, word in sorted(rows):
-        out.setdefault(ref, {})[frm] = word
-    return out
+        rows.append((t if isinstance(t, str) else "", did, ref, frm, word, doc))
+    rows.sort(key=lambda r: r[:2])
+    return [(ref, frm, word, doc) for _t, _did, ref, frm, word, doc in rows]
+
+
+def tally(docs: Dict, coll: str, did: str, roster=None) -> dict:
+    """The votes on one post (`relay.py tally`): each voter whose latest mark on it is a
+    vote, with its choice, note and time; the count per choice; and `pending`, the names
+    in the post's `to` (not its writer) that hold no vote and posted no reply to it.
+
+    Pass the docs from replay.enrich_messages, as marks_by_item asks."""
+    latest = {}  # type: Dict[str, dict]
+    for ref, frm, _word, doc in _mark_rows(docs, roster):
+        if ref == (coll, did):
+            latest[frm] = doc
+    votes = []
+    for frm in sorted(latest):
+        doc = latest[frm]
+        if mark_of(doc) != "vote":
+            continue
+        note, t = doc.get("note"), doc.get("t")
+        votes.append({"from": frm, "vote": doc["vote"], "note": note if isinstance(note, str) else None,
+                      "t": t if isinstance(t, str) else None})
+    counts = {}  # type: Dict[str, int]
+    for v in votes:
+        counts[v["vote"]] = counts.get(v["vote"], 0) + 1
+    post = docs.get((coll, did))
+    post = post if isinstance(post, dict) else {}
+    summary = post.get("summary") if isinstance(post.get("summary"), str) else post.get("title")
+    writer = writer_of(docs, coll, did)
+    answered = {v["from"] for v in votes}
+    if coll == "messages":
+        answered |= {m.get("from") for (c, _i), m in docs.items()
+                     if c == "messages" and isinstance(m, dict) and m.get("replyTo") == did
+                     and not is_retracted(m) and _is_approved(m.get("from"), roster)}
+    pending = []  # type: List[str]
+    for pid in _to_names(post) or []:
+        if pid != writer and pid not in answered and pid not in pending and _is_approved(pid, roster):
+            pending.append(pid)
+    return {"id": did, "collection": coll, "summary": summary if isinstance(summary, str) else None,
+            "counts": dict(sorted(counts.items())), "votes": votes, "pending": pending}
 
 
 # The kinds of participant that owe a mark (participants.KINDS); the owner owes none.
