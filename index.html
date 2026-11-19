@@ -895,8 +895,8 @@ td.num, td.t { font: 12px var(--mono); font-variant-numeric: tabular-nums; white
   }
   // [word, emoji, label] of each mark (marks.MARKS, EMOJI, LABEL), in the order the marks line shows them.
   var MARK_SHOWN = [["ack", "\u2705", "acknowledged"], ["applies", "\ud83d\udd27", "applies"], ["none", "\u2796", "no change"],
-    ["seen", "\ud83d\udc40", "seen"], ["unclear", "\u2753", "not clear"]];
-  // requests.acks_by_item: who closed a request with the mark `none`. The page applies no rule of its own: it reads
+    ["seen", "\ud83d\udc40", "seen"], ["unclear", "\u2753", "not clear"], ["vote", "\ud83d\uddf3\ufe0f", "voted"]];
+  // requests.acks_by_item: who closed a request with the mark `none` or a vote (marks.ANSWERS). The page applies no rule of its own: it reads
   // the `marks` key that the server puts on each marked message (marks.page_views, from marks.marks_by_item), which
   // already drops a writer's own row, a row of a participant that is not approved, and a row whose id does not
   // match, and folds a `lesson-<id>` row into its message, where the later mark wins.
@@ -908,7 +908,7 @@ td.num, td.t { font: 12px var(--mono); font-variant-numeric: tabular-nums; white
     data.messages.forEach(function (m) {
       var v = m.marks, words = v && typeof v === "object" && !Array.isArray(v) ? v.marks : null;
       if (m.kind !== "request" || !words || typeof words !== "object" || Array.isArray(words)) return;
-      var ids = Object.keys(words).filter(function (pid) { return pid && words[pid] === "none"; });
+      var ids = Object.keys(words).filter(function (pid) { return pid && (words[pid] === "none" || words[pid] === "vote"); });
       if (ids.length) acks[m._id] = ids.sort(byName);
     });
     ackCache = { messages: data.messages, participants: data.participants, map: acks };

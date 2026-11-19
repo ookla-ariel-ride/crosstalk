@@ -8,7 +8,7 @@ from typing import Dict, Iterable, List, Optional
 from .config import coordinator as coordinator_of
 from .landqueue import GRANT_VOID, is_withdrawal, land_word
 from .logs import Line, append_line, check_speaker
-from .marks import MARKS, item_ref, writer_of
+from .marks import MARKS, item_ref, vote_choice, vote_note, writer_of
 from .participants import Roster, load_roster
 from .posters import next_stamp
 from .replay import enrich_messages, load_all_lines, replay
@@ -338,16 +338,24 @@ def retract_post(
 
 
 def ack_item(root: Path, pid: str, item_id: str, mark: str = "none",
-             roster: Optional[Roster] = None) -> Line:
+             roster: Optional[Roster] = None, vote: Optional[str] = None,
+             note: Optional[str] = None) -> Line:
     """Put pid's mark on the item item_id: one `acks` row, id `<pid>--<item_id>`, that a
     later mark replaces. It is not a message.
 
     Each mark (marks.MARKS) takes a message, a decision or a lesson that pid did not
     write. `none` writes `none: true` too and never takes a question for the owner; on
-    a request it counts as pid's reply (requests.acks_by_item). The other marks answer
-    nothing."""
+    a request it counts as pid's reply (requests.acks_by_item). `vote` carries the
+    choice vote (marks.vote_choice, kept in upper case) and an optional one-line note;
+    it counts as pid's reply too, and `relay.py tally` counts it. The other marks
+    answer nothing."""
     if mark not in MARKS:
         raise ValueError("unknown mark %r (expected one of %s)" % (mark, ", ".join(MARKS)))
+    if mark == "vote":
+        vote = vote_choice(vote)
+        note = vote_note(note) if note is not None else None
+    elif vote is not None or note is not None:
+        raise ValueError("a vote and its note go only with the mark vote (ack --vote)")
     root = Path(root)
     roster = _ensure_roster(root, roster)
     _require_pid(pid, roster)
@@ -361,10 +369,14 @@ def ack_item(root: Path, pid: str, item_id: str, mark: str = "none",
     if writer_of(docs, ref[0], ref[1]) == pid:
         raise ValueError("%r is your own post; a mark is for another participant's post" % (item_id,))
     data = {"from": pid, "item": item_id, "mark": mark, "t": now_iso()}
+    if mark in ("none", "vote") and ref[0] == "messages" and docs[ref].get("kind") == "question":
+        raise ValueError("a question to the owner gets an answer, not an ack")
     if mark == "none":
-        if ref[0] == "messages" and docs[ref].get("kind") == "question":
-            raise ValueError("a question to the owner gets an answer, not an ack")
         data["none"] = True
+    if mark == "vote":
+        data["vote"] = vote
+        if note is not None:
+            data["note"] = note
     return append_line(root, pid, "set", "acks", pid + ACK_SEP + item_id, data, roster=roster)
 
 

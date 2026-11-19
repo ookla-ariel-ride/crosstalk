@@ -42,7 +42,7 @@ from .consults import (ack_item, adopt_agreement, microsecond_utc_stamp, post_co
 from .files import utf8_json
 from .landqueue import land_queue
 from .logs import KINDS, append_line, message_problems
-from .marks import MARKS
+from .marks import MARKS, NOTE_MAX
 from .participants import ID_RE, load_roster
 from .posters import claim_file, release_file, slugify_path
 from .reports import MESSAGES_LIMIT_MAX, inbox_report, load_docs, recent_messages, trust_of
@@ -342,10 +342,14 @@ class McpServer:
     def _ack(self, args):
         # Always self.pid: the tool takes no sender (IDENTITY_ARGS are refused).
         try:
-            ln = ack_item(self.root, self.pid, args["item"], args["mark"], roster=self._roster())
+            ln = ack_item(self.root, self.pid, args["item"], args["mark"], roster=self._roster(),
+                          vote=args.get("vote"), note=args.get("note"))
         except ValueError as e:
             raise ToolError(str(e))
-        return {"id": ln.id, "item": args["item"], "mark": args["mark"], "seq": ln.seq, "t": ln.t}
+        out = {"id": ln.id, "item": args["item"], "mark": args["mark"], "seq": ln.seq, "t": ln.t}
+        if "vote" in ln.data:
+            out["vote"] = ln.data["vote"]
+        return out
 
     def _claim(self, args):
         try:
@@ -563,11 +567,18 @@ class McpServer:
                  "Put your mark on another participant's message, decision or lesson, as %s, "
                  "like relay.py ack. 'ack' (acknowledged), 'applies' (it changes my project) "
                  "and 'none' (understood, no change) take the post out of to_read; 'seen' and "
-                 "'unclear' keep it there. 'none' on a request also counts as your reply. A "
-                 "later mark on the same post replaces the earlier one." % me,
+                 "'unclear' keep it there. 'none' on a request also counts as your reply. "
+                 "'vote' takes 'vote' (one word such as ADOPT, OBJECT, ABSTAIN or an option "
+                 "number) and an optional one-line 'note'; it counts as your reply on a request "
+                 "and relay.py tally counts it. A later mark on the same post replaces the "
+                 "earlier one." % me,
                  _schema({"item": dict(_STR, minLength=1,
                                        description="Id of the message, decision or lesson."),
-                          "mark": {"type": "string", "enum": list(MARKS)}},
+                          "mark": {"type": "string", "enum": list(MARKS)},
+                          "vote": dict(_STR, minLength=1, maxLength=32,
+                                       description="With mark 'vote': your choice."),
+                          "note": dict(_STR, minLength=1, maxLength=NOTE_MAX,
+                                       description="With mark 'vote': a one-line note.")},
                          ["item", "mark"]),
                  self._ack),
         ]

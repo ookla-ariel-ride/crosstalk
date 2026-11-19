@@ -174,7 +174,7 @@ class PageWordsTests(unittest.TestCase):
         """index.html holds MARK_SHOWN: [word, emoji, label] in the order the line shows them."""
         from crosstalk import marks
         shown = mark_shown((REPO / "index.html").read_text(encoding="utf-8"))
-        self.assertEqual([w for w, _e, _l in shown], ["ack", "applies", "none", "seen", "unclear"])
+        self.assertEqual([w for w, _e, _l in shown], ["ack", "applies", "none", "seen", "unclear", "vote"])
         self.assertEqual(sorted(w for w, _e, _l in shown), sorted(marks.MARKS))
         for word, emoji, label in shown:
             self.assertEqual(emoji, marks.EMOJI[word], word)

@@ -13,7 +13,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Dict, List, Optional, Tuple
 
-from .marks import MARKS
+from .marks import MARKS, NOTE_MAX, VOTE_RE
 from .participants import HARNESS_MAX, ID_RE, Roster, harness_problem
 
 LEGACY_PREFIXES = ("m-", "vc-", "own-", "a-", "d-", "w-", "l-", "p-", "i-", "lesson-")
@@ -192,6 +192,13 @@ def ack_problem(op: str, doc_id: str, owner: str, data: dict) -> Optional[str]:
             return "ack id %r must be %r" % (doc_id, owner + "--" + item)
         if "mark" in data and not (isinstance(data["mark"], str) and data["mark"] in MARKS):
             return "ack mark %r is not one of %s" % (data["mark"], ", ".join(MARKS))
+        if data.get("mark") == "vote":
+            vote, note = data.get("vote"), data.get("note")
+            if not (isinstance(vote, str) and VOTE_RE.fullmatch(vote)):
+                return "ack vote %r is not one upper-case word of 1 to 32 characters" % (vote,)
+            if note is not None and not (isinstance(note, str) and 0 < len(note) <= NOTE_MAX
+                                         and "\n" not in note and "\r" not in note):
+                return "ack note must be one line of 1 to %d characters" % NOTE_MAX
     return None
 
 

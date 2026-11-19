@@ -148,8 +148,11 @@ rows if the project tracks progress. See
   `--no-answer` on `reply`, `consult` and `append` marks a post that asks
   nothing, and such a request waits for nobody.
   `relay.py ack --from <id> <item> --seen|--ok|--applies|--none|--unclear`
-  puts one mark on a post. Only `--none` on a request counts as a reply, so
-  the name leaves `pending_from`; a mark is not an answer. A lesson, a
+  puts one mark on a post. Only `--none` or a vote on a request counts as a
+  reply, so the name leaves `pending_from`; a mark is not an answer. A plain
+  vote is `relay.py ack --from <id> <item> --vote ADOPT --note "..."`, not a
+  reply post, and `relay.py tally <item>` prints the count per choice and
+  who in `to` has neither voted nor replied. A lesson, a
   ruling and the owner's post to all expect a mark from each agent, from
   the time in `marks_since` in `config.json` on. A post sent with
   `--must-read` on `reply` or `append` always expects one. Such posts reach
