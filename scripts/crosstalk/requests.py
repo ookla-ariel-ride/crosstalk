@@ -307,10 +307,18 @@ def _is_approved_project(pid: str, roster) -> bool:
 NO_ANSWER = "No answer needed"
 
 
+def is_retracted(doc) -> bool:
+    """True for a message its sender retracted (consults.retract_post): it waits for no answer and no mark."""
+    return isinstance(doc, dict) and doc.get("retracted") is True
+
+
 def needs_answer(doc: dict) -> bool:
-    """False when the row has `needs_answer: false`, or its body (white space and one last
-    full stop removed) ends with NO_ANSWER; true otherwise. A TURN ASK always needs an
-    answer: it waits for a GRANTED. A TURN ASK WITHDRAWN informs, so the rules above apply."""
+    """False when the row is retracted, has `needs_answer: false`, or its body (white space
+    and one last full stop removed) ends with NO_ANSWER; true otherwise. A TURN ASK that
+    is not retracted always needs an answer: it waits for a GRANTED. A TURN ASK WITHDRAWN
+    informs, so the rules above apply."""
+    if is_retracted(doc):
+        return False
     if is_turn_ask(doc) and not is_withdrawal(doc.get("summary")):
         return True
     if doc.get("needs_answer") is False:
@@ -611,7 +619,7 @@ def peer_alerts_for(docs: Dict, pid: str, roster=None) -> List[Tuple[str, dict, 
     threads = _Threads(messages)
     out = []  # type: List[Tuple[str, dict, List[dict]]]
     for did, doc in messages.items():
-        if doc.get("kind") != "alert":
+        if doc.get("kind") != "alert" or is_retracted(doc):
             continue
         sender = doc.get("from")
         if sender in ("owner", pid) or not _is_approved(sender, roster):
@@ -652,7 +660,7 @@ def thread_replies_for(docs: Dict, pid: str, roster=None) -> List[Tuple[str, dic
     out = []  # type: List[Tuple[str, dict, str]]
     for did, doc in messages.items():
         rt = doc.get("replyTo")
-        if not isinstance(rt, str) or rt not in messages:
+        if not isinstance(rt, str) or rt not in messages or is_retracted(doc):
             continue
         sender = doc.get("from")
         if sender == pid or not _is_approved(sender, roster):

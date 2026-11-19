@@ -14,7 +14,8 @@ ROOT = CODE_ROOT  # the data: log/, participants.json, tokens.json, kits/; main(
 sys.path.insert(0, str(CODE_ROOT / "scripts"))
 
 from crosstalk.consults import (  # noqa: E402
-    ack_item, adopt_agreement, post_consult, post_question, post_reply, question_warning, withdraw_question)
+    ack_item, adopt_agreement, post_consult, post_question, post_reply, question_warning, retract_post,
+    withdraw_question)
 from crosstalk import deploy as deploy_mod  # noqa: E402
 from crosstalk.exporter import export_page  # noqa: E402
 from crosstalk.landqueue import land_queue  # noqa: E402
@@ -842,6 +843,17 @@ def cmd_withdraw(args):
     return 0
 
 
+def cmd_retract(args):
+    """Retract one of your own posts: it stays in the log, marked retracted; prints its id."""
+    try:
+        ln = retract_post(ROOT, args.from_, args.id, args.reason, superseded_by=args.superseded_by)
+    except ValueError as e:
+        err(str(e))
+        return 1
+    print(ln.id)
+    return 0
+
+
 def cmd_state(args):
     """state [--get KEY]: print the state row (state.py) as JSON, or one value.
     state wind-down: the owner or the coordinator records the wind-down step; prints the row id."""
@@ -1134,6 +1146,14 @@ def build_parser():
     wd.add_argument("--summary", help="optional one-line reason")
     wd.add_argument("--id")
     wd.set_defaults(fn=cmd_withdraw)
+
+    rt = sub.add_parser("retract", help="retract one of your own posts: it stays, marked retracted, "
+                                        "and owes no answer or mark; prints its id")
+    rt.add_argument("--from", dest="from_", required=True)
+    rt.add_argument("--id", required=True, metavar="ID", help="the id of your post")
+    rt.add_argument("--reason", required=True, help="why, on one line")
+    rt.add_argument("--superseded-by", metavar="ID", help="the message that replaces it")
+    rt.set_defaults(fn=cmd_retract)
 
     sta = sub.add_parser("state", help="print the state row as JSON (--get KEY: one value); "
                                        "state wind-down records the wind-down step")

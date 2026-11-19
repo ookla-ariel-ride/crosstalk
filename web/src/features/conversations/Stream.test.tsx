@@ -523,6 +523,25 @@ describe("open ids", () => {
     await waitFor(() => expect(screen.queryByText("1 new")).toBeNull());
   });
 
+  test("a retracted post shows its reason and what supersedes it, struck through", () => {
+    const linked = thread("zeta-0001", { title: "A thread with a retracted post" });
+    const msgs = [
+      message("zeta-0001", "2026-11-11T08:00:00Z", { depth: 0, body: "Root body" }),
+      message("zeta-0002", "2026-11-11T08:10:00Z", {
+        body: "Old numbers",
+        retracted: true,
+        retract_reason: "wrong numbers",
+        superseded_by: "zeta-0003",
+      }),
+    ];
+    const data = base(OWNER, EMPTY_STATE, [Q1]);
+    data.push([keys.thread("zeta-0001"), { root: "zeta-0001", thread: linked, messages: msgs }]);
+    renderWith(<Stream sort="needs" open={["zeta-0001"]} onOpenChange={() => {}} />, data);
+    expect(screen.getByText(/^Retracted: wrong numbers/).textContent).toContain("superseded by zeta-0003");
+    expect(screen.getByText("Old numbers").closest("[class*=retracted]")).toBeTruthy();
+    expect(screen.getByText("Root body").closest("[class*=retracted]")).toBeNull();
+  });
+
   test("two fast clicks open two threads", () => {
     const onOpenChange = vi.fn();
     renderWith(<Stream sort="needs" open={[]} onOpenChange={onOpenChange} />, base(OWNER, EMPTY_STATE, [Q1, thread("beta-0009", { title: "Second" })]));

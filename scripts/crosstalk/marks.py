@@ -9,7 +9,7 @@ from pathlib import Path
 from typing import Dict, List, Optional, Tuple
 
 from . import config as config_mod
-from .requests import ACK_SEP, _is_approved, _parse_iso
+from .requests import ACK_SEP, _is_approved, _parse_iso, is_retracted
 
 MARKS = ("seen", "ack", "applies", "none", "unclear")
 # The marks that say "I read it and understood it".
@@ -184,7 +184,8 @@ def _folded(docs: Dict, coll: str, did: str) -> bool:
 
 def expects_mark(docs: Dict, coll: str, did: str, roster, config) -> bool:
     """True when the post (coll, did) expects a mark (PROTOCOL.md, "Which posts expect a
-    mark"). A message with `must_read: true` always does, whatever marks_since holds.
+    mark"). A retracted message never does. A message with `must_read: true` always does,
+    whatever marks_since holds.
     Any other post needs a time at or after marks_since(config), and one of these: a
     message of kind `lesson`, or a message that a `lessons` row `lesson-<id>` names, or
     a `lessons` row with no message; a `decisions` row written by the coordinator or
@@ -198,6 +199,8 @@ def expects_mark(docs: Dict, coll: str, did: str, roster, config) -> bool:
     if not isinstance(doc, dict):
         return False
     if coll == "messages":
+        if is_retracted(doc):
+            return False
         if doc.get("must_read") is True:
             return True
         lesson = docs.get(("lessons", LESSON_PREFIX + did))

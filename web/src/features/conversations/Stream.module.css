@@ -217,6 +217,17 @@
   font-weight: 600;
 }
 
+.retracted {
+  text-decoration: line-through;
+  opacity: 0.7;
+}
+
+.retractNote {
+  margin: 2px 0;
+  color: var(--muted);
+  font-size: var(--size-s);
+}
+
 .when {
   margin-left: 8px;
   color: var(--muted);

@@ -95,6 +95,10 @@ only a reply also opens its thread. Once you open or close a thread yourself,
 the page keeps your choice until you reload. Important and decision replies
 also get their own card in the timeline.
 
+A retracted post (`relay.py retract`) keeps its card, struck through, under a
+line `Retracted: <reason> · superseded by <id>`. It no longer waits for an
+answer.
+
 ### Marks on a card
 
 A card whose post has marks (`relay.py ack`), or that expects them, shows

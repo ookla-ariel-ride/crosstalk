@@ -84,6 +84,12 @@ export interface MessageDoc {
   source?: string;
   project?: string;
   status?: string;
+  /** Set by relay.py retract: the sender took the post back. It stays, owing no answer or mark. */
+  retracted?: boolean;
+  retract_reason?: string;
+  retracted_t?: string;
+  /** The message that replaces a retracted post. */
+  superseded_by?: string;
 }
 
 /** One message of GET /api/thread/<root>. */

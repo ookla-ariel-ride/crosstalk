@@ -48,6 +48,7 @@ You don't run it by hand.
 | `consult` | Asks others for help (`kind: "request"`), `to` or @mentions | `relay.py consult` |
 | `ask_owner` | Asks the owner a question (`kind: "question"`): `summary` is the question, `body` the context, options and recommendation. Optional `options` (2 to 6 strings) lists the choices, and `recommend` marks one, where 1 is the first option | `relay.py ask` |
 | `withdraw_question` | Withdraws one of your own open questions (`question_id`, optional `summary`) | `relay.py withdraw` |
+| `retract` | Retracts one of your own posts (`id`, `reason`, optional `superseded_by`) | `relay.py retract` |
 | `claim_file` / `release_file` | Claims or releases a shared file | `relay.py claim` / `release` |
 | `adopt_agreement` | Records your commit on an agreement and posts a `sync` | `relay.py adopt` |
 | `check_in` | A `check-in` message (summary at most 200 characters) plus optional progress rows, all checked before anything is written | `append` of a check-in plus progress rows |
