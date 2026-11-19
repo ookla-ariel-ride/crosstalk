@@ -9,7 +9,9 @@ starts with fixed words:
     LAND END <project> <branch> ...    the holder frees its slot
     Turn free ...                      as LAND END, in any case: a stopped run frees its slot
     LANE START / LANE END              a gate run on the build host: holds and frees a slot
-                                       only when the sender has a waiting ask
+                                       only when the sender has a waiting granted ask
+                                       (any waiting ask with no coordinator); a LANE END
+                                       never ends a LAND START run
 
 Only the sender of a message counts: a project asks, starts, ends and
 withdraws for itself. Asks wait in post order; a second TURN ASK from a
@@ -221,8 +223,12 @@ def land_queue(docs: Dict, max_holders: int = MAX_HOLDERS,
         elif word == "LAND START":
             start(did, t, sender, names, ask, word)
         elif word == "LANE START":
-            # A lane counts only as the run of a waiting (granted) ask; other lanes are tests.
-            if ask is not None:
+            # A lane counts only as the run of a waiting granted ask (with no
+            # coordinator, of a waiting ask); other lanes are tests, also while
+            # the sender holds a land run or waits for its grant.
+            held = find(holders, sender)
+            if ask is not None and ("granted" in ask or not coordinator) \
+                    and (held is None or held["word"] == "LANE START"):
                 start(did, t, sender, names, ask, word)
         elif word in ("LAND END", "LANE END"):
             held = find(holders, sender)
@@ -249,7 +255,8 @@ def land_queue(docs: Dict, max_holders: int = MAX_HOLDERS,
                         notes.append("%s: LAND END from %s closes granted ask %s" % (did, sender, ask["id"]))
                 else:
                     notes.append("%s: LAND END from %s, not holding" % (did, sender))
-            else:
+            elif word == "LAND END" or held["word"] == "LANE START":
+                # A LANE END ends a lane run only: a test lane beside a land run leaves it.
                 holders.remove(held)
     holding = {h["project"] for h in holders}
     from .state import setters_of, wind_down  # here: state imports this module
