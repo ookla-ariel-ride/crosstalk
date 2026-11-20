@@ -28,6 +28,8 @@ from crosstalk import schedules as schedules_mod  # noqa: E402
 from crosstalk import scorecard as scorecard_mod  # noqa: E402
 from crosstalk import state as state_mod  # noqa: E402
 from crosstalk import watchdog as watchdog_mod  # noqa: E402
+from crosstalk import checkin as checkin_mod  # noqa: E402
+from crosstalk.consults import microsecond_utc_stamp  # noqa: E402
 from crosstalk import buildhost as buildhost_mod  # noqa: E402
 from crosstalk import config as config_mod  # noqa: E402
 from crosstalk import marks as marks_mod  # noqa: E402
@@ -940,6 +942,60 @@ def cmd_watchdog(args):
     return 0
 
 
+def cmd_checkin(args):
+    """checkin: post one kind: check-in; with --auto its facts come from state (crosstalk/checkin.py)."""
+    roster = load_roster(ROOT / "participants.json")
+    if args.from_ not in roster.participants:
+        err("checkin: unknown participant %r" % args.from_)
+        return 1
+    if args.note is not None and args.body_file is not None:
+        err("checkin: give --note or --body-file, not both")
+        return 2
+    if not args.auto and (args.repo is not None or args.since is not None):
+        err("checkin: --repo and --since go with --auto")
+        return 2
+    prose = args.note or ""
+    if args.body_file is not None:
+        try:
+            prose = Path(args.body_file).read_text(encoding="utf-8")
+        except OSError as e:
+            err("checkin: %s" % e)
+            return 1
+    if not args.auto and not prose.strip():
+        err("checkin: without --auto, give the text with --note or --body-file")
+        return 2
+    docs, fatal = load_docs(ROOT, roster)
+    if fatal:
+        for p in fatal:
+            err("%s:%d: %s" % (p.file, p.line, p.message))
+        return 1
+    facts = None
+    if args.auto:
+        repo = Path(args.repo) if args.repo else Path.cwd()
+        try:
+            facts = checkin_mod.facts(docs, roster, args.from_, repo, args.since, time.time())
+        except ValueError as e:
+            err("checkin: %s" % e)
+            return 2
+        if "error" in facts["git"]:
+            err("checkin: warning: git facts not read from %s (%s)" % (repo, facts["git"]["error"]))
+    data = checkin_mod.message(args.from_, facts, prose)
+    data.update(speaker_fields(args))
+    if args.dry_run:
+        print(_text(data["summary"]))
+        print()
+        print(_text(data["body"]))
+        return 0
+    try:
+        ln = append_line(ROOT, args.from_, "set", "messages", "%s-%s" % (args.from_, microsecond_utc_stamp()),
+                         data, roster=roster, allow_duplicate=args.allow_duplicate)
+    except ValueError as e:
+        err(str(e))
+        return 1
+    print(ln.id)
+    return 0
+
+
 def cmd_marks(args):
     """marks <item>: the marks on one post and who owes one.
     marks --missing [--older M]: each post that expects a mark and still has names that owe one."""
@@ -1333,6 +1389,21 @@ def build_parser():
                     help="the participant the alert comes from (default: config watchdog.from, else the first "
                          "approved project that is not the coordinator)")
     wd.set_defaults(fn=cmd_watchdog)
+
+    ck = sub.add_parser("checkin", help="post one kind: check-in; --auto opens the body with facts read from "
+                                        "state (git, reviews, land queue, open requests); prints the id")
+    _speaker_flags(ck)
+    ck.add_argument("--from", dest="from_", required=True)
+    ck.add_argument("--auto", action="store_true",
+                    help="build the summary and a Facts section from state; your text follows under Notes")
+    ck.add_argument("--repo", metavar="PATH", help="with --auto: the git repo to read (default: the current folder)")
+    ck.add_argument("--since", metavar="ISO|auto",
+                    help="with --auto: the window start (default auto: your previous check-in, else 24 hours ago)")
+    ck.add_argument("--note", metavar="TEXT", help="your own text: what changed, what is next")
+    ck.add_argument("--body-file", metavar="FILE", help="your own text, read from a file")
+    ck.add_argument("--dry-run", action="store_true", help="print the summary and body; post nothing")
+    ck.add_argument("--allow-duplicate", action="store_true", help=ALLOW_DUP_HELP)
+    ck.set_defaults(fn=cmd_checkin)
 
     mr = sub.add_parser("marks", help="print the marks on one post and who owes one; "
                                       "--missing lists every post that still waits for marks")

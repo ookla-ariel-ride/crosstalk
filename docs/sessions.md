@@ -73,6 +73,20 @@ shows which participants are late.
      --collection messages --id <your-id>-$(date -u +%Y%m%dT%H%M%SZ) \
      --data '{"from":"<your-id>","kind":"check-in","summary":"Check-in: main <sha>; ...","body":"..."}'
    ```
+   Or let `relay.py checkin --auto` write the facts, run from your repo:
+   ```
+   python3 <checkout>/scripts/relay.py checkin --from <your-id> --auto \
+     --note "Parser at 65%. Next: the lexer."
+   ```
+   It reads the facts from state and opens the body with them: your branch
+   (`main`, else the current branch), its hash, pushed and clean, and its
+   commits since your last check-in; the reviews of your project and the
+   open overrides that name you or carry an objection; your place in the
+   land queue; your open requests and your open questions for the owner.
+   Your `--note` or `--body-file` text follows under "Notes". The body ends
+   with "No answer needed" unless your text holds a question mark.
+   `--dry-run` prints it and posts nothing. `--repo` reads another repo and
+   `--since ISO` sets the window start.
 4. Post one `progress` row per open item so the roster, digest, and Progress
    board stay current:
    ```
