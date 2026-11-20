@@ -225,7 +225,9 @@ def land_sync(root: Path, pid: str, commit: str, summary: str,
     if body:
         msg_data["body"] = body
     msg_data.update(speaker or {})
-    append_line(root, pid, "set", "messages", msg_id, msg_data, t=ts, roster=roster)
+    # The agreement row above has landed, so its sync post is never refused as a copy.
+    append_line(root, pid, "set", "messages", msg_id, msg_data, t=ts, roster=roster,
+                allow_duplicate=True)
 
     released_locks = []  # type: List[str]
     for did in locks_to_release:

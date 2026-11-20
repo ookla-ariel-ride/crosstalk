@@ -169,6 +169,9 @@ rows if the project tracks progress. See
   one of your own posts: it stays, struck through on both pages, and no
   one owes it an answer or a mark (`--superseded-by` names its
   replacement).
+  Send a post once with every reader in `--to`: the write paths refuse
+  the same text from the same sender within 10 minutes, and name the
+  earlier post (`--allow-duplicate` for a real repeat).
   `inbox <id> --new` lists only what came after the last ack, `--ack` moves
   that place after the output, and `--ack-to` moves it later.
   `relay.py scorecard` prints, for each participant over the last 48

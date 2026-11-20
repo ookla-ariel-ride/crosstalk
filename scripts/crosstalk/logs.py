@@ -13,6 +13,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Dict, List, Optional, Tuple
 
+from .landqueue import GRANT_VOID, land_word
 from .marks import MARKS, NOTE_MAX, VOTE_RE, due_utc
 from .participants import HARNESS_MAX, ID_RE, Roster, harness_problem
 
@@ -38,6 +39,8 @@ MODEL_BAD_RE = re.compile(r"[\x00-\x1f\x7f]")
 # A question may carry choices for the owner and the index (from 0) of the recommended one.
 OPTIONS_MIN, OPTIONS_MAX, OPTION_LEN_MAX = 2, 6, 200
 SKEW_MIN = 2
+# The duplicate guard (duplicate_problem): a sender's same text within this many seconds.
+DUP_WINDOW_SEC = 10 * 60
 
 
 @dataclass
@@ -397,6 +400,80 @@ def message_problems(collection: str, op: str, data: dict, roster: Roster,
     return errors, warnings
 
 
+def _dup_text(data: dict) -> str:
+    """The text the duplicate guard compares: the body, else the summary, with runs of
+    whitespace made one space, plus the refs and a question's options, so a post that
+    names another commit or offers other choices is no copy. "" when there is no text."""
+    for key in ("body", "summary"):
+        value = data.get(key)
+        if isinstance(value, str) and value.strip():
+            extra = [data.get(k) for k in ("refs", "options")]
+            return json.dumps([" ".join(value.split())] + extra, sort_keys=True)
+    return ""
+
+
+def dup_exempt(from_: str, op: str, collection: str, data: dict,
+               via: Optional[str] = None) -> bool:
+    """True when the duplicate guard does not judge this write: anything but a new
+    message, the owner's posts, imported rows, and land traffic (the land words,
+    GRANTED and GRANT WITHDRAWN), which a project may repeat on purpose."""
+    if collection != "messages" or op != "set" or from_ == "owner" or via == "import":
+        return True
+    summary = data.get("summary")
+    if land_word(summary) is not None:
+        return True
+    return isinstance(summary, str) and summary.strip().startswith(("GRANTED", GRANT_VOID))
+
+
+def duplicate_problem(log_text: str, doc_id: str, data: dict, now: float) -> Optional[str]:
+    """Why a new message repeats one its sender posted in the last DUP_WINDOW_SEC, or None.
+
+    `log_text` is the sender's own log. The new message repeats an earlier one when
+    the two have the same text, refs and options (_dup_text) and the same replyTo (both none, or the
+    same id), whoever reads them: copies of one post to one reader each are the case
+    this stops. A retracted post does not count, and a `set` on an id the sender
+    already wrote replaces it, so it is no duplicate.
+    """
+    text = _dup_text(data)
+    if not text:
+        return None
+    docs = {}  # type: Dict[str, dict]
+    posted = {}  # type: Dict[str, str]
+    for raw in log_text.split("\n"):
+        if not raw.strip():
+            continue
+        d = json.loads(raw)
+        if d.get("collection") != "messages" or not isinstance(d.get("data"), dict):
+            continue
+        if d.get("op") == "set":
+            docs[d["id"]] = dict(d["data"])
+            posted[d["id"]] = d.get("t", "")
+        else:
+            docs.setdefault(d["id"], {}).update(d["data"])
+    if doc_id in docs:
+        return None
+    best = None  # type: Optional[Tuple[float, str]]
+    for mid, doc in docs.items():
+        when = parse_utc(posted.get(mid))
+        if when is None or now - when.timestamp() > DUP_WINDOW_SEC:
+            continue
+        if doc.get("retracted") is True or doc.get("replyTo") != data.get("replyTo"):
+            continue
+        if _dup_text(doc) != text:
+            continue
+        if best is None or when.timestamp() > best[0]:
+            best = (when.timestamp(), mid)
+    if best is None:
+        return None
+    mid = best[1]
+    readers = docs[mid].get("to")
+    to_text = " to %s" % ", ".join(readers) if isinstance(readers, list) and readers else ""
+    return ("duplicate: you posted the same text as %s%s %d min ago. Post once with "
+            "`--to p1 p2 ...` (or `reply --to p1 p2 ...`), or retract the earlier post first "
+            "(`relay.py retract --from <you> --id %s --reason ...`); --allow-duplicate posts it anyway"
+            % (mid, to_text, max(0, round((now - best[0]) / 60)), mid))
+
+
 def parse_utc(text) -> Optional[datetime]:
     """A UTC yyyy-mm-ddThh:mm:ssZ time, or None if it isn't one."""
     try:
@@ -659,21 +736,26 @@ def _recover(root: Path, pid: str, path: Path, f, data: bytes) -> bytes:
 
 def append_line(root: Path, from_: str, op: str, collection: str, id: str, data: dict,
                 t: Optional[str] = None, via: Optional[str] = None,
-                roster: Optional[Roster] = None) -> Line:
+                roster: Optional[Roster] = None, allow_duplicate: bool = False) -> Line:
     """Append one line to log/<from_>.jsonl under an exclusive lock; returns the Line written.
 
     With a roster, a line that breaks the trust rules or the message shape rules is
     refused before the file is opened. A `state` row also holds the state lock
     (state_lock), so it never lands between the granter's last read and its GRANTED.
+    With a roster, a new message that repeats the sender's own recent post is refused
+    too (duplicate_problem), unless `allow_duplicate`.
     """
     if collection == "state":
         with state_lock(root, force=True):
-            return _append_line(root, from_, op, collection, id, data, t, via, roster)
-    return _append_line(root, from_, op, collection, id, data, t, via, roster)
+            return _append_line(root, from_, op, collection, id, data, t, via, roster,
+                                allow_duplicate)
+    return _append_line(root, from_, op, collection, id, data, t, via, roster,
+                                allow_duplicate)
 
 
 def _append_line(root: Path, from_: str, op: str, collection: str, id: str, data: dict,
-                 t: Optional[str], via: Optional[str], roster: Optional[Roster]) -> Line:
+                 t: Optional[str], via: Optional[str], roster: Optional[Roster],
+                 allow_duplicate: bool = False) -> Line:
     if not isinstance(from_, str) or not ID_RE.fullmatch(from_):
         # Checked before any path is built: on a case-insensitive disk "Codex" would
         # open codex.jsonl.
@@ -698,6 +780,8 @@ def _append_line(root: Path, from_: str, op: str, collection: str, id: str, data
         msg = _identity_problem(root, from_, op, collection, id, data, via, roster)
         if msg:
             raise ValueError(msg)
+    dup_check = roster is not None and not allow_duplicate \
+        and not dup_exempt(from_, op, collection, data, via)
     if t is None:
         t = time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime())
     log_dir = Path(root) / "log"
@@ -708,6 +792,13 @@ def _append_line(root: Path, from_: str, op: str, collection: str, id: str, data
         try:
             f.seek(0)
             body = _recover(root, from_, path, f, f.read())
+            if dup_check:
+                # Under the file lock, so two copies sent at once can't both pass.
+                stamp = parse_utc(t)
+                msg = duplicate_problem(body.decode("utf-8"), id, data,
+                                        stamp.timestamp() if stamp else time.time())
+                if msg:
+                    raise ValueError(msg)
             last = 0
             for raw in body.decode("utf-8").split("\n"):
                 if raw.strip():

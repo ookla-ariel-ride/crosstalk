@@ -264,12 +264,13 @@ class McpServer:
         data.update(speaker_fields())  # who spoke: CROSSTALK_HARNESS and CROSSTALK_MODEL
         return data
 
-    def _append_message(self, data):
+    def _append_message(self, data, allow_duplicate=False):
         roster = self._roster()
         warnings = message_problems("messages", "set", data, roster)[1]
         mid = "%s-%s" % (self.pid, microsecond_utc_stamp())
         try:
-            ln = append_line(self.root, self.pid, "set", "messages", mid, data, roster=roster)
+            ln = append_line(self.root, self.pid, "set", "messages", mid, data, roster=roster,
+                             allow_duplicate=allow_duplicate)
         except ValueError as e:
             raise ToolError(str(e))
         out = {"id": ln.id, "seq": ln.seq, "t": ln.t}
@@ -286,12 +287,14 @@ class McpServer:
         if positions is not None and not all(
                 isinstance(k, str) and isinstance(v, str) for k, v in positions.items()):
             raise ToolError("positions maps participant ids to strings")
-        return self._append_message(self._message_data(args["kind"], args))
+        return self._append_message(self._message_data(args["kind"], args),
+                                    allow_duplicate=bool(args.get("allow_duplicate")))
 
     def _reply(self, args):
         try:
             ln = post_reply(self.root, self.pid, args["to_id"], args["summary"],
-                            body=args.get("body"), refs=args.get("refs"), speaker=speaker_fields())
+                            body=args.get("body"), refs=args.get("refs"), speaker=speaker_fields(),
+                            allow_duplicate=bool(args.get("allow_duplicate")))
         except ValueError as e:
             raise ToolError(str(e))
         return {"id": ln.id, "seq": ln.seq, "t": ln.t, "replyTo": args["to_id"]}
@@ -300,7 +303,8 @@ class McpServer:
         try:
             ln = post_consult(self.root, self.pid, args["summary"], body=args.get("body"),
                               refs=args.get("refs"), to=args.get("to"), speaker=speaker_fields(),
-                              due=args.get("due"))
+                              due=args.get("due"),
+                              allow_duplicate=bool(args.get("allow_duplicate")))
         except ValueError as e:
             raise ToolError(str(e))
         out = {"id": ln.id, "seq": ln.seq, "t": ln.t, "to": ln.data.get("to")}
@@ -318,7 +322,8 @@ class McpServer:
         try:
             ln = post_question(self.root, self.pid, args["summary"], body=args.get("body"),
                                refs=args.get("refs"), speaker=speaker_fields(),
-                               options=args.get("options"), recommend=recommend)
+                               options=args.get("options"), recommend=recommend,
+                               allow_duplicate=bool(args.get("allow_duplicate")))
         except ValueError as e:
             raise ToolError(str(e))
         out = {"id": ln.id, "seq": ln.seq, "t": ln.t}
@@ -435,6 +440,9 @@ class McpServer:
         refs = dict(_STR_LIST, description="Optional refs: commit hashes, #42, other-repo@sha, doc ids.")
         to = dict(_STR_LIST, description="Participant ids to address. Leave out to address "
                                           "everyone, or use @mentions in the text.")
+        dup = {"type": "boolean",
+               "description": "Post even when you sent the same text in the last 10 minutes. "
+                              "The guard refuses copies: put every reader in 'to' instead."}
         return [
             Tool("inbox", "Read my Crosstalk inbox",
                  "List what is waiting for %s: open requests addressed to you, unanswered owner "
@@ -477,13 +485,14 @@ class McpServer:
                                    "description": "Set true for anything the owner should see first."},
                      "positions": {"type": "object",
                                    "description": "For a disagreement: {participant id: position}."},
+                     "allow_duplicate": dup,
                  }, ["kind", "summary"]),
                  self._post_message),
             Tool("reply", "Reply to a Crosstalk message",
                  "Answer a message by its id. Sets replyTo and addresses the original sender, "
                  "which closes the request in your inbox.",
                  _schema({"to_id": dict(_STR, minLength=1, description="Id of the message you answer."),
-                          "summary": summary, "body": body, "refs": refs},
+                          "summary": summary, "body": body, "refs": refs, "allow_duplicate": dup},
                          ["to_id", "summary"]),
                  self._reply),
             Tool("consult", "Ask other projects for help",
@@ -494,7 +503,8 @@ class McpServer:
                  _schema({"summary": summary, "body": body, "refs": refs, "to": to,
                           "due": dict(_STR, minLength=1, maxLength=40,
                                       description="When the proposal passes: an ISO time with Z or an "
-                                                  "offset, or a local hh:mm (the next such time).")},
+                                                  "offset, or a local hh:mm (the next such time)."),
+                          "allow_duplicate": dup},
                          ["summary"]),
                  self._consult),
             Tool("ask_owner", "Ask the owner a question",
@@ -509,7 +519,8 @@ class McpServer:
                                                       "chars on one line, in order."),
                           "recommend": {"type": "integer", "minimum": 1,
                                         "description": "The choice you recommend, by number: "
-                                                       "1 is the first option. Needs options."}},
+                                                       "1 is the first option. Needs options."},
+                          "allow_duplicate": dup},
                          ["summary"]),
                  self._ask_owner),
             Tool("withdraw_question", "Withdraw a question for the owner",

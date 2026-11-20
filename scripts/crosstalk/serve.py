@@ -1495,7 +1495,8 @@ class CrosstalkHandler(BaseHTTPRequestHandler):
         try:
             roster = load_roster(self.state.root / "participants.json")
             ln = append_line(self.state.root, frm, body.get("op"), collection, body.get("id"),
-                             data, t=None, via=via, roster=roster)
+                             data, t=None, via=via, roster=roster,
+                             allow_duplicate=body.get("allow_duplicate") is True)
         except ValueError as e:
             self._error(400, str(e))
             return

@@ -80,6 +80,7 @@ def post_reply(
     to: Optional[Iterable[str]] = None,
     docs: Optional[Dict] = None,
     must_read: bool = False,
+    allow_duplicate: bool = False,
 ) -> Line:
     """Reply to an existing message `to_id`, auto-populating `replyTo` and `to`.
 
@@ -120,7 +121,8 @@ def post_reply(
         _no_answer(data)
     if must_read:
         data["must_read"] = True
-    return append_line(root, pid, "set", "messages", mid, data, roster=roster)
+    return append_line(root, pid, "set", "messages", mid, data, roster=roster,
+                       allow_duplicate=allow_duplicate)
 
 
 def post_consult(
@@ -135,6 +137,7 @@ def post_consult(
     speaker: Optional[Dict[str, str]] = None,
     no_answer: bool = False,
     due: Optional[str] = None,
+    allow_duplicate: bool = False,
 ) -> Line:
     """Post a `kind: request` peer consultation message.
 
@@ -178,7 +181,8 @@ def post_consult(
     data.update(speaker or {})
     if no_answer:
         _no_answer(data)
-    return append_line(root, pid, "set", "messages", mid, data, roster=roster)
+    return append_line(root, pid, "set", "messages", mid, data, roster=roster,
+                       allow_duplicate=allow_duplicate)
 
 
 def post_question(
@@ -192,6 +196,7 @@ def post_question(
     speaker: Optional[Dict[str, str]] = None,
     options: Optional[List[str]] = None,
     recommend: Optional[int] = None,
+    allow_duplicate: bool = False,
 ) -> Line:
     """Post a `kind: question` for the owner: one question per row, summary = the question.
 
@@ -226,7 +231,8 @@ def post_question(
     if recommend is not None:
         data["recommend"] = recommend
     data.update(speaker or {})
-    return append_line(root, pid, "set", "messages", mid, data, roster=roster)
+    return append_line(root, pid, "set", "messages", mid, data, roster=roster,
+                       allow_duplicate=allow_duplicate)
 
 
 def question_warning(root: Path, pid: str, roster: Optional[Roster] = None) -> Optional[str]:
@@ -474,7 +480,9 @@ def adopt_agreement(
         "refs": [agreement_id, "%s@%s" % (pid, commit.lower())],
     }  # type: Dict[str, object]
     msg_data.update(speaker or {})
-    msg_ln = append_line(root, pid, "set", "messages", msg_id, msg_data, t=stamp, roster=roster)
+    # The agreement update above has landed, so its sync post is never refused as a copy.
+    msg_ln = append_line(root, pid, "set", "messages", msg_id, msg_data, t=stamp, roster=roster,
+                         allow_duplicate=True)
     return {
         "agreement_id": agreement_id,
         "status": new_status,
