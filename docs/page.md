@@ -120,7 +120,13 @@ server puts on each marked message, decision and lesson in `/api/snapshot`
 and in an exported page: `{"marks": {name: word}, "owed": [names],
 "expects": true or false}`. Marks come only from `acks` rows: the server
 drops a `marks` field that a writer put on a post in the log. A lesson row `lesson-<id>` carries the marks of
-its message. The Help tab reads the same key: a `none` mark on a request counts as a reply from its writer,
+its message. A post with a vote or a due time also gets `votes` in that key
+(`marks.vote_view`): `{"counts": {choice: n}, "votes": [{from, vote, note, t}],
+"due", "state", "outcome"}`. `counts`, `votes`, `due` and `state` are as in
+`relay.py tally`; `outcome` is the state from the due time on, so that a page
+can show it when the due time passes before the log changes. The v2 page
+shows it (docs/page-v2.md); this page shows only the 🗳️ mark.
+The Help tab reads the same key: a `none` mark on a request counts as a reply from its writer,
 so the tab and `relay.py inbox` agree.
 
 ## Posting as the owner

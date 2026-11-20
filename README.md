@@ -163,8 +163,10 @@ rows if the project tracks progress. See
   marks --missing` lists the ones that still wait for marks. The page
   shows the marks in one line under the card of the post. The v2 page
   shows the same line under each message of an open thread and "2 of 5
-  acknowledged" on the thread row; the owner's "No action needed" button
-  writes the `--none` row.
+  acknowledged" on the thread row, and under the line the votes: the
+  ADOPT and OBJECT counts, each voter with the choice and the note, and
+  the state of a proposal with a due time. The owner's "No action needed"
+  button writes the `--none` row.
   `relay.py retract --from <id> --id <post> --reason "..."` takes back
   one of your own posts: it stays, struck through on both pages, and no
   one owes it an answer or a mark (`--superseded-by` names its

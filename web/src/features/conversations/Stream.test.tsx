@@ -348,6 +348,25 @@ describe("Stream", () => {
     expect(within(reply).queryByRole("img")).toBeNull();
   });
 
+  test("a message with votes shows the counts and each voter with the note under its marks line", () => {
+    const votes = { counts: { ADOPT: 1, OBJECT: 1 }, due: null, state: null, outcome: null, votes: [
+      { from: "beta", vote: "OBJECT", note: "too soon", t: "2026-11-11T09:05:00Z" },
+      { from: "alpha", vote: "ADOPT", note: null, t: "2026-11-11T09:06:00Z" },
+    ] };
+    const marks = { marks: {}, owed: [], expects: false, votes };
+    const voted = [message("alpha-0001", "2026-11-11T09:00:00Z", { depth: 0, marks }), MESSAGES[1]!];
+    renderWith(<Stream sort="needs" open={["alpha-0001"]} onOpenChange={() => {}} />, [
+      ...base(OWNER, EMPTY_STATE, [Q1]).filter(([key]) => key !== DETAIL[0]),
+      [keys.thread("alpha-0001"), { root: "alpha-0001", messages: voted }],
+    ]);
+    const root = document.querySelectorAll("article")[0] as HTMLElement;
+    const block = within(root).getByRole("img", { name: "votes" }).closest("[data-votes]") as HTMLElement;
+    expect(Array.from(block.querySelectorAll("li")).map((li) => li.textContent)).toEqual(["ADOPT Alpha", "OBJECT Beta: too soon"]);
+    expect(Array.from(block.querySelectorAll("[data-choice]")).map((e) => e.textContent)).toEqual(["ADOPT 1", "OBJECT 1"]);
+    const reply = screen.getByText("Read reply").closest("article") as HTMLElement;
+    expect(reply.querySelector("[data-votes]")).toBeNull();
+  });
+
   test("a thread row whose root expects marks shows how many are acknowledged", () => {
     const counted = thread("alpha-0001", { title: "Does the rebuild go on?", marks_count: { acknowledged: 2, expected: 5 } });
     const none = thread("beta-0007", { title: "Nobody owes", marks_count: { acknowledged: 0, expected: 0 } });

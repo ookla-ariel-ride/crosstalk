@@ -96,7 +96,7 @@ def writer_of(docs: Dict, coll: str, did: str) -> Optional[str]:
     return getattr(docs, "first_writer", {}).get((coll, did))
 
 
-def marks_by_item(docs: Dict, roster=None) -> Dict[Tuple[str, str], Dict[str, str]]:
+def marks_by_item(docs: Dict, roster=None, rows=None) -> Dict[Tuple[str, str], Dict[str, str]]:
     """item_ref to {participant: word}.
 
     A row counts when its id is from + ACK_SEP + item, `from` is approved and holds no
@@ -104,10 +104,45 @@ def marks_by_item(docs: Dict, roster=None) -> Dict[Tuple[str, str], Dict[str, st
     When two rows of one participant name the same item (a message and its lesson),
     the row with the later `t` wins. Pass the docs from replay.enrich_messages: a plain
     dict has no `first_writer`, so the own-post rule then misses decisions and lessons.
+    rows is _mark_rows(docs, roster), passed to save its work.
     """
     out = {}  # type: Dict[Tuple[str, str], Dict[str, str]]
-    for ref, frm, word, _doc in _mark_rows(docs, roster):
+    for ref, frm, word, _doc in _mark_rows(docs, roster) if rows is None else rows:
         out.setdefault(ref, {})[frm] = word
+    return out
+
+
+def _vote_list(latest: Dict[str, dict]) -> List[dict]:
+    """{from, vote, note, t} of each latest row (participant to row) that is a vote, by name."""
+    votes = []
+    for frm in sorted(latest):
+        doc = latest[frm]
+        if mark_of(doc) != "vote":
+            continue
+        note, t = doc.get("note"), doc.get("t")
+        votes.append({"from": frm, "vote": doc["vote"], "note": note if isinstance(note, str) else None,
+                      "t": t if isinstance(t, str) else None})
+    return votes
+
+
+def _vote_counts(votes: List[dict]) -> Dict[str, int]:
+    counts = {}  # type: Dict[str, int]
+    for v in votes:
+        counts[v["vote"]] = counts.get(v["vote"], 0) + 1
+    return dict(sorted(counts.items()))
+
+
+def votes_by_item(docs: Dict, roster=None, rows=None) -> Dict[Tuple[str, str], List[dict]]:
+    """item_ref to the votes on it (_vote_list): each participant whose latest mark on
+    the item is a vote. rows is _mark_rows(docs, roster), passed to save its work."""
+    latest = {}  # type: Dict[Tuple[str, str], Dict[str, dict]]
+    for ref, frm, _word, doc in _mark_rows(docs, roster) if rows is None else rows:
+        latest.setdefault(ref, {})[frm] = doc
+    out = {}
+    for ref, by_frm in latest.items():
+        votes = _vote_list(by_frm)
+        if votes:
+            out[ref] = votes
     return out
 
 
@@ -236,17 +271,7 @@ def tally(docs: Dict, coll: str, did: str, roster=None, now: Optional[float] = N
     for ref, frm, _word, doc in _mark_rows(docs, roster):
         if ref == (coll, did):
             latest[frm] = doc
-    votes = []
-    for frm in sorted(latest):
-        doc = latest[frm]
-        if mark_of(doc) != "vote":
-            continue
-        note, t = doc.get("note"), doc.get("t")
-        votes.append({"from": frm, "vote": doc["vote"], "note": note if isinstance(note, str) else None,
-                      "t": t if isinstance(t, str) else None})
-    counts = {}  # type: Dict[str, int]
-    for v in votes:
-        counts[v["vote"]] = counts.get(v["vote"], 0) + 1
+    votes = _vote_list(latest)
     post = docs.get((coll, did))
     post = post if isinstance(post, dict) else {}
     summary = post.get("summary") if isinstance(post.get("summary"), str) else post.get("title")
@@ -262,7 +287,7 @@ def tally(docs: Dict, coll: str, did: str, roster=None, now: Optional[float] = N
             pending.append(pid)
     state = due_state(post, votes, now)
     return {"id": did, "collection": coll, "summary": summary if isinstance(summary, str) else None,
-            "counts": dict(sorted(counts.items())), "votes": votes, "pending": pending,
+            "counts": _vote_counts(votes), "votes": votes, "pending": pending,
             "due": post["due"] if state is not None else None, "state": state}
 
 
@@ -440,23 +465,53 @@ def owed(docs: Dict, coll: str, did: str, roster, config, by_item=None) -> List[
 
 def view(docs: Dict, coll: str, did: str, roster, config, by_item=None) -> dict:
     """What a page shows for one post: {"marks": {participant: word}, "owed": [names],
-    "expects": bool}. A `lessons` row that names its message shows the marks of that
+    "expects": bool}, plus "votes" (vote_view) when the post has a vote or a due
+    time. A `lessons` row that names its message shows the marks of that
     message and expects none itself. Pass the docs from replay.enrich_messages;
     by_item as in owed()."""
     if not isinstance(docs.get((coll, did)), dict):
         return {"marks": {}, "owed": [], "expects": False}
     if by_item is None:
         by_item = marks_by_item(docs, roster)
-    return {"marks": _marks_of(docs, coll, did, roster, by_item),
-            "owed": owed(docs, coll, did, roster, config, by_item),
-            "expects": expects_mark(docs, coll, did, roster, config)}
+    out = {"marks": _marks_of(docs, coll, did, roster, by_item),
+           "owed": owed(docs, coll, did, roster, config, by_item),
+           "expects": expects_mark(docs, coll, did, roster, config)}
+    votes = vote_view(docs, coll, did, votes_by_item(docs, roster))
+    if votes is not None:
+        out["votes"] = votes
+    return out
+
+
+def vote_view(docs: Dict, coll: str, did: str, by_item: Dict[Tuple[str, str], List[dict]],
+              now: Optional[float] = None) -> Optional[dict]:
+    """The `votes` key of a post's view: {"counts", "votes", "due", "state", "outcome"},
+    or None when the post has no vote and no due time. counts and votes are as in
+    tally(); due and state too (None without a due time). outcome is the state from
+    the due time on (`objected`, `passed` or `retracted`), so that a page shows the
+    result once the due time passes without a new build. by_item is votes_by_item()."""
+    ref = item_ref(docs, did) if coll == "lessons" else (coll, did)
+    if ref is None:
+        return None
+    post = docs.get(ref)
+    post = post if isinstance(post, dict) else {}
+    votes = by_item.get(ref, [])
+    due = due_utc(post.get("due"))
+    if not votes and due is None:
+        return None
+    state = due_state(post, votes, now)
+    return {"counts": _vote_counts(votes), "votes": votes,
+            "due": post["due"] if state is not None else None, "state": state,
+            "outcome": due_state(post, votes, due.timestamp()) if due is not None else None}
 
 
 def page_views(docs: Dict, roster, config) -> Dict[Tuple[str, str], dict]:
-    """(collection, id) to view() for each message, decision and lesson that has a mark
-    or expects one: the `marks` key of that row in the data the pages load. A row that
-    is not here gets no key. Pass the docs from replay.enrich_messages."""
-    by_item = marks_by_item(docs, roster)
+    """(collection, id) to view() for each message, decision and lesson that has a mark,
+    expects one, or has a due time (vote_view): the `marks` key of that row in the
+    data the pages load. A row that is not here gets no key. Pass the docs from
+    replay.enrich_messages."""
+    rows = _mark_rows(docs, roster)
+    by_item = marks_by_item(docs, roster, rows)
+    votes_by = votes_by_item(docs, roster, rows)
     config = parsed(config)
     out = {}
     for (coll, did), doc in docs.items():
@@ -464,10 +519,13 @@ def page_views(docs: Dict, roster, config) -> Dict[Tuple[str, str], dict]:
             continue
         expects = expects_mark(docs, coll, did, roster, config)
         have = _marks_of(docs, coll, did, roster, by_item)
-        if not have and not expects:
+        votes = vote_view(docs, coll, did, votes_by)
+        if not have and not expects and votes is None:
             continue
         owe = [pid for pid in markers(docs, coll, did, roster) if have.get(pid) not in ACKNOWLEDGED] if expects else []
         out[(coll, did)] = {"marks": have, "owed": owe, "expects": expects}
+        if votes is not None:
+            out[(coll, did)]["votes"] = votes
     return out
 
 

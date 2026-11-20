@@ -44,6 +44,31 @@ export interface MarksView {
   marks: Record<string, MarkWord>;
   owed: string[];
   expects: boolean;
+  /** The votes on the post (marks.vote_view); only a post with a vote or a due time has it. */
+  votes?: VotesView;
+}
+
+/** One vote (relay.py ack --vote): who, the choice in upper case, the note, and when. */
+export interface Vote {
+  from: string;
+  vote: string;
+  note: string | null;
+  t: string | null;
+}
+
+/** Where a proposal with a due time stands (marks.due_state). */
+export type VoteState = "open" | "objected" | "passed" | "retracted";
+
+/** The `votes` key of a post's marks (marks.vote_view): the same counts and votes as relay.py tally. */
+export interface VotesView {
+  counts: Record<string, number>;
+  votes: Vote[];
+  /** The due time in UTC ISO 8601, or null without one. */
+  due: string | null;
+  /** The state when the server built the view; null without a due time. */
+  state: VoteState | null;
+  /** The state from the due time on: objected, passed or retracted; null without a due time. */
+  outcome: VoteState | null;
 }
 
 export interface ThreadsPage {

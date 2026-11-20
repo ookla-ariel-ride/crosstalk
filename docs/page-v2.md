@@ -79,6 +79,15 @@ names that owe one hold an acknowledged mark, such as "2 of 5 acknowledged".
   loads the line and the count again.
 - An open row of Decisions or of Lessons and incidents shows the same line
   above its detail when the decision or the lesson has marks.
+- Under the marks line, a post with votes (`relay.py ack --vote`) or a due
+  time shows its votes: `🗳️ ADOPT 2  OBJECT 1  Open until 20 Nov 2026,
+  17:00`, then one line per voter, such as `OBJECT Gamma: too soon`. ADOPT
+  and OBJECT always show with their counts, and other choices follow by
+  name. A proposal with a due time shows its state, as `relay.py tally`
+  does: open until the due time, then passed or objected; a retracted one
+  shows `Retracted`. When the due time passes while the page is open, the
+  state changes to the server's `outcome` without a reload. The block is
+  read only: the page casts no vote.
 - A field that holds a number, a list or an object where the page expects
   text shows as that text. A message or a row that still cannot be shown
   says so with its id, and the rest of the page stays.
