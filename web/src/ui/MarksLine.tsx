@@ -20,13 +20,13 @@ const isObject = (v: unknown): v is Record<string, unknown> => typeof v === "obj
 type Roster = Record<string, RosterEntry> | undefined;
 
 /** An agent with a parent shows as "Parent › Name", as on the present page. */
-function displayName(id: string, roster: Roster): string {
+export function displayName(id: string, roster: Roster): string {
   const entry = roster && Object.hasOwn(roster, id) ? roster[id] : undefined;
   const parent = entry?.kind === "agent" && typeof entry.parent === "string" && entry.parent !== id ? entry.parent : null;
   return parent ? nameOf(parent, roster) + " › " + nameOf(id, roster) : nameOf(id, roster);
 }
 
-function byName(roster: Roster) {
+export function byName(roster: Roster) {
   return (a: string, b: string) => nameOf(a, roster).localeCompare(nameOf(b, roster)) || (a < b ? -1 : a > b ? 1 : 0);
 }
 

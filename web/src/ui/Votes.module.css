@@ -1,0 +1,48 @@
+/* The votes under a post: a line of counts and the state, then one line per voter. */
+.votes {
+  margin: 6px 0 0;
+  color: var(--muted);
+  font-size: var(--size-s);
+}
+
+.head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 2px 14px;
+}
+
+.count {
+  color: var(--ink);
+  font-variant-numeric: tabular-nums;
+}
+
+/* The state carries its word, so the colour is not the only sign. */
+.state {
+  font-weight: 700;
+}
+
+.state[data-state="passed"] {
+  color: var(--signal);
+}
+
+.state[data-state="objected"] {
+  color: var(--amber);
+}
+
+.list {
+  margin: 4px 0 0;
+  padding: 0;
+  list-style: none;
+}
+
+.voter {
+  overflow-wrap: anywhere;
+}
+
+.choice {
+  display: inline-block;
+  min-width: 4.5em;
+  color: var(--ink);
+  font-weight: 700;
+}

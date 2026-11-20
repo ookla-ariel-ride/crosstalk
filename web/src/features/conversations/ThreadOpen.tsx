@@ -12,6 +12,7 @@ import { splitRead } from "../../logic/splitRead";
 import { Body } from "../../ui/Body";
 import { Guard } from "../../ui/Guard";
 import { MarksLine } from "../../ui/MarksLine";
+import { Votes } from "../../ui/Votes";
 import { isLater, markOf, useReading } from "./reading";
 import { WatchContext } from "./seen";
 import styles from "./Stream.module.css";
@@ -75,6 +76,7 @@ function MessageView({ message, roster, now, children }: { message: Message; ros
         {rest ? <Body text={rest} /> : null}
       </div>
       <MarksLine marks={message.marks} roster={roster} />
+      <Votes marks={message.marks} roster={roster} />
       {children}
     </article>
   );

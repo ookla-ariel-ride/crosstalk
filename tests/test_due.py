@@ -155,6 +155,35 @@ class DueTests(unittest.TestCase):
         v = marks.tally(docs, "messages", "beta-p2", roster, now=AFTER)
         self.assertEqual((v["due"], v["state"]), (None, None))
 
+    def test_the_page_views_carry_the_votes(self):
+        """page_views puts `votes` on a post with a vote or a due time: the v2 page shows it."""
+        self.r.write_log("alpha", [vote(1, "alpha", "beta-p1", "ADOPT"), vote(2, "alpha", "beta-p2", "ADOPT")])
+        self.r.write_log("gamma", [line(1, "gamma", "acks", id_="gamma--beta-p1",
+                                        data={"from": "gamma", "item": "beta-p1", "mark": "vote", "vote": "OBJECT",
+                                              "note": "too soon", "t": "2026-11-19T11:30:00Z"})])
+        docs, roster = self.docs()
+        views = marks.page_views(docs, roster, {})
+        v = views[("messages", "beta-p1")]["votes"]
+        self.assertEqual(v["counts"], {"ADOPT": 1, "OBJECT": 1})
+        self.assertEqual([(x["from"], x["vote"], x["note"]) for x in v["votes"]],
+                         [("alpha", "ADOPT", None), ("gamma", "OBJECT", "too soon")])
+        self.assertEqual((v["due"], v["outcome"]), (DUE, "objected"))
+        self.assertEqual(views[("messages", "beta-p1")]["marks"], {"alpha": "vote", "gamma": "vote"})
+        no_due = views[("messages", "beta-p2")]["votes"]
+        self.assertEqual((no_due["counts"], no_due["due"], no_due["state"], no_due["outcome"]),
+                         ({"ADOPT": 1}, None, None, None))
+        self.assertEqual(marks.view(docs, "messages", "beta-p1", roster, {})["votes"], v)
+
+    def test_a_due_post_with_no_vote_has_votes_and_a_post_with_neither_has_none(self):
+        docs, roster = self.docs()
+        views = marks.page_views(docs, roster, {})
+        self.assertEqual(views[("messages", "beta-p1")]["votes"],
+                         {"counts": {}, "votes": [], "due": DUE, "state": marks.due_state(docs[("messages", "beta-p1")], []),
+                          "outcome": "passed"})
+        self.assertNotIn(("messages", "beta-p2"), views)
+        self.assertEqual(marks.vote_view(docs, "messages", "beta-p1", {}, now=BEFORE)["state"], "open")
+        self.assertNotIn("votes", marks.view(docs, "messages", "beta-p2", roster, {}))
+
 
 class CliTests(unittest.TestCase):
     def setUp(self):

@@ -117,6 +117,16 @@ describe("SectionPage", () => {
     expect(marksText()).toEqual(["\u2705 Beta not yet: Alpha"]);
   });
 
+  test("an open decision with votes shows them", () => {
+    const votes = { counts: { ADOPT: 1 }, votes: [{ from: "beta", vote: "ADOPT", note: "fine", t: null }], due: null, state: null, outcome: null };
+    renderWith(<SectionPage section="decisions" q="" />, [
+      snapshot(),
+      section("decisions", page([{ id: "own-1", summary: "Use one queue", marks: { marks: {}, owed: [], expects: false, votes } }])),
+    ]);
+    fireEvent.click(screen.getByRole("button", { name: /Use one queue/ }));
+    expect(Array.from(document.querySelectorAll("[data-votes] li")).map((el) => el.textContent)).toEqual(["ADOPT Beta: fine"]);
+  });
+
   test("a row opens in place with its detail; opening another closes it", () => {
     renderWith(<SectionPage section="claims" q="" />, [section("locks", page(LOCKS, { open: 2 }))]);
     const [first, second] = screen.getAllByRole("button", { name: /docs\/[ab]\.md/ });

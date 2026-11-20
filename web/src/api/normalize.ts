@@ -3,7 +3,7 @@
 // gets the type they expect here, as the present page does with String(text):
 // text stays text, a number or a boolean becomes its text, an object or a list
 // becomes its JSON, and null drops the field. The views then need no guards.
-import type { MarksCount, MarksView, MarkWord, Message, RowRef, SectionPage, SectionRow, Thread, ThreadDetail, ThreadsPage } from "./types";
+import type { MarksCount, MarksView, MarkWord, Message, RowRef, SectionPage, SectionRow, Thread, ThreadDetail, ThreadsPage, Vote, VotesView, VoteState } from "./types";
 
 type Raw = Record<string, unknown>;
 
@@ -54,7 +54,35 @@ export function marksView(v: unknown): MarksView | undefined {
     if (id && typeof word === "string" && MARK_WORDS.includes(word)) marks[id] = word as MarkWord;
   }
   const owed = Array.isArray(v.owed) ? v.owed.filter((id): id is string => typeof id === "string" && id !== "") : [];
-  return { marks, owed, expects: v.expects === true };
+  const votes = votesView(v.votes);
+  return { marks, owed, expects: v.expects === true, ...(votes ? { votes } : {}) };
+}
+
+const VOTE_STATES: readonly string[] = ["open", "objected", "passed", "retracted"];
+
+const stateOf = (v: unknown): VoteState | null => (typeof v === "string" && VOTE_STATES.includes(v) ? (v as VoteState) : null);
+
+/**
+ * The `votes` key of a post's marks (marks.vote_view), or undefined when it is not
+ * an object. A vote without a name or a choice is left out, and so is a count that
+ * is not a whole number above 0. A note or a time that is not text reads as null.
+ */
+export function votesView(v: unknown): VotesView | undefined {
+  if (!isObject(v)) return undefined;
+  const counts: Record<string, number> = {};
+  if (isObject(v.counts)) {
+    for (const [choice, n] of Object.entries(v.counts)) {
+      if (choice && typeof n === "number" && Number.isInteger(n) && n > 0) counts[choice] = n;
+    }
+  }
+  const votes: Vote[] = (Array.isArray(v.votes) ? v.votes : []).filter(isObject).flatMap((x) => {
+    const from = typeof x.from === "string" ? x.from : "";
+    const vote = typeof x.vote === "string" ? x.vote : "";
+    if (!from || !vote) return [];
+    return [{ from, vote, note: typeof x.note === "string" && x.note ? x.note : null, t: typeof x.t === "string" ? x.t : null }];
+  });
+  const due = typeof v.due === "string" && v.due ? v.due : null;
+  return { counts, votes, due, state: due ? stateOf(v.state) : null, outcome: due ? stateOf(v.outcome) : null };
 }
 
 /** A thread row's `marks_count`: two whole numbers, the first not above the second; else undefined. */

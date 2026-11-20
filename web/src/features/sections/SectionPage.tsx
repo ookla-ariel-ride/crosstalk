@@ -14,6 +14,7 @@ import { HoldButton } from "../owner";
 import { Row } from "../../ui/Row";
 import { RowList } from "../../ui/RowList";
 import { MarksLine } from "../../ui/MarksLine";
+import { Votes } from "../../ui/Votes";
 import { labelOf } from "../../ui/Sidebar";
 import { useNow } from "../../ui/useNow";
 import { adoptionRow } from "./adoption";
@@ -175,6 +176,7 @@ export function SectionList({ label, count, items, pending, error, retry, more, 
                   onOpen={() => setOpenKey((k) => (k === item.key ? null : item.key))}
                 >
                   <MarksLine marks={item.view.marks} roster={roster} />
+                  <Votes marks={item.view.marks} roster={roster} />
                   {item.view.detail.length ? <Body blocks={item.view.detail} /> : <p className={styles.muted}>No more detail.</p>}
                   {item.act}
                 </Row>
