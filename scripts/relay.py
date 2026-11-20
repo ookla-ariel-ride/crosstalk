@@ -110,7 +110,7 @@ def cmd_append(args):
         err("warning: " + w)
     try:
         ln = append_line(ROOT, args.from_, args.op, args.collection, args.id, data,
-                         roster=roster)
+                         roster=roster, allow_duplicate=args.allow_duplicate)
     except ValueError as e:
         err(str(e))
         return 1
@@ -582,6 +582,7 @@ def cmd_reply(args):
             no_answer=args.no_answer,
             must_read=args.must_read,
             to=_flatten(args.to) if args.to else None,
+            allow_duplicate=args.allow_duplicate,
         )
     except ValueError as e:
         err(str(e))
@@ -603,6 +604,7 @@ def cmd_consult(args):
             speaker=speaker_fields(args),
             no_answer=args.no_answer,
             due=args.due,
+            allow_duplicate=args.allow_duplicate,
         )
     except ValueError as e:
         err(str(e))
@@ -640,6 +642,7 @@ def cmd_ask(args):
             speaker=speaker_fields(args),
             options=args.options,
             recommend=recommend,
+            allow_duplicate=args.allow_duplicate,
         )
     except ValueError as e:
         err(str(e))
@@ -1007,6 +1010,8 @@ def cmd_adopt(args):
 
 NO_ANSWER_HELP = 'set needs_answer: false and end the body with "No answer needed."'
 MUST_READ_HELP = "set must_read: true: every agent the post reaches owes a mark (relay.py ack)"
+ALLOW_DUP_HELP = ("post even when you sent the same text in the last 10 minutes "
+                  "(the duplicate guard, PROTOCOL.md)")
 
 
 def _speaker_flags(parser):
@@ -1039,6 +1044,7 @@ def build_parser():
     g.add_argument("--data-file", help="path to a JSON object file")
     a.add_argument("--no-answer", action="store_true", help=NO_ANSWER_HELP + " (--collection messages --op set only)")
     a.add_argument("--must-read", action="store_true", help=MUST_READ_HELP + " (--collection messages --op set only)")
+    a.add_argument("--allow-duplicate", action="store_true", help=ALLOW_DUP_HELP)
     a.set_defaults(fn=cmd_append)
 
     x = sub.add_parser("export-page", help="write one self-contained HTML page with the log inlined")
@@ -1154,6 +1160,7 @@ def build_parser():
     rp.add_argument("--id")
     rp.add_argument("--no-answer", action="store_true", help=NO_ANSWER_HELP)
     rp.add_argument("--must-read", action="store_true", help=MUST_READ_HELP)
+    rp.add_argument("--allow-duplicate", action="store_true", help=ALLOW_DUP_HELP)
     rp.set_defaults(fn=cmd_reply)
 
     cs = sub.add_parser("consult", help="post a peer consultation request; prints the new message id")
@@ -1168,6 +1175,7 @@ def build_parser():
     cs.add_argument("--due", metavar="TIME",
                     help="when the proposal passes unless a vote OBJECT holds: yyyy-mm-ddThh:mm[:ss] with Z "
                          "or an offset such as +02:00, or a local hh:mm (the next such time); stored in UTC")
+    cs.add_argument("--allow-duplicate", action="store_true", help=ALLOW_DUP_HELP)
     cs.set_defaults(fn=cmd_consult)
 
     ak = sub.add_parser("ask", help="post a question for the owner; prints the new message id")
@@ -1183,6 +1191,7 @@ def build_parser():
                     help="the choice you recommend, by number: 1 is the first --option")
     ak.add_argument("--no-answer", action="store_true", help="refused: a question to the owner needs an answer")
     ak.add_argument("--must-read", action="store_true", help="refused: a question to the owner asks no mark")
+    ak.add_argument("--allow-duplicate", action="store_true", help=ALLOW_DUP_HELP)
     ak.set_defaults(fn=cmd_ask)
 
     qs = sub.add_parser("questions", help="print the open questions for the owner (JSON)")
