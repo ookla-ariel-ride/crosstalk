@@ -27,6 +27,7 @@ from crosstalk import adoption as adoption_mod  # noqa: E402
 from crosstalk import schedules as schedules_mod  # noqa: E402
 from crosstalk import scorecard as scorecard_mod  # noqa: E402
 from crosstalk import state as state_mod  # noqa: E402
+from crosstalk import watchdog as watchdog_mod  # noqa: E402
 from crosstalk import buildhost as buildhost_mod  # noqa: E402
 from crosstalk import config as config_mod  # noqa: E402
 from crosstalk import marks as marks_mod  # noqa: E402
@@ -901,6 +902,44 @@ def cmd_scorecard(args):
     return 0
 
 
+def cmd_watchdog(args):
+    """watchdog: how late the coordinator's check-in is; --post alerts once per gap (crosstalk/watchdog.py)."""
+    roster = load_roster(ROOT / "participants.json")
+    docs, fatal = load_docs(ROOT, roster)
+    if fatal:
+        for p in fatal:
+            err("%s:%d: %s" % (p.file, p.line, p.message))
+        return 1
+    if args.late_min is not None and args.late_min <= 0:
+        err("watchdog: --late-min must be more than 0")
+        return 1
+    r = watchdog_mod.reading(docs, roster, time.time(), args.late_min)
+    if r["last_id"] is None:
+        print("watchdog: %s" % r["state"])
+    else:
+        print("watchdog: %s last checked in at %s (%s); due %s, every %g min; %s min late; %s"
+              % (r["coordinator"], r["last_t"], r["last_id"], r["due"], r["period_min"],
+                 "%g" % max(0.0, r["late_min"]), r["state"]))
+    if not args.post or r["state"] != "late":
+        return 0
+    if not config_mod.of(roster)["watchdog"]["enabled"]:
+        print("watchdog: no post (config watchdog.enabled is not true)")
+        return 0
+    sender, why = watchdog_mod.sender(roster, args.from_)
+    if sender is None:
+        err("watchdog: %s" % why)
+        return 1
+    try:
+        ln = append_line(ROOT, sender, "set", "messages",
+                         watchdog_mod.alert_id(sender, r["coordinator"], r["last_id"]),
+                         watchdog_mod.message(r, sender, roster), roster=roster)
+    except ValueError as e:
+        err(str(e))
+        return 1
+    print(ln.id)
+    return 0
+
+
 def cmd_marks(args):
     """marks <item>: the marks on one post and who owes one.
     marks --missing [--older M]: each post that expects a mark and still has names that owe one."""
@@ -1282,6 +1321,18 @@ def build_parser():
                           "local time is past scorecard.at and it is not posted yet (the housekeeper runs this)")
     _speaker_flags(scd)
     scd.set_defaults(fn=cmd_scorecard)
+
+    wd = sub.add_parser("watchdog", help="print how late the coordinator's check-in is; --post posts one "
+                                         "alert per gap when it is late by watchdog.lateMin (60) or more")
+    wd.add_argument("--late-min", type=float, default=None,
+                    help="the minutes past the due check-in that count as late (default: config watchdog.lateMin)")
+    wd.add_argument("--post", action="store_true",
+                    help="when late and config watchdog.enabled is true, post one kind: alert to every approved "
+                         "project and the owner (the housekeeper runs this)")
+    wd.add_argument("--from", dest="from_", default=None,
+                    help="the participant the alert comes from (default: config watchdog.from, else the first "
+                         "approved project that is not the coordinator)")
+    wd.set_defaults(fn=cmd_watchdog)
 
     mr = sub.add_parser("marks", help="print the marks on one post and who owes one; "
                                       "--missing lists every post that still waits for marks")

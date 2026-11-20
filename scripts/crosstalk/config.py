@@ -43,6 +43,14 @@ holds no secret.
     scorecard.at, zone  The local time (HH:MM) and the IANA time zone of the daily
                         post: 09:00 in America/Los_Angeles by default.
     scorecard.hours     The window of `relay.py scorecard` and the daily post: 48.
+    watchdog.enabled    true: `relay.py watchdog --post` (the housekeeper runs it) posts
+                        one alert when the coordinator's check-in is late (watchdog.py);
+                        false (the default) posts nothing.
+    watchdog.lateMin    The minutes past the due check-in that count as late: 60.
+    watchdog.everyMin   The check-in period when the coordinator reports no check-in
+                        schedule job: 30.
+    watchdog.from       The participant the alert comes from; empty picks the first
+                        approved project by id that is not the coordinator.
     modelFamilies       [[pattern, family], ...]: extra rows for the page's model
                         family table. A value that is not a list of two-string
                         pairs reads as the empty list.
@@ -66,6 +74,7 @@ DEFAULTS = {
     "usage": {"glob": "", "limit": 90.0, "stopLimit": 95.0, "graceMin": 0.0, "maxAgeMin": 45.0},
     "reviews": {"reviewer": "codex"},
     "scorecard": {"daily": False, "at": "09:00", "zone": "America/Los_Angeles", "hours": 48.0},
+    "watchdog": {"enabled": False, "lateMin": 60.0, "everyMin": 30.0, "from": ""},
     "modelFamilies": [],  # a list of [pattern, family] string pairs
 }
 

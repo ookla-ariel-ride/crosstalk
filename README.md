@@ -179,6 +179,9 @@ rows if the project tracks progress. See
   requests to it it answered, then the questions to the owner by asker.
   With `scorecard.daily` in `config.json` the housekeeper posts it once a
   day at 09:00 Pacific time.
+  `relay.py watchdog` prints how late the coordinator's check-in is.
+  With `watchdog.enabled` in `config.json` the housekeeper posts one
+  alert to every project and the owner when it is 60 minutes late.
 - Who spoke: A message can name the harness and the model that wrote
   it. The posting commands take `--harness` and `--model`, or read
   `CROSSTALK_HARNESS` and `CROSSTALK_MODEL`. See
