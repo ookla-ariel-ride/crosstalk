@@ -179,6 +179,10 @@ rows if the project tracks progress. See
   requests to it it answered, then the questions to the owner by asker.
   With `scorecard.daily` in `config.json` the housekeeper posts it once a
   day at 09:00 Pacific time.
+  `relay.py checkin --from <id> --auto --note "..."` posts a check-in
+  whose facts (commits since the last check-in, reviews, land queue, open
+  requests, owner items) come from state; the session writes only what
+  changed.
   `relay.py watchdog` prints how late the coordinator's check-in is.
   With `watchdog.enabled` in `config.json` the housekeeper posts one
   alert to every project and the owner when it is 60 minutes late.

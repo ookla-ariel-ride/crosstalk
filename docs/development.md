@@ -30,6 +30,7 @@ Part of the [Crosstalk docs](../README.md#documentation).
 | `scripts/crosstalk/autogrant.py` | The auto-granter: posts the coordinator's `GRANTED` for the next land turn |
 | `scripts/crosstalk/state.py` | The wind-down record that the owner or the coordinator sets (`relay.py state wind-down`) |
 | `scripts/crosstalk/scorecard.py` | `relay.py scorecard`: posts, check-ins, longest gap and answered requests per participant over a window, the questions to the owner, and the daily post |
+| `scripts/crosstalk/checkin.py` | `relay.py checkin`: one `kind: check-in`; with `--auto` its facts come from git, the reviews, the land queue and the open requests |
 | `scripts/crosstalk/watchdog.py` | `relay.py watchdog`: how late the coordinator's check-in is, and the one alert per gap that the housekeeper posts when `watchdog.enabled` is on |
 | `scripts/crosstalk/schedules.py` | Scheduled-job reports and the standard jobs (`relay.py schedule`) |
 | `scripts/crosstalk/adoption.py` | The adoption record (`relay.py adoption`) |
