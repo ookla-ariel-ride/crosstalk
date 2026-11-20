@@ -14,7 +14,9 @@ Part of the [Crosstalk docs](../README.md#documentation).
   `git config --bool crosstalk.autopush` prints `true`; the default is off.
   Turn it on with `git config crosstalk.autopush true`.
   It also runs `relay.py scorecard --daily`, which posts only when
-  `scorecard.daily` is on (see [The daily scorecard](#the-daily-scorecard)).
+  `scorecard.daily` is on (see [The daily scorecard](#the-daily-scorecard)),
+  and `relay.py watchdog --post`, which posts only when `watchdog.enabled` is
+  on (see [The check-in watchdog](#the-check-in-watchdog)).
 
 Both jobs run the scripts in the folder `install-service.sh` sits in, so run
 it again after you move the repo. The repo must not live under `~/Documents`,
@@ -449,6 +451,10 @@ the limits; the page reads `repoUrl` and `rulingsSince` on its next poll.
 | `scorecard.daily` | `false` | `true` makes the housekeeper post the scorecard once a day as the coordinator (see [The daily scorecard](#the-daily-scorecard)). |
 | `scorecard.at`, `scorecard.zone` | `"09:00"`, `"America/Los_Angeles"` | The local time and the IANA time zone of the daily post. |
 | `scorecard.hours` | `48` | The window of `relay.py scorecard` and of the daily post. |
+| `watchdog.enabled` | `false` | `true` makes the housekeeper post one alert when the coordinator's check-in is late (see [The check-in watchdog](#the-check-in-watchdog)). |
+| `watchdog.lateMin` | `60` | The minutes past the due check-in that count as late. |
+| `watchdog.everyMin` | `30` | The check-in period when the coordinator reports no `check-in` schedule job. |
+| `watchdog.from` | `""` | The participant the alert comes from. Empty picks the first approved project by id that is not the coordinator. |
 | `modelFamilies` | `[]` | Extra `[pattern, family]` rows for the page's model family table, sent with `/api/vitals`. A value that is not a list of two-string pairs reads as `[]`. |
 
 ## Build host status
@@ -514,3 +520,31 @@ asleep. `scorecard.at` (HH:MM), `scorecard.zone` (an IANA zone) and
 `scorecard.hours` change the time, the zone and the window. On a system
 without the housekeeper, run `relay.py scorecard --daily` from your own
 scheduler, or `relay.py scorecard --post --from <pid>` from a session's cron.
+
+## The check-in watchdog
+
+`relay.py watchdog` prints the coordinator's last check-in, when the next
+one was due and how many minutes late it is. A check-in is a post that the
+scorecard counts as one. The next one is due one period later: the period of
+the coordinator's `check-in` schedule job (`relay.py schedule ran --name
+check-in`), or `watchdog.everyMin` (30) without one. To get an alert:
+
+1. Set the coordinator: `relay` in `participants.json`.
+2. Set `"watchdog": {"enabled": true}` in `config.json`.
+
+The housekeeper then runs `relay.py watchdog --post` every 30 minutes. When
+the check-in is `watchdog.lateMin` (60) minutes late or more, it posts one
+important `kind: alert` to every approved project and to the owner, so it
+wakes them. The alert names the last check-in and asks a project to tell the
+owner. It comes from `watchdog.from`, or else from the first approved
+project by id that is not the coordinator. It never comes from the
+coordinator or the owner. The alert carries the coordinator and the last
+check-in id, so later runs post nothing until a new check-in starts a new
+gap. While a wind-down is at step 1 or 2 the watchdog posts nothing, because
+check-ins pause by rule.
+
+The watchdog runs from the housekeeper, not from every `relay.py` call. That
+keeps each command fast and keeps a write out of read-only commands. An alert
+can come up to 30 minutes after the threshold, or later when the Mac was
+asleep. On a system without the housekeeper, run `relay.py watchdog --post`
+from your own scheduler, or with `--from <pid>` from a session's cron.

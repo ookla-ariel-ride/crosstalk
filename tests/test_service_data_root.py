@@ -271,21 +271,22 @@ class DataRootTests(Installer):
                            stdout=subprocess.PIPE, stderr=subprocess.PIPE, universal_newlines=True)
         self.assertEqual(r.returncode, 0, r.stderr)
         calls = [json.loads(x) for x in rec.read_text(encoding="utf-8").splitlines()]
-        self.assertEqual([c[3] for c in calls], ["check", "coordinator", "schedule", "scorecard"])
+        self.assertEqual([c[3] for c in calls], ["check", "coordinator", "schedule", "scorecard", "watchdog"])
         for argv in calls:
             self.assertEqual(argv[0], relay_py)
             lines.append(("housekeeper", argv[1:]))
         want = {"serve": relay.cmd_serve, "buildhost": relay.cmd_buildhost, "check": relay.cmd_check,
                 "coordinator": relay.cmd_coordinator, "schedule": relay.cmd_schedule,
-                "scorecard": relay.cmd_scorecard}
+                "scorecard": relay.cmd_scorecard, "watchdog": relay.cmd_watchdog}
         for label, argv in lines:
             flag, rest = relay.split_data_root(argv)
             self.assertEqual(flag, str(data), (label, argv))
             ns = relay.build_parser().parse_args(rest)
             self.assertIs(ns.fn, want[rest[0]], (label, rest))
         self.assertEqual(relay.build_parser().parse_args(lines[1][1][2:]).buildhost_cmd, "poll")
-        self.assertEqual(relay.build_parser().parse_args(lines[-2][1][2:]).schedule_cmd, "ran")
-        self.assertTrue(relay.build_parser().parse_args(lines[-1][1][2:]).daily)
+        self.assertEqual(relay.build_parser().parse_args(lines[-3][1][2:]).schedule_cmd, "ran")
+        self.assertTrue(relay.build_parser().parse_args(lines[-2][1][2:]).daily)
+        self.assertTrue(relay.build_parser().parse_args(lines[-1][1][2:]).post)
 
     def test_a_missing_data_root_fails_and_writes_nothing(self):
         code = self.code_folder()
